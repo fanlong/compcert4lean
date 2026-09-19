@@ -4697,3 +4697,13 @@ theorem generic_format_abs_inv :
   exact pg_suffix_generic_format_abs_inv ctx magnitude beta fexp x hx
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem cexp_fexp :
+    ∀ ctx magnitude, cexp_fexpStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x ex hbounds
+  rw [← cexp_abs ctx magnitude beta fexp x]
+  exact cexp_fexp_pos ctx magnitude beta fexp (Exact.Rabs ctx x) ex hbounds
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

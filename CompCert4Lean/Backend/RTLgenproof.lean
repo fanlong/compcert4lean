@@ -5102,3 +5102,44 @@ theorem transl_condexpr_CEcond_correct
         exact hstable r hr
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Backend.RTLgenspec
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+
+theorem transl_condexpr_CEcondition_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_condexpr_CEcondition_correctStatement := by
+  intro xi prog tprog sp e m le a b c va v
+    heval_a htrans_a heval_branch htrans_branch
+  unfold transl_condexpr_prop at htrans_branch ⊢
+  intro tge tm cs f map pr ns ntrue nfalse rs hwf htr hmatch hext
+  cases htr with
+  | tr_CEcondition map pr a b c ns ntrue nfalse n2 n3 h1 h2 h3 =>
+      have htr_branch : tr_condition f.fn_code map pr (if va then b else c)
+          (if va then n2 else n3) ntrue nfalse := by
+        cases va
+        · exact h3
+        · exact h2
+      have hcond := htrans_a tm cs f map pr ns n2 n3 rs hwf h1 hmatch hext
+      obtain ⟨rs1, tm1, hplus1, hmatch1, hstable1, hext1⟩ := hcond
+      have hbranch := htrans_branch tm1 cs f map pr (if va then n2 else n3)
+          ntrue nfalse rs1 hwf htr_branch hmatch1 hext1
+      obtain ⟨rs2, tm2, hplus2, hmatch2, hstable2, hext2⟩ := hbranch
+      refine ⟨rs2, tm2, ?_, hmatch2, ?_, hext2⟩
+      · exact plus_trans _ _ _ _ _ _ _ _ _ _ hplus1 hplus2 rfl
+      · intro r hr
+        calc
+          Regmap.get r rs2 = Regmap.get r rs1 := hstable2 r hr
+          _ = Regmap.get r rs := hstable1 r hr
+
+end CompCert4Lean.Backend.RTLgenproof

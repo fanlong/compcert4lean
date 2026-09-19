@@ -4806,3 +4806,11 @@ theorem init_mem_inj_1 : init_mem_inj_1Statement := by
   exact ug_init_mem_inj_1 p tp used hvalid hmatch m tm hmem htmem
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+theorem init_mem_inj_2 : init_mem_inj_2Statement := by
+  intro p tp used hvalid hmatch m tm hmem htmem
+  exact ug_init_mem_inj_2 p tp used hvalid hmatch m tm hmem htmem
+
+end CompCert4Lean.Backend.Unusedglobproof

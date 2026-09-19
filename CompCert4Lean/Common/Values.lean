@@ -4035,3 +4035,15 @@ theorem divu_pow2 : divu_pow2Statement := by
     exact (pg_values_int_divu_pow2 a n logn hpow).symm
 
 end CompCert4Lean.Common.Values.Val
+
+namespace CompCert4Lean.Common.Values.Val
+
+theorem divu_one : divu_oneStatement := by
+  intro s
+  simp only [divu]
+  have hzero : CompCert4Lean.Lib.Integers.Int.eq Int.one Int.zero = false := by decide
+  have hdiv : CompCert4Lean.Lib.Integers.Int.divu s Int.one = s :=
+    CompCert4Lean.Lib.Integers.Int.divu_one_proof s
+  simp [hzero, hdiv]
+
+end CompCert4Lean.Common.Values.Val

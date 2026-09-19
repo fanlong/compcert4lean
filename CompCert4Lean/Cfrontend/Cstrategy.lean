@@ -3543,3 +3543,318 @@ theorem decompose_expr
     (binary32_certificate := binary32_certificate)
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+open CompCert4Lean.Cfrontend.Csem
+open CompCert4Lean.Cfrontend.Csyntax
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Lib.Integers
+
+private theorem estep_simulation_pre {G S : Type}
+    {step : G → S → trace → S → Prop} {ge : G} {a b c : S} {t : trace}
+    (h : star step ge a E0 b) (h' : plus step ge b t c) : plus step ge a t c :=
+  star_plus_trans G S step ge a E0 b t c t h h' rfl
+
+private theorem estep_simulation_last {G S : Type}
+    {step : G → S → trace → S → Prop} {ge : G} {a b c : S} {t : trace}
+    (h : star step ge a E0 b) (h' : step ge b t c) : plus step ge a t c :=
+  plus_right G S step ge a E0 b t c t h h' rfl
+
+set_option maxHeartbeats 1200000 in
+theorem estep_simulation
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    estep_simulationStatement := by
+  unfold estep_simulationStatement
+  intro xi ge S t S' h
+  cases h with
+  | @step_expr f r k e m v ty heval hnot hty =>
+      subst ty
+      have hs := eval_simple_rvalue_steps xi ge f k e m r v heval
+        (fun x => x) (.ctx_top .RV)
+      rcases star_inv _ _ _ _ _ _ _ hs with ⟨heq, _⟩ | hp
+      · have hr : expr.Eval v (typeof r) = r := by injection heq
+        rw [← hr] at hnot
+        exact False.elim hnot
+      · exact hp
+  | @step_rvalof_volatile f C l ty k e m b ofs bf t v hc hl hd ht hv =>
+      subst ty
+      have hC := leftcontext_context _ _ _ hc
+      apply estep_simulation_last
+        (eval_simple_lvalue_steps xi ge f k e m l b ofs bf hl
+          (fun x => C (.Evalof x (typeof l)))
+          (context_compose _ _ _ hC _ _ (.rvalof (.ctx_top .LV))))
+      exact Or.inl (Csem.estep.step_rred (.rvalof hd) hC)
+  | @step_seqand_true f C r1 r2 ty k e m v hc hr hb =>
+      have hC := leftcontext_context _ _ _ hc
+      apply estep_simulation_last
+        (eval_simple_rvalue_steps xi ge f k e m r1 v hr
+          (fun x => C (.Eseqand x r2 ty))
+          (context_compose _ _ _ hC _ _ (.seqand (.ctx_top .RV))))
+      exact Or.inl (Csem.estep.step_rred (.red_seqand_true hb) hC)
+  | @step_seqand_false f C r1 r2 ty k e m v hc hr hb =>
+      have hC := leftcontext_context _ _ _ hc
+      apply estep_simulation_last
+        (eval_simple_rvalue_steps xi ge f k e m r1 v hr
+          (fun x => C (.Eseqand x r2 ty))
+          (context_compose _ _ _ hC _ _ (.seqand (.ctx_top .RV))))
+      exact Or.inl (Csem.estep.step_rred (.red_seqand_false hb) hC)
+  | @step_seqor_true f C r1 r2 ty k e m v hc hr hb =>
+      have hC := leftcontext_context _ _ _ hc
+      apply estep_simulation_last
+        (eval_simple_rvalue_steps xi ge f k e m r1 v hr
+          (fun x => C (.Eseqor x r2 ty))
+          (context_compose _ _ _ hC _ _ (.seqor (.ctx_top .RV))))
+      exact Or.inl (Csem.estep.step_rred (.red_seqor_true hb) hC)
+  | @step_seqor_false f C r1 r2 ty k e m v hc hr hb =>
+      have hC := leftcontext_context _ _ _ hc
+      apply estep_simulation_last
+        (eval_simple_rvalue_steps xi ge f k e m r1 v hr
+          (fun x => C (.Eseqor x r2 ty))
+          (context_compose _ _ _ hC _ _ (.seqor (.ctx_top .RV))))
+      exact Or.inl (Csem.estep.step_rred (.red_seqor_false hb) hC)
+  | @step_condition f C r1 r2 r3 ty k e m v b hc hr hb =>
+      have hC := leftcontext_context _ _ _ hc
+      apply estep_simulation_last
+        (eval_simple_rvalue_steps xi ge f k e m r1 v hr
+          (fun x => C (.Econdition x r2 r3 ty))
+          (context_compose _ _ _ hC _ _ (.condition (.ctx_top .RV))))
+      exact Or.inl (Csem.estep.step_rred (.condition hb) hC)
+  | @step_assign f C l r ty k e m b ofs bf v v1 t m' v' hc hl hr hcast ha ht =>
+      subst ty
+      have hC := leftcontext_context _ _ _ hc
+      apply estep_simulation_pre
+        (eval_simple_lvalue_steps xi ge f k e m l b ofs bf hl
+          (fun x => C (.Eassign x r (typeof l)))
+          (context_compose _ _ _ hC _ _ (.assignLeft (.ctx_top .LV))))
+      apply estep_simulation_last
+        (eval_simple_rvalue_steps xi ge f k e m r v hr
+          (fun x => C (.Eassign (.Eloc b ofs bf (typeof l)) x (typeof l)))
+          (context_compose _ _ _ hC _ _ (.assignRight (.ctx_top .RV))))
+      exact Or.inl (Csem.estep.step_rred (.assign hcast ha) hC)
+  | @step_assignop f C op l r tyres ty k e m b ofs bf v1 v2 v3 v4 t1 t2 m' v' t
+      hc hl hd hr hb hcast ha ht htrace =>
+      subst ty
+      have hC := leftcontext_context _ _ _ hc
+      apply estep_simulation_pre
+        (eval_simple_lvalue_steps xi ge f k e m l b ofs bf hl
+          (fun x => C (.Eassignop op x r tyres (typeof l)))
+          (context_compose _ _ _ hC _ _ (.assignopLeft (.ctx_top .LV))))
+      apply estep_simulation_pre
+        (eval_simple_rvalue_steps xi ge f k e m r v2 hr
+          (fun x => C (.Eassignop op (.Eloc b ofs bf (typeof l)) x tyres (typeof l)))
+          (context_compose _ _ _ hC _ _ (.assignopRight (.ctx_top .RV))))
+      refine plus_three _ _ _ _ _ t1
+        (.ExprState f (C (.Eassign (.Eloc b ofs bf (typeof l))
+          (.Ebinop op (.Eval v1 (typeof l)) (.Eval v2 (typeof r)) tyres) (typeof l))) k e m)
+        E0
+        (.ExprState f (C (.Eassign (.Eloc b ofs bf (typeof l))
+          (.Eval v3 tyres) (typeof l))) k e m)
+        t2 _ _ ?_ ?_ ?_ ?_
+      · exact Or.inl (Csem.estep.step_rred (.assignop hd) hC)
+      · exact Or.inl (Csem.estep.step_rred
+          (C := fun x => C (.Eassign (.Eloc b ofs bf (typeof l)) x (typeof l)))
+          (.binop hb)
+          (context_compose _ _ _ hC _ _ (.assignRight (.ctx_top .RV))))
+      · exact Or.inl (Csem.estep.step_rred (.assign hcast ha) hC)
+      · exact htrace
+  | @step_assignop_stuck f C op l r tyres ty k e m b ofs bf v1 v2 t
+      hc hl hd hr hstuck ht =>
+      subst ty
+      have hC := leftcontext_context _ _ _ hc
+      have hCa : context .RV .RV
+          (fun x => C (.Eassign (.Eloc b ofs bf (typeof l)) x (typeof l))) :=
+        context_compose _ _ _ hC _ _ (.assignRight (.ctx_top .RV))
+      apply estep_simulation_pre
+        (eval_simple_lvalue_steps xi ge f k e m l b ofs bf hl
+          (fun x => C (.Eassignop op x r tyres (typeof l)))
+          (context_compose _ _ _ hC _ _ (.assignopLeft (.ctx_top .LV))))
+      apply estep_simulation_pre
+        (eval_simple_rvalue_steps xi ge f k e m r v2 hr
+          (fun x => C (.Eassignop op (.Eloc b ofs bf (typeof l)) x tyres (typeof l)))
+          (context_compose _ _ _ hC _ _ (.assignopRight (.ctx_top .RV))))
+      cases hb : sem_binary_operation ge.genv_cenv op v1 (typeof l) v2 (typeof r) m with
+      | none =>
+          refine plus_two _ _ _ _ _ t
+            (.ExprState f (C (.Eassign (.Eloc b ofs bf (typeof l))
+              (.Ebinop op (.Eval v1 (typeof l)) (.Eval v2 (typeof r)) tyres) (typeof l))) k e m)
+            E0 _ _ ?_ ?_ ?_
+          · exact Or.inl (Csem.estep.step_rred (.assignop hd) hC)
+          · apply Or.inl
+            apply Csem.estep.step_stuck hCa
+            intro hs
+            rcases imm_safe_inv xi ge e .RV _ m hs with ⟨v, hv⟩
+            rw [hb] at hv
+            contradiction
+          · exact (CompCert4Lean.Common.Events.E0_right t).symm
+      | some v3 =>
+          simp only [hb] at hstuck
+          refine plus_three _ _ _ _ _ t
+            (.ExprState f (C (.Eassign (.Eloc b ofs bf (typeof l))
+              (.Ebinop op (.Eval v1 (typeof l)) (.Eval v2 (typeof r)) tyres) (typeof l))) k e m)
+            E0
+            (.ExprState f (C (.Eassign (.Eloc b ofs bf (typeof l))
+              (.Eval v3 tyres) (typeof l))) k e m)
+            E0 _ _ ?_ ?_ ?_ ?_
+          · exact Or.inl (Csem.estep.step_rred (.assignop hd) hC)
+          · exact Or.inl (Csem.estep.step_rred
+              (C := fun x => C (.Eassign (.Eloc b ofs bf (typeof l)) x (typeof l)))
+              (.binop hb) hCa)
+          · apply Or.inl
+            apply Csem.estep.step_stuck hC
+            intro hs
+            rcases imm_safe_inv xi ge e .RV _ m hs with ⟨v4, m', v', t', _, hcast, ha⟩
+            rw [hcast] at hstuck
+            exact hstuck t' m' v' ha
+          · exact (CompCert4Lean.Common.Events.E0_right t).symm
+  | @step_postincr f C id l ty k e m b ofs bf v1 v2 v3 t1 t2 m' v' t
+      hc hl hd hi hcast ha ht htrace =>
+      subst ty
+      have hC := leftcontext_context _ _ _ hc
+      have hb : sem_binary_operation ge.genv_cenv
+          (match (generalizing := false) id with | .Incr => .Oadd | .Decr => .Osub)
+          v1 (typeof l) (.Vint Int.one) type_int32s m = some v2 := by
+        cases id <;> exact hi
+      apply estep_simulation_pre
+        (eval_simple_lvalue_steps xi ge f k e m l b ofs bf hl
+          (fun x => C (.Epostincr id x (typeof l)))
+          (context_compose _ _ _ hC _ _ (.postincr (.ctx_top .LV))))
+      refine plus_four _ _ _ _ _ t1
+        (.ExprState f (C (.Ecomma
+          (.Eassign (.Eloc b ofs bf (typeof l))
+            (.Ebinop (match (generalizing := false) id with | .Incr => .Oadd | .Decr => .Osub)
+              (.Eval v1 (typeof l)) (.Eval (.Vint Int.one) type_int32s)
+              (incrdecr_type (typeof l))) (typeof l))
+          (.Eval v1 (typeof l)) (typeof l))) k e m)
+        E0
+        (.ExprState f (C (.Ecomma
+          (.Eassign (.Eloc b ofs bf (typeof l))
+            (.Eval v2 (incrdecr_type (typeof l))) (typeof l))
+          (.Eval v1 (typeof l)) (typeof l))) k e m)
+        t2
+        (.ExprState f (C (.Ecomma (.Eval v' (typeof l))
+          (.Eval v1 (typeof l)) (typeof l))) k e m')
+        E0 _ _ ?_ ?_ ?_ ?_ ?_
+      · exact Or.inl (Csem.estep.step_rred (.postincr hd rfl) hC)
+      · exact Or.inl (Csem.estep.step_rred
+          (C := fun x => C (.Ecomma
+            (.Eassign (.Eloc b ofs bf (typeof l)) x (typeof l))
+            (.Eval v1 (typeof l)) (typeof l)))
+          (.binop hb)
+          (context_compose _ _ _ hC _ _ (.comma (.assignRight (.ctx_top .RV)))))
+      · exact Or.inl (Csem.estep.step_rred
+          (C := fun x => C (.Ecomma x (.Eval v1 (typeof l)) (typeof l)))
+          (.assign hcast ha)
+          (context_compose _ _ _ hC _ _ (.comma (.ctx_top .RV))))
+      · exact Or.inl (Csem.estep.step_rred (.comma rfl) hC)
+      · exact htrace.trans
+          (congrArg (Eapp t1) (CompCert4Lean.Common.Events.E0_right t2).symm)
+  | @step_postincr_stuck f C id l ty k e m b ofs bf v1 t hc hl hd hstuck ht =>
+      subst ty
+      have hC := leftcontext_context _ _ _ hc
+      have hCc : context .RV .RV
+          (fun x => C (.Ecomma x (.Eval v1 (typeof l)) (typeof l))) :=
+        context_compose _ _ _ hC _ _ (.comma (.ctx_top .RV))
+      have hCa : context .RV .RV
+          (fun x => C (.Ecomma
+            (.Eassign (.Eloc b ofs bf (typeof l)) x (typeof l))
+            (.Eval v1 (typeof l)) (typeof l))) :=
+        context_compose _ _ _ hCc _ _ (.assignRight (.ctx_top .RV))
+      have hb : sem_binary_operation ge.genv_cenv
+          (match (generalizing := false) id with | .Incr => .Oadd | .Decr => .Osub)
+          v1 (typeof l) (.Vint Int.one) type_int32s m =
+          sem_incrdecr ge.genv_cenv id v1 (typeof l) m := by
+        cases id <;> rfl
+      apply estep_simulation_pre
+        (eval_simple_lvalue_steps xi ge f k e m l b ofs bf hl
+          (fun x => C (.Epostincr id x (typeof l)))
+          (context_compose _ _ _ hC _ _ (.postincr (.ctx_top .LV))))
+      cases hi : sem_incrdecr ge.genv_cenv id v1 (typeof l) m with
+      | none =>
+          rw [hi] at hb
+          refine plus_two _ _ _ _ _ t
+            (.ExprState f (C (.Ecomma
+              (.Eassign (.Eloc b ofs bf (typeof l))
+                (.Ebinop (match (generalizing := false) id with | .Incr => .Oadd | .Decr => .Osub)
+                  (.Eval v1 (typeof l)) (.Eval (.Vint Int.one) type_int32s)
+                  (incrdecr_type (typeof l))) (typeof l))
+              (.Eval v1 (typeof l)) (typeof l))) k e m)
+            E0 _ _ ?_ ?_ ?_
+          · exact Or.inl (Csem.estep.step_rred (.postincr hd rfl) hC)
+          · apply Or.inl
+            apply Csem.estep.step_stuck hCa
+            intro hs
+            rcases imm_safe_inv xi ge e .RV _ m hs with ⟨v, hv⟩
+            rw [hb] at hv
+            contradiction
+          · exact (CompCert4Lean.Common.Events.E0_right t).symm
+      | some v2 =>
+          rw [hi] at hb
+          simp only [hi] at hstuck
+          refine plus_three _ _ _ _ _ t
+            (.ExprState f (C (.Ecomma
+              (.Eassign (.Eloc b ofs bf (typeof l))
+                (.Ebinop (match (generalizing := false) id with | .Incr => .Oadd | .Decr => .Osub)
+                  (.Eval v1 (typeof l)) (.Eval (.Vint Int.one) type_int32s)
+                  (incrdecr_type (typeof l))) (typeof l))
+              (.Eval v1 (typeof l)) (typeof l))) k e m)
+            E0
+            (.ExprState f (C (.Ecomma
+              (.Eassign (.Eloc b ofs bf (typeof l))
+                (.Eval v2 (incrdecr_type (typeof l))) (typeof l))
+              (.Eval v1 (typeof l)) (typeof l))) k e m)
+            E0 _ _ ?_ ?_ ?_ ?_
+          · exact Or.inl (Csem.estep.step_rred (.postincr hd rfl) hC)
+          · exact Or.inl (Csem.estep.step_rred
+              (C := fun x => C (.Ecomma
+                (.Eassign (.Eloc b ofs bf (typeof l)) x (typeof l))
+                (.Eval v1 (typeof l)) (typeof l)))
+              (.binop hb) hCa)
+          · apply Or.inl
+            apply Csem.estep.step_stuck hCc
+            intro hs
+            rcases imm_safe_inv xi ge e .RV _ m hs with ⟨v3, m', v', t', _, hcast, ha⟩
+            rw [hcast] at hstuck
+            exact hstuck t' m' v' ha
+          · exact (CompCert4Lean.Common.Events.E0_right t).symm
+  | @step_comma f C r1 r2 ty k e m v hc hr ht =>
+      have hC := leftcontext_context _ _ _ hc
+      apply estep_simulation_last
+        (eval_simple_rvalue_steps xi ge f k e m r1 v hr
+          (fun x => C (.Ecomma x r2 ty))
+          (context_compose _ _ _ hC _ _ (.comma (.ctx_top .RV))))
+      exact Or.inl (Csem.estep.step_rred (.comma ht.symm) hC)
+  | @step_paren f C r tycast ty k e m v1 v hc hr hcast =>
+      have hC := leftcontext_context _ _ _ hc
+      apply estep_simulation_last
+        (eval_simple_rvalue_steps xi ge f k e m r v1 hr
+          (fun x => C (.Eparen x tycast ty))
+          (context_compose _ _ _ hC _ _ (.paren (.ctx_top .RV))))
+      exact Or.inl (Csem.estep.step_rred (.paren hcast) hC)
+  | @step_call f C rf rargs ty k e m targs tres cconv vf vargs fd
+      hc hclass hf hargs hfind ht =>
+      have hC := leftcontext_context _ _ _ hc
+      rcases eval_simple_list_implies ge e m rargs targs vargs hargs with ⟨vl, hcast, hargs'⟩
+      apply estep_simulation_pre
+        (eval_simple_rvalue_steps xi ge f k e m rf vf hf
+          (fun x => C (.Ecall x rargs ty))
+          (context_compose _ _ _ hC _ _ (.callLeft (.ctx_top .RV))))
+      apply estep_simulation_last
+        (eval_simple_list_steps xi ge f k e m rargs vl hargs'
+          (fun x => C (.Ecall (.Eval vf (typeof rf)) x ty))
+          (contextlist'_call _ .Enil _ _ hC))
+      exact Or.inl (Csem.estep.step_call (.call hfind hcast ht hclass) hC)
+  | @step_builtin f C ef tyargs rargs ty k e m vargs t vres m' hc hargs hext =>
+      have hC := leftcontext_context _ _ _ hc
+      rcases eval_simple_list_implies ge e m rargs tyargs vargs hargs with ⟨vl, hcast, hargs'⟩
+      apply estep_simulation_last
+        (eval_simple_list_steps xi ge f k e m rargs vl hargs'
+          (fun x => C (.Ebuiltin ef tyargs x ty))
+          (contextlist'_builtin _ _ .Enil _ _ hC))
+      exact Or.inl (Csem.estep.step_rred (.builtin hcast hext) hC)
+
+end CompCert4Lean.Cfrontend.Cstrategy

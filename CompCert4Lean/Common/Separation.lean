@@ -3108,3 +3108,8 @@ theorem alloc_parallel_rule : alloc_parallel_ruleStatement := by
       hRangeLoRest⟩
   · intro b hb
     exact scc085_extend_inj_other j b1 b2 delta b hb
+
+
+theorem globalenv_inject_obligation_2 : globalenv_inject_obligation_2Statement := by
+  intro F V ge j m b hpred hfalse
+  exact False.elim hfalse

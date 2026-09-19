@@ -4152,3 +4152,141 @@ theorem sel_switch_correct
       (varg :: le) hWF (by rfl) (hAgree i hRange)
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+private theorem switch_int_unsigned_repr_aux (n : Z)
+    (hn : ZArith.BinInt.Z.le .Z0 n ∧ ZArith.BinInt.Z.lt n CompCert4Lean.Lib.Integers.Int.modulus) :
+    CompCert4Lean.Lib.Integers.Int.unsigned (CompCert4Lean.Lib.Integers.Int.repr n) = n := by
+  apply CompCert4Lean.Lib.Integers.Int.unsigned_repr_proof_api n
+  refine ⟨hn.1, ?_⟩
+  have h := hn.2
+  change intOfZ n < 4294967296 at h
+  change intOfZ n ≤ 4294967295
+  omega
+
+private theorem switch_int_lessdef_bool_aux (b : Bool) (v : val)
+    (h : Val.lessdef (Val.of_bool b) v) : v = Val.of_bool b := by
+  cases b <;> simp only [Val.of_bool, Bool.false_eq_true, if_false, if_true] at h ⊢ <;>
+    cases h <;> rfl
+
+theorem sel_switch_int_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    sel_switch_int_correctStatement := by
+  intro xi tprog dfl cases arg sp e m i t le hvalid harg
+  have hConst (n : int) (sp : val) (e : Env) (m : mem) (le : letenv) :
+      eval_expr xi (Genv.globalenv tprog) sp e m le (.Eop (.Ointconst n) .Enil) (.Vint n) :=
+    eval_expr.eval_Eop le (.Ointconst n) .Enil [] (.Vint n) (eval_exprlist.nil le) rfl
+  refine sel_switch_correct xi tprog _ _ _ _ CompCert4Lean.Lib.Integers.Int.modulus Rint
+    ?_ ?_ ?_ ?_ dfl cases arg sp e m (.Vint i) (CompCert4Lean.Lib.Integers.Int.unsigned i) t le
+    hvalid harg (Rint.intro i) (CompCert4Lean.Lib.Integers.Int.unsigned_range_proof i)
+  · intro sp e m le a v i n heval hR hn
+    cases hR with
+    | intro j =>
+        obtain ⟨v', he, hv⟩ := CompCert4Lean.X86.SelectOpproof.eval_comp
+          xi (Genv.globalenv tprog) sp e m .Ceq le a (.Vint j)
+          (.Eop (.Ointconst (CompCert4Lean.Lib.Integers.Int.repr n)) .Enil) (.Vint (CompCert4Lean.Lib.Integers.Int.repr n))
+          heval (hConst (CompCert4Lean.Lib.Integers.Int.repr n) sp e m le)
+        have hb : CompCert4Lean.Lib.Integers.Int.eq j (CompCert4Lean.Lib.Integers.Int.repr n) = proj_sumbool (zeq (CompCert4Lean.Lib.Integers.Int.unsigned j) n) := by
+          change decide (CompCert4Lean.Lib.Integers.Int.unsigned j = CompCert4Lean.Lib.Integers.Int.unsigned (CompCert4Lean.Lib.Integers.Int.repr n)) = _
+          rw [switch_int_unsigned_repr_aux n hn]
+          cases h : zeq (CompCert4Lean.Lib.Integers.Int.unsigned j) n with
+          | left hEq => simp [proj_sumbool, hEq]
+          | right hNe => simp [proj_sumbool, hNe]
+        have hs : Val.cmp .Ceq (.Vint j) (.Vint (CompCert4Lean.Lib.Integers.Int.repr n)) =
+            Val.of_bool (proj_sumbool (zeq (CompCert4Lean.Lib.Integers.Int.unsigned j) n)) := by
+          change Val.of_optbool (some (CompCert4Lean.Lib.Integers.Int.eq j (CompCert4Lean.Lib.Integers.Int.repr n))) = _
+          rw [hb]
+          cases proj_sumbool (zeq (CompCert4Lean.Lib.Integers.Int.unsigned j) n) <;> rfl
+        rw [hs] at hv
+        rw [switch_int_lessdef_bool_aux _ _ hv] at he
+        exact he
+  · intro sp e m le a v i n heval hR hn
+    cases hR with
+    | intro j =>
+        obtain ⟨v', he, hv⟩ := CompCert4Lean.X86.SelectOpproof.eval_compu
+          xi (Genv.globalenv tprog) sp e m .Clt le a (.Vint j)
+          (.Eop (.Ointconst (CompCert4Lean.Lib.Integers.Int.repr n)) .Enil) (.Vint (CompCert4Lean.Lib.Integers.Int.repr n))
+          heval (hConst (CompCert4Lean.Lib.Integers.Int.repr n) sp e m le)
+        have hb : CompCert4Lean.Lib.Integers.Int.ltu j (CompCert4Lean.Lib.Integers.Int.repr n) =
+            proj_sumbool (CompCert4Lean.Lib.Coqlib.zlt (CompCert4Lean.Lib.Integers.Int.unsigned j) n) := by
+          have hu := switch_int_unsigned_repr_aux n hn
+          cases h : CompCert4Lean.Lib.Coqlib.zlt (CompCert4Lean.Lib.Integers.Int.unsigned j) n with
+          | left hLt =>
+              change CompCert4Lean.Lib.Integers.Int.ltu j (CompCert4Lean.Lib.Integers.Int.repr n) = true
+              have hRev : CompCert4Lean.Lib.Integers.Int.ltu
+                  (CompCert4Lean.Lib.Integers.Int.repr n) j = false := by
+                cases hr : CompCert4Lean.Lib.Integers.Int.ltu
+                    (CompCert4Lean.Lib.Integers.Int.repr n) j with
+                | false => rfl
+                | true =>
+                    have hrange := (CompCert4Lean.Lib.Integers.Int.ltu_inv_proof _ _ hr).2
+                    rw [hu] at hrange
+                    exact False.elim (_root_.Int.lt_asymm hLt hrange)
+              have hNe : CompCert4Lean.Lib.Integers.Int.eq j
+                  (CompCert4Lean.Lib.Integers.Int.repr n) = false := by
+                change decide (CompCert4Lean.Lib.Integers.Int.unsigned j =
+                  CompCert4Lean.Lib.Integers.Int.unsigned (CompCert4Lean.Lib.Integers.Int.repr n)) = false
+                rw [hu]
+                have hneq : CompCert4Lean.Lib.Integers.Int.unsigned j ≠ n := by
+                  intro heq
+                  rw [heq] at hLt
+                  exact _root_.Int.lt_irrefl _ hLt
+                simp [hneq]
+              have hNot := CompCert4Lean.Lib.Integers.Int.not_ltu_proof j
+                (CompCert4Lean.Lib.Integers.Int.repr n)
+              simpa [hRev, hNe] using hNot.symm
+          | right hGe =>
+              change CompCert4Lean.Lib.Integers.Int.ltu j (CompCert4Lean.Lib.Integers.Int.repr n) = false
+              cases hl : CompCert4Lean.Lib.Integers.Int.ltu j (CompCert4Lean.Lib.Integers.Int.repr n) with
+              | false => rfl
+              | true =>
+                  have hLt := (CompCert4Lean.Lib.Integers.Int.ltu_inv_proof _ _ hl).2
+                  rw [hu] at hLt
+                  exact False.elim ((_root_.Int.not_lt.mpr hGe) hLt)
+        have hs : Val.cmpu (Mem.valid_pointer m) .Clt (.Vint j) (.Vint (CompCert4Lean.Lib.Integers.Int.repr n)) =
+            Val.of_bool (proj_sumbool (CompCert4Lean.Lib.Coqlib.zlt (CompCert4Lean.Lib.Integers.Int.unsigned j) n)) := by
+          change Val.of_optbool (some (CompCert4Lean.Lib.Integers.Int.ltu j (CompCert4Lean.Lib.Integers.Int.repr n))) = _
+          rw [hb]
+          cases proj_sumbool (CompCert4Lean.Lib.Coqlib.zlt (CompCert4Lean.Lib.Integers.Int.unsigned j) n) <;> rfl
+        rw [hs] at hv
+        rw [switch_int_lessdef_bool_aux _ _ hv] at he
+        exact he
+  · intro sp e m le a v i n heval hR hn
+    cases hR with
+    | intro j =>
+        obtain ⟨v', he, hv⟩ := CompCert4Lean.X86.SelectOpproof.eval_sub
+          xi (Genv.globalenv tprog) sp e m le a (.Vint j)
+          (.Eop (.Ointconst (CompCert4Lean.Lib.Integers.Int.repr n)) .Enil) (.Vint (CompCert4Lean.Lib.Integers.Int.repr n))
+          heval (hConst (CompCert4Lean.Lib.Integers.Int.repr n) sp e m le)
+        change Val.lessdef (.Vint (CompCert4Lean.Lib.Integers.Int.sub j (CompCert4Lean.Lib.Integers.Int.repr n))) v' at hv
+        cases hv
+        refine ⟨_, he, ?_⟩
+        have hu : CompCert4Lean.Lib.Integers.Int.unsigned (CompCert4Lean.Lib.Integers.Int.sub j (CompCert4Lean.Lib.Integers.Int.repr n)) =
+            ZArith.BinInt.Z.modulo (ZArith.BinInt.Z.sub (CompCert4Lean.Lib.Integers.Int.unsigned j) n) CompCert4Lean.Lib.Integers.Int.modulus := by
+          change CompCert4Lean.Lib.Integers.Int.unsigned (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.sub
+            (CompCert4Lean.Lib.Integers.Int.unsigned j) (CompCert4Lean.Lib.Integers.Int.unsigned (CompCert4Lean.Lib.Integers.Int.repr n)))) = _
+          rw [CompCert4Lean.Lib.Integers.Int.unsigned_repr_eq_proof, switch_int_unsigned_repr_aux n hn]
+        rw [← hu]
+        exact Rint.intro _
+  · intro sp e m le a v i heval hR
+    refine ⟨v, heval, ?_⟩
+    cases hR with
+    | intro j =>
+        rw [ZArith.BinInt.Z.mod_small _ _ (CompCert4Lean.Lib.Integers.Int.unsigned_range_proof j)]
+        exact Rint.intro j
+
+end CompCert4Lean.Backend.Selectionproof

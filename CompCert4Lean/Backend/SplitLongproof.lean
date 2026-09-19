@@ -3462,3 +3462,83 @@ theorem eval_longofintu : eval_longofintuStatement := by
     | _ => exact Val.lessdef_undef _
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.X86.Op
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_negl : eval_neglStatement := by
+  intro xi prog sp e m le a x ha
+  refine ⟨Val.negl x, ?_, Val.lessdef_refl _⟩
+  cases hc : is_longconst a with
+  | some n =>
+      have hx := is_longconst_sound xi prog sp e m le a x n hc ha
+      subst x
+      simp only [negl, hc]
+      let k := CompCert4Lean.Lib.Integers.Int64.neg n
+      change eval_expr xi (Genv.globalenv prog) sp e m le
+        (Eop Omakelong
+          (Econs (Eop (Ointconst (int64Hiword k)) Enil)
+            (Econs (Eop (Ointconst (int64Loword k)) Enil) Enil))) (.Vlong k)
+      apply eval_expr.eval_Eop (le := le) (op := Omakelong)
+        (vl := [.Vint (int64Hiword k), .Vint (int64Loword k)])
+      · apply eval_exprlist.cons
+        · apply eval_expr.eval_Eop (vl := [])
+          · exact eval_exprlist.nil le
+          · rfl
+        · apply eval_exprlist.cons
+          · apply eval_expr.eval_Eop (vl := [])
+            · exact eval_exprlist.nil le
+            · rfl
+          · exact eval_exprlist.nil le
+      · change some (val.Vlong (int64Ofwords (int64Hiword k) (int64Loword k))) =
+          some (val.Vlong k)
+        rw [splitlong_recompose_local]
+  | none =>
+      simp only [negl, hc]
+      have hlookup : lookup_builtin_function (ofString "__builtin_negl") sig_l_l =
+          some (.BI_standard .BI_negl) := by
+        have htable : standard_builtin_table =
+            [ (ofString "__builtin_sel", BI_select Tint)
+            , (ofString "__builtin_sel", BI_select Tlong)
+            , (ofString "__builtin_sel", BI_select Tfloat)
+            , (ofString "__builtin_sel", BI_select Tsingle)
+            , (ofString "__builtin_fabs", BI_fabs)
+            , (ofString "__builtin_fabsf", BI_fabsf)
+            , (ofString "__builtin_fsqrt", BI_fsqrt)
+            , (ofString "__builtin_sqrt", BI_fsqrt)
+            , (ofString "__builtin_negl", BI_negl) ] ++
+              standard_builtin_table.drop 9 := rfl
+        have hn : ∀ s : String, s ≠ "__builtin_negl" →
+            ofString "__builtin_negl" ≠ ofString s := by
+          intro s hs
+          exact splitlong_ofString_ne (Ne.symm hs)
+        unfold lookup_builtin_function
+        rw [htable]
+        simp only [List.cons_append, List.nil_append]
+        rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+        rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+        rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+        rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+        rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+        rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+        rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+        rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+        have hsig : sig_l_l = standard_builtin_sig BI_negl := rfl
+        rw [splitlong_lookupBuiltin_cons_eq _ _ _ _ _ _ rfl hsig]
+      apply eval_builtin_1 xi prog sp e m (.BI_standard .BI_negl) le
+        (ofString "__builtin_negl") sig_l_l a x (Val.negl x) ha hlookup
+      cases x <;> rfl
+
+end CompCert4Lean.Backend.SplitLongproof

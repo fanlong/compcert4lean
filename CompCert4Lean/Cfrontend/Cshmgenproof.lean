@@ -5975,3 +5975,18 @@ theorem make_mod_correct
     rfl
   · intro x y m
     rfl
+
+theorem make_or_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_or_correctStatement := by
+  intro ge
+  apply make_binarith_int_correct ge
+  · intro x y m
+    rfl
+  · intro x y m
+    rfl
+  · intro x y m
+    rfl
+  · intro x y m
+    rfl

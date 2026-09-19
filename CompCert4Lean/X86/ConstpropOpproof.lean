@@ -3840,3 +3840,31 @@ theorem addr_strength_reduction_correct :
       exact ⟨res, heval, Val.lessdef_refl _⟩
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+
+theorem make_cmp_base_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @make_cmp_base_correctStatement binary64_certificate binary32_certificate := by
+  intro bc ge sp ae e m hem c args vl hvl
+  unfold make_cmp_base
+  cases hred : cond_strength_reduction c args vl with
+  | mk c' args' =>
+      have hcond := cond_strength_reduction_correct bc ae e m hem c args vl hvl
+      refine ⟨Val.of_optbool (eval_condition c' (reg_values e args') m), ?_, ?_⟩
+      · rfl
+      · rw [hred] at hcond
+        rw [← hcond]
+        exact Val.lessdef_refl _
+
+end CompCert4Lean.X86.ConstpropOpproof

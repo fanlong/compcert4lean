@@ -2952,3 +2952,73 @@ theorem eval_divu_mul
     simp only [Val.shru, hlt, if_true]
 
 end CompCert4Lean.Backend.SelectDivproof
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SelectDiv
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_divuimm
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] :
+    eval_divuimmStatement := by
+  intro cfg xi prog sp e m le e1 x n2 z ha hz
+  unfold divuimm
+  cases hpow : CompCert4Lean.Lib.Integers.Int.is_power2 n2 with
+  | some l =>
+      simp only [hpow]
+      have hdiv := CompCert4Lean.Common.Values.Val.divu_pow2 x n2 l z hpow hz
+      have hsh := CompCert4Lean.X86.SelectOpproof.eval_shruimm
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m l le e1 x ha
+      rcases hsh with ⟨v, hv, hd⟩
+      refine ⟨v, ?_, ?_⟩
+      · simpa [hpow] using hv
+      · simpa [hdiv] using hd
+  | none =>
+      simp only [hpow]
+      split
+      · exact CompCert4Lean.X86.SelectOpproof.eval_divu_base
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          xi (Genv.globalenv prog) sp e m le e1
+          (Eop (Ointconst n2) Enil) x (.Vint n2) z ha
+          (eval_intconst_local xi (Genv.globalenv prog) sp e m le n2) hz
+      · cases hparams : divu_mul_params (intUnsigned n2) with
+        | none =>
+            exact CompCert4Lean.X86.SelectOpproof.eval_divu_base
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              xi (Genv.globalenv prog) sp e m le e1
+              (Eop (Ointconst n2) Enil) x (.Vint n2) z ha
+              (eval_intconst_local xi (Genv.globalenv prog) sp e m le n2) hz
+        | some pm =>
+            rcases pm with ⟨p, M⟩
+            cases x with
+            | Vint x1 =>
+                cases hzero : CompCert4Lean.Lib.Integers.Int.eq n2
+                    CompCert4Lean.Lib.Integers.Int.zero with
+                | true => simp [Val.divu, hzero] at hz
+                | false =>
+                    simp [Val.divu, hzero] at hz
+                    cases hz
+                    have hbody := eval_divu_mul xi prog sp e m
+                      (le := (.Vint x1 :: le)) (x := x1) (y := n2)
+                      (p := p) (M := M) hparams rfl
+                    refine ⟨.Vint (intDivu x1 n2), ?_, Val.lessdef_refl _⟩
+                    exact eval_expr.eval_Elet le e1 (divu_mul p M) (.Vint x1)
+                      (.Vint (intDivu x1 n2)) ha hbody
+            | Vundef => simp [Val.divu] at hz
+            | Vlong i => simp [Val.divu] at hz
+            | Vfloat f => simp [Val.divu] at hz
+            | Vsingle f => simp [Val.divu] at hz
+            | Vptr b ofs => simp [Val.divu] at hz
+
+end CompCert4Lean.Backend.SelectDivproof

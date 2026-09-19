@@ -4520,3 +4520,41 @@ theorem shift_memcpy_eq_holds
           | _ => simp [CSE.shift_memcpy_eq] at hshift
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Lib.Integers
+
+theorem add_memcpy_holds
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    add_memcpy_holdsStatement := by
+  intro m bsrc osrc sz bytes bdst odst m' valu ge sp rs n1 n2 bc asrc adst
+    hload hstore hnum1 hnum2 hsrc hdst hsp hnext
+  cases asrc <;> cases adst <;> try exact hnum2
+  cases hsrc with
+  | stk hs =>
+      cases hdst with
+      | stk hd =>
+          have hbsrc : bsrc = sp := bc.bc_stack bsrc sp hs hsp
+          have hbdst : bdst = sp := bc.bc_stack bdst sp hd hsp
+          subst bsrc
+          subst bdst
+          refine ⟨⟨?_, hnum2.num_holds_wf.wf_num_reg,
+            hnum2.num_holds_wf.wf_num_val⟩, ?_, hnum2.num_holds_reg⟩
+          · intro e he
+            rcases add_memcpy_eqs_charact e _ _ _ _ _ he with he2 | ⟨e0, he0, hshift⟩
+            · exact hnum2.num_holds_wf.wf_num_eqs e he2
+            · exact wf_equation_incr _ _ e
+                (shift_memcpy_eq_wf _ _ _ e0 e _ hshift
+                  (hnum1.num_holds_wf.wf_num_eqs e0 he0)) hnext
+          · intro e he
+            rcases add_memcpy_eqs_charact e _ _ _ _ _ he with he2 | ⟨e0, he0, hshift⟩
+            · exact hnum2.num_holds_eq e he2
+            · exact shift_memcpy_eq_holds (Ptrofs.unsigned osrc)
+                (Ptrofs.unsigned odst) sz e0 e m sp bytes m' valu ge
+                hshift hload hstore (hnum1.num_holds_eq e0 he0)
+
+end CompCert4Lean.Backend.CSEproof

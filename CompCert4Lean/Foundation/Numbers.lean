@@ -5633,3 +5633,52 @@ theorem ZArith.Zpower.Zpower_exp :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zpower.two_power_nat_equiv :
+    ZArith.Zpower.two_power_nat_equivStatement := by
+  intro n
+  rfl
+
+theorem ZArith.Zpower.two_power_nat_S :
+    ZArith.Zpower.two_power_nat_SStatement := by
+  intro n
+  unfold ZArith.Zpower.two_power_nat
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.mul, ZArith.BinInt.Z.pow, intOfZ_zOfInt,
+    ZArith.BinInt.Z.of_nat]
+  have hn : ¬ (Int.ofNat n < 0) := Int.not_lt_of_ge (Int.natCast_nonneg _)
+  have hs : ¬ (Int.ofNat (Nat.succ n) < 0) := Int.not_lt_of_ge (Int.natCast_nonneg _)
+  rw [if_neg hs, if_neg hn]
+  simp only [intOfZ_zOfInt]
+  change (Int.pow 2 (Nat.succ n)) = 2 * (Int.pow 2 n)
+  rw [numbers_int_pow_two_nat, numbers_int_pow_two_nat]
+  simp [Nat.pow_succ, Nat.mul_comm]
+
+
+theorem ZArith.Zpower.shift_pos_correct :
+    ZArith.Zpower.shift_pos_correctStatement := by
+  intro p x
+  unfold ZArith.Zpower.shift_pos PArith.BinPos.Pos.shiftl_nat
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.mul, ZArith.BinInt.Z.pow_pos,
+    intOfZ_zOfInt]
+  have hx : 0 < posToNat x := posToNat_positive x
+  have hmul : 0 < posToNat x * 2 ^ PArith.BinPos.Pos.to_nat p :=
+    Nat.mul_pos hx (Nat.two_pow_pos _)
+  simp only [intOfZ, posToNat_posOfNat hmul]
+  simp [posToNat, numbers_int_pow_two_nat]
+  exact Int.mul_comm _ _
+
+theorem ZArith.Zpower.two_power_pos_nat :
+    ZArith.Zpower.two_power_pos_natStatement := by
+  intro p
+  simpa [ZArith.Zpower.two_power_pos, ZArith.Zpower.two_power_nat,
+    ZArith.Zpower.Zpower_nat] using
+    (ZArith.Zpower.Zpower_pos_nat
+      (ZArith.BinInt.Z.Zpos (.xO .xH)) p)
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

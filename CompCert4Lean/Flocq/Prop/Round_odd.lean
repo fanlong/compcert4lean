@@ -4137,3 +4137,19 @@ theorem generic_format_fexpe_fexp : ∀ (ctx : ExactRealContext)
   omega
 
 end CompCert4Lean.Flocq.Prop.Round_odd
+
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+
+open CompCert4Lean.Flocq.Core
+
+theorem d_eq : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
+    d_eqStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x d hd
+  apply CompCert4Lean.Flocq.Core.Round_pred.Rnd_DN_pt_unique ctx
+    (generic_format ctx magnitude beta fexp) x (F2R ctx d)
+    (round ctx magnitude beta fexp (Zfloor ctx) x)
+  · exact hd
+  · exact CompCert4Lean.Flocq.Core.Generic_fmt.round_DN_pt ctx magnitude beta fexp
+      hvalid x
+
+end CompCert4Lean.Flocq.Prop.Round_odd

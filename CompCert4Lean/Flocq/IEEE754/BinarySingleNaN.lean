@@ -3539,3 +3539,78 @@ theorem loc_of_shr_record_of_loc :
   | loc_Inexact c => cases c <;> rfl
 
 end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+open CompCert4Lean.Flocq.Core
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq in
+private theorem pg_shr_one_divmod (mrs : shr_record)
+    (hm : Zle Z0 (shr_m mrs)) :
+    Raux.Zdiv (shr_m mrs) Ztwo = shr_m (shr_1 mrs) ∧
+      ZArith.Zdiv.Zmod (shr_m mrs) Ztwo =
+        (if shr_r (shr_1 mrs) then Zone else Z0) := by
+  rcases mrs with ⟨m, r, s⟩
+  cases m with
+  | Z0 => exact ⟨rfl, rfl⟩
+  | Zpos p =>
+    cases p with
+    | xH => exact ⟨rfl, rfl⟩
+    | xI p =>
+      constructor
+      · apply intOfZ_injective
+        change intOfZ (zOfInt ((Int.ofNat (2 * posToNat p + 1)) / 2)) =
+          Int.ofNat (posToNat p)
+        simp only [intOfZ_zOfInt, Int.ofNat_eq_natCast, Int.natCast_add,
+          Int.natCast_mul]
+        omega
+      · apply intOfZ_injective
+        change intOfZ (zOfInt ((Int.ofNat (2 * posToNat p + 1)) % 2)) = 1
+        simp only [intOfZ_zOfInt, Int.ofNat_eq_natCast, Int.natCast_add,
+          Int.natCast_mul]
+        omega
+    | xO p =>
+      constructor
+      · apply intOfZ_injective
+        change intOfZ (zOfInt ((Int.ofNat (2 * posToNat p)) / 2)) =
+          Int.ofNat (posToNat p)
+        simp only [intOfZ_zOfInt, Int.ofNat_eq_natCast,
+          Int.natCast_mul]
+        omega
+      · apply intOfZ_injective
+        change intOfZ (zOfInt ((Int.ofNat (2 * posToNat p)) % 2)) = 0
+        simp only [intOfZ_zOfInt, Int.ofNat_eq_natCast,
+          Int.natCast_mul]
+        omega
+  | Zneg p =>
+    change 0 ≤ -(Int.ofNat (posToNat p)) at hm
+    have hp := posToNat_positive p
+    simp only [Int.ofNat_eq_natCast] at hm
+    omega
+
+private theorem pg_shr_one_location (mrs : shr_record) :
+    CompCert4Lean.Flocq.Calc.Bracket.new_location Ztwo
+        (if shr_r (shr_1 mrs) then Zone else Z0) (loc_of_shr_record mrs) =
+      loc_of_shr_record (shr_1 mrs) := by
+  rcases mrs with ⟨m, r, s⟩
+  cases m with
+  | Z0 => cases r <;> cases s <;> rfl
+  | Zpos p => cases p <;> cases r <;> cases s <;> rfl
+  | Zneg p => cases p <;> cases r <;> cases s <;> rfl
+
+theorem inbetween_shr_1 :
+    ∀ (ctx : ExactRealContext), inbetween_shr_1Statement ctx := by
+  intro ctx x mrs e hm hx
+  have h := CompCert4Lean.Flocq.Calc.Bracket.inbetween_float_new_location
+    ctx radix2 x (shr_m mrs) e (loc_of_shr_record mrs) Zone
+    (by change (0 : Int) < 1; decide) hx
+  change CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx radix2
+    (Raux.Zdiv (shr_m mrs) Ztwo) (Zadd e Zone) x
+    (CompCert4Lean.Flocq.Calc.Bracket.new_location Ztwo
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Zmod (shr_m mrs) Ztwo)
+      (loc_of_shr_record mrs)) at h
+  rw [(pg_shr_one_divmod mrs hm).1, (pg_shr_one_divmod mrs hm).2,
+    pg_shr_one_location] at h
+  exact h
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN

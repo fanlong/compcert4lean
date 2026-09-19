@@ -8513,3 +8513,19 @@ theorem add_signed_proof : add_signed := by
   · exact eqm_sym_proof _ _ (eqm_signed_unsigned_proof y)
 
 end CompCert4Lean.Lib.Integers.Int
+
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem divu_pow2_proof : divu_pow2 := by
+  intro x n logn hpow
+  have hcorrect := suffix_is_power2_correct n logn hpow
+  unfold divu WordCore.divu shru WordCore.shru
+  change repr (zDiv (unsigned x) (unsigned n)) =
+    repr (zShiftr (unsigned x) (unsigned logn))
+  rw [hcorrect]
+  exact (shru_div_two_p_proof x logn).symm
+
+end CompCert4Lean.Lib.Integers.Int

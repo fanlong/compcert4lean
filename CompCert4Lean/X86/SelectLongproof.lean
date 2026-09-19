@@ -3563,3 +3563,39 @@ theorem eval_shll
       · rfl
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+theorem eval_shrlu
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_shrluStatement binary64_certificate binary32_certificate := by
+  unfold eval_shrluStatement binary_constructor_sound
+  intro xi prog hf hdecl sp e m le a x b y ha hb
+  unfold shrlu
+  cases hmatch : CompCert4Lean.Backend.SplitLong.is_intconst b with
+  | some n =>
+      have hy : y = .Vint n :=
+        CompCert4Lean.Backend.SplitLongproof.is_intconst_sound
+          xi prog sp e m le b y n hmatch hb
+      subst y
+      obtain ⟨v, hv, hd⟩ := eval_shrluimm
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi prog hf hdecl sp e m n le a x ha
+      exact ⟨v, by simpa only [hmatch] using hv, hd⟩
+  | none =>
+      refine ⟨Val.shrlu x y, ?_, Val.lessdef_refl _⟩
+      simp only [hmatch]
+      apply eval_expr.eval_Eop le Oshrlu (Econs a (Econs b Enil)) [x, y]
+        (Val.shrlu x y)
+      · exact eval_exprlist.cons le a (Econs b Enil) x [y] ha
+          (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))
+      · rfl
+
+end CompCert4Lean.X86.SelectLongproof

@@ -7262,3 +7262,12 @@ theorem load_store_same : load_store_sameStatement := by
 
 end Mem
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+namespace Mem
+
+theorem loadbytes_storebytes_disjoint : loadbytes_storebytes_disjointStatement :=
+  loadbytes_storebytes_disjoint_aux
+
+end Mem
+end CompCert4Lean.Common.Memory

@@ -2289,3 +2289,17 @@ theorem cast_val_is_casted :
           | solve | constructor <;> rfl)
 
 end CompCert4Lean.Cfrontend.Cop
+
+namespace CompCert4Lean.Cfrontend.Cop
+
+theorem cast_idempotent :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      cast_idempotentStatement := by
+  intro _binary64_certificate _binary32_certificate v ty ty' v' m h
+  apply cast_val_casted (binary64_certificate := _binary64_certificate)
+    (binary32_certificate := _binary32_certificate)
+  exact cast_val_is_casted (binary64_certificate := _binary64_certificate)
+    (binary32_certificate := _binary32_certificate) v ty ty' v' m h
+
+end CompCert4Lean.Cfrontend.Cop

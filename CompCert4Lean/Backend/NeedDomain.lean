@@ -8243,3 +8243,138 @@ theorem lagree_shr_1 : lagree_shr_1Statement := by
   exact pgLagreeShr1
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open Lean Elab Tactic Meta
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem local_int64_unsigned_repr_eq_exact (x : Z) :
+    Int64.unsigned (Int64.repr x) =
+      ZArith.BinInt.Z.modulo x Int64.modulus := by
+  let w := CompCert4Lean.Lib.Integers.WordCore.repr Int64.wordsize x
+  change w.intval = ZArith.BinInt.Z.modulo x Int64.modulus
+  have hwi : w.intval = ZArith.BinInt.Z.of_nat w.val := by
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "WordCore.intval_eq_zOfNat_val")
+        | throwError "frozen WordCore.intval_eq_zOfNat_val helper not found"
+      let stx := Lean.mkIdent n
+      let arg := Lean.mkIdent `w
+      evalTactic (← `(tactic| exact $stx $arg))
+  rw [hwi]
+  have hval :
+      w.val =
+        _root_.Int.toNat
+          (intOfZ x % _root_.Int.ofNat (2 ^ Int64.wordsize)) := by
+    have hraw :
+        (CompCert4Lean.Lib.Integers.WordCore.repr Int64.wordsize
+          (zOfInt (intOfZ x))).val =
+          _root_.Int.toNat
+            (intOfZ x % _root_.Int.ofNat (2 ^ Int64.wordsize)) := by
+      run_tac
+        let env ← getEnv
+        let some (n, _) := env.constants.toList.find?
+            (fun (n, _) => (toString n).endsWith "WordCore.val_repr")
+        | throwError "frozen WordCore.val_repr helper not found"
+        let stx := Lean.mkIdent n
+        let arg := Lean.mkIdent `x
+        evalTactic
+          (← `(tactic| exact $stx Int64.wordsize (intOfZ $arg)))
+    rw [zOfInt_intOfZ x] at hraw
+    exact hraw
+  rw [hval]
+  apply intOfZ_injective
+  have hmpos : (0 : _root_.Int) < intOfZ Int64.modulus := by
+    change (0 : _root_.Int) < _root_.Int.ofNat (2 ^ Int64.wordsize)
+    exact _root_.Int.natCast_pos.mpr (Nat.two_pow_pos _)
+  have hm : intOfZ Int64.modulus = _root_.Int.ofNat (2 ^ Int64.wordsize) := by
+    rfl
+  simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  have hmod : intOfZ (ZArith.BinInt.Z.modulo x Int64.modulus) =
+      intOfZ x % _root_.Int.ofNat (2 ^ Int64.wordsize) := by
+    have hrange := ZArith.BinInt.Z.modulo_range x Int64.modulus (by
+      change (0 : _root_.Int) < intOfZ Int64.modulus
+      exact hmpos)
+    have hr0 : (0 : _root_.Int) ≤
+        intOfZ (ZArith.BinInt.Z.modulo x Int64.modulus) := hrange.1
+    have hrlt : intOfZ (ZArith.BinInt.Z.modulo x Int64.modulus) <
+        intOfZ Int64.modulus := hrange.2
+    have hd := ZArith.Zdiv.Z_div_mod_eq_full x Int64.modulus
+    have hdInt := congrArg intOfZ hd
+    simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+      intOfZ_zOfInt] at hdInt
+    let q := intOfZ (ZArith.BinInt.Z.div x Int64.modulus)
+    let r := intOfZ (ZArith.BinInt.Z.modulo x Int64.modulus)
+    let m := intOfZ Int64.modulus
+    have hcalc : intOfZ x % m = r := by
+      calc
+        intOfZ x % m = (m * q + r) % m :=
+          congrArg (fun a => a % m) hdInt
+        _ = (r + q * m) % m := by
+          rw [_root_.Int.add_comm, _root_.Int.mul_comm]
+        _ = r % m := _root_.Int.add_mul_emod_self_right r q m
+        _ = r := _root_.Int.emod_eq_of_lt hr0 hrlt
+    simpa [m, r, hm] using hcalc.symm
+  rw [hmod]
+  exact _root_.Int.toNat_of_nonneg
+    (_root_.Int.emod_nonneg (intOfZ x) (_root_.Int.ne_of_gt hmpos))
+
+theorem eqmod_lagree : eqmod_lagreeStatement := by
+  intro m x y hxy
+  apply pg_lagree_of_eqmod_unsigned m (Int64.repr x) (Int64.repr y)
+  let n := ZArith.BinInt.Z.to_nat (Int64.size m)
+  have hs := lagreeSizeRangeFinal m
+  have hsize : ZArith.BinInt.Z.of_nat n = Int64.size m := by
+    dsimp [n]
+    exact ZArith.Znat.Z2Nat.id (Int64.size m) hs.1
+  have hpow : CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat n =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p (Int64.size m) := by
+    rw [CompCert4Lean.Lib.Coqlib.two_power_nat_two_p, hsize]
+  let target := CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p (Int64.size m)
+  have hpos : ZArith.BinInt.Z.gt target z0 := by
+    dsimp [target]
+    change 0 < intOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p
+      (Int64.size m))
+    rw [← hpow]
+    exact CompCert4Lean.Lib.Coqlib.two_power_nat_pos n
+  have hux := local_int64_unsigned_repr_eq_exact x
+  have huy := local_int64_unsigned_repr_eq_exact y
+  have hmodpos : ZArith.BinInt.Z.gt Int64.modulus z0 := by
+    change 0 < intOfZ Int64.modulus
+    change 0 < _root_.Int.ofNat (2 ^ Int64.wordsize)
+    exact _root_.Int.natCast_pos.mpr (Nat.two_pow_pos _)
+  have hdiv : ZArith.BinInt.Z.divide target Int64.modulus := by
+    have hd := pg_two_power_divides64 m
+    dsimp [target]
+    change ZArith.BinInt.Z.divide
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p (Int64.size m))
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64)
+    exact hd
+  have hmx0 := CompCert4Lean.Lib.Zbits.eqmod_mod Int64.modulus hmodpos x
+  have hmy0 := CompCert4Lean.Lib.Zbits.eqmod_mod Int64.modulus hmodpos y
+  have hmx := CompCert4Lean.Lib.Zbits.eqmod_divides Int64.modulus target x
+      (ZArith.BinInt.Z.modulo x Int64.modulus) hmx0 hdiv
+  have hmy := CompCert4Lean.Lib.Zbits.eqmod_divides Int64.modulus target y
+      (ZArith.BinInt.Z.modulo y Int64.modulus) hmy0 hdiv
+  have hux0 := CompCert4Lean.Lib.Zbits.eqmod_refl2 target
+      (Int64.unsigned (Int64.repr x))
+      (ZArith.BinInt.Z.modulo x Int64.modulus) hux
+  have huy0 := CompCert4Lean.Lib.Zbits.eqmod_refl2 target
+      (Int64.unsigned (Int64.repr y))
+      (ZArith.BinInt.Z.modulo y Int64.modulus) huy
+  have hux' := CompCert4Lean.Lib.Zbits.eqmod_trans target
+      (Int64.unsigned (Int64.repr x))
+      (ZArith.BinInt.Z.modulo x Int64.modulus) x hux0 (pg_eqmod_sym hmx)
+  have huy' := CompCert4Lean.Lib.Zbits.eqmod_trans target
+      (Int64.unsigned (Int64.repr y))
+      (ZArith.BinInt.Z.modulo y Int64.modulus) y huy0 (pg_eqmod_sym hmy)
+  have hmid := CompCert4Lean.Lib.Zbits.eqmod_trans target x y
+      (Int64.unsigned (Int64.repr y)) hxy (pg_eqmod_sym huy')
+  exact CompCert4Lean.Lib.Zbits.eqmod_trans target
+      (Int64.unsigned (Int64.repr x)) x
+      (Int64.unsigned (Int64.repr y)) hux' hmid
+
+end CompCert4Lean.Backend.NeedDomain

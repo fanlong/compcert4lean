@@ -4374,3 +4374,52 @@ open CompCert4Lean.Cfrontend.SimplExprspec
           (hrec le' r' sl3 htr'' hincl' htype')
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExpr
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Memory
+
+ theorem step_makeif :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      step_makeifStatement := by
+  intro binary64_certificate binary32_certificate
+  intro xi tp f a s1 s2 k e le m v1 b heval hbool
+  unfold makeif
+  cases hev : eval_simpl_expr a with
+  | none =>
+      apply star_one
+      exact Clight.step_ifthenelse f a s1 s2 k e le m v1 b heval hbool
+  | some v =>
+      have hv : v = v1 := by
+        simpa [hev] using
+          (eval_simpl_expr_sound
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            tp e le m a v1 heval)
+      subst v
+      cases hb : bool_val v1 (Clight.typeof a)
+          CompCert4Lean.Common.Memory.Mem.empty with
+      | none =>
+          simp only [hev, hb]
+          apply star_one
+          exact Clight.step_ifthenelse f a s1 s2 k e le m v1 b heval hbool
+      | some b' =>
+          have hstatic := static_bool_val_sound v1 (Clight.typeof a) m b' hb
+          have hbeq : b' = b := Option.some.inj (hstatic.symm.trans hbool)
+          subst b'
+          cases b with
+          | false =>
+              simpa [hev, hb] using
+                (star_refl (Clight.step1 xi) (Clight.globalenv tp)
+                  (Clight.State f s2 k e le m))
+          | true =>
+              simpa [hev, hb] using
+                (star_refl (Clight.step1 xi) (Clight.globalenv tp)
+                  (Clight.State f s1 k e le m))
+
+end CompCert4Lean.Cfrontend.SimplExprproof

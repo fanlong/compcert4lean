@@ -2554,3 +2554,141 @@ theorem truncate_correct_partial : ∀ (ctx : ExactRealContext)
   exact truncate_correct_partial' ctx magnitude beta fexp hvalid x m e l hx hbetween he'
 
 end CompCert4Lean.Flocq.Calc.Round
+
+namespace CompCert4Lean.Flocq.Calc.Round
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem truncate_correct' : ∀ (ctx : ExactRealContext)
+    (magnitude : ExactMagnitude ctx),
+    truncate_correct'Statement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x m e l hx hbetween hcase
+  rcases ctx.certificate.total_order x ctx.spec.zero with hneg | hpos
+  · rcases hneg with hlt | heq
+    · have hnot : ¬ ctx.spec.le ctx.spec.zero x :=
+        (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt |>.2
+      exact (hnot hx).elim
+    · subst x
+      have hb := CompCert4Lean.Flocq.Calc.Bracket.inbetween_float_bounds
+        ctx beta ctx.spec.zero m e l hbetween
+      have hmneg : Zle m Z0 := by
+        apply CompCert4Lean.Flocq.Core.Float_prop.le_0_F2R ctx beta m e
+        exact hb.1
+      have hmpos : Zlt Z0 (Zadd m Zone) := by
+        apply CompCert4Lean.Flocq.Core.Float_prop.gt_0_F2R ctx beta (Zadd m Zone) e
+        exact hb.2
+      have hm : m = Z0 := by
+        apply intOfZ_injective
+        change intOfZ m = (0 : Int)
+        change intOfZ m ≤ (0 : Int) at hmneg
+        change (0 : Int) < intOfZ (Zadd m Zone) at hmpos
+        simp only [Zadd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hmpos
+        have hone : intOfZ Zone = (1 : Int) := by rfl
+        rw [hone] at hmpos
+        omega
+      subst m
+      cases hbetween with
+      | inbetween_Exact hzero =>
+          unfold truncate
+          dsimp
+          split
+          · rename_i hk
+            dsimp [truncate_aux]
+            have hzdiv : Zdiv Z0 (Zpower (beta : Z)
+                (Zsub (fexp (Zadd (Zdigits beta Z0) e)) e)) = Z0 :=
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Zdiv_0_l _
+            have hzmod : Zmod Z0 (Zpower (beta : Z)
+                (Zsub (fexp (Zadd (Zdigits beta Z0) e)) e)) = Z0 :=
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Zmod_0_l _
+            rw [hzdiv, hzmod]
+            have hloc : new_location (Zpower (beta : Z)
+                (Zsub (fexp (Zadd (Zdigits beta Z0) e)) e)) Z0 loc_Exact = loc_Exact := by
+              change CompCert4Lean.Flocq.Calc.Bracket.new_location
+                (Zpower (beta : Z)
+                  (Zsub (fexp (Zadd (Zdigits beta Z0) e)) e)) Z0 loc_Exact = loc_Exact
+              unfold CompCert4Lean.Flocq.Calc.Bracket.new_location
+              have hzeroeq : CompCert4Lean.Flocq.Calc.Bracket.Zeq_bool Z0 Z0 = true := by
+                rfl
+              split <;> simp [CompCert4Lean.Flocq.Calc.Bracket.new_location_even,
+                CompCert4Lean.Flocq.Calc.Bracket.new_location_odd, hzeroeq]
+            rw [hloc]
+            constructor
+            · apply CompCert4Lean.Flocq.Calc.Bracket.inbetween_Exact
+              exact (CompCert4Lean.Flocq.Core.Float_prop.F2R_0 ctx beta _).symm
+            · right
+              refine ⟨rfl, ?_⟩
+              exact CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_0 ctx magnitude beta fexp
+          · rename_i hk
+            constructor
+            · apply CompCert4Lean.Flocq.Calc.Bracket.inbetween_Exact
+              exact (CompCert4Lean.Flocq.Core.Float_prop.F2R_0 ctx beta e).symm
+            · right
+              refine ⟨rfl, ?_⟩
+              exact CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_0 ctx magnitude beta fexp
+      | inbetween_Inexact c hbounds hmiddle =>
+          have hfzero : CompCert4Lean.Flocq.Calc.Bracket.F2R ctx
+              (CompCert4Lean.Flocq.Calc.Bracket.Float beta Z0 e) = ctx.spec.zero :=
+            CompCert4Lean.Flocq.Core.Float_prop.F2R_0 ctx beta e
+          rw [hfzero] at hbounds
+          have hcontra : ctx.spec.lt ctx.spec.zero ctx.spec.zero := hbounds.1
+          exact (ctx.certificate.orderedField.lt_irrefl _ hcontra).elim
+  · have hxpos : ctx.spec.lt ctx.spec.zero x := hpos
+    rcases hcase with he | hl
+    · by_cases hsmall : Zle e (fexp (Zadd (Zdigits beta m) e))
+      · have hres := truncate_correct_partial ctx magnitude beta fexp hvalid
+          x m e l hxpos hbetween hsmall
+        dsimp at hres ⊢
+        rcases hres with ⟨hres, he'⟩
+        simpa only [] using (show _ from ⟨hres, Or.inl he'⟩)
+      · have hres := truncate_correct_partial' ctx magnitude beta fexp hvalid
+          x m e l hxpos hbetween he
+        dsimp at hres ⊢
+        rcases hres with ⟨hres, he'⟩
+        simpa only [] using (show _ from ⟨hres, Or.inl he'⟩)
+    · by_cases hsmall : Zle e (fexp (Zadd (Zdigits beta m) e))
+      · have hres := truncate_correct_partial ctx magnitude beta fexp hvalid
+          x m e l hxpos hbetween hsmall
+        dsimp at hres ⊢
+        rcases hres with ⟨hres, he'⟩
+        simpa only [] using (show _ from ⟨hres, Or.inl he'⟩)
+      · subst l
+        cases hbetween with
+        | inbetween_Exact hxeq =>
+          unfold truncate
+          dsimp
+          split
+          · rename_i hk
+            exfalso
+            apply hsmall
+            have hk' : Zlt Z0 (Zsub (fexp (Zadd (Zdigits beta m) e)) e) :=
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zbool.Zlt_is_lt_bool
+                Z0 _).mpr hk
+            change (0 : Int) < intOfZ (Zsub (fexp (Zadd (Zdigits beta m) e)) e) at hk'
+            change intOfZ e ≤ intOfZ (fexp (Zadd (Zdigits beta m) e))
+            simp only [Zsub, ZArith.BinInt.Z.sub, intOfZ_zOfInt] at hk'
+            omega
+          · rename_i hk
+            have hformat : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.generic_format
+                ctx magnitude beta fexp x := by
+              rw [hxeq]
+              apply CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_F2R
+              intro hm0
+              unfold CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp
+              change Zle (fexp ((CompCert4Lean.Flocq.Core.Raux.Exact.mag
+                magnitude beta (CompCert4Lean.Flocq.Core.Float_prop.Exact.F2R ctx
+                  (CompCert4Lean.Flocq.Core.Float_prop.Float beta m e))).mag_val)) e
+              have hmag := CompCert4Lean.Flocq.Core.Float_prop.mag_F2R_Zdigits
+                ctx magnitude beta m e hm0
+              have hmag' : (CompCert4Lean.Flocq.Core.Raux.Exact.mag
+                  magnitude beta (CompCert4Lean.Flocq.Core.Float_prop.Exact.F2R ctx
+                    (CompCert4Lean.Flocq.Core.Float_prop.Float beta m e))).mag_val =
+                    Zadd (Zdigits beta m) e := by
+                simpa only [CompCert4Lean.Flocq.Core.Float_prop.Exact.mag,
+                  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.mag] using hmag
+              rw [hmag']
+              change intOfZ (fexp (Zadd (Zdigits beta m) e)) ≤ intOfZ e
+              change ¬ intOfZ e ≤ intOfZ (fexp (Zadd (Zdigits beta m) e)) at hsmall
+              omega
+            exact ⟨CompCert4Lean.Flocq.Calc.Bracket.inbetween_Exact hxeq,
+              Or.inr ⟨rfl, hformat⟩⟩
+
+end CompCert4Lean.Flocq.Calc.Round

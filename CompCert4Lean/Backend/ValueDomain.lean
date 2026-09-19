@@ -5709,3 +5709,10 @@ theorem vge_lub_r : vge_lub_rStatement := by
   exact vge_lub_l_select_aux cfg y x
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem vmatch_lub_l : vmatch_lub_lStatement := by
+  exact vmatch_lub_l_select_aux
+
+end CompCert4Lean.Backend.ValueDomain

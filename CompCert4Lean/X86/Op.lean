@@ -5297,3 +5297,114 @@ theorem eval_operation_lessdef
   exact ⟨v2, heval2, suffix_eval_addressing_lessdef_of_inject v1 v2 hinj⟩
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Integers
+
+private theorem suffix_condition_inject_repr (z : Z)
+    (hz : zLe z0 z ∧ zLe z Ptrofs.max_unsigned) :
+    Ptrofs.unsigned (Ptrofs.repr z) = z := by
+  change Int64.unsigned (Int64.repr z) = z
+  rw [suffix64_unsigned_repr]
+  apply ZArith.BinInt.Z.mod_small
+  refine ⟨hz.1, ?_⟩
+  have h := hz.2
+  change intOfZ z ≤ intOfZ Int64.modulus - 1 at h
+  change intOfZ z < intOfZ Int64.modulus
+  omega
+
+private theorem suffix_condition_inject_bounds
+    (f : meminj) (m1 m2 : mem) (hinj : Mem.inject f m1 m2)
+    (b : block) (ofs : Ptrofs) (b' : block) (delta : Z)
+    (hmap : f b = some (b', delta))
+    (hp : Mem.weak_valid_pointer m1 b (Ptrofs.unsigned ofs) = true) :
+    Ptrofs.unsigned (Ptrofs.repr delta) = delta ∧
+      zLe z0 (zAdd (Ptrofs.unsigned ofs) delta) ∧
+      zLe (zAdd (Ptrofs.unsigned ofs) delta) Ptrofs.max_unsigned := by
+  have hperm := (Mem.weak_valid_pointer_spec m1 b (Ptrofs.unsigned ofs)).mp hp
+  have hmax :
+      Mem.perm m1 b (Ptrofs.unsigned ofs) Max Nonempty ∨
+      Mem.perm m1 b (ZArith.BinInt.Z.sub (Ptrofs.unsigned ofs) (zOfNat 1)) Max Nonempty := by
+    rcases hperm with h | h
+    · exact Or.inl (Mem.perm_cur_max m1 b _ Nonempty
+        ((Mem.valid_pointer_nonempty_perm m1 b _).mp h))
+    · exact Or.inr (Mem.perm_cur_max m1 b _ Nonempty
+        ((Mem.valid_pointer_nonempty_perm m1 b _).mp h))
+  obtain ⟨hd, hs⟩ := hinj.mi_representable b b' delta ofs hmap hmax
+  have hu : 0 ≤ intOfZ (Ptrofs.unsigned ofs) := by
+    have h := ofs.intrange.1
+    change (-1 : _root_.Int) < intOfZ (Ptrofs.unsigned ofs) at h
+    omega
+  have hdmax : zLe delta Ptrofs.max_unsigned := by
+    have h := hs.2
+    change intOfZ (zAdd (Ptrofs.unsigned ofs) delta) ≤ intOfZ Ptrofs.max_unsigned at h
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at h
+    change intOfZ delta ≤ intOfZ Ptrofs.max_unsigned
+    omega
+  exact ⟨suffix_condition_inject_repr delta ⟨hd, hdmax⟩, hs⟩
+
+private theorem suffix_condition_inject_address
+    (f : meminj) (m1 m2 : mem) (hinj : Mem.inject f m1 m2)
+    (b : block) (ofs : Ptrofs) (b' : block) (delta : Z)
+    (hmap : f b = some (b', delta))
+    (hp : Mem.weak_valid_pointer m1 b (Ptrofs.unsigned ofs) = true) :
+    Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta)) =
+      zAdd (Ptrofs.unsigned ofs) delta := by
+  obtain ⟨hd, hs⟩ := suffix_condition_inject_bounds f m1 m2 hinj b ofs b' delta hmap hp
+  change Ptrofs.unsigned (Ptrofs.repr
+    (zAdd (Ptrofs.unsigned ofs) (Ptrofs.unsigned (Ptrofs.repr delta)))) = _
+  rw [hd]
+  exact suffix_condition_inject_repr _ hs
+
+theorem eval_condition_inject : eval_condition_injectStatement := by
+  intro f cond vl1 vl2 r m1 m2 hvl hinj heval
+  have hv (b : block) (ofs : Z) (b' : block) (delta : Z)
+      (hmap : f b = some (b', delta))
+      (hp : Mem.valid_pointer m1 b ofs = true) :
+      Mem.valid_pointer m2 b' (zAdd ofs delta) = true := by
+    apply (Mem.valid_pointer_nonempty_perm m2 b' _).mpr
+    exact hinj.mi_inj.mi_perm b b' delta ofs Cur Nonempty hmap
+      ((Mem.valid_pointer_nonempty_perm m1 b ofs).mp hp)
+  apply suffix_operation_condition_inj f m1 m2 _ _ _ _ cond vl1 vl2 r hvl heval
+  · intro b ofs b' delta hmap hp
+    rw [suffix_condition_inject_address f m1 m2 hinj b ofs b' delta hmap
+      (Mem.valid_pointer_implies m1 b _ hp)]
+    exact hv b _ b' delta hmap hp
+  · intro b ofs b' delta hmap hp
+    rw [suffix_condition_inject_address f m1 m2 hinj b ofs b' delta hmap hp]
+    apply (Mem.weak_valid_pointer_spec m2 b' _).mpr
+    rcases (Mem.weak_valid_pointer_spec m1 b _).mp hp with h | h
+    · exact Or.inl (hv b _ b' delta hmap h)
+    · apply Or.inr
+      have hshift :
+          ZArith.BinInt.Z.sub (zAdd (Ptrofs.unsigned ofs) delta) (zOfNat 1) =
+          zAdd (ZArith.BinInt.Z.sub (Ptrofs.unsigned ofs) (zOfNat 1)) delta := by
+        apply intOfZ_injective
+        simp only [zAdd, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        omega
+      change Mem.valid_pointer m2 b'
+        (ZArith.BinInt.Z.sub (zAdd (Ptrofs.unsigned ofs) delta) (zOfNat 1)) = true
+      rw [hshift]
+      exact hv b _ b' delta hmap h
+  · intro b ofs b' delta hmap hp
+    obtain ⟨hd, hs⟩ := suffix_condition_inject_bounds f m1 m2 hinj b ofs b' delta hmap hp
+    rw [hd]
+    exact hs
+  · intro b1 ofs1 b2 ofs2 b1' delta1 b2' delta2 hne hp1 hp2 hmap1 hmap2
+    rw [suffix_condition_inject_address f m1 m2 hinj b1 ofs1 b1' delta1 hmap1
+        (Mem.valid_pointer_implies m1 b1 _ hp1),
+      suffix_condition_inject_address f m1 m2 hinj b2 ofs2 b2' delta2 hmap2
+        (Mem.valid_pointer_implies m1 b2 _ hp2)]
+    exact hinj.mi_no_overlap b1 b1' delta1 b2 b2' delta2
+      (Ptrofs.unsigned ofs1) (Ptrofs.unsigned ofs2) hne hmap1 hmap2
+      (Mem.perm_cur_max m1 b1 _ Nonempty
+        ((Mem.valid_pointer_nonempty_perm m1 b1 _).mp hp1))
+      (Mem.perm_cur_max m1 b2 _ Nonempty
+        ((Mem.valid_pointer_nonempty_perm m1 b2 _).mp hp2))
+
+end CompCert4Lean.X86.Op

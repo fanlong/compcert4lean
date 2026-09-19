@@ -5779,3 +5779,190 @@ theorem var_addr_correct
           rw [hc] at hvar
           cases hvar
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Cfrontend.Cminorgen
+open Lean Elab Tactic Meta
+
+private abbrev cg_zLe := ZArith.BinInt.Z.le
+private abbrev cg_zAdd := ZArith.BinInt.Z.add
+private abbrev cg_z0 : Z := .Z0
+
+private def cminorgenproofIntegersPrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem cminorgenproof_unsigned_repr_bounded (z : Z)
+    (hz : cg_zLe cg_z0 z ∧ cg_zLe z Ptrofs.max_unsigned) :
+    Ptrofs.unsigned (Ptrofs.repr z) = z := by
+  have heq : Ptrofs.unsigned (Ptrofs.repr z) =
+      ZArith.BinInt.Z.modulo z Ptrofs.modulus := by
+    run_tac
+      let lctx ← getLCtx
+      let zF := (lctx.findFromUserName? `z).get!
+      let e ← mkAppM
+        (cminorgenproofIntegersPrivateName
+          "CompCert4Lean.Lib.Integers.Int64.suffix_int64_unsigned_repr_eq_exact")
+        #[mkFVar zF.fvarId]
+      closeMainGoal Name.anonymous e
+  rw [heq]
+  apply ZArith.BinInt.Z.mod_small
+  refine ⟨hz.1, ?_⟩
+  have h := hz.2
+  change intOfZ z ≤ 18446744073709551615 at h
+  change intOfZ z < 18446744073709551616
+  omega
+
+private theorem cminorgenproof_address_inject
+    (f : Val.meminj) (m tm : mem) (chunk : CompCert4Lean.Common.AST.memory_chunk)
+    (b : block) (ofs : Ptrofs.int) (b' : block) (delta : Z)
+    (hinj : Mem.inject f m tm)
+    (hvalid : Mem.valid_access m chunk b (Ptrofs.unsigned ofs) Readable)
+    (hmap : f b = some (b', delta)) :
+    Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta)) =
+      cg_zAdd (Ptrofs.unsigned ofs) delta := by
+  have hperm : Mem.perm m b (Ptrofs.unsigned ofs) Cur Readable := by
+    apply hvalid.1
+    constructor
+    · exact _root_.Int.le_refl _
+    · have hsize := size_chunk_pos chunk
+      change 0 < intOfZ (size_chunk chunk) at hsize
+      change intOfZ (Ptrofs.unsigned ofs) <
+        intOfZ (cg_zAdd (Ptrofs.unsigned ofs) (size_chunk chunk))
+      simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+      omega
+  have hnonempty := Mem.perm_cur_max m b (Ptrofs.unsigned ofs) Nonempty
+    (Mem.perm_implies m b (Ptrofs.unsigned ofs) Cur Readable Nonempty hperm
+      (perm_order.perm_any_N Readable))
+  obtain ⟨hdelta, hsum⟩ := hinj.mi_representable b b' delta ofs hmap
+    (Or.inl hnonempty)
+  have hu : 0 ≤ intOfZ (Ptrofs.unsigned ofs) := by
+    have h := ofs.intrange.1
+    change (-1 : _root_.Int) < intOfZ (Ptrofs.unsigned ofs) at h
+    omega
+  have hdmax : cg_zLe delta Ptrofs.max_unsigned := by
+    have h := hsum.2
+    change intOfZ (cg_zAdd (Ptrofs.unsigned ofs) delta) ≤
+      intOfZ Ptrofs.max_unsigned at h
+    simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt] at h
+    change intOfZ delta ≤ intOfZ Ptrofs.max_unsigned
+    omega
+  change Ptrofs.unsigned (Ptrofs.repr
+    (cg_zAdd (Ptrofs.unsigned ofs)
+      (Ptrofs.unsigned (Ptrofs.repr delta)))) = _
+  rw [cminorgenproof_unsigned_repr_bounded delta ⟨hdelta, hdmax⟩]
+  exact cminorgenproof_unsigned_repr_bounded _ hsum
+
+private theorem cminorgenproof_loadv_inject
+    (f : Val.meminj) (m tm : mem) (chunk : CompCert4Lean.Common.AST.memory_chunk)
+    (a1 a2 v1 : val)
+    (hinj : Mem.inject f m tm)
+    (hload : Mem.loadv chunk m a1 = some v1)
+    (hval : Val.inject f a1 a2) :
+    ∃ v2, Mem.loadv chunk tm a2 = some v2 ∧ Val.inject f v1 v2 := by
+  cases hval with
+  | inject_int i => simp [Mem.loadv] at hload
+  | inject_long i => simp [Mem.loadv] at hload
+  | inject_float x => simp [Mem.loadv] at hload
+  | inject_single x => simp [Mem.loadv] at hload
+  | val_inject_undef v => simp [Mem.loadv] at hload
+  | @inject_ptr b ofs b' ofs' delta hmap hofs =>
+      simp only [Mem.loadv] at hload ⊢
+      obtain ⟨v2, hload2, hval2⟩ :=
+        Mem.load_inj f m tm chunk b (Ptrofs.unsigned ofs) b' delta v1
+          hinj.mi_inj hload hmap
+      have haddr := cminorgenproof_address_inject f m tm chunk b ofs b' delta
+        hinj (Mem.load_valid_access m chunk b (Ptrofs.unsigned ofs) v1 hload) hmap
+      refine ⟨v2, ?_, hval2⟩
+      subst ofs'
+      rw [haddr]
+      exact hload2
+
+set_option maxHeartbeats 1000000 in
+theorem transl_expr_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_expr_correctStatement := by
+  intro prog tprog hprog f m tm cenv tf e le te sp lo hi cs hminj hmatch
+  intro a v hev
+  induction hev with
+  | eval_Evar id v hget =>
+      intro ta htr
+      have htemps : match_temps f le te := by
+        cases hmatch with
+        | cons _ _ htemps _ _ _ _ => exact htemps
+      rcases htemps id v hget with ⟨tv, htv, hinj⟩
+      simp only [CompCert4Lean.Cfrontend.Cminorgen.transl_expr] at htr
+      cases htr
+      exact ⟨tv, .eval_Evar id tv htv, hinj⟩
+  | eval_Eaddrof id b haddr =>
+      intro ta htr
+      simp only [CompCert4Lean.Cfrontend.Cminorgen.transl_expr] at htr
+      cases htr
+      exact var_addr_correct prog tprog hprog cenv id f tf e le te sp lo hi m cs tm b hmatch haddr
+  | eval_Econst cst v heval =>
+      intro ta htr
+      simp only [CompCert4Lean.Cfrontend.Cminorgen.transl_expr] at htr
+      cases htr
+      rcases transl_constant_correct tprog f (.Vptr sp Ptrofs.zero) cst v heval with ⟨tv, htv, hinj⟩
+      exact ⟨tv, .eval_Econst (transl_constant cst) tv htv, hinj⟩
+  | eval_Eunop op a1 v1 v ha1 hop ih =>
+      intro ta htr
+      simp only [CompCert4Lean.Cfrontend.Cminorgen.transl_expr] at htr
+      cases q : transl_expr cenv a1 with
+      | Error msg =>
+          rw [q] at htr
+          cases htr
+      | OK ta1 =>
+          rw [q] at htr
+          cases htr
+          rcases ih ta1 q with ⟨tv1, heval1, hinj1⟩
+          rcases eval_unop_compat f op v1 tv1 v hop hinj1 with ⟨tv, heval, hinj⟩
+          exact ⟨tv, .eval_Eunop op ta1 tv1 tv heval1 heval, hinj⟩
+  | eval_Ebinop op a1 a2 v1 v2 v ha1 ha2 hop ih1 ih2 =>
+      intro ta htr
+      simp only [CompCert4Lean.Cfrontend.Cminorgen.transl_expr] at htr
+      cases q1 : transl_expr cenv a1 with
+      | Error msg =>
+          rw [q1] at htr
+          cases htr
+      | OK ta1 =>
+          cases q2 : transl_expr cenv a2 with
+          | Error msg =>
+              rw [q1, q2] at htr
+              cases htr
+          | OK ta2 =>
+              rw [q1, q2] at htr
+              cases htr
+              rcases ih1 ta1 q1 with ⟨tv1, heval1, hinj1⟩
+              rcases ih2 ta2 q2 with ⟨tv2, heval2, hinj2⟩
+              rcases eval_binop_compat f op v1 tv1 v2 tv2 v m tm hop hinj1 hinj2 hminj with
+                ⟨tv, heval, hinj⟩
+              exact ⟨tv, .eval_Ebinop op ta1 ta2 tv1 tv2 tv heval1 heval2 heval, hinj⟩
+  | eval_Eload chunk address vaddr v haddr hload ih =>
+      intro ta htr
+      simp only [CompCert4Lean.Cfrontend.Cminorgen.transl_expr] at htr
+      cases q : transl_expr cenv address with
+      | Error msg =>
+          rw [q] at htr
+          cases htr
+      | OK ta1 =>
+          rw [q] at htr
+          cases htr
+          rcases ih ta1 q with ⟨tv1, heval1, hinj1⟩
+          rcases cminorgenproof_loadv_inject f m tm chunk vaddr tv1 v hminj hload hinj1 with
+            ⟨tv, hload', hinj⟩
+          exact ⟨tv, .eval_Eload chunk ta1 tv1 tv heval1 hload', hinj⟩
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

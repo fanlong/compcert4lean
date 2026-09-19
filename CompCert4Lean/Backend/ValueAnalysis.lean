@@ -2552,3 +2552,305 @@ theorem eval_static_builtin_function_sound
       | lessdef_undef => simp [aval_of_val] at hstatic
 
 end CompCert4Lean.Backend.ValueAnalysis
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+private theorem pg_alloc_stack_undef_vmatch (bc : block_classification)
+    (chunk : memory_chunk) (ofs : Z) :
+    vmatch bc Vundef (ablock_load chunk (ablock_init Pbot) ofs) := by
+  simp only [ablock_load, ablock_init]
+  rw [show ZTree.get ofs (ZTree.empty acontent) = none by exact PTree.gempty _ _]
+  cases chunk <;> simp [vnormalize, ntop1, provenance, poffset]
+  all_goals first | exact vmatch.ifptrUndef _ | exact vmatch.numUndef _ | exact vmatch.vmatch_Uns_undef _ _ | exact vmatch.sgnUndef _ _
+
+private theorem pg_pmatch_incr
+    (bc bc' : block_classification) (b : block) (ofs : ptrofs) (p : aptr)
+    (hincr : bc_incr bc bc') (h : pmatch bc b ofs p) :
+    pmatch bc' b ofs p := by
+  cases h with
+  | gl id hb => apply pmatch.gl; rw [hincr b (by simp [hb])]; exact hb
+  | glo id hb => apply pmatch.glo; rw [hincr b (by simp [hb])]; exact hb
+  | glob id hb => apply pmatch.glob; rw [hincr b (by simp [hb])]; exact hb
+  | stk hb => apply pmatch.stk; rw [hincr b (by simp [hb])]; exact hb
+  | stack hb => apply pmatch.stack; rw [hincr b (by simp [hb])]; exact hb
+  | nonstack hs hi =>
+      apply pmatch.nonstack
+      · intro h'; apply hs
+        rw [hincr b hi] at h'
+        exact h'
+      · intro h'; apply hi
+        rw [hincr b hi] at h'
+        exact h'
+  | top hi =>
+      apply pmatch.top
+      intro h'; apply hi
+      rw [hincr b hi] at h'
+      exact h'
+
+private theorem pg_vmatch_incr
+    (bc bc' : block_classification) (v : val) (x : aval)
+    (hincr : bc_incr bc bc') (h : vmatch bc v x) :
+    vmatch bc' v x := by
+  cases h with
+  | vmatch_i i => exact vmatch.vmatch_i i
+  | vmatch_iu i => exact vmatch.vmatch_iu i
+  | iuUndef i => exact vmatch.iuUndef i
+  | uns p i n h1 h2 => exact vmatch.uns p i n h1 h2
+  | vmatch_Uns_undef p n => exact vmatch.vmatch_Uns_undef p n
+  | sgn p i n h1 h2 => exact vmatch.sgn p i n h1 h2
+  | sgnUndef p n => exact vmatch.sgnUndef p n
+  | long i => exact vmatch.long i
+  | float f => exact vmatch.float f
+  | single f => exact vmatch.single f
+  | numUndef p => exact vmatch.numUndef p
+  | numInt i p => exact vmatch.numInt i p
+  | numLong i p => exact vmatch.numLong i p
+  | numFloat f p => exact vmatch.numFloat f p
+  | numSingle f p => exact vmatch.numSingle f p
+  | ptr b ofs p hp => exact vmatch.ptr b ofs p (pg_pmatch_incr bc bc' b ofs p hincr hp)
+  | ptrUndef p => exact vmatch.ptrUndef p
+  | ifptrUndef p => exact vmatch.ifptrUndef p
+  | ifptrInt i p => exact vmatch.ifptrInt i p
+  | ifptrLong i p => exact vmatch.ifptrLong i p
+  | ifptrFloat f p => exact vmatch.ifptrFloat f p
+  | ifptrSingle f p => exact vmatch.ifptrSingle f p
+  | ifptrPtr b ofs p hp => exact vmatch.ifptrPtr b ofs p (pg_pmatch_incr bc bc' b ofs p hincr hp)
+
+private theorem pg_smatch_incr
+    (bc bc' : block_classification) (m : mem) (b : block) (p : aptr)
+    (hincr : bc_incr bc bc') (h : smatch bc m b p) :
+    smatch bc' m b p := by
+  rcases h with ⟨hload, hbytes⟩
+  constructor
+  · intro chunk ofs v hv
+    exact pg_vmatch_incr bc bc' v (Ifptr p) hincr (hload chunk ofs v hv)
+  · intro ofs b' ofs' q i hv
+    exact pg_pmatch_incr bc bc' b' ofs' p hincr (hbytes ofs b' ofs' q i hv)
+
+private theorem pg_alloc_preserve_bmatch
+    (bc : block_classification) (m m' : mem) (b : block) (ab : ablock)
+    (sp : block) (sz : Z) (halloc : Mem.alloc m z0 sz = (m', sp))
+    (hbelow : Plt b m.nextblock) (hbm : bmatch bc m b ab) :
+    bmatch bc m' b ab := by
+  apply bmatch_inv bc m b ab m' hbm
+  intro ofs n hn
+  exact Mem.loadbytes_alloc_unchanged m z0 sz m' sp halloc b ofs n
+    (by unfold Mem.valid_block; exact hbelow)
+
+private theorem pg_alloc_preserve_smatch
+    (bc : block_classification) (m m' : mem) (b : block) (p : aptr)
+    (sp : block) (sz : Z) (halloc : Mem.alloc m z0 sz = (m', sp))
+    (hbelow : Plt b m.nextblock) (hsm : smatch bc m b p) :
+    smatch bc m' b p := by
+  apply smatch_inv bc m b p m' hsm
+  intro ofs n hn
+  exact Mem.loadbytes_alloc_unchanged m z0 sz m' sp halloc b ofs n
+    (by unfold Mem.valid_block; exact hbelow)
+
+private theorem pg_alloc_stack_undef_smatch
+    (bc : block_classification) (m m' : mem) (sp : block) (sz : Z)
+    (halloc : Mem.alloc m z0 sz = (m', sp)) :
+    smatch bc m' sp Nonstack := by
+  constructor
+  · intro chunk ofs v hload
+    have hv : v = Vundef := Mem.load_alloc_same m z0 sz m' sp halloc chunk ofs v hload
+    subst v
+    exact vmatch.ifptrUndef Nonstack
+  · intro ofs b' ofs' q i hbytes
+    have hm : Fragment (Vptr b' ofs') q i ∈
+        [Fragment (Vptr b' ofs') q i] := by simp
+    have hu := Mem.loadbytes_alloc_same m z0 sz m' sp halloc ((.Zpos .xH) : Z) ofs
+      [Fragment (Vptr b' ofs') q i] (Fragment (Vptr b' ofs') q i) hbytes hm
+    cases hu
+
+private theorem pg_alloc_stack_undef_bmatch
+    (bc : block_classification) (m m' : mem) (sp : block) (sz : Z)
+    (halloc : Mem.alloc m z0 sz = (m', sp)) :
+    bmatch bc m' sp (ablock_init Pbot) := by
+  constructor
+  · constructor
+    · intro chunk ofs v hload
+      have hv : v = Vundef := Mem.load_alloc_same m z0 sz m' sp halloc chunk ofs v hload
+      subst v
+      exact vmatch.ifptrUndef Pbot
+    · intro ofs b' ofs' q i hbytes
+      have hm : Fragment (Vptr b' ofs') q i ∈
+          [Fragment (Vptr b' ofs') q i] := by simp
+      have hu := Mem.loadbytes_alloc_same m z0 sz m' sp halloc ((.Zpos .xH) : Z) ofs
+        [Fragment (Vptr b' ofs') q i] (Fragment (Vptr b' ofs') q i) hbytes hm
+      cases hu
+  · intro chunk ofs v hload
+    have hv : v = Vundef := Mem.load_alloc_same m z0 sz m' sp halloc chunk ofs v hload
+    subst v
+    exact pg_alloc_stack_undef_vmatch bc chunk ofs
+
+theorem allocate_stack : allocate_stackStatement := by
+  classical
+  intro m sz m' sp bc ge rm am halloc hgenv hrom hmm hnostack
+  have hnext : m'.nextblock = PArith.BinPos.Pos.succ m.nextblock :=
+    Mem.nextblock_alloc m z0 sz m' sp halloc
+  have hsp : sp = m.nextblock := Mem.alloc_result m z0 sz m' sp halloc
+  have hspinvalid : bc sp = BCinvalid := by
+    rw [hsp]
+    apply bc_below_invalid m.nextblock
+    · exact Plt_strict _
+    · exact hmm.mmatch_below
+  let f : block → block_class := fun b => if b = sp then BCstack else bc b
+  have hfstack : ∀ b1 b2, f b1 = BCstack → f b2 = BCstack → b1 = b2 := by
+    intro b1 b2 h1 h2
+    by_cases hb1 : b1 = sp
+    · subst b1
+      by_cases hb2 : b2 = sp
+      · exact hb2.symm
+      · have : bc b2 = BCstack := by simpa [f, hb2] using h2
+        exact False.elim (hnostack b2 this)
+    · by_cases hb2 : b2 = sp
+      · subst b2
+        have : bc b1 = BCstack := by simpa [f, hb1] using h1
+        exact False.elim (hnostack b1 this)
+      · have h1' : bc b1 = BCstack := by simpa [f, hb1] using h1
+        have h2' : bc b2 = BCstack := by simpa [f, hb2] using h2
+        exact bc.bc_stack b1 b2 h1' h2'
+  have hfglob : ∀ b1 b2 id, f b1 = BCglob id → f b2 = BCglob id → b1 = b2 := by
+    intro b1 b2 id h1 h2
+    have h1' : bc b1 = BCglob id := by
+      by_cases hb : b1 = sp
+      · subst b1; simp [f] at h1
+      · simpa [f, hb] using h1
+    have h2' : bc b2 = BCglob id := by
+      by_cases hb : b2 = sp
+      · subst b2; simp [f] at h2
+      · simpa [f, hb] using h2
+    exact bc.bc_glob b1 b2 id h1' h2'
+  let bc' : block_classification := { bc_img := f, bc_stack := hfstack, bc_glob := hfglob }
+  have hf_eq : ∀ b, bc b ≠ BCinvalid → bc' b = bc b := by
+    intro b hb
+    by_cases hbs : b = sp
+    · subst b; exact False.elim (hb hspinvalid)
+    · simp [bc', f, hbs]
+  have hincr : bc_incr bc bc' := fun b hb => hf_eq b hb
+  have hgenv' : genv_match bc' ge := by
+    rcases hgenv with ⟨hsym, hbelow⟩
+    constructor
+    · intro id b
+      constructor
+      · intro hfind
+        have hold := (hsym id b).mp hfind
+        by_cases hbs : b = sp
+        · subst b; rw [hspinvalid] at hold; cases hold
+        · simpa [bc', f, hbs] using hold
+      · intro hbc
+        have hold : bc b = BCglob id := by
+          by_cases hbs : b = sp
+          · subst b; simp [bc', f] at hbc
+          · simpa [bc', f, hbs] using hbc
+        exact (hsym id b).mpr hold
+    · intro b hb
+      have hold := hbelow b hb
+      have hne : bc b ≠ BCinvalid := by exact hold.1
+      have heq := hf_eq b hne
+      constructor
+      · intro hi; apply hold.1; exact heq ▸ hi
+      · intro hs; apply hold.2; exact heq ▸ hs
+  have hrom' : romatch bc' m' rm := by
+    intro b id ab hbc hget
+    have hbcold : bc b = BCglob id := by
+      by_cases hbs : b = sp
+      · subst b; simp [bc', f] at hbc
+      · simpa [bc', f, hbs] using hbc
+    rcases hrom b id ab hbcold hget with ⟨hglob, hbm, hperm⟩
+    have hbelow : Plt b m.nextblock := hmm.mmatch_below b (by intro hi; rw [hbcold] at hi; cases hi)
+    have hbm' := pg_alloc_preserve_bmatch bc m m' b ab sp sz halloc hbelow hbm
+    have hbm'' : bmatch bc' m' b ab := by
+      rcases hbm' with ⟨hsm, hload⟩
+      constructor
+      · exact pg_smatch_incr bc bc' m' b ab.ab_summary hincr hsm
+      · intro chunk ofs v hl
+        exact pg_vmatch_incr bc bc' v _ hincr (hload chunk ofs v hl)
+    refine ⟨hglob, hbm'', ?_⟩
+    intro ofs hp
+    apply hperm ofs
+    exact Mem.perm_alloc_4 m z0 sz m' sp halloc b ofs .Max .Writable hp
+      (by intro heq; subst b; apply Plt_strict m.nextblock; exact hsp ▸ hbelow)
+  have hmm' : mmatch bc' m' mfunction_entry := by
+    constructor
+    · intro b hb
+      have hbs : b = sp := bc'.bc_stack b sp hb (by simp [bc', f])
+      subst b
+      simpa [mfunction_entry] using (pg_alloc_stack_undef_bmatch bc' m m' sp sz halloc)
+    · intro id ab b hb hget
+      have hbcold : bc b = BCglob id := by
+        by_cases hbs : b = sp
+        · subst b; simp [bc', f] at hb
+        · simpa [bc', f, hbs] using hb
+      change PTree.get id (PTree.empty ablock) = some ab at hget
+      have hnone : PTree.get id (PTree.empty ablock) = none := PTree.gempty _ _
+      rw [hnone] at hget
+      cases hget
+    · intro b hb1 hb2
+      have hbcold2 : bc b ≠ BCinvalid := by
+        intro hi
+        apply hb2
+        by_cases hbs : b = sp
+        · subst b; exact False.elim (hb1 (by simp [bc', f]))
+        · rw [show bc' b = bc b by simp [bc', f, hbs]]
+          exact hi
+      have hbcold1 : bc b ≠ BCstack := by
+        intro hs
+        by_cases hbs : b = sp
+        · subst b; exact hbcold2 hspinvalid
+        · have hb' : bc' b = BCstack := by rw [show bc' b = bc b by simp [bc', f, hbs]]; exact hs
+          have : b = sp := bc'.bc_stack b sp hb' (by simp [bc', f])
+          exact hbs this
+      have hbelow : Plt b m.nextblock := hmm.mmatch_below b hbcold2
+      have hsm := smatch_no_stack bc hnostack m b am.am_nonstack
+        (hmm.mmatch_nonstack b hbcold1 hbcold2)
+      have hsm' := pg_alloc_preserve_smatch bc m m' b Nonstack sp sz halloc hbelow hsm
+      exact pg_smatch_incr bc bc' m' b Nonstack hincr hsm'
+    · intro b hb
+      by_cases hbs : b = sp
+      · subst b
+        exact pg_alloc_stack_undef_smatch bc' m m' sp sz halloc
+      · have hbcold : bc b ≠ BCinvalid := by
+          intro hi
+          apply hb
+          rw [show bc' b = bc b by simp [bc', f, hbs], hi]
+        have hbelow : Plt b m.nextblock := hmm.mmatch_below b hbcold
+        have hsm := smatch_no_stack bc hnostack m b am.am_top
+          (hmm.mmatch_top b hbcold)
+        have hsm' := pg_alloc_preserve_smatch bc m m' b Nonstack sp sz halloc hbelow hsm
+        exact pg_smatch_incr bc bc' m' b Nonstack hincr hsm'
+    · intro b hb
+      by_cases hbs : b = sp
+      · subst b
+        exact Mem.valid_new_block m z0 sz m' sp halloc
+      · have hbcold : bc b ≠ BCinvalid := by
+          intro hi
+          apply hb
+          rw [show bc' b = bc b by simp [bc', f, hbs], hi]
+        have hbelow := hmm.mmatch_below b hbcold
+        exact Plt_Ple_trans _ _ _ hbelow (by rw [hnext]; exact Ple_succ _)
+  have hsame : ∀ b, Plt b sp → bc' b = bc b := by
+    intro b hb
+    have hne : b ≠ sp := by intro heq; subst b; exact Plt_strict _ hb
+    dsimp [bc']
+    exact if_neg hne
+  have hvm : ∀ v x, vmatch bc v x → vmatch bc' v (Ifptr Nonstack) := by
+    intro v x hv
+    exact pg_vmatch_incr bc bc' v (Ifptr Nonstack) hincr
+      (vmatch_no_stack bc hnostack v x hv)
+  refine ⟨bc', hincr, ?_, hgenv', hrom', hmm', hsame, hvm⟩
+  · simp [bc', f]
+
+end CompCert4Lean.Backend.ValueAnalysis

@@ -5021,3 +5021,130 @@ theorem eval_shrimm
   exact test_eval_shrimm_for_eval_shr_local xi ge sp e m n
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+ theorem eval_mulimm_base
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_mulimm_baseStatement := by
+  unfold eval_mulimm_baseStatement unary_constructor_sound
+  intro xi ge sp e m n le a x ha
+  have hD := CompCert4Lean.Lib.Integers.Int.one_bits_decomp_proof n
+  have hR := CompCert4Lean.Lib.Integers.Int.one_bits_range_proof n
+  cases hbits : CompCert4Lean.Lib.Integers.Int.one_bits n with
+  | nil =>
+      refine ⟨Val.mul x (.Vint n), ?_, Val.lessdef_refl _⟩
+      simp only [CompCert4Lean.X86.SelectOp.mulimm_base, hbits]
+      exact eval_expr.eval_Eop le (Omulimm n) (Econs a Enil) [x]
+        (Val.mul x (.Vint n))
+        (eval_exprlist.cons le a Enil x [] ha (eval_exprlist.nil le)) rfl
+  | cons i rest =>
+      cases rest with
+      | nil =>
+          have hDn := hD
+          simp [hbits] at hDn
+          change n = CompCert4Lean.Lib.Integers.Int.add
+              (CompCert4Lean.Lib.Integers.Int.shl
+                CompCert4Lean.Lib.Integers.Int.one i)
+              CompCert4Lean.Lib.Integers.Int.zero at hDn
+          have hRi : CompCert4Lean.Lib.Integers.Int.ltu i
+              CompCert4Lean.Lib.Integers.Int.iwordsize = true := by
+            apply hR
+            simp [hbits]
+          have hsem : Val.mul x (.Vint n) = Val.shl x (.Vint i) := by
+            rw [hDn, CompCert4Lean.Lib.Integers.Int.add_zero_proof]
+            exact val_shl_mul_eval_shl_local x i hRi
+          obtain ⟨v, hv, hd⟩ := eval_shlimm_for_eval_shl_local
+            xi ge sp e m i le a x ha
+          refine ⟨v, ?_, ?_⟩
+          · simpa [CompCert4Lean.X86.SelectOp.mulimm_base, hbits] using hv
+          · change Val.lessdef (Val.mul x (.Vint n)) v
+            rw [hsem]
+            exact hd
+      | cons j rest =>
+          cases rest with
+          | nil =>
+              have hDi := hD
+              simp [hbits] at hDi
+              change n = CompCert4Lean.Lib.Integers.Int.add
+                  (CompCert4Lean.Lib.Integers.Int.shl
+                    CompCert4Lean.Lib.Integers.Int.one i)
+                  (CompCert4Lean.Lib.Integers.Int.add
+                    (CompCert4Lean.Lib.Integers.Int.shl
+                      CompCert4Lean.Lib.Integers.Int.one j)
+                    CompCert4Lean.Lib.Integers.Int.zero) at hDi
+              have hRi : CompCert4Lean.Lib.Integers.Int.ltu i
+                  CompCert4Lean.Lib.Integers.Int.iwordsize = true := by
+                apply hR
+                simp [hbits]
+              have hRj : CompCert4Lean.Lib.Integers.Int.ltu j
+                  CompCert4Lean.Lib.Integers.Int.iwordsize = true := by
+                apply hR
+                simp [hbits]
+              obtain ⟨v1, hv1, hd1⟩ := eval_shlimm_for_eval_shl_local
+                xi ge sp e m i (x :: le) (Eletvar 0) x
+                (eval_expr.eval_Eletvar (x :: le) 0 x (by rfl))
+              obtain ⟨v2, hv2, hd2⟩ := eval_shlimm_for_eval_shl_local
+                xi ge sp e m j (x :: le) (Eletvar 0) x
+                (eval_expr.eval_Eletvar (x :: le) 0 x (by rfl))
+              obtain ⟨v3, hv3, hd3⟩ := eval_add xi ge sp e m
+                (x :: le)
+                (shlimm (Eletvar 0) i) v1
+                (shlimm (Eletvar 0) j) v2 hv1 hv2
+              refine ⟨v3, ?_, ?_⟩
+              · simp only [CompCert4Lean.X86.SelectOp.mulimm_base, hbits]
+                exact eval_expr.eval_Elet le _ _ x v3 ha hv3
+              · have hDij : n = CompCert4Lean.Lib.Integers.Int.add
+                    (CompCert4Lean.Lib.Integers.Int.shl
+                      CompCert4Lean.Lib.Integers.Int.one i)
+                    (CompCert4Lean.Lib.Integers.Int.shl
+                      CompCert4Lean.Lib.Integers.Int.one j) := by
+                  rw [hDi, CompCert4Lean.Lib.Integers.Int.add_zero_proof]
+                have hmul : Val.mul x (.Vint n) =
+                    Val.add
+                      (Val.mul x (.Vint
+                        (CompCert4Lean.Lib.Integers.Int.shl
+                          CompCert4Lean.Lib.Integers.Int.one i)))
+                      (Val.mul x (.Vint
+                        (CompCert4Lean.Lib.Integers.Int.shl
+                          CompCert4Lean.Lib.Integers.Int.one j))) := by
+                  rw [hDij]
+                  change Val.mul x
+                      (Val.add
+                        (.Vint (CompCert4Lean.Lib.Integers.Int.shl
+                          CompCert4Lean.Lib.Integers.Int.one i))
+                        (.Vint (CompCert4Lean.Lib.Integers.Int.shl
+                          CompCert4Lean.Lib.Integers.Int.one j))) = _
+                  rw [Val.mul_add_distr_r]
+                have hleft : Val.lessdef
+                    (Val.add (Val.shl x (.Vint i))
+                      (Val.shl x (.Vint j)))
+                    (Val.add v1 v2) := by
+                  apply Val.add_lessdef
+                  · change Val.lessdef (Val.shl x (.Vint i)) v1 at hd1
+                    exact hd1
+                  · change Val.lessdef (Val.shl x (.Vint j)) v2 at hd2
+                    exact hd2
+                change Val.lessdef (Val.mul x (.Vint n)) v3
+                rw [hmul,
+                  val_shl_mul_eval_shl_local x i hRi,
+                  val_shl_mul_eval_shl_local x j hRj]
+                exact Val.lessdef_trans _ _ _ hleft hd3
+          | cons k rest =>
+              refine ⟨Val.mul x (.Vint n), ?_, Val.lessdef_refl _⟩
+              simp only [CompCert4Lean.X86.SelectOp.mulimm_base, hbits]
+              exact eval_expr.eval_Eop le (Omulimm n) (Econs a Enil) [x]
+                (Val.mul x (.Vint n))
+                (eval_exprlist.cons le a Enil x [] ha (eval_exprlist.nil le)) rfl
+
+end CompCert4Lean.X86.SelectOpproof

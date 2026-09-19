@@ -2079,3 +2079,131 @@ theorem transl_find_label : transl_find_labelStatement := by
       exact transl_code_label lbl f f.fn_code true c hc
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Asmgenproof0
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Asm
+open CompCert4Lean.X86.Asmgen
+open Lean Elab Tactic Meta
+
+private theorem asmgenproof_ptrofs_unsigned_repr_local (z : Z)
+    (hz : ZArith.BinInt.Z.le Z0 z ∧
+      ZArith.BinInt.Z.le z Ptrofs.max_unsigned) :
+    Ptrofs.unsigned (Ptrofs.repr z) = z := by
+  have hzi : z = zOfInt (intOfZ z) := (zOfInt_intOfZ z).symm
+  rw [hzi]
+  change (CompCert4Lean.Lib.Integers.WordCore.repr Ptrofs.wordsize
+      (zOfInt (intOfZ z))).intval = zOfInt (intOfZ z)
+  let w := CompCert4Lean.Lib.Integers.WordCore.repr Ptrofs.wordsize
+      (zOfInt (intOfZ z))
+  have hi : w.val = Int.toNat
+      (intOfZ z % ((2 ^ Ptrofs.wordsize : Nat) : Int)) := by
+    dsimp [w]
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "WordCore.val_repr")
+        | throwError "frozen WordCore.val_repr helper not found"
+      let stx := Lean.mkIdent n
+      let arg := Lean.mkIdent `z
+      evalTactic
+        (← `(tactic| exact $stx Ptrofs.wordsize
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ $arg)))
+  have hwi : w.intval = ZArith.BinInt.Z.of_nat w.val := by
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith
+            "WordCore.intval_eq_zOfNat_val")
+        | throwError "frozen WordCore.intval_eq_zOfNat_val helper not found"
+      let stx := Lean.mkIdent n
+      let arg := Lean.mkIdent `w
+      evalTactic (← `(tactic| exact $stx $arg))
+  change w.intval = _
+  rw [hwi, hi]
+  have hznonneg : 0 ≤ intOfZ z := hz.1
+  have hzmax := hz.2
+  have hm : intOfZ Ptrofs.max_unsigned =
+      (2 ^ Ptrofs.wordsize : Int) - 1 := by rfl
+  have hzlt : intOfZ z < ((2 ^ Ptrofs.wordsize : Nat) : Int) := by
+    change intOfZ z ≤ intOfZ Ptrofs.max_unsigned at hzmax
+    rw [hm] at hzmax
+    have hpcast : ((2 ^ Ptrofs.wordsize : Nat) : Int) =
+        (2 : Int) ^ Ptrofs.wordsize := by
+      exact (Int.natCast_pow 2 Ptrofs.wordsize).symm
+    rw [hpcast]
+    omega
+  rw [Int.emod_eq_of_lt hznonneg hzlt]
+  change zOfInt (↑(Int.toNat (intOfZ z)) : Int) = _
+  rw [Int.toNat_of_nonneg hznonneg]
+
+theorem find_label_goto_label : find_label_goto_labelStatement := by
+  intro prog f tf lbl rs m c' b ofs hfind htrans hpc hlabel
+  have htl := transl_find_label lbl f tf htrans
+  rw [hlabel] at htl
+  rcases htl with ⟨tc, htcfind, htc⟩
+  obtain ⟨pos', hpos, htail, hlt, hle⟩ :=
+    label_pos_code_tail lbl tf.fn_code Z0 tc htcfind
+  refine ⟨tc, CompCert4Lean.X86.Asm.Pregmap.set
+    (.PC) (.Vptr b (Ptrofs.repr pos')) rs, ?_, ?_, ?_⟩
+  · unfold CompCert4Lean.X86.Asm.goto_label
+    rw [hpos]
+    change (match rs PC with
+      | .Vptr b a => CompCert4Lean.X86.Asm.outcome.Next
+          (CompCert4Lean.X86.Asm.Pregmap.set PC
+            (.Vptr b (Ptrofs.repr pos')) rs) m
+      | _ => CompCert4Lean.X86.Asm.outcome.Stuck) = _
+    rw [hpc]
+  · change transl_code_at_pc (Genv.globalenv prog)
+      (CompCert4Lean.X86.Asm.Pregmap.set PC (.Vptr b (Ptrofs.repr pos')) rs PC)
+      b f c' false tf tc
+    change transl_code_at_pc (Genv.globalenv prog)
+      (.Vptr b (Ptrofs.repr pos')) b f c' false tf tc
+    refine CompCert4Lean.Backend.Asmgenproof0.transl_code_at_pc.intro
+      b (Ptrofs.repr pos') f c' false tf tc hfind htrans htc ?_
+    have hpos_nonneg : ZArith.BinInt.Z.le Z0 pos' := by
+      have hh := hlt
+      change (0 : Int) < intOfZ pos' at hh
+      change (0 : Int) ≤ intOfZ pos'
+      omega
+    have hlen := transf_function_no_overflow f tf htrans
+    have hpos_max : ZArith.BinInt.Z.le pos' Ptrofs.max_unsigned := by
+      have hadd : ZArith.BinInt.Z.add Z0 (list_length_z tf.fn_code) =
+          list_length_z tf.fn_code := by
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+        rw [show intOfZ Z0 = 0 by rfl, Int.zero_add]
+      have hle' : ZArith.BinInt.Z.le pos' (list_length_z tf.fn_code) := by
+        rw [← hadd]
+        exact hle
+      exact ZArith.BinInt.Z.le_trans pos' (list_length_z tf.fn_code)
+        Ptrofs.max_unsigned hle' hlen
+    rw [asmgenproof_ptrofs_unsigned_repr_local pos' ⟨hpos_nonneg, hpos_max⟩]
+    have hsub : ZArith.BinInt.Z.sub pos' Z0 = pos' := by
+      apply intOfZ_injective
+      simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+      rw [show intOfZ Z0 = 0 by rfl]
+      omega
+    rw [hsub] at htail
+    exact htail
+  · intro r hr
+    change (CompCert4Lean.X86.Asm.Pregmap.set PC
+      (.Vptr b (Ptrofs.repr pos')) rs) r = rs r
+    unfold CompCert4Lean.X86.Asm.Pregmap.set
+    split
+    · rename_i heq
+      exact False.elim (hr heq)
+    · rfl
+
+end CompCert4Lean.X86.Asmgenproof

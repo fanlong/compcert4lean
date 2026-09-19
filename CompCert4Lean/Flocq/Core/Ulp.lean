@@ -6221,3 +6221,9 @@ theorem generic_format_pred_pos :
       generic_format_pred_posStatement ctx magnitude := by
   intro ctx magnitude
   exact pg_pred_ge_gt_generic_pred_pos ctx magnitude
+
+theorem generic_format_succ :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      generic_format_succStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x hformat
+  exact pg_assignment_generic_format_succ ctx magnitude beta fexp hvalid x hformat

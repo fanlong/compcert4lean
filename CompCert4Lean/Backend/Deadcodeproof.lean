@@ -2735,3 +2735,37 @@ theorem match_succ_states : ∀ cfg, match_succ_statesStatement cfg := by
         exact hge.2 (Genv.globalenv prog) sp b ofs h)
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Backend.Deadcode
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+theorem eagree_set_res : eagree_set_resStatement := by
+  intro e1 e2 v1 v2 res ne hv he
+  cases res with
+  | BR r =>
+      intro q
+      change vagree (Regmap.get q (Regmap.set r v1 e1))
+        (Regmap.get q (Regmap.set r v2 e2)) (NE.get q ne)
+      have hq := he q
+      change vagree (Regmap.get q e1) (Regmap.get q e2)
+        (NE.get q (NE.set r Nothing ne)) at hq
+      rw [ne_get_set_local r q Nothing ne] at hq
+      cases hp : peq q r with
+      | left hqr =>
+          subst q
+          rw [Regmap.gss_proof Common.Values.val r v1 e1,
+            Regmap.gss_proof Common.Values.val r v2 e2]
+          exact vagree_lessdef v1 v2 (NE.get r ne) hv
+      | right hqr =>
+          rw [Regmap.gso_proof Common.Values.val q r v1 e1 hqr,
+            Regmap.gso_proof Common.Values.val q r v2 e2 hqr]
+          simpa only [hp] using hq
+  | BR_none => exact he
+  | BR_splitlong hi lo => exact he
+
+end CompCert4Lean.Backend.Deadcodeproof

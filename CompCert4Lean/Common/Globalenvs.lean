@@ -5612,3 +5612,26 @@ theorem init_mem_characterization_gen : init_mem_characterization_genStatement :
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+
+theorem init_mem_characterization : init_mem_characterizationStatement := by
+  intro F V p b gv m hfind hmem
+  rw [find_var_info_iff] at hfind
+  have hglobals := init_mem_characterization_gen (F := F) (V := V) (p := p) (m := m) hmem
+  exact hglobals b (Gvar gv) hfind
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

@@ -3866,3 +3866,74 @@ theorem match_stacks_inside_inlined_tailcall : match_stacks_inside_inlined_tailc
           exact ⟨SBELOW.1, ZArith.BinInt.Z.le_trans _ _ _ SBELOW.2 htaille⟩
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem transf_initial_states : transf_initial_statesStatement := by
+  letI : Linker fundef := Linker_fundef function
+  letI : Linker Unit := Linker_unit
+  letI : Linker program := Linker_prog fundef Unit
+  intro cfg prog tprog hmatch st1 hinit
+  cases hinit with
+  | intro b f m0 hmem hsymb hfun hsig =>
+      rcases function_ptr_translated cfg prog tprog hmatch b f hfun with
+        ⟨cu, tf, hfind, htrans, hlink⟩
+      have hgenv : match_globalenvs prog
+          (Mem.flat_inj (Mem.nextblock m0)) (Mem.nextblock m0) := by
+        constructor
+        · intro b hb
+          unfold Mem.flat_inj
+          cases hdec : plt b (Mem.nextblock m0) with
+          | left hleft => rfl
+          | right hright => exact False.elim (hright hb)
+        · intro b1 b2 delta hmap hb
+          unfold Mem.flat_inj at hmap
+          cases hp : plt b1 (Mem.nextblock m0) with
+          | left hleft =>
+              rw [show plt b1 (Mem.nextblock m0) = .left hleft from hp] at hmap
+              cases hmap
+              rfl
+          | right hright =>
+              rw [show plt b1 (Mem.nextblock m0) = .right hright from hp] at hmap
+              cases hmap
+        · intro id b hfind'
+          exact Genv.find_symbol_not_fresh fundef Unit prog id b m0 hmem hfind'
+        · intro b fd hfind'
+          exact Genv.find_funct_ptr_not_fresh fundef Unit prog b fd m0 hmem hfind'
+        · intro b gv hfind'
+          exact Genv.find_var_info_not_fresh fundef Unit prog b gv m0 hmem hfind'
+      refine ⟨Callstate [] tf [] m0, ?_, ?_⟩
+      · apply initial_state.intro b tf m0
+        · exact @Genv.init_mem_match
+            program fundef Unit fundef Unit
+            (@Linker_prog fundef Unit (Linker_fundef function) Linker_unit)
+            (fun cunit f tf => transf_fundef (funenv_program cfg cunit) f = .OK tf)
+            (fun x y : Unit => x = y) prog prog tprog hmatch m0 hmem
+        · change Genv.find_symbol (Genv.globalenv tprog) tprog.prog_main = some b
+          rw [match_program_main hmatch]
+          rw [symbols_preserved cfg prog tprog hmatch prog.prog_main]
+          exact hsymb
+        · exact hfind
+        · exact (sig_function_translated cfg cu f tf htrans).trans hsig
+      · apply match_call_states [] f [] m0 [] tf [] m0 cu
+          (Mem.flat_inj (Mem.nextblock m0))
+        · exact match_stacks_nil (Mem.nextblock m0) (Mem.nextblock m0)
+            hgenv (Ple_refl _)
+        · exact hlink
+        · exact htrans
+        · exact Val.inject_list_nil _
+        · exact Genv.initmem_inject fundef Unit prog m0 hmem
+
+end CompCert4Lean.Backend.Inliningproof
