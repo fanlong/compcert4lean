@@ -8934,3 +8934,161 @@ theorem eqm_samerepr_proof : eqm_samerepr := by
   exact congrArg Int.toNat hrem
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem suffix_int64_wordcore_mul_val (x y : int) :
+    Int.ofNat (WordCore.mul x y).val =
+      (Int.ofNat x.val * Int.ofNat y.val) % Int.ofNat (2 ^ wordsize) := by
+  unfold WordCore.mul
+  have hrepr : zMul (WordCore.unsigned x) (WordCore.unsigned y) =
+      zOfInt (Int.ofNat x.val * Int.ofNat y.val) := by
+    change zOfInt (intOfZ x.intval * intOfZ y.intval) =
+      zOfInt (Int.ofNat x.val * Int.ofNat y.val)
+    rw [WordCore.intval_eq_zOfNat_val x, WordCore.intval_eq_zOfNat_val y]
+    simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  rw [hrepr, WordCore.val_repr]
+  exact Int.toNat_of_nonneg
+    (Int.emod_nonneg _ (Int.ne_of_gt
+      (Int.natCast_pos.mpr (Nat.two_pow_pos wordsize))))
+
+private theorem suffix_int64_not_val (x : int) :
+    (WordCore.not x).val = Nat.xor x.val (2 ^ wordsize - 1) := by
+  unfold WordCore.not
+  have hz : zOfNat (Nat.xor x.val (2 ^ wordsize - 1)) =
+      zOfInt (Int.ofNat (Nat.xor x.val (2 ^ wordsize - 1))) := by rfl
+  rw [hz, WordCore.val_repr_residue, WordCore.residue_zOfNat]
+  apply Nat.mod_eq_of_lt
+  apply Nat.xor_lt_two_pow (WordCore.val_lt x)
+  have hpow : 0 < 2 ^ wordsize := Nat.two_pow_pos wordsize
+  omega
+
+private theorem suffix_int64_signed_injective {x y : int}
+    (h : signed x = signed y) : x = y := by
+  dsimp [signed, WordCore.signed] at h
+  simp [zltSelect, sumboolSelect] at h
+  split at h <;> split at h
+  · apply WordCore.ext
+    exact h
+  · exfalso
+    have hx0 : 0 ≤ intOfZ (unsigned x) := by
+      have hx := x.intrange.1
+      change (-1 : Int) < intOfZ (unsigned x) at hx
+      omega
+    have hymod := y.intrange.2
+    change intOfZ (unsigned y) < intOfZ modulus at hymod
+    change intOfZ (unsigned y) < intOfZ (zTwoPowerNat wordsize) at hymod
+    have hh := congrArg intOfZ h
+    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt] at hh
+    have hmod : intOfZ (zTwoPowerNat wordsize) = (2 ^ wordsize : Int) := by
+      rw [WordCore.twoPowerNat_eq_zOfNat_twoPow]
+      rfl
+    rw [hmod] at hymod hh
+    have hh' : intOfZ (unsigned x) =
+        intOfZ (unsigned y) - (2 ^ wordsize : Int) := by
+      exact hh
+    have hneg : intOfZ (unsigned y) - (2 ^ wordsize : Int) < 0 := by
+      omega
+    rw [← hh'] at hneg
+    exact (Int.not_lt_of_ge hx0 hneg).elim
+  · exfalso
+    have hy0 : 0 ≤ intOfZ (unsigned y) := by
+      have hy := y.intrange.1
+      change (-1 : Int) < intOfZ (unsigned y) at hy
+      omega
+    have hxmod := x.intrange.2
+    change intOfZ (unsigned x) < intOfZ modulus at hxmod
+    change intOfZ (unsigned x) < intOfZ (zTwoPowerNat wordsize) at hxmod
+    have hh := congrArg intOfZ h
+    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt] at hh
+    have hmod : intOfZ (zTwoPowerNat wordsize) = (2 ^ wordsize : Int) := by
+      rw [WordCore.twoPowerNat_eq_zOfNat_twoPow]
+      rfl
+    rw [hmod] at hxmod hh
+    have hh' : intOfZ (unsigned x) - (2 ^ wordsize : Int) =
+        intOfZ (unsigned y) := by
+      exact hh
+    have hneg : intOfZ (unsigned x) - (2 ^ wordsize : Int) < 0 := by
+      omega
+    rw [hh'] at hneg
+    exact (Int.not_lt_of_ge hy0 hneg).elim
+  · have hh := congrArg intOfZ h
+    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt] at hh
+    have hmod : intOfZ (zTwoPowerNat wordsize) = (2 ^ wordsize : Int) := by
+      rw [WordCore.twoPowerNat_eq_zOfNat_twoPow]
+      rfl
+    rw [hmod] at hh
+    have hu : unsigned x = unsigned y := by
+      apply intOfZ_injective
+      exact (Int.sub_left_inj _).mp hh
+    apply WordCore.ext
+    exact hu
+
+private theorem suffix_int64_lt_not : lt_not := by
+  intro x y
+  by_cases hxy : x = y
+  · subst y
+    cases h : CompCert4Lean.Lib.Coqlib.zlt (signed x) (signed x) with
+    | left hlt => exact (Int.lt_irrefl _ hlt).elim
+    | right hge =>
+        change zltSelect (signed x) (signed x) true false =
+          (!zltSelect (signed x) (signed x) true false && !eq x x)
+        simp only [zltSelect, sumboolSelect]
+        rw [h]
+        simp [eq, WordCore.eq]
+  · have heq : eq x y = false := by
+      have hxy' : x.intval ≠ y.intval := by
+        intro hval
+        apply hxy
+        exact WordCore.ext hval
+      simp [eq, WordCore.eq, hxy']
+    cases h1 : CompCert4Lean.Lib.Coqlib.zlt (signed y) (signed x) with
+    | left h1lt =>
+        cases h2 : CompCert4Lean.Lib.Coqlib.zlt (signed x) (signed y) with
+        | left h2lt => exact (Int.lt_asymm h1lt h2lt).elim
+        | right h2ge =>
+            change zltSelect (signed y) (signed x) true false =
+              (!zltSelect (signed x) (signed y) true false && !eq x y)
+            simp only [zltSelect, sumboolSelect]
+            rw [h1, h2]
+            simp [heq]
+    | right h1ge =>
+        cases h2 : CompCert4Lean.Lib.Coqlib.zlt (signed x) (signed y) with
+        | left h2lt =>
+            change zltSelect (signed y) (signed x) true false =
+              (!zltSelect (signed x) (signed y) true false && !eq x y)
+            simp only [zltSelect, sumboolSelect]
+            rw [h1, h2]
+            simp [heq]
+        | right h2ge =>
+            have hs : signed x = signed y := intOfZ_injective
+              (Int.le_antisymm h1ge h2ge)
+            exact (hxy (suffix_int64_signed_injective hs)).elim
+
+theorem min_signed_neg_proof : min_signed_neg := by
+  change (-((2 : Int) ^ 63)) < 0
+  decide
+
+theorem mul_zero_proof : mul_zero := by
+  intro x
+  change WordCore.mul x (WordCore.zero wordsize) = WordCore.zero wordsize
+  apply WordCore.ext_of_val_eq
+  apply Int.ofNat.inj
+  rw [suffix_int64_wordcore_mul_val]
+  rfl
+
+theorem not_involutive_proof : not_involutive := by
+  intro x
+  apply WordCore.ext_of_val_eq
+  change (WordCore.not (WordCore.not x)).val = x.val
+  rw [suffix_int64_not_val, suffix_int64_not_val, Nat.xor_eq, Nat.xor_eq, Nat.xor_assoc,
+    Nat.xor_self, Nat.xor_zero]
+
+theorem not_lt_proof : not_lt := by
+  intro x y
+  rw [suffix_int64_lt_not x y]
+  cases hxy : lt x y <;> cases heq : eq x y <;> simp [hxy, heq]
+
+end CompCert4Lean.Lib.Integers.Int64

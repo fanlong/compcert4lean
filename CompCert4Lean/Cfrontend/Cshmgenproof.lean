@@ -6303,3 +6303,24 @@ theorem make_store_bitfield_correct
   suffix_make_store_bitfield_correct
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+theorem transl_arglist_typed
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_arglist_typedStatement := by
+  intro prog e le m al tyl vl h
+  induction h with
+  | nil =>
+      exact CompCert4Lean.Lib.Coqlib.list_forall2.nil _
+  | cons a rest ty types v1 v2 values ha hcast hrest ih =>
+      apply CompCert4Lean.Lib.Coqlib.list_forall2.cons
+      · apply CompCert4Lean.Cfrontend.Cop.val_casted_has_argtype
+        exact CompCert4Lean.Cfrontend.Cop.cast_val_is_casted
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          v1 (CompCert4Lean.Cfrontend.Clight.typeof a) ty v2 m hcast
+      · exact ih
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
