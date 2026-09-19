@@ -2629,3 +2629,26 @@ theorem eagree_init_regs : eagree_init_regsStatement := by
                       exact ih vl1 vl2 ne htail r0
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem symbols_preserved : ∀ cfg, symbols_preservedStatement cfg := by
+  intro cfg prog tprog hmatch id
+  unfold match_prog at hmatch
+  exact Genv.find_symbol_match RTL.program RTL.fundef Unit RTL.fundef Unit
+    (fun q f tf => CompCert4Lean.Backend.Deadcode.transf_fundef
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      cfg (prog_defmap q) (romem_for cfg q) f = .OK tf)
+    (fun x y : Unit => x = y) prog prog tprog hmatch id
+
+end CompCert4Lean.Backend.Deadcodeproof

@@ -3932,3 +3932,41 @@ theorem eval_load
                 rfl
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Cminor
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.Lib.Integers
+
+theorem expr_is_addrof_ident_correct : expr_is_addrof_ident_correctStatement := by
+  intro e id h
+  cases e with
+  | Evar _ => simp [CompCert4Lean.Backend.Selection.expr_is_addrof_ident] at h
+  | Econst c =>
+      cases c with
+      | Ointconst _ => simp [CompCert4Lean.Backend.Selection.expr_is_addrof_ident] at h
+      | Ofloatconst _ => simp [CompCert4Lean.Backend.Selection.expr_is_addrof_ident] at h
+      | Osingleconst _ => simp [CompCert4Lean.Backend.Selection.expr_is_addrof_ident] at h
+      | Olongconst _ => simp [CompCert4Lean.Backend.Selection.expr_is_addrof_ident] at h
+      | Oaddrsymbol id' ofs =>
+          cases heq : Ptrofs.eq ofs Ptrofs.zero with
+          | false => simp [CompCert4Lean.Backend.Selection.expr_is_addrof_ident, heq] at h
+          | true =>
+              simp [CompCert4Lean.Backend.Selection.expr_is_addrof_ident, heq] at h
+              have hofs : ofs = Ptrofs.zero := by
+                unfold CompCert4Lean.Lib.Integers.Ptrofs.eq
+                  CompCert4Lean.Lib.Integers.WordCore.eq at heq
+                apply CompCert4Lean.Lib.Integers.WordCore.ext
+                exact of_decide_eq_true heq
+              cases h
+              cases hofs
+              rfl
+      | Oaddrstack _ => simp [CompCert4Lean.Backend.Selection.expr_is_addrof_ident] at h
+  | Eunop _ _ => simp [CompCert4Lean.Backend.Selection.expr_is_addrof_ident] at h
+  | Ebinop _ _ _ => simp [CompCert4Lean.Backend.Selection.expr_is_addrof_ident] at h
+  | Eload _ _ => simp [CompCert4Lean.Backend.Selection.expr_is_addrof_ident] at h
+
+end CompCert4Lean.Backend.Selectionproof

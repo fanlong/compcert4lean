@@ -2340,3 +2340,11 @@ theorem decode_val_cast : decode_val_castStatement := by
           trivial
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem decode_val_int64 : decode_val_int64Statement := by
+  intro l1 l2 hl1 hl2 hptr64
+  simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr64
+
+end CompCert4Lean.Common.Memdata

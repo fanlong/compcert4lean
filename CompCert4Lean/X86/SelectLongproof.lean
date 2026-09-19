@@ -3028,3 +3028,15 @@ theorem eval_shrluimm
               · rfl
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+theorem eval_shrlimm
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_shrlimmStatement binary64_certificate binary32_certificate := by
+  exact eval_shrlimm_aux_suffix
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+
+end CompCert4Lean.X86.SelectLongproof

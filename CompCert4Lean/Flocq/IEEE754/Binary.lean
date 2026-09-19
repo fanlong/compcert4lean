@@ -1019,3 +1019,19 @@ theorem eq_binary_overflow_FF2SF :
   split <;> rfl
 
 end CompCert4Lean.Flocq.IEEE754.Binary
+
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem generic_format_B2R :
+    ∀ {prec emax : Z} (ctx : ExactRealContext)
+      (magnitude : Exact.Magnitude ctx),
+      generic_format_B2RStatement (prec := prec) (emax := emax)
+        ctx magnitude := by
+  intro prec emax ctx magnitude x
+  have h := BinarySingleNaN.generic_format_B2R ctx magnitude
+    (B2BSN x.1) (B2BSN_result_obligation_proof x)
+  rw [B2R_B2BSN ctx x] at h
+  exact h
+
+end CompCert4Lean.Flocq.IEEE754.Binary

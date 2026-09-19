@@ -5665,3 +5665,31 @@ theorem is_sign_ext_uns : is_sign_ext_unsStatement := by
       exact hi (zSub n z1) hpred hnm
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem is_sign_ext_sgn : is_sign_ext_sgnStatement := by
+  intro i n m hn hm h
+  apply (is_sgn_sign_ext m
+    (CompCert4Lean.Lib.Integers.Int.sign_ext n i) hm).2
+  rcases h with hi | hnm
+  · have him : CompCert4Lean.Lib.Integers.Int.sign_ext m i = i :=
+      (is_sgn_sign_ext m i hm).1 hi
+    by_cases hmn : zLe m n
+    · have hw := CompCert4Lean.Lib.Integers.Int.sign_ext_widen_proof i m n
+        ⟨hm, hmn⟩
+      rw [him] at hw
+      rw [hw]
+      exact him
+    · have hmn' : zLe n m := by
+        change ¬ (intOfZ m ≤ intOfZ n) at hmn
+        change intOfZ n ≤ intOfZ m
+        exact Int.le_of_not_le hmn
+      exact CompCert4Lean.Lib.Integers.Int.sign_ext_widen_proof i n m
+        ⟨hn, hmn'⟩
+  · exact CompCert4Lean.Lib.Integers.Int.sign_ext_widen_proof i n m
+      ⟨hn, hnm⟩
+
+end CompCert4Lean.Backend.ValueDomain

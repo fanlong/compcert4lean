@@ -3401,3 +3401,22 @@ theorem eval_highlong : eval_highlongStatement := by
       · rfl
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_intoflong : eval_intoflongStatement := by
+  unfold eval_intoflongStatement intoflong
+  exact eval_lowlong
+
+end CompCert4Lean.Backend.SplitLongproof

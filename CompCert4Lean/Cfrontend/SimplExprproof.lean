@@ -3762,3 +3762,556 @@ theorem tr_simple :
       p tp hmatch cunit e m l b ofs bf hEval
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.Cstrategy
+open CompCert4Lean.Cfrontend.SimplExpr
+open CompCert4Lean.Cfrontend.SimplExprspec
+open CompCert4Lean.Lib.Maps
+
+section
+variable [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+  [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+private def pg4222Decomposition (ce : composite_env) (le : ttemp_env) (e : cexpr)
+    (sl : List Clight.statement) (tmps : List ident)
+    (R : ttemp_env → cexpr → List Clight.statement → Prop) : Prop :=
+  ∃ dst' sl1 sl2 a' tmp',
+    tr_expr ce le dst' e sl1 a' tmp' ∧ sl = sl1 ++ sl2 ∧ Included tmp' tmps ∧
+    ∀ le' e' sl3, tr_expr ce le' dst' e' sl3 a' tmp' →
+      (∀ id, id ∉ tmp' → PTree.get id le' = PTree.get id le) →
+      Csyntax.typeof e' = Csyntax.typeof e → R le' e' (sl3 ++ sl2)
+
+private theorem pg4222Lift {ce le e sl tmps outer}
+    {R S : ttemp_env → cexpr → List Clight.statement → Prop}
+    (tail : List Clight.statement)
+    (h : pg4222Decomposition ce le e sl tmps R)
+    (hsub : Included tmps outer)
+    (hlift : ∀ le' e' sl', R le' e' sl' →
+      (∀ id, id ∉ tmps → PTree.get id le' = PTree.get id le) →
+      Csyntax.typeof e' = Csyntax.typeof e → S le' e' (sl' ++ tail)) :
+    pg4222Decomposition ce le e (sl ++ tail) outer S := by
+  rcases h with ⟨dst, sl1, sl2, a, tmp, htr, rfl, hinc, hrec⟩
+  refine ⟨dst, sl1, sl2 ++ tail, a, tmp, htr, List.append_assoc ..,
+    fun id hid => hsub id (hinc id hid), ?_⟩
+  intro le' e' sl3 htr' hagree hty
+  rw [← List.append_assoc]
+  apply hlift le' e' (sl3 ++ sl2) (hrec le' e' sl3 htr' hagree hty)
+  · intro id hnot
+    exact hagree id (fun hin => hnot (hinc id hin))
+  · exact hty
+
+private theorem pg4222LiftZero {ce le e sl tmps outer}
+    {R S : ttemp_env → cexpr → List Clight.statement → Prop}
+    (h : pg4222Decomposition ce le e sl tmps R)
+    (hsub : Included tmps outer)
+    (hlift : ∀ le' e' sl', R le' e' sl' →
+      (∀ id, id ∉ tmps → PTree.get id le' = PTree.get id le) →
+      Csyntax.typeof e' = Csyntax.typeof e → S le' e' sl') :
+    pg4222Decomposition ce le e sl outer S := by
+  simpa only [List.append_nil] using pg4222Lift [] h hsub
+    (fun le' e' sl' hr ha ht => by simpa only [List.append_nil] using hlift le' e' sl' hr ha ht)
+
+private theorem pg4222AgreeRight {xs ys : List ident} {le le' : ttemp_env}
+    (hd : CompCert4Lean.Lib.Coqlib.list_disjoint xs ys)
+    (ha : ∀ id, id ∉ xs → PTree.get id le' = PTree.get id le) :
+    ∀ id, id ∈ ys → PTree.get id le' = PTree.get id le := by
+  intro id hin
+  exact ha id (fun hx => hd id id hx hin rfl)
+
+private theorem pg4222AgreeLeft {xs ys : List ident} {le le' : ttemp_env}
+    (hd : CompCert4Lean.Lib.Coqlib.list_disjoint xs ys)
+    (ha : ∀ id, id ∉ ys → PTree.get id le' = PTree.get id le) :
+    ∀ id, id ∈ xs → PTree.get id le' = PTree.get id le := by
+  intro id hin
+  exact ha id (fun hy => hd id id hin hy rfl)
+
+private def pg4222ExprContext (cunit : cprogram) (C : cexpr → cexpr) : Prop :=
+  ∀ le e dst sl a tmps, tr_expr cunit.prog_comp_env le dst (C e) sl a tmps →
+    pg4222Decomposition cunit.prog_comp_env le e sl tmps
+      (fun le' e' sl' => tr_expr cunit.prog_comp_env le' dst (C e') sl' a tmps)
+
+private def pg4222ListContext (cunit : cprogram) (C : cexpr → cexprlist) : Prop :=
+  ∀ le e sl a tmps, tr_exprlist cunit.prog_comp_env le (C e) sl a tmps →
+    pg4222Decomposition cunit.prog_comp_env le e sl tmps
+      (fun le' e' sl' => tr_exprlist cunit.prog_comp_env le' (C e') sl' a tmps)
+
+private theorem pg4222Expr (cunit : cprogram) {kfrom kto C}
+    (hctx : leftcontext kfrom kto C) : pg4222ExprContext cunit C := by
+  induction hctx using leftcontext.rec
+    (motive_2 := fun C _ => pg4222ListContext cunit C) with
+  | lctx_top =>
+    intro le e dst sl a tmps htr
+    refine ⟨dst, sl, [], a, tmps, htr, (List.append_nil _).symm,
+      fun _ h => h, ?_⟩
+    intro le' e' sl3 htr' _ _
+    simpa only [List.append_nil] using htr'
+  | lctx_deref hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_deref _ _ ty sl1 a1 _ h1 =>
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) (fun _ h => h)
+      intro le' e' sl' hinner hagree htype
+      exact tr_expr.tr_deref _ _ _ _ _ _ _ hinner
+  | lctx_field hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_field _ _ f ty sl1 a1 _ h1 =>
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) (fun _ h => h)
+      intro le' e' sl' hinner hagree htype
+      exact tr_expr.tr_field _ _ _ _ _ _ _ _ hinner
+  | lctx_rvalof hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_valof _ _ ty _ sl1 a1 tmp1 sl2 a2 tmp2 h1 h2 hd hi1 hi2 =>
+      simp only [List.append_assoc]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hi1
+      intro le' e' sl' hinner hagree htype
+      simp only [← List.append_assoc]
+      apply tr_expr.tr_valof _ _ _ _ _ _ _ _ _ _ _ hinner
+      · simpa only [typeof_context _ _ _ hctx _ _ htype] using h2
+      · exact hd
+      · exact hi1
+      · exact hi2
+  | lctx_addrof hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_addrof _ _ ty _ sl1 a1 h1 =>
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) (fun _ h => h)
+      intro le' e' sl' hinner hagree htype
+      exact tr_expr.tr_addrof _ _ _ _ _ _ _ hinner
+  | lctx_unop hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_unop _ op _ ty _ sl1 a1 h1 =>
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) (fun _ h => h)
+      intro le' e' sl' hinner hagree htype
+      exact tr_expr.tr_unop _ _ _ _ _ _ _ _ hinner
+  | lctx_binop_left hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_binop dst op e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 tmp h1 h2 hdisjoint hincl1 hincl2 =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hincl1
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h2' := tr_expr_invariant _ _ _ _ _ _ _ h2 le' (pg4222AgreeRight hdisjoint hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_binop _ _ _ _ _ _ _ _ _ _ _ _ _ hinner h2' hdisjoint hincl1 hincl2)
+  | lctx_binop_right hs hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_binop dst op e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 tmp h1 h2 hdisjoint hincl1 hincl2 =>
+      have hn := tr_simple_expr_nil cunit _ _ _ _ _ _ h1 (Or.inl rfl) hs
+      subst sl1
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h2) hincl2
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h1' := tr_expr_invariant _ _ _ _ _ _ _ h1 le' (pg4222AgreeLeft hdisjoint hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_binop _ _ _ _ _ _ _ _ _ _ _ _ _ h1' hinner hdisjoint hincl1 hincl2)
+  | lctx_cast hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_cast_effects e1 ty sl1 a1 any tmp h1 =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222LiftZero (ih _ _ _ _ _ _ h1) (fun _ h => h)
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_cast_effects _ _ _ _ _ _ _ hinner)
+    | tr_cast_val dst e1 ty sl1 a1 tmp h1 =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) (fun _ h => h)
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_cast_val _ _ _ _ _ _ _ hinner)
+  | lctx_seqand hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_seqand_val e1 e2 ty sl1 a1 tmp1 t sl2 a2 tmp2 tmp h1 h2 hdisjoint hincl1 hincl2 htmp =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hincl1
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h2' := tr_expr_invariant _ _ _ _ _ _ _ h2 le' (pg4222AgreeRight hdisjoint hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_seqand_val _ _ _ _ _ _ _ _ _ _ _ _ hinner h2' hdisjoint hincl1 hincl2 htmp)
+    | tr_seqand_effects e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 any tmp h1 h2 hdisjoint hincl1 hincl2 =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hincl1
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h2' := tr_expr_invariant _ _ _ _ _ _ _ h2 le' (pg4222AgreeRight hdisjoint hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_seqand_effects _ _ _ _ _ _ _ _ _ _ _ _ hinner h2' hdisjoint hincl1 hincl2)
+    | tr_seqand_set sd e1 e2 ty sl1 a1 tmp1 t sl2 a2 tmp2 any tmp h1 h2 hdisjoint hincl1 hincl2 htmp =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hincl1
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h2' := tr_expr_invariant _ _ _ _ _ _ _ h2 le' (pg4222AgreeRight hdisjoint hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_seqand_set _ _ _ _ _ _ _ _ _ _ _ _ _ _ hinner h2' hdisjoint hincl1 hincl2 htmp)
+  | lctx_seqor hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_seqor_val e1 e2 ty sl1 a1 tmp1 t sl2 a2 tmp2 tmp h1 h2 hdisjoint hincl1 hincl2 htmp =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hincl1
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h2' := tr_expr_invariant _ _ _ _ _ _ _ h2 le' (pg4222AgreeRight hdisjoint hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_seqor_val _ _ _ _ _ _ _ _ _ _ _ _ hinner h2' hdisjoint hincl1 hincl2 htmp)
+    | tr_seqor_effects e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 any tmp h1 h2 hdisjoint hincl1 hincl2 =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hincl1
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h2' := tr_expr_invariant _ _ _ _ _ _ _ h2 le' (pg4222AgreeRight hdisjoint hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_seqor_effects _ _ _ _ _ _ _ _ _ _ _ _ hinner h2' hdisjoint hincl1 hincl2)
+    | tr_seqor_set sd e1 e2 ty sl1 a1 tmp1 t sl2 a2 tmp2 any tmp h1 h2 hdisjoint hincl1 hincl2 htmp =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hincl1
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h2' := tr_expr_invariant _ _ _ _ _ _ _ h2 le' (pg4222AgreeRight hdisjoint hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_seqor_set _ _ _ _ _ _ _ _ _ _ _ _ _ _ hinner h2' hdisjoint hincl1 hincl2 htmp)
+  | lctx_condition hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_condition_val e1 e2 e3 ty sl1 a1 tmp1 sl2 a2 tmp2 sl3 a3 tmp3 t tmp h1 h2 h3 hdisjoint12 hdisjoint13 hincl1 hincl2 hincl3 htmp =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hincl1
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h2' := tr_expr_invariant _ _ _ _ _ _ _ h2 le' (pg4222AgreeRight hdisjoint12 hagree)
+      have h3' := tr_expr_invariant _ _ _ _ _ _ _ h3 le' (pg4222AgreeRight hdisjoint13 hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_condition_val _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hinner h2' h3' hdisjoint12 hdisjoint13 hincl1 hincl2 hincl3 htmp)
+    | tr_condition_effects e1 e2 e3 ty sl1 a1 tmp1 sl2 a2 tmp2 sl3 a3 tmp3 any tmp h1 h2 h3 hdisjoint12 hdisjoint13 hincl1 hincl2 hincl3 =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hincl1
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h2' := tr_expr_invariant _ _ _ _ _ _ _ h2 le' (pg4222AgreeRight hdisjoint12 hagree)
+      have h3' := tr_expr_invariant _ _ _ _ _ _ _ h3 le' (pg4222AgreeRight hdisjoint13 hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_condition_effects _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hinner h2' h3' hdisjoint12 hdisjoint13 hincl1 hincl2 hincl3)
+    | tr_condition_set sd t e1 e2 e3 ty sl1 a1 tmp1 sl2 a2 tmp2 sl3 a3 tmp3 any tmp h1 h2 h3 hdisjoint12 hdisjoint13 hincl1 hincl2 hincl3 htmp =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hincl1
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h2' := tr_expr_invariant _ _ _ _ _ _ _ h2 le' (pg4222AgreeRight hdisjoint12 hagree)
+      have h3' := tr_expr_invariant _ _ _ _ _ _ _ h3 le' (pg4222AgreeRight hdisjoint13 hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_condition_set _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hinner h2' h3' hdisjoint12 hdisjoint13 hincl1 hincl2 hincl3 htmp)
+  | lctx_assign_left hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_assign_effects e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 bf any tmp h1 h2 hdisjoint hincl1 hincl2 haccess =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hincl1
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h2' := tr_expr_invariant _ _ _ _ _ _ _ h2 le' (pg4222AgreeRight hdisjoint hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_assign_effects _ _ _ _ _ _ _ _ _ _ _ _ _ hinner h2' hdisjoint hincl1 hincl2 haccess)
+    | tr_assign_val dst e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 t tmp ty1 ty2 bf h1 h2 hincl1 hincl2 hdisjoint htmp hnot1 hnot2 hty1 hty2 haccess =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hincl1
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h2' := tr_expr_invariant _ _ _ _ _ _ _ h2 le' (pg4222AgreeRight hdisjoint hagree)
+      have hty1' : _ := hty1.trans hctype.symm
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_assign_val _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hinner h2' hincl1 hincl2 hdisjoint htmp hnot1 hnot2 hty1' hty2 haccess)
+  | lctx_assign_right hs hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_assign_effects e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 bf any tmp h1 h2 hdisjoint hincl1 hincl2 haccess =>
+      have hn := tr_simple_expr_nil cunit _ _ _ _ _ _ h1 (Or.inl rfl) hs
+      subst sl1
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h2) hincl2
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h1' := tr_expr_invariant _ _ _ _ _ _ _ h1 le' (pg4222AgreeLeft hdisjoint hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_assign_effects _ _ _ _ _ _ _ _ _ _ _ _ _ h1' hinner hdisjoint hincl1 hincl2 haccess)
+    | tr_assign_val dst e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 t tmp ty1 ty2 bf h1 h2 hincl1 hincl2 hdisjoint htmp hnot1 hnot2 hty1 hty2 haccess =>
+      have hn := tr_simple_expr_nil cunit _ _ _ _ _ _ h1 (Or.inl rfl) hs
+      subst sl1
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h2) hincl2
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h1' := tr_expr_invariant _ _ _ _ _ _ _ h1 le' (pg4222AgreeLeft hdisjoint hagree)
+      have hty2' : _ := hty2.trans hctype.symm
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_assign_val _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ h1' hinner hincl1 hincl2 hdisjoint htmp hnot1 hnot2 hty1 hty2' haccess)
+  | lctx_assignop_left hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_assignop_effects op e1 e2 tyres ty ty1 sl1 a1 tmp1 sl2 a2 tmp2 bf sl3 a3 tmp3 any tmp h1 h2 hty1 h3 hdisjoint12 hdisjoint13 hdisjoint23 hincl1 hincl2 hincl3 haccess =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hincl1
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h2' := tr_expr_invariant _ _ _ _ _ _ _ h2 le' (pg4222AgreeRight hdisjoint12 hagree)
+      have hty1' : _ := hty1.trans hctype.symm
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_assignop_effects _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hinner h2' hty1' h3 hdisjoint12 hdisjoint13 hdisjoint23 hincl1 hincl2 hincl3 haccess)
+    | tr_assignop_val dst op e1 e2 tyres ty sl1 a1 tmp1 sl2 a2 tmp2 sl3 a3 tmp3 t bf tmp ty1 h1 h2 h3 hdisjoint12 hdisjoint13 hdisjoint23 hincl1 hincl2 hincl3 htmp hnot1 hnot2 hnot3 hty1 haccess =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hincl1
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h2' := tr_expr_invariant _ _ _ _ _ _ _ h2 le' (pg4222AgreeRight hdisjoint12 hagree)
+      have hty1' : _ := hty1.trans hctype.symm
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_assignop_val _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hinner h2' h3 hdisjoint12 hdisjoint13 hdisjoint23 hincl1 hincl2 hincl3 htmp hnot1 hnot2 hnot3 hty1' haccess)
+  | lctx_assignop_right hs hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_assignop_effects op e1 e2 tyres ty ty1 sl1 a1 tmp1 sl2 a2 tmp2 bf sl3 a3 tmp3 any tmp h1 h2 hty1 h3 hdisjoint12 hdisjoint13 hdisjoint23 hincl1 hincl2 hincl3 haccess =>
+      have hn := tr_simple_expr_nil cunit _ _ _ _ _ _ h1 (Or.inl rfl) hs
+      subst sl1
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h2) hincl2
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h1' := tr_expr_invariant _ _ _ _ _ _ _ h1 le' (pg4222AgreeLeft hdisjoint12 hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_assignop_effects _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ h1' hinner hty1 h3 hdisjoint12 hdisjoint13 hdisjoint23 hincl1 hincl2 hincl3 haccess)
+    | tr_assignop_val dst op e1 e2 tyres ty sl1 a1 tmp1 sl2 a2 tmp2 sl3 a3 tmp3 t bf tmp ty1 h1 h2 h3 hdisjoint12 hdisjoint13 hdisjoint23 hincl1 hincl2 hincl3 htmp hnot1 hnot2 hnot3 hty1 haccess =>
+      have hn := tr_simple_expr_nil cunit _ _ _ _ _ _ h1 (Or.inl rfl) hs
+      subst sl1
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h2) hincl2
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h1' := tr_expr_invariant _ _ _ _ _ _ _ h1 le' (pg4222AgreeLeft hdisjoint12 hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_assignop_val _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ h1' hinner h3 hdisjoint12 hdisjoint13 hdisjoint23 hincl1 hincl2 hincl3 htmp hnot1 hnot2 hnot3 hty1 haccess)
+  | lctx_postincr hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_postincr_effects id e1 ty ty1 sl1 a1 tmp1 sl2 a2 tmp2 bf any tmp h1 h2 hty1 hincl1 hincl2 hdisjoint haccess =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hincl1
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have hty1' : _ := hty1.trans hctype.symm
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_postincr_effects _ _ _ _ _ _ _ _ _ _ _ _ _ _ hinner h2 hty1' hincl1 hincl2 hdisjoint haccess)
+    | tr_postincr_val dst id e1 ty sl1 a1 tmp1 bf t ty1 tmp h1 hincl1 htmp hnot1 hty1 haccess =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hincl1
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have hty1' : _ := hty1.trans hctype.symm
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_postincr_val _ _ _ _ _ _ _ _ _ _ _ _ hinner hincl1 htmp hnot1 hty1' haccess)
+  | lctx_call_left hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_call_effects e1 el2 ty sl1 a1 tmp1 sl2 al2 tmp2 any tmp h1 h2 hdisjoint hincl1 hincl2 =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hincl1
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h2' := tr_exprlist_invariant _ _ _ _ _ _ h2 le' (pg4222AgreeRight hdisjoint hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_call_effects _ _ _ _ _ _ _ _ _ _ _ _ hinner h2' hdisjoint hincl1 hincl2)
+    | tr_call_val dst e1 el2 ty sl1 a1 tmp1 sl2 al2 tmp2 t tmp hdst h1 h2 hdisjoint htmp hincl1 hincl2 =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hincl1
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h2' := tr_exprlist_invariant _ _ _ _ _ _ h2 le' (pg4222AgreeRight hdisjoint hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_call_val _ _ _ _ _ _ _ _ _ _ _ _ _ hdst hinner h2' hdisjoint htmp hincl1 hincl2)
+  | lctx_call_right hs hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_call_effects e1 el2 ty sl1 a1 tmp1 sl2 al2 tmp2 any tmp h1 h2 hdisjoint hincl1 hincl2 =>
+      have hn := tr_simple_expr_nil cunit _ _ _ _ _ _ h1 (Or.inl rfl) hs
+      subst sl1
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ h2) hincl2
+      intro le' e' sl' hinner hagree htype
+      have h1' := tr_expr_invariant _ _ _ _ _ _ _ h1 le' (pg4222AgreeLeft hdisjoint hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_call_effects _ _ _ _ _ _ _ _ _ _ _ _ h1' hinner hdisjoint hincl1 hincl2)
+    | tr_call_val dst e1 el2 ty sl1 a1 tmp1 sl2 al2 tmp2 t tmp hdst h1 h2 hdisjoint htmp hincl1 hincl2 =>
+      have hn := tr_simple_expr_nil cunit _ _ _ _ _ _ h1 (Or.inl rfl) hs
+      subst sl1
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ h2) hincl2
+      intro le' e' sl' hinner hagree htype
+      have h1' := tr_expr_invariant _ _ _ _ _ _ _ h1 le' (pg4222AgreeLeft hdisjoint hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_call_val _ _ _ _ _ _ _ _ _ _ _ _ _ hdst h1' hinner hdisjoint htmp hincl1 hincl2)
+  | lctx_builtin hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_builtin_effects ef tyargs el ty sl al tmp1 any tmp h1 hincl =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ h1) hincl
+      intro le' e' sl' hinner hagree htype
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_builtin_effects _ _ _ _ _ _ _ _ _ _ hinner hincl)
+    | tr_builtin_val dst ef tyargs el ty sl al tmp1 t tmp hdst h1 htmp hincl =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ h1) hincl
+      intro le' e' sl' hinner hagree htype
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_builtin_val _ _ _ _ _ _ _ _ _ _ _ hdst hinner htmp hincl)
+  | lctx_comma hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_comma dst e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 tmp h1 h2 hdisjoint hincl1 hincl2 =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hincl1
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      have h2' := tr_expr_invariant _ _ _ _ _ _ _ h2 le' (pg4222AgreeRight hdisjoint hagree)
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_comma _ _ _ _ _ _ _ _ _ _ _ _ hinner h2' hdisjoint hincl1 hincl2)
+  | lctx_paren hctx ih =>
+    intro le e dst sl a tmps htr
+    cases htr with
+    | tr_paren_val e1 tycast ty sl1 a1 t tmp h1 htmp =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222LiftZero (ih _ _ _ _ _ _ h1) (fun _ h => h)
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_paren_val _ _ _ _ _ _ _ _ hinner htmp)
+    | tr_paren_effects e1 tycast ty sl1 a1 tmp any h1 =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222LiftZero (ih _ _ _ _ _ _ h1) (fun _ h => h)
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_paren_effects _ _ _ _ _ _ _ _ hinner)
+    | tr_paren_set t sd e1 tycast ty sl1 a1 tmp any h1 htmp =>
+      simp only [List.append_assoc, List.nil_append]
+      apply pg4222LiftZero (ih _ _ _ _ _ _ h1) (fun _ h => h)
+      intro le' e' sl' hinner hagree htype
+      have hctype := typeof_context _ _ _ hctx _ _ htype
+      simpa only [List.append_assoc, List.nil_append] using
+        (tr_expr.tr_paren_set _ _ _ _ _ _ _ _ _ _ hinner htmp)
+  | lctx_list_head hctx ih =>
+    intro le e sl a tmps htr
+    cases htr with
+    | tr_cons _ el sl1 a1 tmp1 sl2 al2 tmp2 _ h1 h2 hd hi1 hi2 =>
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hi1
+      intro le' e' sl' hinner hagree htype
+      apply tr_exprlist.tr_cons _ _ _ _ _ _ _ _ _ _ hinner
+      · exact tr_exprlist_invariant _ _ _ _ _ _ h2 le' (pg4222AgreeRight hd hagree)
+      · exact hd
+      · exact hi1
+      · exact hi2
+  | lctx_list_tail hs hctx ih =>
+    intro le e sl a tmps htr
+    cases htr with
+    | tr_cons r el sl1 a1 tmp1 sl2 al2 tmp2 _ h1 h2 hd hi1 hi2 =>
+      have hn := tr_simple_expr_nil cunit _ _ _ _ _ _ h1 (Or.inl rfl) hs
+      subst sl1
+      simp only [List.nil_append]
+      apply pg4222LiftZero (ih _ _ _ _ _ h2) hi2
+      intro le' e' sl' hinner hagree htype
+      have h1' := tr_expr_invariant _ _ _ _ _ _ _ h1 le' (pg4222AgreeLeft hd hagree)
+      simpa only [List.nil_append] using
+        tr_exprlist.tr_cons le' _ _ [] _ _ sl' _ _ _ h1' hinner hd hi1 hi2
+
+private theorem pg4222List (cunit : cprogram) {kfrom C}
+    (hctx : leftcontextlist kfrom C) : pg4222ListContext cunit C := by
+  induction hctx using leftcontextlist.rec
+    (motive_1 := fun _ C _ => pg4222ExprContext cunit C) with
+  | lctx_top => exact pg4222Expr cunit (.lctx_top kfrom)
+  | lctx_deref hctx _ =>
+    exact pg4222Expr cunit (.lctx_deref hctx)
+  | lctx_field hctx _ =>
+    exact pg4222Expr cunit (.lctx_field hctx)
+  | lctx_rvalof hctx _ =>
+    exact pg4222Expr cunit (.lctx_rvalof hctx)
+  | lctx_addrof hctx _ =>
+    exact pg4222Expr cunit (.lctx_addrof hctx)
+  | lctx_unop hctx _ =>
+    exact pg4222Expr cunit (.lctx_unop hctx)
+  | lctx_binop_left hctx _ =>
+    exact pg4222Expr cunit (.lctx_binop_left hctx)
+  | lctx_binop_right hs hctx _ =>
+    exact pg4222Expr cunit (.lctx_binop_right hs hctx)
+  | lctx_cast hctx _ =>
+    exact pg4222Expr cunit (.lctx_cast hctx)
+  | lctx_seqand hctx _ =>
+    exact pg4222Expr cunit (.lctx_seqand hctx)
+  | lctx_seqor hctx _ =>
+    exact pg4222Expr cunit (.lctx_seqor hctx)
+  | lctx_condition hctx _ =>
+    exact pg4222Expr cunit (.lctx_condition hctx)
+  | lctx_assign_left hctx _ =>
+    exact pg4222Expr cunit (.lctx_assign_left hctx)
+  | lctx_assign_right hs hctx _ =>
+    exact pg4222Expr cunit (.lctx_assign_right hs hctx)
+  | lctx_assignop_left hctx _ =>
+    exact pg4222Expr cunit (.lctx_assignop_left hctx)
+  | lctx_assignop_right hs hctx _ =>
+    exact pg4222Expr cunit (.lctx_assignop_right hs hctx)
+  | lctx_postincr hctx _ =>
+    exact pg4222Expr cunit (.lctx_postincr hctx)
+  | lctx_call_left hctx _ =>
+    exact pg4222Expr cunit (.lctx_call_left hctx)
+  | lctx_call_right hs hctx _ =>
+    exact pg4222Expr cunit (.lctx_call_right hs hctx)
+  | lctx_builtin hctx _ =>
+    exact pg4222Expr cunit (.lctx_builtin hctx)
+  | lctx_comma hctx _ =>
+    exact pg4222Expr cunit (.lctx_comma hctx)
+  | lctx_paren hctx _ =>
+    exact pg4222Expr cunit (.lctx_paren hctx)
+  | lctx_list_head hctx ih =>
+    intro le e sl a tmps htr
+    cases htr with
+    | tr_cons _ el sl1 a1 tmp1 sl2 al2 tmp2 _ h1 h2 hd hi1 hi2 =>
+      apply pg4222Lift _ (ih _ _ _ _ _ _ h1) hi1
+      intro le' e' sl' hinner hagree htype
+      apply tr_exprlist.tr_cons _ _ _ _ _ _ _ _ _ _ hinner
+      · exact tr_exprlist_invariant _ _ _ _ _ _ h2 le' (pg4222AgreeRight hd hagree)
+      · exact hd
+      · exact hi1
+      · exact hi2
+  | lctx_list_tail hs hctx ih =>
+    intro le e sl a tmps htr
+    cases htr with
+    | tr_cons r el sl1 a1 tmp1 sl2 al2 tmp2 _ h1 h2 hd hi1 hi2 =>
+      have hn := tr_simple_expr_nil cunit _ _ _ _ _ _ h1 (Or.inl rfl) hs
+      subst sl1
+      simp only [List.nil_append]
+      apply pg4222LiftZero (ih _ _ _ _ _ h2) hi2
+      intro le' e' sl' hinner hagree htype
+      have h1' := tr_expr_invariant _ _ _ _ _ _ _ h1 le' (pg4222AgreeLeft hd hagree)
+      simpa only [List.nil_append] using
+        tr_exprlist.tr_cons le' _ _ [] _ _ sl' _ _ _ h1' hinner hd hi1 hi2
+
+theorem tr_expr_leftcontext_rec : tr_expr_leftcontext_recStatement := by
+  intro cunit
+  constructor
+  · intro kfrom kto C hctx
+    exact pg4222Expr cunit hctx
+  · intro kfrom C hctx
+    exact pg4222List cunit hctx
+
+end
+end CompCert4Lean.Cfrontend.SimplExprproof

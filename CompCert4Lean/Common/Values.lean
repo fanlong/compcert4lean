@@ -3957,3 +3957,13 @@ theorem mods_divs : mods_divsStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values.Val
+
+theorem divs_pow2 : divs_pow2Statement := by
+  intro x n logn y hpow hlt hdiv
+  cases x <;> cases y <;> simp [divs, shrx] at hdiv ⊢
+  case Vint.Vint =>
+    exact ⟨hlt, (CompCert4Lean.Lib.Integers.Int.divs_pow2_proof _ _ _ hpow).symm.trans hdiv.2⟩
+
+end CompCert4Lean.Common.Values.Val

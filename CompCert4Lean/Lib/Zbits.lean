@@ -1800,3 +1800,77 @@ theorem Znatlike_ind : Znatlike_indStatement := by
         intro x hx hPx
         exact hstep x hx hPx)
       n hn0
+
+theorem Zzero_ext_spec : Zzero_ext_specStatement := by
+  unfold Zzero_ext_specStatement
+  apply Znatlike_ind
+  · intro n hn x i hi
+    unfold Zzero_ext
+    dsimp
+    rw [Ziter_base (Z → Z) n _ _ hn]
+    change zTestbit zZero i = _
+    rw [Ztestbit_0]
+    cases hcmp : zltDec i n with
+    | left hlt =>
+        change intOfZ i < intOfZ n at hlt
+        change intOfZ n ≤ 0 at hn
+        change 0 ≤ intOfZ i at hi
+        omega
+    | right hge => rfl
+  · intro n hn ih x i hi
+    have hs : intOfZ (zSucc n) = intOfZ n + 1 := by
+      simp only [zSucc, ZArith.BinInt.Z.succ, ZArith.BinInt.Z.add,
+        intOfZ_zOfInt]
+      rfl
+    have hstep : Zzero_ext (zSucc n) x =
+        Zshiftin (zOdd x) (Zzero_ext n (zDiv2 x)) := by
+      unfold Zzero_ext
+      dsimp
+      rw [Ziter_succ (Z → Z) n _ _ hn]
+    rw [hstep, Ztestbit_shiftin _ _ _ hi]
+    cases hzero : zeqDec i zZero with
+    | left hi0 =>
+        subst i
+        simp only [sumboolSelect]
+        rw [Ztestbit_base]
+        cases hlt : zltDec zZero (zSucc n) with
+        | left hlt => rfl
+        | right hge =>
+            change intOfZ (zSucc n) ≤ 0 at hge
+            change 0 ≤ intOfZ n at hn
+            omega
+    | right hi0 =>
+        simp only [sumboolSelect]
+        have hp : intOfZ (zPred i) = intOfZ i - 1 := by
+          simp only [zPred, ZArith.BinInt.Z.pred, ZArith.BinInt.Z.sub,
+            intOfZ_zOfInt]
+          rfl
+        have hine : intOfZ i ≠ 0 := by
+          intro h
+          apply hi0
+          apply intOfZ_injective
+          exact h
+        have hip : zLe zZero (zPred i) := by
+          change 0 ≤ intOfZ (zPred i)
+          change 0 ≤ intOfZ i at hi
+          omega
+        rw [ih (zDiv2 x) (zPred i) hip]
+        have hbit := Ztestbit_eq i x hi
+        rw [hzero] at hbit
+        change zTestbit x i = zTestbit (zDiv2 x) (zPred i) at hbit
+        rw [hbit]
+        cases hpred : zltDec (zPred i) n with
+        | left hpred_lt =>
+            cases hlt : zltDec i (zSucc n) with
+            | left hlt_lt => rfl
+            | right hge =>
+                change intOfZ (zPred i) < intOfZ n at hpred_lt
+                change intOfZ (zSucc n) ≤ intOfZ i at hge
+                omega
+        | right hpred_ge =>
+            cases hlt : zltDec i (zSucc n) with
+            | left hlt_lt =>
+                change intOfZ n ≤ intOfZ (zPred i) at hpred_ge
+                change intOfZ i < intOfZ (zSucc n) at hlt_lt
+                omega
+            | right hge => rfl

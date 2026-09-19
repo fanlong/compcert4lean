@@ -2079,3 +2079,84 @@ theorem inbetween_float_ex (ctx : ExactRealContext) :
     (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zorder.Zlt_succ_proof m)
 
 end CompCert4Lean.Flocq.Calc.Bracket
+
+namespace CompCert4Lean.Flocq.Calc.Bracket
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq in
+theorem inbetween_float_new_location (ctx : ExactRealContext) :
+    inbetween_float_new_locationStatement ctx := by
+  intro beta x m e l k hk hx
+  have hk' : (0 : Int) < intOfZ k := hk
+  have hr (q : Z) :
+      F2R ctx (Float beta q (Zadd e k)) =
+        F2R ctx (Float beta (Zmul q (Zpower (beta : Z) k)) e) := by
+    have hek : Zle e (Zadd e k) := by
+      change intOfZ e ≤ intOfZ (Zadd e k)
+      simp only [Zadd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+      omega
+    have h := CompCert4Lean.Flocq.Core.Float_prop.F2R_change_exp
+      ctx beta e q (Zadd e k) hek
+    have hsub : ZArith.BinInt.Z.sub (Zadd e k) e = k := by
+      apply intOfZ_injective
+      simp only [Zadd, ZArith.BinInt.Z.sub,
+        ZArith.BinInt.Z.add, intOfZ_zOfInt]
+      omega
+    change F2R ctx (Float beta q (Zadd e k)) =
+      F2R ctx (Float beta (Zmul q (Zpower (beta : Z)
+        (ZArith.BinInt.Z.sub (Zadd e k) e))) e) at h
+    rw [hsub] at h
+    exact h
+  let n := Zpower (beta : Z) k
+  let q := Zdiv m n
+  let r := Zmod m n
+  let step := CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e
+  let start := F2R ctx (Float beta (Zmul q n) e)
+  have hn : Zlt Zone n := CompCert4Lean.Flocq.Core.Zaux.Zpower_gt_1 beta k hk
+  have hn0 : Zlt Z0 n := by
+    change (0 : Int) < intOfZ n
+    have hn' : (1 : Int) < intOfZ n := hn
+    omega
+  have hstep : Rlt ctx (IZR ctx Z0) step := by
+    change ctx.spec.lt (ctx.spec.ofZ Z0) step
+    rw [ctx.certificate.sourceLaws.ofZ_zero]
+    exact bracket_bpow_pos ctx beta e
+  have hrem : Zle Z0 r ∧ Zlt r n := ZArith.Zdiv.Z_mod_lt m n hn0
+  have hgrid (a : Z) :
+      Rplus ctx start (Rmult ctx (IZR ctx a) step) =
+        F2R ctx (Float beta (Zadd (Zmul q n) a) e) := by
+    change ctx.spec.add (ctx.spec.mul (ctx.spec.ofZ (Zmul q n)) step)
+      (ctx.spec.mul (ctx.spec.ofZ a) step) =
+        ctx.spec.mul (ctx.spec.ofZ (Zadd (Zmul q n) a)) step
+    rw [ctx.certificate.sourceLaws.ofZ_add, middle_mul_add_right]
+  have hdiv : Zadd (Zmul q n) r = m := by
+    have h := ZArith.Zdiv.Z_div_mod_eq_full m n
+    apply intOfZ_injective
+    have h' := congrArg intOfZ h
+    change intOfZ m = intOfZ (Zadd (Zmul n q) r) at h'
+    simp only [Zadd, Zmul, ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+      intOfZ_zOfInt] at h' ⊢
+    rw [Int.mul_comm] at h'
+    exact h'.symm
+  have hdiv1 : Zadd (Zmul q n) (Zadd r Zone) = Zadd m Zone := by
+    have h' := congrArg intOfZ hdiv
+    apply intOfZ_injective
+    simp only [Zadd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at h' ⊢
+    omega
+  have hu : Zmul (Zadd q Zone) n = Zadd (Zmul q n) n := by
+    apply intOfZ_injective
+    simp only [Zadd, Zmul, ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+      intOfZ_zOfInt]
+    change (intOfZ q + 1) * intOfZ n = intOfZ q * intOfZ n + intOfZ n
+    rw [Int.add_mul, Int.one_mul]
+  unfold inbetween_float at hx ⊢
+  change inbetween ctx (F2R ctx (Float beta q (Zadd e k)))
+    (F2R ctx (Float beta (Zadd q Zone) (Zadd e k))) x (new_location n r l)
+  rw [hr, hr]
+  change inbetween ctx start (F2R ctx (Float beta (Zmul (Zadd q Zone) n) e))
+    x (new_location n r l)
+  rw [hu, ← hgrid n]
+  apply new_location_correct ctx start step n hstep hn x r l hrem
+  rw [hgrid r, hgrid (Zadd r Zone), hdiv, hdiv1]
+  exact hx
+
+end CompCert4Lean.Flocq.Calc.Bracket

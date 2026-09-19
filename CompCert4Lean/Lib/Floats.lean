@@ -3594,3 +3594,210 @@ theorem quiet_nan_32_proof : quiet_nan_32_proofStatement := by
     (quiet_nan_32_payload_bounds p).2
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem float64_of_int_two_bits
+    [certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate z53 z1024] :
+    Float.of_int (Integers.Int.repr (ZArith.BinInt.Z.of_nat 2)) =
+      ⟨BitVec.ofNat 64 4611686018427387904⟩ := by
+  rfl
+
+private theorem float64_unpack_two_bits :
+    _root_.Float.Model.UnpackedFloat.unpack _root_.Float.Model.Format.binary64
+        (BitVec.ofNat 64 4611686018427387904) =
+      .finite .positive 4503599627370496 (-51) (by decide) := by
+  rfl
+
+private theorem shiftToTargetExponent_scale64
+    (m k : Nat) (e : Int) (hm : m ≠ 0)
+    (hle : e ≤ _root_.Float.Model.Format.binary64.targetExponent
+      (_root_.Float.Model.totalExponent m e)) :
+    _root_.Float.Model.UnpackedFloat.shiftToTargetExponent
+        _root_.Float.Model.Format.binary64 (m * 2 ^ k) (e - (k : Int))
+        _root_.Float.Model.UnpackedFloat.Accuracy.exact =
+      _root_.Float.Model.UnpackedFloat.shiftToTargetExponent
+        _root_.Float.Model.Format.binary64 m e
+        _root_.Float.Model.UnpackedFloat.Accuracy.exact := by
+  have htotal :
+      _root_.Float.Model.totalExponent (m * 2 ^ k) (e - (k : Int)) =
+        _root_.Float.Model.totalExponent m e := by
+    unfold _root_.Float.Model.totalExponent
+    rw [log2_mul_pow m k hm]
+    omega
+  unfold _root_.Float.Model.UnpackedFloat.shiftToTargetExponent
+  rw [htotal]
+  unfold _root_.Float.Model.UnpackedFloat.shiftToExponent
+  let t := _root_.Float.Model.Format.binary64.targetExponent
+    (_root_.Float.Model.totalExponent m e)
+  have hnonneg : 0 ≤ t - e := by omega
+  have hdiff : t - (e - (k : Int)) = (k : Int) + (t - e) := by omega
+  change
+    ((_root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+        (m * 2 ^ k) _root_.Float.Model.UnpackedFloat.Accuracy.exact >>>
+          (t - (e - (k : Int))).toNat),
+        e - (k : Int) + (t - (e - (k : Int))).toNat) =
+      ((_root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+        m _root_.Float.Model.UnpackedFloat.Accuracy.exact >>> (t - e).toNat),
+        e + (t - e).toNat)
+  rw [hdiff, Int.toNat_add (Int.ofNat_nonneg k) hnonneg]
+  apply Prod.ext
+  · exact extendedMantissa_shift_pow_add m k (t - e).toNat
+  · simp only [Int.toNat_natCast]
+    have hcast : ((t - e).toNat : Int) = t - e := Int.toNat_of_nonneg hnonneg
+    omega
+
+private theorem round_double_worker64
+    (s : _root_.Float.Model.UnpackedFloat.Sign) (m : Nat) (e : Int)
+    (hm : 0 < m) :
+    _root_.Float.Model.UnpackedFloat.round _root_.Float.Model.Format.binary64
+        s (m + m) e =
+      _root_.Float.Model.UnpackedFloat.roundWithAccuracy
+        _root_.Float.Model.Format.binary64 s (m * 4503599627370496) (e - 51)
+        _root_.Float.Model.UnpackedFloat.Accuracy.exact := by
+  let a := m + m
+  let t := _root_.Float.Model.Format.binary64.targetExponent
+    (_root_.Float.Model.totalExponent a e)
+  let d := (e - t).toNat
+  have ha : a ≠ 0 := by simp [a, Nat.ne_of_gt hm]
+  have hloga : a.log2 = m.log2 + 1 := by
+    rw [show a = 2 * m by omega, Nat.log2_two_mul (Nat.ne_of_gt hm)]
+  have ht_lower : e - 51 ≤ t := by
+    dsimp [t]
+    change e - 51 ≤ max ((a.log2 : Int) + 1 + e - 53) (-1074)
+    rw [hloga]
+    omega
+  have hdle : d ≤ 51 := by
+    dsimp [d]
+    omega
+  let c := a * 2 ^ d
+  let ec := e - (d : Int)
+  have hc : c ≠ 0 :=
+    Nat.mul_ne_zero ha (Nat.ne_of_gt (Nat.two_pow_pos d))
+  have htotalc :
+      _root_.Float.Model.totalExponent c ec =
+        _root_.Float.Model.totalExponent a e := by
+    dsimp [c, ec]
+    unfold _root_.Float.Model.totalExponent
+    rw [log2_mul_pow a d ha]
+    omega
+  have hlec : ec ≤ _root_.Float.Model.Format.binary64.targetExponent
+      (_root_.Float.Model.totalExponent c ec) := by
+    rw [htotalc]
+    change e - (d : Int) ≤ t
+    dsimp [d]
+    omega
+  have hscale := shiftToTargetExponent_scale64 c (51 - d) ec hc hlec
+  have hmant : c * 2 ^ (51 - d) = m * 4503599627370496 := by
+    dsimp [c, a]
+    rw [Nat.mul_assoc, ← Nat.pow_add, Nat.add_sub_of_le hdle]
+    change (m + m) * 2251799813685248 = m * 4503599627370496
+    omega
+  have hexp : ec - ((51 - d : Nat) : Int) = e - 51 := by
+    dsimp [ec]
+    omega
+  rw [hmant, hexp] at hscale
+  unfold _root_.Float.Model.UnpackedFloat.round
+    _root_.Float.Model.UnpackedFloat.decreaseExponent
+  dsimp only
+  change
+    _root_.Float.Model.UnpackedFloat.roundWithAccuracy
+        _root_.Float.Model.Format.binary64 s (a <<< d) ec
+        _root_.Float.Model.UnpackedFloat.Accuracy.exact = _
+  rw [Nat.shiftLeft_eq]
+  change
+    _root_.Float.Model.UnpackedFloat.roundWithAccuracy
+        _root_.Float.Model.Format.binary64 s c ec
+        _root_.Float.Model.UnpackedFloat.Accuracy.exact = _
+  unfold _root_.Float.Model.UnpackedFloat.roundWithAccuracy
+  rw [← hscale]
+
+private theorem unpacked_add_self_mul_two_worker64
+    (a : _root_.Float.Model.UnpackedFloat) :
+    _root_.Float.Model.UnpackedFloat.add _root_.Float.Model.Format.binary64 a a =
+      _root_.Float.Model.UnpackedFloat.mul _root_.Float.Model.Format.binary64 a
+        (.finite .positive 4503599627370496 (-51) (by decide)) := by
+  cases a with
+  | notANumber => rfl
+  | infinity s => cases s <;> rfl
+  | zero s => cases s <;> rfl
+  | finite s m e hm =>
+      have hmI : (0 : Int) < (m : Int) := by omega
+      cases s with
+      | negative =>
+        simp only [_root_.Float.Model.UnpackedFloat.add,
+          _root_.Float.Model.UnpackedFloat.mul,
+          _root_.Float.Model.UnpackedFloat.decreaseExponent,
+          _root_.Float.Model.UnpackedFloat.Sign.apply,
+          _root_.Float.Model.UnpackedFloat.normalize, Int.min_self, Int.sub_self,
+          Int.toNat_zero, Nat.shiftLeft_zero]
+        have hc : compare (-(m : Int) + -(m : Int)) 0 = .lt :=
+          Int.compare_eq_lt.mpr (by omega)
+        rw [hc]
+        have hnat : (-(-(m : Int) + -(m : Int))).toNat = m + m := by omega
+        rw [hnat]
+        change
+          _root_.Float.Model.UnpackedFloat.round _root_.Float.Model.Format.binary64
+              .negative (m + m) e =
+            _root_.Float.Model.UnpackedFloat.roundWithAccuracy
+              _root_.Float.Model.Format.binary64 .negative (m * 4503599627370496) (e - 51)
+              _root_.Float.Model.UnpackedFloat.Accuracy.exact
+        exact round_double_worker64 .negative m e hm
+      | positive =>
+        simp only [_root_.Float.Model.UnpackedFloat.add,
+          _root_.Float.Model.UnpackedFloat.mul,
+          _root_.Float.Model.UnpackedFloat.decreaseExponent,
+          _root_.Float.Model.UnpackedFloat.Sign.apply,
+          _root_.Float.Model.UnpackedFloat.normalize, Int.min_self, Int.sub_self,
+          Int.toNat_zero, Nat.shiftLeft_zero]
+        have hc : compare ((m : Int) + (m : Int)) 0 = .gt :=
+          Int.compare_eq_gt.mpr (by omega)
+        rw [hc]
+        have hnat : ((m : Int) + (m : Int)).toNat = m + m := by omega
+        rw [hnat]
+        change
+          _root_.Float.Model.UnpackedFloat.round _root_.Float.Model.Format.binary64
+              .positive (m + m) e =
+            _root_.Float.Model.UnpackedFloat.roundWithAccuracy
+              _root_.Float.Model.Format.binary64 .positive (m * 4503599627370496) (e - 51)
+              _root_.Float.Model.UnpackedFloat.Accuracy.exact
+        exact round_double_worker64 .positive m e hm
+
+private theorem model_add_self_mul_two_worker64
+    [certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate z53 z1024]
+    (f : float) :
+    modelBinary64
+        (_root_.Float.Model.UnpackedFloat.add _root_.Float.Model.Format.binary64) f f =
+      modelBinary64
+        (_root_.Float.Model.UnpackedFloat.mul _root_.Float.Model.Format.binary64) f
+          (Float.of_int (Integers.Int.repr (ZArith.BinInt.Z.of_nat 2))) := by
+  rw [float64_of_int_two_bits]
+  unfold modelBinary64
+  rw [float64_unpack_two_bits, unpacked_add_self_mul_two_worker64]
+
+private theorem isNaN_of_int_two_worker64
+    [certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate z53 z1024] :
+    isNaN64 (Float.of_int (Integers.Int.repr (ZArith.BinInt.Z.of_nat 2))) = false := by
+  rw [float64_of_int_two_bits]
+  rfl
+
+namespace Float
+
+theorem mul2_add
+    [certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate z53 z1024] :
+    Float.mul2_addStatement := by
+  intro f
+  unfold Float.add Float.mul
+  rw [model_add_self_mul_two_worker64]
+  have htwo := isNaN_of_int_two_worker64
+  by_cases hf : isNaN64 f = true
+  · simp only [finishBinary, binop_nan, cons_pl, hf, htwo, Bool.true_or,
+      Bool.false_eq_true, ↓reduceIte]
+    rw [CompCert4Lean.X86_64.Archi.choose_nan_64_idem]
+  · simp [finishBinary, hf, htwo]
+
+end Float
+
+end CompCert4Lean.Lib.Floats

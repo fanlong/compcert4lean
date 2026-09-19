@@ -5304,3 +5304,243 @@ theorem store_init_data_list_charact : store_init_data_list_charactStatement := 
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+
+namespace CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+namespace Genv
+
+private theorem pg_alloc_nonempty_order_eq (p : permission)
+    (h : perm_order Memtype.Nonempty p) : p = Memtype.Nonempty := by
+  cases h <;> rfl
+
+private theorem pg_load_store_invariant
+    (F V : Type) (ge : t F V) (m m' : mem) (b : block)
+    (hunch : Mem.unchanged_on (fun _ _ => True) m m')
+    (_hvalid : Mem.valid_block m b) :
+    ∀ il p, load_store_init_data ge m b p il →
+      load_store_init_data ge m' b p il := by
+  intro il
+  induction il with
+  | nil => intro p h; trivial
+  | cons i rest ih =>
+      intro p h
+      cases i with
+      | Init_int8 n =>
+          rcases h with ⟨hh, ht⟩
+          constructor
+          · exact pg_load_unchanged_on (fun _ _ => True) m m' Mint8unsigned b p _ hunch
+              (by intro _ _; trivial) hh
+          · exact ih (zAdd p (zOfNat 1)) ht
+      | Init_int16 n =>
+          rcases h with ⟨hh, ht⟩
+          constructor
+          · exact pg_load_unchanged_on (fun _ _ => True) m m' Mint16unsigned b p _ hunch
+              (by intro _ _; trivial) hh
+          · exact ih (zAdd p (zOfNat 2)) ht
+      | Init_int32 n =>
+          rcases h with ⟨hh, ht⟩
+          constructor
+          · exact pg_load_unchanged_on (fun _ _ => True) m m' Mint32 b p _ hunch
+              (by intro _ _; trivial) hh
+          · exact ih (zAdd p (zOfNat 4)) ht
+      | Init_int64 n =>
+          rcases h with ⟨hh, ht⟩
+          constructor
+          · exact pg_load_unchanged_on (fun _ _ => True) m m' Mint64 b p _ hunch
+              (by intro _ _; trivial) hh
+          · exact ih (zAdd p (zOfNat 8)) ht
+      | Init_float32 n =>
+          rcases h with ⟨hh, ht⟩
+          constructor
+          · exact pg_load_unchanged_on (fun _ _ => True) m m' Mfloat32 b p _ hunch
+              (by intro _ _; trivial) hh
+          · exact ih (zAdd p (zOfNat 4)) ht
+      | Init_float64 n =>
+          rcases h with ⟨hh, ht⟩
+          constructor
+          · exact pg_load_unchanged_on (fun _ _ => True) m m' Mfloat64 b p _ hunch
+              (by intro _ _; trivial) hh
+          · exact ih (zAdd p (zOfNat 8)) ht
+      | Init_addrof symb ofs =>
+          rcases h with ⟨⟨b', hs, hh⟩, ht⟩
+          constructor
+          · exact ⟨b', hs, pg_load_unchanged_on (fun _ _ => True) m m' Mptr b p _ hunch
+              (by intro _ _; trivial) hh⟩
+          · exact ih (zAdd p (size_chunk Mptr)) ht
+      | Init_space n =>
+          rcases h with ⟨hz, ht⟩
+          constructor
+          · intro chunk q hlo hhi halign
+            exact pg_load_unchanged_on (fun _ _ => True) m m' chunk b q _ hunch
+              (by intro _ _; trivial) (hz chunk q hlo hhi halign)
+          · exact ih (zAdd p (zMax n z0)) ht
+
+
+theorem alloc_global_initialized
+    (F V : Type) (ge g : t F V) (m : mem) (id : ident)
+    (gd : globdef F V) (m' : mem)
+    (hnext : g.genv_next = m.nextblock)
+    (halloc : alloc_global ge m (id, gd) = some m')
+    (hglobals : globals_initialized ge g m) :
+    globals_initialized ge (add_global g (id, gd)) m' ∧
+      (add_global g (id, gd)).genv_next = m'.nextblock := by
+  have hnextalloc := alloc_global_nextblock F V ge (id, gd) m m' halloc
+  constructor
+  · intro b gd' hfind
+    unfold find_def at hfind
+    change PTree.get b (PTree.set g.genv_next gd g.genv_defs) = some gd' at hfind
+    rw [PTree.gsspec_proof (show positive from b)
+      (show positive from g.genv_next) gd g.genv_defs] at hfind
+    cases heq : peq (show positive from b) (show positive from g.genv_next) with
+    | left hbeq =>
+        rw [heq] at hfind
+        cases Option.some.inj hfind
+        have hb : b = g.genv_next := hbeq
+        cases hb
+        cases gd with
+        | Gfun f =>
+            unfold alloc_global at halloc
+            cases ha : Mem.alloc m z0 z1 with
+            | mk m1 bnew =>
+                have hdrop : Mem.drop_perm m1 bnew z0 z1 Memtype.Nonempty = some m' := by
+                  simpa [ha] using halloc
+                have hbnew := Mem.alloc_result m z0 z1 m1 bnew ha
+                have hgb : g.genv_next = bnew := hnext.trans hbnew.symm
+                rw [hgb]
+                constructor
+                · exact Mem.perm_drop_1 m1 bnew z0 z1 Nonempty m' hdrop z0 Cur
+                    (by constructor <;> change (0:Int) ≤ 0 <;> omega)
+                · intro ofs k prm hp
+                  have hp1 := Mem.perm_drop_4 m1 bnew z0 z1 Nonempty m' hdrop
+                    bnew ofs k prm hp
+                  have hbounds := Mem.perm_alloc_3 m z0 z1 m1 bnew ha ofs k prm hp1
+                  have hord := Mem.perm_drop_2 m1 bnew z0 z1 Nonempty m' hdrop
+                    ofs k prm hbounds hp
+                  constructor
+                  · apply intOfZ_injective
+                    have hlo := hbounds.1
+                    have hhi := hbounds.2
+                    change (0 : Int) ≤ intOfZ ofs at hlo
+                    change intOfZ ofs < 1 at hhi
+                    change intOfZ ofs = 0
+                    omega
+                  · exact pg_alloc_nonempty_order_eq prm hord
+        | Gvar v =>
+            unfold alloc_global at halloc
+            cases ha : Mem.alloc m z0 (init_data_list_size v.gvar_init) with
+            | mk m1 bnew =>
+                cases hz : store_zeros m1 bnew z0
+                    (init_data_list_size v.gvar_init) with
+                | none => simp [ha, hz] at halloc
+                | some m2 =>
+                    cases hl : store_init_data_list ge m2 bnew z0 v.gvar_init with
+                    | none => simp [ha, hz, hl] at halloc
+                    | some m3 =>
+                        have hdrop : Mem.drop_perm m3 bnew z0
+                            (init_data_list_size v.gvar_init) (perm_globvar v) = some m' := by
+                          simpa [ha, hz, hl] using halloc
+                        have hbnew := Mem.alloc_result m z0
+                          (init_data_list_size v.gvar_init) m1 bnew ha
+                        have hgb : g.genv_next = bnew := hnext.trans hbnew.symm
+                        rw [hgb]
+                        constructor
+                        · intro ofs hofs
+                          exact Mem.perm_drop_1 m3 bnew z0
+                            (init_data_list_size v.gvar_init) (perm_globvar v) m' hdrop ofs Cur hofs
+                        constructor
+                        · intro ofs k prm hp
+                          have hp3 := Mem.perm_drop_4 m3 bnew z0
+                            (init_data_list_size v.gvar_init) (perm_globvar v) m' hdrop
+                            bnew ofs k prm hp
+                          have hp2 := (store_init_data_list_perm F V ge k prm
+                            bnew ofs v.gvar_init bnew m2 z0 m3 hl).mpr hp3
+                          have hp1 := (store_zeros_perm k prm bnew ofs m1 bnew z0
+                            (init_data_list_size v.gvar_init) m2 hz).mpr hp2
+                          have hbounds := Mem.perm_alloc_3 m z0
+                            (init_data_list_size v.gvar_init) m1 bnew ha ofs k prm hp1
+                          exact ⟨hbounds, Mem.perm_drop_2 m3 bnew z0
+                            (init_data_list_size v.gvar_init) (perm_globvar v) m' hdrop
+                            ofs k prm hbounds hp⟩
+                        constructor
+                        · intro hnonvol
+                          have hchar := store_init_data_list_charact F V ge bnew
+                            v.gvar_init m2 z0 m3 hl
+                            (store_zeros_read_as_zero m1 bnew z0
+                              (init_data_list_size v.gvar_init) m2 hz)
+                          apply load_store_init_data_invariant F V ge m3 m' bnew
+                            (fun chunk ofs => by
+                              exact Mem.load_drop m3 bnew z0
+                                (init_data_list_size v.gvar_init) (perm_globvar v) m' hdrop
+                                chunk bnew ofs
+                                (Or.inr (Or.inr (Or.inr (by
+                                  unfold perm_globvar
+                                  rw [hnonvol]
+                                  cases v.gvar_readonly <;> constructor)))))
+                            v.gvar_init z0 hchar
+                        · intro hnonvol
+                          have hload := store_init_data_list_loadbytes F V ge bnew
+                            v.gvar_init m2 z0 m3 hl
+                            (store_zeros_loadbytes m1 bnew z0
+                              (init_data_list_size v.gvar_init) m2 hz)
+                          have hread : perm_order (perm_globvar v) Readable := by
+                            unfold perm_globvar
+                            rw [hnonvol]
+                            cases v.gvar_readonly <;> constructor
+                          exact Mem.loadbytes_drop m3 bnew z0
+                            (init_data_list_size v.gvar_init) (perm_globvar v) m' hdrop
+                            bnew z0 (init_data_list_size v.gvar_init)
+                            (Or.inr (Or.inr (Or.inr hread))) |>.trans hload
+    | right hbne =>
+        rw [heq] at hfind
+        have hold : find_def g b = some gd' := hfind
+        have hvalid : Mem.valid_block m b := by
+          change Plt b m.nextblock
+          rw [← hnext]
+          exact g.genv_defs_range b hold
+        have hunch := alloc_global_unchanged F V ge
+          (fun _ _ => True) m id gd m' halloc
+        have holdprops := hglobals b gd' hold
+        cases gd' with
+        | Gfun f =>
+            constructor
+            · exact (hunch.unchanged_on_perm b z0 Cur Memtype.Nonempty trivial hvalid).mp
+                holdprops.1
+            · intro ofs k prm hp
+              apply holdprops.2 ofs k prm
+              exact (hunch.unchanged_on_perm b ofs k prm trivial hvalid).mpr hp
+        | Gvar v =>
+            constructor
+            · intro ofs hi
+              exact (hunch.unchanged_on_perm b ofs Cur (perm_globvar v)
+                trivial hvalid).mp (holdprops.1 ofs hi)
+            constructor
+            · intro ofs k prm hp
+              apply holdprops.2.1 ofs k prm
+              exact (hunch.unchanged_on_perm b ofs k prm trivial hvalid).mpr hp
+            constructor
+            · intro hnonvol
+              exact pg_load_store_invariant F V ge m m' b hunch hvalid
+                v.gvar_init z0 (holdprops.2.2.1 hnonvol)
+            · intro hnonvol
+              exact pg_store_zeros_loadbytes_unchanged (fun _ _ => True) m m' b z0
+                (init_data_list_size v.gvar_init) _ hunch
+                (init_data_list_size_pos v.gvar_init)
+                (by intro _ _; trivial)
+                (holdprops.2.2.2 hnonvol)
+  · change PArith.BinPos.Pos.succ g.genv_next = m'.nextblock
+    rw [hnext]
+    exact hnextalloc.symm
+
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

@@ -8401,3 +8401,90 @@ theorem sign_ext_widen_proof : sign_ext_widen := by
               simp only [hselpred, sumboolSelect]
 
 end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers.Int
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem suffix_shl_one_repr (a : Z)
+    (ha : zLe zZero a ∧ zLt a zwordsize) :
+    shl one (repr a) = repr (zTwoP a) := by
+  change WordCore.repr wordsize
+      (zShiftl (unsigned one) (unsigned (repr a))) =
+    WordCore.repr wordsize (zTwoP a)
+  have hu : unsigned (repr a) = a := by
+    rw [suffix_unsigned_repr_eq_exact]
+    apply ZArith.BinInt.Z.mod_small
+    constructor
+    · exact ha.1
+    · change intOfZ a < (2 ^ wordsize : Int)
+      change intOfZ a < intOfZ (zTwoP zwordsize)
+      rw [show intOfZ (zTwoP zwordsize) = (2 : Int) ^ wordsize by
+        unfold zTwoP
+        unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p
+        unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpower.two_p
+        unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow
+        rfl]
+      have hw : intOfZ a < Int.ofNat wordsize := ha.2
+      have hpow : (Int.ofNat wordsize : Int) < (2 : Int) ^ wordsize := by decide
+      omega
+  rw [hu]
+  have hone : unsigned one = zOne := by rfl
+  rw [hone]
+  have hs := CompCert4Lean.Lib.Zbits.Zshiftl_mul_two_p zOne a ha.1
+  have hsm : zShiftl zOne a = zMul zOne (zTwoP a) := by exact hs
+  rw [hsm]
+  simpa [zOne] using congrArg (WordCore.repr wordsize) (ZArith.BinInt.Zmult_1_l_proof (zTwoP a))
+
+end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers.Int
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem one_bits_decomp_proof : one_bits_decomp := by
+  unfold one_bits_decomp
+  intro x
+  have hfold : ∀ (l : List Z),
+      (∀ a ∈ l, zLe zZero a ∧ zLt a zwordsize) →
+      repr (CompCert4Lean.Lib.Zbits.powerserie l) =
+        one_bits_decomp.intOfOneBits (l.map repr) := by
+    intro l hl
+    induction l with
+    | nil => rfl
+    | cons a l ih =>
+        have ha := hl a (by simp)
+        have hl' : ∀ b ∈ l, zLe zZero b ∧ zLt b zwordsize := by
+          intro b hb
+          exact hl b (by simp [hb])
+        have hi := ih hl'
+        simp only [CompCert4Lean.Lib.Zbits.powerserie, List.map_cons,
+          one_bits_decomp.intOfOneBits]
+        rw [add_unsigned_proof]
+        rw [suffix_shl_one_repr a ha]
+        rw [← hi]
+        apply eqm_samerepr_proof
+        apply eqm_add_proof
+        · exact suffix_eqm_unsigned_repr _
+        · exact suffix_eqm_unsigned_repr _
+  have hxr : zLe zZero (unsigned x) ∧
+      zLt (unsigned x) (zTwoPowerNat wordsize) := by
+    have hu := unsigned_range_proof x
+    simpa [modulus] using hu
+  have hp := CompCert4Lean.Lib.Zbits.Z_one_bits_powerserie
+    wordsize (unsigned x) hxr
+  have hx : x = repr (unsigned x) := (repr_unsigned_proof x).symm
+  have hu : unsigned (repr (unsigned x)) = unsigned x := by
+    rw [suffix_unsigned_repr_eq_exact]
+    apply ZArith.BinInt.Z.mod_small
+    exact ⟨hxr.1, hxr.2⟩
+  rw [hx]
+  unfold one_bits
+  rw [hu]
+  have hrepr : repr (unsigned x) = repr (CompCert4Lean.Lib.Zbits.powerserie
+      (CompCert4Lean.Lib.Zbits.Z_one_bits wordsize (unsigned x) zZero)) :=
+    congrArg repr hp
+  rw [hrepr]
+  apply hfold
+  intro a ha
+  exact CompCert4Lean.Lib.Zbits.Z_one_bits_range wordsize (unsigned x) a ha
+
+end CompCert4Lean.Lib.Integers.Int

@@ -3440,3 +3440,23 @@ theorem simple_can_eval_rval
     xi ge f k e m C r v hv hcontext hsafe⟩
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+theorem simple_can_eval_lval
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    simple_can_eval_lvalStatement := by
+  unfold simple_can_eval_lvalStatement
+  intro xi ge f k e m l C hs hcontext hsafe
+  have hl := simple_can_eval
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    xi ge f k e m l .LV C hs hcontext hsafe
+  rcases hl with ⟨b, ofs, bf, hv⟩
+  exact ⟨b, ofs, bf, hv, eval_simple_lvalue_safe
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    xi ge f k e m C l b ofs bf hv hcontext hsafe⟩
+
+end CompCert4Lean.Cfrontend.Cstrategy

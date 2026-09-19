@@ -4159,3 +4159,64 @@ theorem store_normalized_range_sound : store_normalized_range_soundStatement := 
     exact Val.lessdef_refl _
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSE
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+
+theorem kill_loads_after_storebytes_holds
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    kill_loads_after_storebytes_holdsStatement := by
+  intro valu ge sp rs m n dst b ofs bytes m' bc sz
+    hnum hp hstore hge hsp hlen hsz
+  apply kill_equations_hold valu ge (Vptr sp Ptrofs.zero) rs m n
+    (CSE.filter_after_store n dst sz) m' hnum
+  intro rh res hfilter hvalid hev
+  unfold CSE.filter_after_store at hfilter
+  cases hev with
+  | op_eval_to op vl res heval =>
+      have hop := cse_operation_memory_independent
+        (F := RTL.fundef) (V := Unit) ge (Vptr sp Ptrofs.zero) op
+        (List.map valu vl) m m' hfilter
+      exact rhs_eval_to.op_eval_to op vl res (by rw [← hop]; exact heval)
+  | load_eval_to chunk2 addr2 vl2 a2 res p2 haddr2 hload =>
+      cases hvalid with
+      | load_valid _ _ _ _ _ b' ofs' bc' ha' hp' hg' hs' =>
+          have heqa : a2 = Vptr b' ofs' := Option.some.inj (haddr2.symm.trans ha')
+          subst a2
+          apply rhs_eval_to.load_eval_to chunk2 addr2 vl2 (Vptr b' ofs') res p2 haddr2
+          change Mem.load chunk2 m' b' (Ptrofs.unsigned ofs') = some res
+          change Mem.load chunk2 m b' (Ptrofs.unsigned ofs') = some res at hload
+          have hd : pdisjoint p2 (size_chunk chunk2) dst sz = true := by
+            change (!pdisjoint p2 (size_chunk chunk2) dst sz) = false at hfilter
+            cases hd' : pdisjoint p2 (size_chunk chunk2) dst sz <;>
+              simp_all
+          have hbytes : zOfNat bytes.length = sz := by
+            rw [hlen]
+            exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Z2Nat.id sz hsz
+          rw [Mem.load_storebytes_other m b (Ptrofs.unsigned ofs) bytes m' hstore
+            chunk2 b' (Ptrofs.unsigned ofs')]
+          · exact hload
+          · have hdis := cse_store_disjoint (size_chunk chunk2) b' ofs' bc' p2
+                sz b ofs bc dst ge sp hd hp' hp hg' hs' hge hsp
+            rcases hdis with hdis | hdis | hdis
+            · exact Or.inl hdis
+            · exact Or.inr (Or.inl hdis)
+            · exact Or.inr (Or.inr (by simpa only [hbytes] using hdis))
+  | builtin_eval_to bf args' vargs res hargs hsem =>
+      exact rhs_eval_to.builtin_eval_to bf args' vargs res
+        (cse_builtin_args_memory_independent m'
+          (CompCert4Lean.Common.Globalenvs.Genv.to_senv ge) valu
+          (Vptr sp Ptrofs.zero) m args' vargs hargs hfilter) hsem
+
+end CompCert4Lean.Backend.CSEproof
