@@ -6263,3 +6263,124 @@ theorem pred_pos_plus_ulp :
       pred_pos_plus_ulpStatement ctx magnitude := by
   intro ctx magnitude
   exact pg_sp_pred_pos_plus_ulp ctx magnitude
+
+theorem round_DN_minus_eps_pos :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      round_DN_minus_eps_posStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x hxpos hxformat eps heps
+  have hxle : Exact.Rle ctx (Exact.R0 ctx) x :=
+    (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxpos |>.1
+  have hpred := pred_eq_pos ctx magnitude beta fexp x hxle
+  rw [hpred]
+  let y : Exact.R ctx := Exact.pred_pos ctx magnitude beta fexp x
+  let u : Exact.R ctx := Exact.ulp ctx magnitude beta fexp y
+  let delta : Exact.R ctx := Exact.Rminus ctx u eps
+  have hepsu : Exact.Rle ctx eps u := by
+    simpa [u, y, hpred] using heps.2
+  have hepspos : Exact.Rlt ctx (Exact.R0 ctx) eps := heps.1
+  have hyformat : Exact.generic_format ctx magnitude beta fexp y := by
+    exact generic_format_pred_pos ctx magnitude beta fexp hvalid x hxformat hxpos
+  have hsum : Exact.Rplus ctx y u = x := by
+    exact pred_pos_plus_ulp ctx magnitude beta fexp hvalid x hxpos hxformat
+  change Exact.round ctx magnitude beta fexp
+      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx)
+      (Exact.Rminus ctx x eps) = y
+  rw [← hsum]
+  have heq : Exact.Rminus ctx (Exact.Rplus ctx y u) eps =
+      Exact.Rplus ctx y delta := by
+    change ctx.spec.add (ctx.spec.add y u) (ctx.spec.neg eps) =
+      ctx.spec.add y (ctx.spec.add u (ctx.spec.neg eps))
+    rw [ctx.certificate.orderedField.add_assoc]
+  rw [heq]
+  by_cases hyzero : y = Exact.R0 ctx
+  · rw [hyzero]
+    by_cases heqeps : eps = u
+    · have hzero : delta = Exact.R0 ctx := by
+        change ctx.spec.add u (ctx.spec.neg eps) = ctx.spec.zero
+        rw [heqeps, ctx.certificate.orderedField.add_comm,
+          ctx.certificate.orderedField.neg_add_cancel]
+      rw [hzero]
+      have hzformat : Exact.generic_format ctx magnitude beta fexp (Exact.R0 ctx) :=
+        pg_pred_ge_gt_generic_format_zero ctx magnitude beta fexp
+      change Exact.round ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx)
+        (ctx.spec.add ctx.spec.zero ctx.spec.zero) = ctx.spec.zero
+      rw [ctx.certificate.orderedField.zero_add]
+      exact pg_sllt_round_generic ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx)
+        (pg_sllt_valid_rnd_DN ctx) (Exact.R0 ctx) hzformat
+    · have hlt : Exact.Rlt ctx eps u := by
+        rcases ctx.certificate.total_order eps u with h | h
+        · rcases h with hlt | heq
+          · exact hlt
+          · exact (heqeps heq).elim
+        · exact False.elim
+            (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h).2 hepsu)
+      have hsmall0 : Exact.Rlt ctx (Exact.Rminus ctx u eps)
+          (Exact.ulp ctx magnitude beta fexp (Exact.R0 ctx)) := by
+        have hu0 : u = Exact.ulp ctx magnitude beta fexp (Exact.R0 ctx) := by
+          change Exact.ulp ctx magnitude beta fexp y =
+            Exact.ulp ctx magnitude beta fexp (Exact.R0 ctx)
+          rw [hyzero]
+        rw [← hu0]
+        change ctx.spec.lt (ctx.spec.add u (ctx.spec.neg eps)) u
+        have hneg : ctx.spec.lt (ctx.spec.neg eps) ctx.spec.zero := by
+          have hn :=
+            CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_lt_contravar
+              ctx eps (Exact.R0 ctx) hepspos
+          change ctx.spec.lt (ctx.spec.neg eps)
+            (ctx.spec.neg ctx.spec.zero) at hn
+          have hnzero : ctx.spec.neg ctx.spec.zero = ctx.spec.zero := by
+            have hz := ctx.certificate.orderedField.neg_add_cancel ctx.spec.zero
+            rw [ctx.certificate.orderedField.add_zero] at hz
+            exact hz
+          rw [hnzero] at hn
+          exact hn
+        have htmp := ctx.certificate.orderedField.add_lt_compat_l u
+          (ctx.spec.neg eps) ctx.spec.zero hneg
+        rw [ctx.certificate.orderedField.add_zero] at htmp
+        exact htmp
+      have hround := pg_sllt_round_DN_zero_small ctx magnitude beta fexp hvalid
+        (Exact.Rminus ctx u eps) (by
+          change ctx.spec.lt ctx.spec.zero
+            (ctx.spec.add u (ctx.spec.neg eps))
+          exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rlt_Rminus_proof
+            ctx eps u hlt)
+        hsmall0
+      change Exact.round ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx)
+        (ctx.spec.add ctx.spec.zero delta) = ctx.spec.zero
+      rw [ctx.certificate.orderedField.zero_add]
+      exact hround
+  · have hy0 : Exact.Rle ctx (Exact.R0 ctx) y :=
+      pred_pos_ge_0 ctx magnitude beta fexp hvalid x hxpos hxformat
+    have hypos : Exact.Rlt ctx (Exact.R0 ctx) y := by
+      rcases ctx.certificate.total_order (Exact.R0 ctx) y with h | h
+      · rcases h with hlt | heq
+        · exact hlt
+        · exact (hyzero heq.symm).elim
+      · exact False.elim
+          (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h).2 hy0)
+    have hdelta0 : Exact.Rle ctx (Exact.R0 ctx) delta := by
+      change ctx.spec.le ctx.spec.zero (ctx.spec.add u (ctx.spec.neg eps))
+      exact CompCert4Lean.Flocq.Core.Raux.Rle_0_minus ctx eps u hepsu
+    have hdelta_lt : Exact.Rlt ctx delta u := by
+      change ctx.spec.lt (ctx.spec.add u (ctx.spec.neg eps)) u
+      have hneg : ctx.spec.lt (ctx.spec.neg eps) ctx.spec.zero := by
+        have hn :=
+          CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_lt_contravar
+            ctx eps (Exact.R0 ctx) hepspos
+        change ctx.spec.lt (ctx.spec.neg eps)
+          (ctx.spec.neg ctx.spec.zero) at hn
+        have hnzero : ctx.spec.neg ctx.spec.zero = ctx.spec.zero := by
+          have hz := ctx.certificate.orderedField.neg_add_cancel ctx.spec.zero
+          rw [ctx.certificate.orderedField.add_zero] at hz
+          exact hz
+        rw [hnzero] at hn
+        exact hn
+      have htmp := ctx.certificate.orderedField.add_lt_compat_l u
+        (ctx.spec.neg eps) ctx.spec.zero hneg
+      rw [ctx.certificate.orderedField.add_zero] at htmp
+      exact htmp
+    exact pg_sllt_round_DN_plus_eps_strict ctx magnitude beta fexp y
+      hypos hyformat delta ⟨hdelta0, hdelta_lt⟩

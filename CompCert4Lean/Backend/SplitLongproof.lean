@@ -3928,3 +3928,115 @@ theorem eval_floatoflongu : eval_floatoflonguStatement := by
     ha hdecl.2.2.2.1 hlookup hsem
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SplitLong
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+private theorem splitlong_lookup_stof :
+    lookup_builtin_function (ofString "__compcert_i64_stof") sig_l_s =
+      some (.BI_standard .BI_i64_stof) := by
+  have htable : standard_builtin_table =
+      [ (ofString "__builtin_sel", BI_select Tint)
+      , (ofString "__builtin_sel", BI_select Tlong)
+      , (ofString "__builtin_sel", BI_select Tfloat)
+      , (ofString "__builtin_sel", BI_select Tsingle)
+      , (ofString "__builtin_fabs", BI_fabs)
+      , (ofString "__builtin_fabsf", BI_fabsf)
+      , (ofString "__builtin_fsqrt", BI_fsqrt)
+      , (ofString "__builtin_sqrt", BI_fsqrt)
+      , (ofString "__builtin_negl", BI_negl)
+      , (ofString "__builtin_addl", BI_addl)
+      , (ofString "__builtin_subl", BI_subl)
+      , (ofString "__builtin_mull", BI_mull)
+      , (ofString "__builtin_bswap16", BI_i16_bswap)
+      , (ofString "__builtin_bswap", BI_i32_bswap)
+      , (ofString "__builtin_bswap32", BI_i32_bswap)
+      , (ofString "__builtin_bswap64", BI_i64_bswap)
+      , (ofString "__builtin_unreachable", BI_unreachable)
+      , (ofString "__compcert_i64_umulh", BI_i64_umulh)
+      , (ofString "__compcert_i64_smulh", BI_i64_smulh)
+      , (ofString "__compcert_i64_sdiv", BI_i64_sdiv)
+      , (ofString "__compcert_i64_udiv", BI_i64_udiv)
+      , (ofString "__compcert_i64_smod", BI_i64_smod)
+      , (ofString "__compcert_i64_umod", BI_i64_umod)
+      , (ofString "__compcert_i64_shl", BI_i64_shl)
+      , (ofString "__compcert_i64_shr", BI_i64_shr)
+      , (ofString "__compcert_i64_sar", BI_i64_sar)
+      , (ofString "__compcert_i64_dtos", BI_i64_dtos)
+      , (ofString "__compcert_i64_dtou", BI_i64_dtou)
+      , (ofString "__compcert_i64_stod", BI_i64_stod)
+      , (ofString "__compcert_i64_utod", BI_i64_utod)
+      , (ofString "__compcert_i64_stof", BI_i64_stof) ] ++
+        standard_builtin_table.drop 31 := rfl
+  have hn : ∀ s : String, s ≠ "__compcert_i64_stof" →
+      ofString "__compcert_i64_stof" ≠ ofString s := by
+    intro s hs
+    exact splitlong_ofString_ne (Ne.symm hs)
+  unfold lookup_builtin_function
+  rw [htable]
+  simp only [List.cons_append, List.nil_append]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (hn _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_eq _ _ _ _ _ _ rfl (by rfl)]
+
+theorem eval_singleoflong : eval_singleoflongStatement := by
+  intro xi prog hf hdecl sp e m le a x y ha hy
+  refine ⟨y, ?_, Val.lessdef_refl y⟩
+  unfold singleoflong
+  have hlookup := splitlong_lookup_stof
+  have hsem : builtin_function_sem
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (.BI_standard .BI_i64_stof) [x] = some y := by
+    cases x with
+    | Vlong n =>
+        change some (Vsingle (CompCert4Lean.Lib.Floats.Float32.of_long n)) = some y at hy
+        change some (Vsingle (CompCert4Lean.Lib.Floats.Float32.of_long n)) = some y
+        exact hy
+    | Vundef => cases hy
+    | Vint n => cases hy
+    | Vfloat f => cases hy
+    | Vsingle f => cases hy
+    | Vptr b o => cases hy
+  exact eval_helper_1 xi prog sp e m (.BI_standard .BI_i64_stof) le
+    hf.i64_stof (ofString "__compcert_i64_stof") sig_l_s a x y
+    ha hdecl.2.2.2.2.1 hlookup hsem
+
+end CompCert4Lean.Backend.SplitLongproof

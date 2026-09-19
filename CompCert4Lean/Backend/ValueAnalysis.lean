@@ -3140,3 +3140,23 @@ theorem sound_stack_storebytes
   exact Or.inl hne
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Integers
+
+theorem sound_stack_free
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    sound_stack_freeStatement := by
+  intro cfg prog ge m b lo hi m' bc stk bound hfree hstk
+  apply sound_stack_ext
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    cfg prog ge m' bc stk m bound hstk
+  intro b' ofs n bytes hbound hbinv hnonneg hload
+  exact Mem.loadbytes_free_2 m b lo hi m' hfree b' ofs n bytes hload
+
+end CompCert4Lean.Backend.ValueAnalysis

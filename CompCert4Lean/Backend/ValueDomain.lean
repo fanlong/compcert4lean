@@ -5905,3 +5905,13 @@ theorem of_xtype_arg_sound : of_xtype_arg_soundStatement := by
       · exact (is_uns_zero_ext _ _).2 harg.symm
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem ablock_load_anywhere_sound : ablock_load_anywhere_soundStatement := by
+  intro bc chunk m b ofs v ab hload hbm
+  unfold ablock_load_anywhere
+  exact vnormalize_cast bc chunk m b ofs v ab.ab_summary hload
+    (hbm.1.1 chunk ofs v hload)
+
+end CompCert4Lean.Backend.ValueDomain

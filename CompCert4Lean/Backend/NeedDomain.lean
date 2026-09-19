@@ -9134,3 +9134,161 @@ theorem longofint_sound : longofint_soundStatement := by
           exact Val.lessdef_undef _
 
 end CompCert4Lean.Backend.NeedDomain
+
+
+namespace CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem pg_store_argument_same {α : Type} (P : α → α → Prop)
+    (hP : ∀ a, P a a) : ∀ (l : List α),
+      CompCert4Lean.Lib.Coqlib.list_forall2 P l l := by
+  intro l
+  induction l with
+  | nil => exact CompCert4Lean.Lib.Coqlib.list_forall2.nil _
+  | cons a l ih =>
+      exact CompCert4Lean.Lib.Coqlib.list_forall2.cons _ _ (hP a) ih
+
+private theorem pg_store_argument_undef (chunk : memory_chunk) (w : val) :
+    CompCert4Lean.Lib.Coqlib.list_forall2 memval_lessdef
+      (List.replicate (size_chunk_nat chunk) Undef) (encode_val chunk w) := by
+  have h := repeat_Undef_inject_any inject_id (encode_val chunk w)
+  rw [encode_val_length] at h
+  exact h
+
+private theorem pg_store_argument_eq8 (a b : int)
+    (h : iagree a b (Int.repr z255)) :
+    encode_val Mbool (Vint a) = encode_val Mbool (Vint b) := by
+  have hmask : complete_mask (Int.repr z255) = Int.repr z255 := by
+    set_option maxRecDepth 100000 in decide
+  have hsize : Int.size (Int.repr z255) = zOfNat 8 := by
+    set_option maxRecDepth 100000 in decide
+  have hmod := iagree_eqmod a b (Int.repr z255) (by simpa [hmask] using h)
+  rw [hsize] at hmod
+  change inj_bytes (encode_int 1 (Int.unsigned a)) =
+    inj_bytes (encode_int 1 (Int.unsigned b))
+  rw [encode_int_8_mod _ _ hmod]
+
+private theorem pg_store_argument_eq16 (a b : int)
+    (h : iagree a b (Int.repr z65535)) :
+    encode_val Mint16signed (Vint a) = encode_val Mint16signed (Vint b) := by
+  have hmask : complete_mask (Int.repr z65535) = Int.repr z65535 := by
+    set_option maxRecDepth 100000 in decide
+  have hsize : Int.size (Int.repr z65535) = zOfNat 16 := by
+    set_option maxRecDepth 100000 in decide
+  have hmod := iagree_eqmod a b (Int.repr z65535) (by simpa [hmask] using h)
+  rw [hsize] at hmod
+  change inj_bytes (encode_int 2 (Int.unsigned a)) =
+    inj_bytes (encode_int 2 (Int.unsigned b))
+  rw [encode_int_16_mod _ _ hmod]
+
+theorem store_argument_sound : store_argument_soundStatement := by
+  intro chunk v w h
+  cases chunk with
+  | Mbool =>
+      cases v with
+      | Vint a =>
+          cases w with
+          | Vint b =>
+              have hab : iagree a b (Int.repr z255) := by
+                simpa [store_argument, vagree, iVagree] using h
+              rw [pg_store_argument_eq8 a b hab]
+              exact pg_store_argument_same memval_lessdef
+                (fun mv => memval_lessdef_refl mv) _
+          | _ =>
+              simp [store_argument, vagree, iVagree] at h
+      | _ => exact pg_store_argument_undef Mbool w
+  | Mint8signed =>
+      cases v with
+      | Vint a =>
+          cases w with
+          | Vint b =>
+              have hab : iagree a b (Int.repr z255) := by
+                simpa [store_argument, vagree, iVagree] using h
+              have heq : encode_val Mint8signed (Vint a) =
+                  encode_val Mint8signed (Vint b) := by
+                change inj_bytes (encode_int 1 (Int.unsigned a)) =
+                  inj_bytes (encode_int 1 (Int.unsigned b))
+                have hmask : complete_mask (Int.repr z255) = Int.repr z255 := by
+                  set_option maxRecDepth 100000 in decide
+                have hsize : Int.size (Int.repr z255) = zOfNat 8 := by
+                  set_option maxRecDepth 100000 in decide
+                have hm := iagree_eqmod a b (Int.repr z255) (by simpa [hmask] using hab)
+                rw [hsize] at hm
+                rw [encode_int_8_mod _ _ hm]
+              rw [heq]
+              exact pg_store_argument_same memval_lessdef
+                (fun mv => memval_lessdef_refl mv) _
+          | _ =>
+              simp [store_argument, vagree, iVagree] at h
+      | _ => exact pg_store_argument_undef Mint8signed w
+  | Mint8unsigned =>
+      cases v with
+      | Vint a =>
+          cases w with
+          | Vint b =>
+              have hab : iagree a b (Int.repr z255) := by
+                simpa [store_argument, vagree, iVagree] using h
+              have heq : encode_val Mint8unsigned (Vint a) =
+                  encode_val Mint8unsigned (Vint b) := by
+                change inj_bytes (encode_int 1 (Int.unsigned a)) =
+                  inj_bytes (encode_int 1 (Int.unsigned b))
+                have hmask : complete_mask (Int.repr z255) = Int.repr z255 := by
+                  set_option maxRecDepth 100000 in decide
+                have hsize : Int.size (Int.repr z255) = zOfNat 8 := by
+                  set_option maxRecDepth 100000 in decide
+                have hm := iagree_eqmod a b (Int.repr z255) (by simpa [hmask] using hab)
+                rw [hsize] at hm
+                rw [encode_int_8_mod _ _ hm]
+              rw [heq]
+              exact pg_store_argument_same memval_lessdef
+                (fun mv => memval_lessdef_refl mv) _
+          | _ =>
+              simp [store_argument, vagree, iVagree] at h
+      | _ => exact pg_store_argument_undef Mint8unsigned w
+  | Mint16signed =>
+      cases v with
+      | Vint a =>
+          cases w with
+          | Vint b =>
+              have hab : iagree a b (Int.repr z65535) := by
+                simpa [store_argument, vagree, iVagree] using h
+              have heq : encode_val Mint16signed (Vint a) =
+                  encode_val Mint16signed (Vint b) := by
+                exact pg_store_argument_eq16 a b hab
+              rw [heq]
+              exact pg_store_argument_same memval_lessdef
+                (fun mv => memval_lessdef_refl mv) _
+          | _ =>
+              simp [store_argument, vagree, iVagree] at h
+      | _ => exact pg_store_argument_undef Mint16signed w
+  | Mint16unsigned =>
+      cases v with
+      | Vint a =>
+          cases w with
+          | Vint b =>
+              have hab : iagree a b (Int.repr z65535) := by
+                simpa [store_argument, vagree, iVagree] using h
+              have heq : encode_val Mint16unsigned (Vint a) =
+                  encode_val Mint16unsigned (Vint b) := by
+                change inj_bytes (encode_int 2 (Int.unsigned a)) =
+                  inj_bytes (encode_int 2 (Int.unsigned b))
+                have hmask : complete_mask (Int.repr z65535) = Int.repr z65535 := by
+                  set_option maxRecDepth 100000 in decide
+                have hsize : Int.size (Int.repr z65535) = zOfNat 16 := by
+                  set_option maxRecDepth 100000 in decide
+                have hm := iagree_eqmod a b (Int.repr z65535) (by simpa [hmask] using hab)
+                rw [hsize] at hm
+                rw [encode_int_16_mod _ _ hm]
+              rw [heq]
+              exact pg_store_argument_same memval_lessdef
+                (fun mv => memval_lessdef_refl mv) _
+          | _ =>
+              simp [store_argument, vagree, iVagree] at h
+      | _ => exact pg_store_argument_undef Mint16unsigned w
+  | _ =>
+      simpa [memval_lessdef] using
+        (encode_val_inject inject_id v w _ ((val_inject_id v w).mpr h))
+end CompCert4Lean.Backend.NeedDomain
