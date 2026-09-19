@@ -6405,3 +6405,194 @@ theorem succ_le_lt :
   intro ctx magnitude beta fexp hvalid x y hxformat hyformat hxy
   exact pg_current_succ_le_lt ctx magnitude beta fexp hvalid x y
     hxformat hyformat hxy
+
+theorem error_lt_ulp :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      error_lt_ulpStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid rnd hrnd x hxne
+  have hformat_or :=
+    CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_EM
+      ctx magnitude beta fexp hvalid x
+  rcases hformat_or with hformat | hformat
+  · have hround := CompCert4Lean.Flocq.Core.Generic_fmt.round_generic
+      ctx magnitude beta fexp rnd hrnd x hformat
+    have hround' : Exact.round ctx magnitude beta fexp rnd x = x := by
+      exact hround
+    rw [hround']
+    change Exact.Rlt ctx (Exact.Rabs ctx (Exact.Rminus ctx x x))
+      (Exact.ulp ctx magnitude beta fexp x)
+    have hzero : Exact.Rminus ctx x x = Exact.R0 ctx := by
+      change ctx.spec.add x (ctx.spec.neg x) = ctx.spec.zero
+      rw [ctx.certificate.orderedField.add_comm,
+        ctx.certificate.orderedField.neg_add_cancel]
+    rw [hzero]
+    change ctx.spec.lt (ctx.spec.abs ctx.spec.zero)
+      (Exact.ulp ctx magnitude beta fexp x)
+    rw [ctx.certificate.sourceLaws.abs_nonnegative _
+      (ctx.certificate.orderedField.le_refl _)]
+    rw [ulp_neq_0 ctx magnitude beta fexp x hxne]
+    exact CompCert4Lean.Flocq.Core.Raux.bpow_gt_0 ctx beta _
+  · have hround_cases :=
+      CompCert4Lean.Flocq.Core.Generic_fmt.round_DN_or_UP
+        ctx magnitude beta fexp rnd hrnd x
+    rcases hround_cases with hfloor | hceil
+    · let floor := Exact.round ctx magnitude beta fexp
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx) x
+      let ceil := Exact.round ctx magnitude beta fexp
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx) x
+      have hfloor' : Exact.round ctx magnitude beta fexp rnd x = floor := by
+        simpa [floor] using hfloor
+      rw [hfloor']
+      have hdn := CompCert4Lean.Flocq.Core.Generic_fmt.round_DN_pt
+        ctx magnitude beta fexp hvalid x
+      have hbounds :=
+        CompCert4Lean.Flocq.Core.Generic_fmt.round_DN_UP_lt
+          ctx magnitude beta fexp hvalid x hformat
+      have hle : Exact.Rle ctx floor x := by
+        simpa [floor] using hdn.2.1
+      have hle0 : Exact.Rle ctx (Exact.Rminus ctx floor x)
+          (Exact.R0 ctx) := by
+        have h :=
+          CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rle_minus
+            ctx floor x hle
+        change ctx.spec.le (ctx.spec.add floor (ctx.spec.neg x))
+          (ctx.spec.ofZ Z0) at h
+        rw [ctx.certificate.sourceLaws.ofZ_zero] at h
+        exact h
+      have habs :=
+        CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rbasic_fun.Rabs_left1
+          ctx (Exact.Rminus ctx floor x) (by
+            have h :=
+              CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rle_minus
+                ctx floor x hle
+            exact h)
+      change ctx.spec.abs
+          (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rminus ctx.spec floor x) =
+        ctx.spec.neg
+          (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rminus ctx.spec floor x) at habs
+      have hceil_eq := round_UP_DN_ulp ctx magnitude beta fexp x hformat
+      have hceil_eq' : ceil = Exact.Rplus ctx floor
+          (Exact.ulp ctx magnitude beta fexp x) := by
+        simpa [ceil, floor] using hceil_eq
+      have hceil_eq_spec : ceil = ctx.spec.add floor
+          (Exact.ulp ctx magnitude beta fexp x) := by
+        change Exact.round ctx magnitude beta fexp
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx) x =
+          ctx.spec.add
+            (Exact.round ctx magnitude beta fexp
+              (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx) x)
+            (Exact.ulp ctx magnitude beta fexp x)
+        exact hceil_eq
+      have hxceil : Exact.Rlt ctx x ceil := by
+        simpa [ceil] using hbounds.2
+      have hfloor_eq : floor =
+          Exact.round ctx magnitude beta fexp
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx) x := rfl
+      have hsum : Exact.Rplus ctx floor
+          (Exact.Rminus ctx x floor) = x :=
+        pg_sllt_add_sub_cancel ctx floor x
+      have hsum' : ctx.spec.add floor
+          (ctx.spec.add x (ctx.spec.neg floor)) = x := by
+        exact hsum
+      have hmain : Exact.Rlt ctx (Exact.Rminus ctx x floor)
+          (Exact.ulp ctx magnitude beta fexp x) := by
+        apply CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_lt_reg_l
+          ctx floor
+        change ctx.spec.lt
+          (ctx.spec.add floor (ctx.spec.add x (ctx.spec.neg floor)))
+          (ctx.spec.add floor (Exact.ulp ctx magnitude beta fexp x))
+        rw [hsum']
+        rw [← hceil_eq_spec]
+        exact hxceil
+      change ctx.spec.lt
+        (ctx.spec.abs
+          (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rminus ctx.spec floor x))
+        (Exact.ulp ctx magnitude beta fexp x)
+      rw [habs]
+      have hneg : ctx.spec.neg
+          (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rminus ctx.spec floor x) =
+          ctx.spec.add x (ctx.spec.neg floor) := by
+        have h :=
+          CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_minus_distr
+            ctx floor x
+        change ctx.spec.neg
+            (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rminus ctx.spec floor x) =
+          ctx.spec.add x (ctx.spec.neg floor) at h
+        exact h
+      rw [hneg]
+      exact hmain
+    · let floor := Exact.round ctx magnitude beta fexp
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx) x
+      let ceil := Exact.round ctx magnitude beta fexp
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx) x
+      have hceil' : Exact.round ctx magnitude beta fexp rnd x = ceil := by
+        simpa [ceil] using hceil
+      rw [hceil']
+      have hup := CompCert4Lean.Flocq.Core.Generic_fmt.round_UP_pt
+        ctx magnitude beta fexp hvalid x
+      have hbounds :=
+        CompCert4Lean.Flocq.Core.Generic_fmt.round_DN_UP_lt
+          ctx magnitude beta fexp hvalid x hformat
+      have hge : Exact.Rle ctx x ceil := by
+        simpa [ceil] using hup.2.1
+      have hge0 : Exact.Rle ctx (Exact.R0 ctx)
+          (Exact.Rminus ctx ceil x) := by
+        exact CompCert4Lean.Flocq.Core.Raux.Rle_0_minus ctx x ceil hge
+      have habs :=
+        CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rbasic_fun.Rabs_pos_eq
+          ctx (Exact.Rminus ctx ceil x) (by
+            change ctx.spec.le (ctx.spec.ofZ Z0)
+              (ctx.spec.add ceil (ctx.spec.neg x))
+            rw [ctx.certificate.sourceLaws.ofZ_zero]
+            exact hge0)
+      change ctx.spec.abs
+          (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rminus ctx.spec ceil x) =
+        CompCert4Lean.Foundation.FlocqReal.ExactReal.Rminus ctx.spec ceil x at habs
+      have hceil_eq := round_UP_DN_ulp ctx magnitude beta fexp x hformat
+      have hceil_eq' : ceil = Exact.Rplus ctx floor
+          (Exact.ulp ctx magnitude beta fexp x) := by
+        simpa [ceil, floor] using hceil_eq
+      have hceil_eq_spec : ceil = ctx.spec.add floor
+          (Exact.ulp ctx magnitude beta fexp x) := by
+        change Exact.round ctx magnitude beta fexp
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx) x =
+          ctx.spec.add
+            (Exact.round ctx magnitude beta fexp
+              (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx) x)
+            (Exact.ulp ctx magnitude beta fexp x)
+        exact hceil_eq
+      have hxfloor : Exact.Rlt ctx floor x := by
+        simpa [floor] using hbounds.1
+      have hq : Exact.Rlt ctx ceil
+          (Exact.Rplus ctx x (Exact.ulp ctx magnitude beta fexp x)) := by
+        have hadd := ctx.certificate.orderedField.add_lt_compat_l
+          (Exact.ulp ctx magnitude beta fexp x) floor x hxfloor
+        rw [ctx.certificate.orderedField.add_comm
+          (Exact.ulp ctx magnitude beta fexp x) floor,
+          ctx.certificate.orderedField.add_comm
+            (Exact.ulp ctx magnitude beta fexp x) x] at hadd
+        change ctx.spec.lt ceil
+          (ctx.spec.add x (Exact.ulp ctx magnitude beta fexp x))
+        rw [hceil_eq_spec]
+        exact hadd
+      have hsum : Exact.Rplus ctx x
+          (Exact.Rminus ctx ceil x) = ceil :=
+        pg_sllt_add_sub_cancel ctx x ceil
+      have hsum' : ctx.spec.add x
+          (ctx.spec.add ceil (ctx.spec.neg x)) = ceil := by
+        exact hsum
+      have hmain : Exact.Rlt ctx (Exact.Rminus ctx ceil x)
+          (Exact.ulp ctx magnitude beta fexp x) := by
+        apply CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_lt_reg_l
+          ctx x
+        change ctx.spec.lt
+          (ctx.spec.add x (ctx.spec.add ceil (ctx.spec.neg x)))
+          (ctx.spec.add x (Exact.ulp ctx magnitude beta fexp x))
+        rw [hsum']
+        exact hq
+      change ctx.spec.lt
+        (ctx.spec.abs
+          (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rminus ctx.spec ceil x))
+        (Exact.ulp ctx magnitude beta fexp x)
+      rw [habs]
+      exact hmain

@@ -9092,3 +9092,63 @@ theorem not_lt_proof : not_lt := by
   cases hxy : lt x y <;> cases heq : eq x y <;> simp [hxy, heq]
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eqm_trans_proof : eqm_trans := by
+  intro x y z hxy hyz
+  exact CompCert4Lean.Lib.Zbits.eqmod_trans modulus x y z hxy hyz
+
+theorem xor_zero_proof : xor_zero := by
+  intro x
+  apply WordCore.ext_of_val_eq
+  change (WordCore.xor x (WordCore.zero wordsize)).val = x.val
+  unfold WordCore.xor
+  rw [WordCore.val_repr_residue]
+  have hzero : (WordCore.zero wordsize).val = 0 := by
+    unfold WordCore.zero
+    rw [WordCore.val_repr_residue]
+    rfl
+  change WordCore.residue wordsize
+      (zOfNat (Nat.xor x.val (WordCore.zero wordsize).val)) = x.val
+  rw [hzero]
+  have hz : zOfNat (Nat.xor x.val 0) =
+      zOfInt (Int.ofNat (Nat.xor x.val 0)) := by rfl
+  rw [hz, WordCore.residue_zOfNat]
+  exact (Nat.mod_eq_of_lt (Nat.xor_lt_two_pow (WordCore.val_lt x)
+    (WordCore.val_lt (WordCore.zero wordsize)))).trans (Nat.xor_zero _)
+
+theorem and_mone_proof : and_mone := by
+  intro x
+  apply WordCore.ext_of_val_eq
+  change (WordCore.and x (WordCore.mone wordsize)).val = x.val
+  unfold WordCore.and
+  rw [WordCore.val_repr_residue]
+  change WordCore.residue wordsize
+      (zOfNat (Nat.land x.val (WordCore.mone wordsize).val)) = x.val
+  have hmone : (WordCore.mone wordsize).val = 2 ^ wordsize - 1 := by
+    unfold WordCore.mone
+    rw [WordCore.val_repr_residue]
+    have hz : zOpp zOne = zOfInt (-1) := by rfl
+    rw [hz, WordCore.residue_zOfInt]
+    change ((-1 : Int) % Int.ofNat (2 ^ wordsize)).toNat =
+      2 ^ wordsize - 1
+    change ((-1 : Int) % Int.ofNat (2 ^ 64)).toNat = 2 ^ 64 - 1
+    decide
+  rw [hmone]
+  have hz : zOfNat (Nat.land x.val (2 ^ wordsize - 1)) =
+      zOfInt (Int.ofNat (Nat.land x.val (2 ^ wordsize - 1))) := by rfl
+  rw [hz, WordCore.residue_zOfNat]
+  have hmasklt : 2 ^ wordsize - 1 < 2 ^ wordsize := by
+    exact Nat.sub_lt (Nat.two_pow_pos wordsize) (by omega)
+  exact (Nat.mod_eq_of_lt (Nat.and_lt_two_pow x.val hmasklt)).trans
+    (Nat.and_two_pow_sub_one_of_lt_two_pow (WordCore.val_lt x))
+
+theorem eqm_unsigned_repr_r_proof : eqm_unsigned_repr_r := by
+  intro a b hab
+  exact eqm_trans_proof a b (unsigned (repr b)) hab
+    (suffix_int64_eqm_unsigned_repr b)
+
+end CompCert4Lean.Lib.Integers.Int64

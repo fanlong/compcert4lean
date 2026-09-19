@@ -5105,3 +5105,116 @@ theorem restore_callee_save_correct
     simpa [hr] using hcallee
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+open CompCert4Lean.Common.Separation
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.X86.Conventions1
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.X86.Stacklayout
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+ theorem function_epilogue_correct [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : function_epilogue_correctStatement := by
+  intro cfg xi return_address_offset tprog f bound_local_pos bound_outgoing_pos
+    bound_stack_data_pos used_callee_save_norepet used_callee_save_prop tf htrans
+    m' j sp' ls ls0 pa ra P m rs sp m1 k cs fb hframe hagree hloc hjsp hfree
+  have htf := unfold_transf_function cfg f tf htrans
+  subst tf
+  let b := function_bounds cfg f
+  let fe := make_env cfg b
+  have hframeOrig := hframe
+  unfold frame_contents at hframe
+  have hframeR :
+      (sepconj
+        (sepconj (range sp' z0 fe.fe_stack_data)
+          (range sp' (zAdd fe.fe_stack_data b.bound_stack_data) fe.fe_size))
+        (sepconj (minjection j m) P)).m_pred m' := by
+    refine ⟨hframe.1.2, hframe.2.1, ?_⟩
+    intro b' ofs hr hp
+    exact hframe.2.2 b' ofs (Or.inr hr) hp
+  have hframeR' := (sep_assoc_1
+    (range sp' z0 fe.fe_stack_data)
+    (range sp' (zAdd fe.fe_stack_data b.bound_stack_data) fe.fe_size)
+    (sepconj (minjection j m) P)).1 m' hframeR
+  have hfree' := free_parallel_rule j m sp f.fn_stacksize m1 m' sp' fe.fe_size
+    fe.fe_stack_data (zAdd fe.fe_stack_data b.bound_stack_data) fe.fe_stack_data P
+    hframeR' hfree hjsp rfl
+    (by
+      change ZArith.BinInt.Z.add fe.fe_stack_data
+          (ZArith.BinInt.Z.max f.fn_stacksize ZArith.BinInt.Z.Z0) =
+        ZArith.BinInt.Z.add fe.fe_stack_data
+          (ZArith.BinInt.Z.max ZArith.BinInt.Z.Z0 f.fn_stacksize)
+      rw [ZArith.BinInt.Z.max_comm])
+  rcases hfree' with ⟨m1', hfree_target, hminj⟩
+  have hagree_unused :
+      agree_unused cfg f bound_local_pos bound_outgoing_pos bound_stack_data_pos
+        used_callee_save_norepet used_callee_save_prop j ls0 rs := by
+    intro r hr
+    have heq := hloc.agree_unused_reg r hr
+    rw [← heq]
+    exact hagree r
+  have hrestore := restore_callee_save_correct
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    cfg xi return_address_offset tprog f bound_local_pos bound_outgoing_pos
+    bound_stack_data_pos used_callee_save_norepet used_callee_save_prop
+    m' j sp' ls ls0 pa ra (sepconj (minjection j m) P) rs k cs fb hframeOrig hagree_unused
+  rcases hrestore with ⟨rs1, hstar, hsave, hnosave⟩
+  unfold frame_contents at hframeOrig
+  have hloadpa := hasvalue_get_stack Tptr m' sp'
+    fe.fe_ofs_link pa
+    (sep_pick3
+      (contains_locations return_address_offset tprog j sp' fe.fe_ofs_local
+        b.bound_local Local ls)
+      (contains_locations return_address_offset tprog j sp' (fe_ofs_arg cfg)
+        b.bound_outgoing Outgoing ls)
+      (hasvalue Mptr sp' fe.fe_ofs_link pa)
+      (sepconj (hasvalue Mptr sp' fe.fe_ofs_retaddr ra)
+        (contains_callee_saves j sp' fe.fe_ofs_callee_save
+          b.used_callee_save ls0))
+      m' hframeOrig.1.1)
+  have hloadra := hasvalue_get_stack Tptr m' sp'
+    fe.fe_ofs_retaddr ra
+    (sep_pick4
+      (contains_locations return_address_offset tprog j sp' fe.fe_ofs_local
+        b.bound_local Local ls)
+      (contains_locations return_address_offset tprog j sp' (fe_ofs_arg cfg)
+        b.bound_outgoing Outgoing ls)
+      (hasvalue Mptr sp' fe.fe_ofs_link pa)
+      (hasvalue Mptr sp' fe.fe_ofs_retaddr ra)
+      (contains_callee_saves j sp' fe.fe_ofs_callee_save
+        b.used_callee_save ls0)
+      m' hframeOrig.1.1)
+  refine ⟨rs1, m1', hloadpa, hloadra, hfree_target, hstar, ?_, ?_, hminj⟩
+  · intro r
+    change Val.inject j
+      (if is_callee_save cfg r then ls0 (R r) else ls (R r)) (rs1 r)
+    cases h : is_callee_save cfg r with
+    | false =>
+        rw [hnosave r h]
+        exact hagree r
+    | true => exact hsave r h
+  · intro l hl
+    cases l with
+    | R r =>
+        change (if is_callee_save cfg r then ls0 (R r) else ls (R r)) = ls0 (R r)
+        have hc : is_callee_save cfg r = true := hl
+        simp [hc]
+    | S sl ofs ty =>
+        cases sl with
+        | Local => rfl
+        | Incoming => rfl
+        | Outgoing => exact (hl rfl).elim
+
+end CompCert4Lean.Backend.Stackingproof

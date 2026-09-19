@@ -4546,3 +4546,66 @@ theorem u'_eq : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
   rw [hdexp]
 
 end CompCert4Lean.Flocq.Prop.Round_odd
+
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+
+open CompCert4Lean.Flocq.Core
+
+theorem m_eq : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
+    m_eqStatement ctx magnitude := by
+  intro ctx magnitude beta hbeta fexp hvalid x d u hd hdcanon hu hdpos
+  obtain ⟨u', hu'value, hu'exp⟩ := u'_eq ctx magnitude beta fexp hvalid x d u hd hdcanon hu hdpos
+  obtain ⟨b, hb⟩ := CompCert4Lean.Flocq.Core.Zaux.Zeven_ex (radix_val beta)
+  have hb' : radix_val beta = CompCert4Lean.Flocq.Core.Zaux.Zadd
+      (CompCert4Lean.Flocq.Core.Zaux.Zmul Ztwo b)
+      CompCert4Lean.Flocq.Core.Zaux.Z0 := by
+    simpa [hbeta] using hb
+  let half : float beta :=
+    Float beta b (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zneg .xH)
+  let s : float beta := CompCert4Lean.Flocq.Calc.Operations.Fplus d u'
+  let g : float beta := CompCert4Lean.Flocq.Calc.Operations.Fmult half s
+  refine ⟨g, ?_, ?_⟩
+  · have hmul := CompCert4Lean.Flocq.Calc.Operations.F2R_mult ctx beta half s
+    have hplus := CompCert4Lean.Flocq.Calc.Operations.F2R_plus ctx beta d u'
+    have hplus' : F2R ctx s = Rplus ctx (F2R ctx d) (F2R ctx u') := by
+      exact hplus
+    have hhalf := round_odd_half_coefficient_aux ctx beta b hb'
+    calc
+      F2R ctx g = Rmult ctx (F2R ctx half) (F2R ctx s) := hmul
+      _ = Rmult ctx (ctx.spec.inv (Rtwo ctx))
+          (Rplus ctx (F2R ctx d) (F2R ctx u')) := by rw [hhalf, hplus']
+      _ = Rmult ctx (ctx.spec.inv (Rtwo ctx))
+          (Rplus ctx (F2R ctx d) (F2R ctx u)) := by rw [hu'value]
+      _ = Rdiv ctx (Rplus ctx (F2R ctx d) (F2R ctx u)) (Rtwo ctx) := by
+        change ctx.spec.mul (ctx.spec.inv (Rtwo ctx))
+            (ctx.spec.add (F2R ctx d) (F2R ctx u)) =
+          ctx.spec.div (ctx.spec.add (F2R ctx d) (F2R ctx u)) (Rtwo ctx)
+        rw [ctx.certificate.orderedField.div_eq_mul_inv,
+          ctx.certificate.orderedField.mul_comm]
+  · have hs := CompCert4Lean.Flocq.Calc.Operations.Fexp_Fplus beta d u'
+    have hmin : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.min
+        (Fexp d) (Fexp u') = Fexp d := by
+      rw [hu'exp]
+      simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.min]
+    have hsexp : Fexp s = Fexp d := by
+      exact hs.trans hmin
+    have hdxmag := round_odd_mag_d_aux ctx magnitude beta fexp hvalid
+      x d hd hdcanon hdpos
+    have hdexp : Fexp d = fexp (mag_val ctx magnitude beta x) := by
+      calc
+        Fexp d = fexp (mag_val ctx magnitude beta (F2R ctx d)) := hdcanon
+        _ = fexp (mag_val ctx magnitude beta x) := congrArg fexp hdxmag
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zneg .xH) (Fexp s) = _
+    rw [hsexp, hdexp]
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    change (-1 : Int) + CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (fexp (mag_val ctx magnitude beta x)) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (fexp (mag_val ctx magnitude beta x)) - 1
+    omega
+
+end CompCert4Lean.Flocq.Prop.Round_odd

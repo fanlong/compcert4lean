@@ -4227,3 +4227,70 @@ theorem make_divimm_correct
           exact hdiv
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+
+set_option maxHeartbeats 1000000 in
+private theorem worker_val_divu_pow2
+    (x : CompCert4Lean.Common.Values.val)
+    (n logn : CompCert4Lean.Lib.Integers.int)
+    (y : CompCert4Lean.Common.Values.val)
+    (hpow : CompCert4Lean.Lib.Integers.Int.is_power2 n = some logn)
+    (hdiv : CompCert4Lean.Common.Values.Val.divu x (.Vint n) = some y) :
+    CompCert4Lean.Common.Values.Val.shru x (.Vint logn) = y := by
+  exact CompCert4Lean.Common.Values.Val.divu_pow2 x n logn y hpow hdiv
+
+set_option maxHeartbeats 1000000 in
+theorem make_divuimm_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @make_divuimm_correctStatement binary64_certificate binary32_certificate := by
+  intro ge sp e m n r1 r2 v hdiv hr2
+  unfold CompCert4Lean.X86.ConstpropOp.make_divuimm
+  cases hEq : CompCert4Lean.Lib.Integers.Int.eq n
+      CompCert4Lean.Lib.Integers.Int.one with
+  | true =>
+      have hn1 : n = CompCert4Lean.Lib.Integers.Int.one := by
+        exact cp_eq_true n CompCert4Lean.Lib.Integers.Int.one hEq
+      subst n
+      refine ⟨CompCert4Lean.Backend.Registers.Regmap.get r1 e, ?_, ?_⟩
+      · rfl
+      · cases hx : CompCert4Lean.Backend.Registers.Regmap.get r1 e with
+        | Vundef => simp [Val.divu, hr2, hx] at hdiv
+        | Vint i =>
+            have hd : Val.divu (.Vint i) (.Vint CompCert4Lean.Lib.Integers.Int.one) = some v := by
+              simpa [hx, hr2] using hdiv
+            rw [CompCert4Lean.Common.Values.Val.divu_one i] at hd
+            cases hd
+            exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+        | Vlong x => simp [Val.divu, hr2, hx] at hdiv
+        | Vfloat x => simp [Val.divu, hr2, hx] at hdiv
+        | Vsingle x => simp [Val.divu, hr2, hx] at hdiv
+        | Vptr b ofs => simp [Val.divu, hr2, hx] at hdiv
+  | false =>
+      cases hp : CompCert4Lean.Lib.Integers.Int.is_power2 n with
+      | some l =>
+          refine ⟨v, ?_, CompCert4Lean.Common.Values.Val.lessdef_refl _⟩
+          have hdivn : CompCert4Lean.Common.Values.Val.divu
+              (CompCert4Lean.Backend.Registers.Regmap.get r1 e) (.Vint n) = some v := by
+            rw [← hr2]
+            exact hdiv
+          change some (CompCert4Lean.Common.Values.Val.shru
+            (CompCert4Lean.Backend.Registers.Regmap.get r1 e) (.Vint l)) = some v
+          exact congrArg some (worker_val_divu_pow2
+            (CompCert4Lean.Backend.Registers.Regmap.get r1 e) n l v hp hdivn)
+      | none =>
+          refine ⟨v, ?_, CompCert4Lean.Common.Values.Val.lessdef_refl _⟩
+          change CompCert4Lean.Common.Values.Val.divu
+            (CompCert4Lean.Backend.Registers.Regmap.get r1 e)
+            (CompCert4Lean.Backend.Registers.Regmap.get r2 e) = some v
+          exact hdiv
+
+end CompCert4Lean.X86.ConstpropOpproof

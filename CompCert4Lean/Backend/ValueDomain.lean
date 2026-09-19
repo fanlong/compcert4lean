@@ -5928,3 +5928,17 @@ theorem ablock_init_sound : ablock_init_soundStatement := by
     exact vnormalize_cast bc chunk m b ofs v p hload (hsmatch.1 chunk ofs v hload)
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+
+theorem ablock_storebytes_anywhere_sound : ablock_storebytes_anywhere_soundStatement := by
+  intro bc m b ofs bytes p m' b' ab hstore hpmatch hbm
+  exact ablock_init_sound bc m' b' (plub p ab.ab_summary)
+    (smatch_storebytes bc m b ofs bytes m' b' ab.ab_summary p
+      hstore hbm.1 hpmatch)
+
+end CompCert4Lean.Backend.ValueDomain

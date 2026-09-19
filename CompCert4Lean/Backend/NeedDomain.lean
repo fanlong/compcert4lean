@@ -9430,3 +9430,267 @@ theorem default_needs_of_operation_sound
       ((CompCert4Lean.Common.Values.val_inject_lessdef v1 v2).mpr hinj)⟩
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Lib.IntvSets
+open CompCert4Lean.Lib.Maps
+
+theorem nlive_all : nlive_allStatement := by
+  intro ge sp b ofs
+  constructor
+  · intro h
+    exact CompCert4Lean.Lib.IntvSets.ISet.In_empty ofs
+  · intro id iv hsym hget
+    rw [CompCert4Lean.Lib.Maps.PTree.gempty (CompCert4Lean.Lib.IntvSets.ISet.t) id] at hget
+    cases hget
+
+theorem incl_nmem_add : incl_nmem_addStatement := by
+  intro ge sp nm b i p sz h
+  cases nm with
+  | NMemDead => exact nlive_all ge sp b i
+  | NMem stk gl =>
+      cases h with
+      | nlive_intro stk gl b i hs hg =>
+          cases p with
+          | Pbot => exact nlive_all ge sp b i
+          | Gl id ofs =>
+              simp only [nmem_add]
+              cases hx : CompCert4Lean.Lib.Maps.PTree.get id gl with
+              | none => exact nlive.nlive_intro _ _ _ _ hs hg
+              | some iv =>
+                  constructor
+                  · exact hs
+                  · intro id' iv' hsym hget hi
+                    by_cases heq : id' = id
+                    · subst id'
+                      rw [CompCert4Lean.Lib.Maps.PTree.gss (A := CompCert4Lean.Lib.IntvSets.ISet.t) id _ gl] at hget
+                      cases hget
+                      exact hg id iv hsym hx
+                        ((CompCert4Lean.Lib.IntvSets.ISet.In_remove _ _ _ _).mp hi).2
+                    · rw [CompCert4Lean.Lib.Maps.PTree.gso (A := CompCert4Lean.Lib.IntvSets.ISet.t) (i := id') (j := id) _ gl heq] at hget
+                      exact hg id' iv' hsym hget hi
+          | Glo id =>
+              simp only [nmem_add]
+              constructor
+              · exact hs
+              · intro id' iv' hsym hget hi
+                by_cases heq : id' = id
+                · subst id'
+                  rw [CompCert4Lean.Lib.Maps.PTree.grs_proof (A := CompCert4Lean.Lib.IntvSets.ISet.t) id gl] at hget
+                  cases hget
+                · have hsame := CompCert4Lean.Lib.Maps.PTree.gro_proof (A := CompCert4Lean.Lib.IntvSets.ISet.t) (i := id') (j := id) gl heq
+                  rw [hsame] at hget
+                  exact hg id' iv' hsym hget hi
+          | Glob => exact nlive_all ge sp b i
+          | Stk ofs =>
+              simp only [nmem_add]
+              constructor
+              · exact fun hb hi => hs hb ((CompCert4Lean.Lib.IntvSets.ISet.In_remove _ _ _ _).mp hi).2
+              · exact hg
+          | Stack =>
+              simp only [nmem_add]
+              constructor
+              · intro hb hi
+                exact (CompCert4Lean.Lib.IntvSets.ISet.In_empty i) hi
+              · exact hg
+          | Nonstack => exact nlive_all ge sp b i
+          | Ptop => exact nlive_all ge sp b i
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Lib.IntvSets
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Globalenvs
+
+theorem nlive_add : nlive_addStatement := by
+  intro ge sp bc b ofs p nm sz i gm hsp hpm hi
+  cases nm with
+  | NMemDead => exact nlive_all ge sp b i
+  | NMem stk gl =>
+      cases p with
+      | Pbot => exact nlive_all ge sp b i
+      | Glob => exact nlive_all ge sp b i
+      | Nonstack => exact nlive_all ge sp b i
+      | Ptop => exact nlive_all ge sp b i
+      | Gl id ofs' =>
+          cases hpm with
+          | gl _ hbc =>
+              have hsym : Genv.find_symbol ge id = some b := (gm.1 id b).mpr hbc
+              have hb : b ≠ sp := by
+                intro h
+                subst b
+                rw [hsp] at hbc
+                cases hbc
+              have hid : ∀ idx, Genv.find_symbol ge idx = some b → idx = id := by
+                intro idx hidx
+                have hbc' := (gm.1 idx b).mp hidx
+                rw [hbc] at hbc'
+                cases hbc'
+                rfl
+              simp only [nmem_add]
+              cases hx : CompCert4Lean.Lib.Maps.PTree.get id gl with
+              | none =>
+                  constructor
+                  · intro h; exact False.elim (hb h)
+                  · intro idx iv hidx hget hmem
+                    have heq := hid idx hidx
+                    subst idx
+                    rw [hx] at hget
+                    cases hget
+              | some iv =>
+                  constructor
+                  · intro h; exact False.elim (hb h)
+                  · intro idx iv' hidx hget hmem
+                    have heq := hid idx hidx
+                    subst idx
+                    rw [CompCert4Lean.Lib.Maps.PTree.gss (A := CompCert4Lean.Lib.IntvSets.ISet.t) id _ gl] at hget
+                    cases hget
+                    exact ((CompCert4Lean.Lib.IntvSets.ISet.In_remove _ _ _ _).mp hmem).1 hi
+      | Glo id =>
+          cases hpm with
+          | glo _ hbc =>
+              have hsym : Genv.find_symbol ge id = some b := (gm.1 id b).mpr hbc
+              have hb : b ≠ sp := by
+                intro h
+                subst b
+                rw [hsp] at hbc
+                cases hbc
+              have hid : ∀ idx, Genv.find_symbol ge idx = some b → idx = id := by
+                intro idx hidx
+                have hbc' := (gm.1 idx b).mp hidx
+                rw [hbc] at hbc'
+                cases hbc'
+                rfl
+              simp only [nmem_add]
+              constructor
+              · intro h; exact False.elim (hb h)
+              · intro idx iv hidx hget
+                have heq := hid idx hidx
+                subst idx
+                rw [CompCert4Lean.Lib.Maps.PTree.grs_proof (A := CompCert4Lean.Lib.IntvSets.ISet.t) id gl] at hget
+                cases hget
+      | Stk ofs' =>
+          cases hpm with
+          | stk hbc =>
+              have hbs : b = sp := bc.bc_stack b sp hbc hsp
+              subst b
+              simp only [nmem_add]
+              constructor
+              · intro _ hmem
+                exact ((CompCert4Lean.Lib.IntvSets.ISet.In_remove _ _ _ _).mp hmem).1 hi
+              · intro idx iv hsym hget
+                have hbc' := (gm.1 idx sp).mp hsym
+                rw [hsp] at hbc'
+                cases hbc'
+      | Stack =>
+          cases hpm with
+          | stack hbc =>
+              have hbs : b = sp := bc.bc_stack b sp hbc hsp
+              subst b
+              simp only [nmem_add]
+              constructor
+              · intro _ hmem
+                exact CompCert4Lean.Lib.IntvSets.ISet.In_empty i hmem
+              · intro idx iv hsym hget
+                have hbc' := (gm.1 idx sp).mp hsym
+                rw [hsp] at hbc'
+                cases hbc'
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Lib.IntvSets
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+theorem nlive_remove : nlive_removeStatement := by
+  intro ge sp bc b ofs p nm sz b' i gm hsp hpm h houtside
+  cases nm with
+  | NMemDead => cases h
+  | NMem stk gl =>
+      cases h with
+      | nlive_intro stk gl b' i hs hg =>
+          cases p with
+          | Pbot => exact nlive.nlive_intro _ _ _ _ hs hg
+          | Glob => exact nlive.nlive_intro _ _ _ _ hs hg
+          | Nonstack => exact nlive.nlive_intro _ _ _ _ hs hg
+          | Ptop => exact nlive.nlive_intro _ _ _ _ hs hg
+          | Gl id ofs' =>
+              cases hpm with
+              | gl _ hbc =>
+                  have hsymb : Genv.find_symbol ge id = some b := (gm.1 id b).mpr hbc
+                  simp only [nmem_remove]
+                  cases hx : CompCert4Lean.Lib.Maps.PTree.get id gl with
+                  | none =>
+                      simp only [hx]
+                      constructor
+                      · exact hs
+                      · intro idx iv hidx hget hmem
+                        by_cases heq : idx = id
+                        · subst idx
+                          rw [CompCert4Lean.Lib.Maps.PTree.gss (A := CompCert4Lean.Lib.IntvSets.ISet.t) id _ gl] at hget
+                          cases hget
+                          have hbb : b' = b := Option.some.inj (hidx.symm.trans hsymb)
+                          have hnot : ¬ (ZArith.BinInt.Z.le (Ptrofs.unsigned ofs) i ∧ ZArith.BinInt.Z.lt i (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) sz)) := by
+                            intro hr
+                            rcases houtside with hne | hlt | hge
+                            · exact hne hbb
+                            · exact (ZArith.BinInt.Z.lt_irrefl (Ptrofs.unsigned ofs))
+                                (ZArith.BinInt.Z.le_lt_trans (Ptrofs.unsigned ofs) i (Ptrofs.unsigned ofs) hr.1 hlt)
+                            · exact (ZArith.BinInt.Z.lt_irrefl i)
+                                (ZArith.BinInt.Z.lt_le_trans i (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) sz) i hr.2 hge)
+                          exact hnot ((CompCert4Lean.Lib.IntvSets.ISet.In_interval i _ _).mp hmem)
+                        · have hsame := CompCert4Lean.Lib.Maps.PTree.gso (A := CompCert4Lean.Lib.IntvSets.ISet.t) (i := idx) (j := id) (CompCert4Lean.Lib.IntvSets.ISet.interval (Ptrofs.unsigned ofs) (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) sz)) gl heq
+                          rw [hsame] at hget
+                          exact hg idx iv hidx hget hmem
+                  | some iv0 =>
+                      simp only [hx]
+                      constructor
+                      · exact hs
+                      · intro idx iv hidx hget hmem
+                        by_cases heq : idx = id
+                        · subst idx
+                          rw [CompCert4Lean.Lib.Maps.PTree.gss (A := CompCert4Lean.Lib.IntvSets.ISet.t) id _ gl] at hget
+                          cases hget
+                          have hbb : b' = b := Option.some.inj (hidx.symm.trans hsymb)
+                          have hnot : ¬ (ZArith.BinInt.Z.le (Ptrofs.unsigned ofs) i ∧ ZArith.BinInt.Z.lt i (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) sz)) := by
+                            intro hr
+                            rcases houtside with hne | hlt | hge
+                            · exact hne hbb
+                            · exact (ZArith.BinInt.Z.lt_irrefl (Ptrofs.unsigned ofs))
+                                (ZArith.BinInt.Z.le_lt_trans (Ptrofs.unsigned ofs) i (Ptrofs.unsigned ofs) hr.1 hlt)
+                            · exact (ZArith.BinInt.Z.lt_irrefl i)
+                                (ZArith.BinInt.Z.lt_le_trans i (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) sz) i hr.2 hge)
+                          rcases (CompCert4Lean.Lib.IntvSets.ISet.In_add _ _ _ _).mp hmem with hr | hold
+                          · exact hnot hr
+                          · exact hg id iv0 hidx hx hold
+                        · have hsame := CompCert4Lean.Lib.Maps.PTree.gso (A := CompCert4Lean.Lib.IntvSets.ISet.t) (i := idx) (j := id) (CompCert4Lean.Lib.IntvSets.ISet.add (Ptrofs.unsigned ofs) (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) sz) iv0) gl heq
+                          rw [hsame] at hget
+                          exact hg idx iv hidx hget hmem
+          | Glo id => exact nlive.nlive_intro _ _ _ _ hs hg
+          | Stk ofs' =>
+              cases hpm with
+              | stk hbc =>
+                  have hbs : b = sp := bc.bc_stack b sp hbc hsp
+                  subst b
+                  simp only [nmem_remove]
+                  constructor
+                  · intro hbsp hmem
+                    have hbb : b' = sp := hbsp
+                    rcases (CompCert4Lean.Lib.IntvSets.ISet.In_add _ _ _ _).mp hmem with hr | hold
+                    · rcases houtside with hne | hlt | hge
+                      · exact (hne (hbb.trans rfl)).elim
+                      · exact (ZArith.BinInt.Z.lt_irrefl (Ptrofs.unsigned ofs))
+                          (ZArith.BinInt.Z.le_lt_trans (Ptrofs.unsigned ofs) i (Ptrofs.unsigned ofs) hr.1 hlt)
+                      · exact (ZArith.BinInt.Z.lt_irrefl i)
+                          (ZArith.BinInt.Z.lt_le_trans i (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) sz) i hr.2 hge)
+                    · exact hs hbsp hold
+                  · exact hg
+          | Stack => exact nlive.nlive_intro _ _ _ _ hs hg
+
+end CompCert4Lean.Backend.NeedDomain

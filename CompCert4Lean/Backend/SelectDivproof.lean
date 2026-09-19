@@ -3795,3 +3795,17 @@ theorem eval_mods
               Val.lessdef_refl _⟩
 
 end CompCert4Lean.Backend.SelectDivproof
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eval_divlu_mull
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : eval_divlu_mullStatement := by
+  intro xi prog hf _ sp e m le x y p M hparams hnth
+  exact eval_divlu_mull_local xi (Genv.globalenv prog) sp e m hf le x y p M hparams hnth
+
+end CompCert4Lean.Backend.SelectDivproof

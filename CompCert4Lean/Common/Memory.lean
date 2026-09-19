@@ -8289,3 +8289,72 @@ theorem different_pointers_inject : different_pointers_injectStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem disjoint_or_equal_inject : disjoint_or_equal_injectStatement := by
+  intro f m m' b1 b1' d1 b2 b2' d2 o1 o2 sz hinj hm1 hm2 hr1 hr2 hpos hno
+  by_cases hb : b1 = b2
+  · subst b2
+    have heq := Option.some.inj (hm1.symm.trans hm2)
+    cases heq
+    rcases hno with hne | heq | hle | hle
+    · exact False.elim (hne rfl)
+    · exact Or.inr (Or.inl (congrArg (fun o => zAdd o d1) heq))
+    · right; right; left
+      change intOfZ (zAdd o1 sz) ≤ intOfZ o2 at hle
+      change intOfZ (zAdd (zAdd o1 d1) sz) ≤ intOfZ (zAdd o2 d1)
+      simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hle ⊢
+      omega
+    · right; right; right
+      change intOfZ (zAdd o2 sz) ≤ intOfZ o1 at hle
+      change intOfZ (zAdd (zAdd o2 d1) sz) ≤ intOfZ (zAdd o1 d1)
+      simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hle ⊢
+      omega
+  · by_cases ht : b1' = b2'
+    · subst b2'
+      right; right
+      by_cases hleft : zLe (zAdd (zAdd o1 d1) sz) (zAdd o2 d2)
+      · exact Or.inl hleft
+      by_cases hright : zLe (zAdd (zAdd o2 d2) sz) (zAdd o1 d1)
+      · exact Or.inr hright
+      exfalso
+      let x := zOfInt (max (intOfZ o1 + intOfZ d1) (intOfZ o2 + intOfZ d2))
+      have hxp : ∀ o d,
+          (o = o1 ∧ d = d1) ∨ (o = o2 ∧ d = d2) →
+          zLe o (zSub x d) ∧ zLt (zSub x d) (zAdd o sz) := by
+        intro o d heq
+        change ¬ (intOfZ (zAdd (zAdd o1 d1) sz) ≤ intOfZ (zAdd o2 d2)) at hleft
+        change ¬ (intOfZ (zAdd (zAdd o2 d2) sz) ≤ intOfZ (zAdd o1 d1)) at hright
+        change 0 < intOfZ sz at hpos
+        change intOfZ o ≤ intOfZ (zSub x d) ∧
+          intOfZ (zSub x d) < intOfZ (zAdd o sz)
+        simp only [x, zSub, zAdd, ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add,
+          intOfZ_zOfInt] at hleft hright ⊢
+        rcases heq with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> omega
+      have hneq := hinj.mi_no_overlap b1 b1' d1 b2 b1' d2
+        (zSub x d1) (zSub x d2) hb hm1 hm2
+        (hr1 _ (hxp o1 d1 (Or.inl ⟨rfl, rfl⟩)))
+        (hr2 _ (hxp o2 d2 (Or.inr ⟨rfl, rfl⟩)))
+      rcases hneq with hneq | hneq
+      · exact hneq rfl
+      · apply hneq
+        apply intOfZ_injective
+        simp only [zSub, zAdd, ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+        omega
+    · exact Or.inl ht
+
+end Mem
+
+end CompCert4Lean.Common.Memory

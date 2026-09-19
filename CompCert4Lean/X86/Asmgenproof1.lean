@@ -4170,3 +4170,183 @@ theorem testcond_for_unsigned_comparison_32_correct : testcond_for_unsigned_comp
       <;> omega
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+theorem int64_sub_overflow : int64_sub_overflowStatement := by
+  intro x y
+  have hso :
+      CompCert4Lean.Lib.Integers.Int64.sub_overflow x y
+          CompCert4Lean.Lib.Integers.Int64.zero =
+        CompCert4Lean.Lib.Integers.Int64.one ∨
+      CompCert4Lean.Lib.Integers.Int64.sub_overflow x y
+          CompCert4Lean.Lib.Integers.Int64.zero =
+        CompCert4Lean.Lib.Integers.Int64.zero := by
+    change CompCert4Lean.Lib.Integers.WordCore.sub_overflow x y
+        (CompCert4Lean.Lib.Integers.WordCore.zero
+          CompCert4Lean.Lib.Integers.Int64.wordsize) =
+        CompCert4Lean.Lib.Integers.WordCore.one
+          CompCert4Lean.Lib.Integers.Int64.wordsize ∨
+      CompCert4Lean.Lib.Integers.WordCore.sub_overflow x y
+        (CompCert4Lean.Lib.Integers.WordCore.zero
+          CompCert4Lean.Lib.Integers.Int64.wordsize) =
+        CompCert4Lean.Lib.Integers.WordCore.zero
+          CompCert4Lean.Lib.Integers.Int64.wordsize
+    rw [word_sub_overflow_eq_select_aux]
+    cases hlo : CompCert4Lean.Lib.Coqlib.zlt
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+            (CompCert4Lean.Lib.Integers.WordCore.signed x)
+            (CompCert4Lean.Lib.Integers.WordCore.signed y))
+          (CompCert4Lean.Lib.Integers.WordCore.signed
+            (CompCert4Lean.Lib.Integers.WordCore.zero
+              CompCert4Lean.Lib.Integers.Int64.wordsize)))
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat
+            (CompCert4Lean.Lib.Integers.Int64.wordsize - 1))) with
+    | left _ => left; simp only [asmgenproof1SumboolSelect, hlo]
+    | right _ =>
+      cases hhi : CompCert4Lean.Lib.Coqlib.zlt
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat
+              (CompCert4Lean.Lib.Integers.Int64.wordsize - 1))
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH))
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+              (CompCert4Lean.Lib.Integers.WordCore.signed x)
+              (CompCert4Lean.Lib.Integers.WordCore.signed y))
+            (CompCert4Lean.Lib.Integers.WordCore.signed
+              (CompCert4Lean.Lib.Integers.WordCore.zero
+                CompCert4Lean.Lib.Integers.Int64.wordsize))) with
+      | left _ => left; simp only [asmgenproof1SumboolSelect, hlo, hhi]
+      | right _ => right; simp only [asmgenproof1SumboolSelect, hlo, hhi]
+  have hneg :
+      CompCert4Lean.Lib.Integers.Int64.negative
+          (CompCert4Lean.Lib.Integers.Int64.sub x y) =
+        CompCert4Lean.Lib.Integers.Int64.one ∨
+      CompCert4Lean.Lib.Integers.Int64.negative
+          (CompCert4Lean.Lib.Integers.Int64.sub x y) =
+        CompCert4Lean.Lib.Integers.Int64.zero := by
+    change (if
+        asmgenproof1SumboolSelect
+          (CompCert4Lean.Lib.Coqlib.zlt
+            (CompCert4Lean.Lib.Integers.WordCore.signed
+              (CompCert4Lean.Lib.Integers.WordCore.sub x y))
+            (CompCert4Lean.Lib.Integers.WordCore.signed
+              (CompCert4Lean.Lib.Integers.WordCore.zero
+                CompCert4Lean.Lib.Integers.Int64.wordsize)))
+          true false = true then
+        CompCert4Lean.Lib.Integers.WordCore.one
+          CompCert4Lean.Lib.Integers.Int64.wordsize
+      else CompCert4Lean.Lib.Integers.WordCore.zero
+        CompCert4Lean.Lib.Integers.Int64.wordsize) =
+        CompCert4Lean.Lib.Integers.WordCore.one
+          CompCert4Lean.Lib.Integers.Int64.wordsize ∨
+      (if
+        asmgenproof1SumboolSelect
+          (CompCert4Lean.Lib.Coqlib.zlt
+            (CompCert4Lean.Lib.Integers.WordCore.signed
+              (CompCert4Lean.Lib.Integers.WordCore.sub x y))
+            (CompCert4Lean.Lib.Integers.WordCore.signed
+              (CompCert4Lean.Lib.Integers.WordCore.zero
+                CompCert4Lean.Lib.Integers.Int64.wordsize)))
+          true false = true then
+        CompCert4Lean.Lib.Integers.WordCore.one
+          CompCert4Lean.Lib.Integers.Int64.wordsize
+      else CompCert4Lean.Lib.Integers.WordCore.zero
+        CompCert4Lean.Lib.Integers.Int64.wordsize) =
+        CompCert4Lean.Lib.Integers.WordCore.zero
+          CompCert4Lean.Lib.Integers.Int64.wordsize
+    cases hn : CompCert4Lean.Lib.Coqlib.zlt
+        (CompCert4Lean.Lib.Integers.WordCore.signed
+          (CompCert4Lean.Lib.Integers.WordCore.sub x y))
+        (CompCert4Lean.Lib.Integers.WordCore.signed
+          (CompCert4Lean.Lib.Integers.WordCore.zero
+            CompCert4Lean.Lib.Integers.Int64.wordsize)) with
+    | left _ => left; simp only [asmgenproof1SumboolSelect, hn, Bool.false_eq_true, if_true, if_false]
+    | right _ => right; simp only [asmgenproof1SumboolSelect, hn, Bool.false_eq_true, if_true, if_false]
+  have hz :
+      CompCert4Lean.Lib.Integers.Int.repr
+        (CompCert4Lean.Lib.Integers.Int64.unsigned
+          CompCert4Lean.Lib.Integers.Int64.zero) =
+        CompCert4Lean.Lib.Integers.Int.zero := by rfl
+  have ho :
+      CompCert4Lean.Lib.Integers.Int.repr
+        (CompCert4Lean.Lib.Integers.Int64.unsigned
+          CompCert4Lean.Lib.Integers.Int64.one) =
+        CompCert4Lean.Lib.Integers.Int.one := by rfl
+  have h64_00 :
+      CompCert4Lean.Lib.Integers.Int64.xor
+        CompCert4Lean.Lib.Integers.Int64.zero
+        CompCert4Lean.Lib.Integers.Int64.zero =
+      CompCert4Lean.Lib.Integers.Int64.zero := by
+    exact word_xor_zero_zero_aux 64
+  have h64_01 :
+      CompCert4Lean.Lib.Integers.Int64.xor
+        CompCert4Lean.Lib.Integers.Int64.zero
+        CompCert4Lean.Lib.Integers.Int64.one =
+      CompCert4Lean.Lib.Integers.Int64.one := by
+    exact word_xor_zero_one_aux 64 (by decide)
+  have h64_10 :
+      CompCert4Lean.Lib.Integers.Int64.xor
+        CompCert4Lean.Lib.Integers.Int64.one
+        CompCert4Lean.Lib.Integers.Int64.zero =
+      CompCert4Lean.Lib.Integers.Int64.one := by
+    exact word_xor_one_zero_aux 64 (by decide)
+  have h64_11 :
+      CompCert4Lean.Lib.Integers.Int64.xor
+        CompCert4Lean.Lib.Integers.Int64.one
+        CompCert4Lean.Lib.Integers.Int64.one =
+      CompCert4Lean.Lib.Integers.Int64.zero := by
+    exact word_xor_one_one_aux 64 (by decide)
+  have i00 :
+      CompCert4Lean.Lib.Integers.Int.xor
+        CompCert4Lean.Lib.Integers.Int.zero
+        CompCert4Lean.Lib.Integers.Int.zero =
+      CompCert4Lean.Lib.Integers.Int.zero := by
+    exact word_xor_zero_zero_aux 32
+  have i01 :
+      CompCert4Lean.Lib.Integers.Int.xor
+        CompCert4Lean.Lib.Integers.Int.zero
+        CompCert4Lean.Lib.Integers.Int.one =
+      CompCert4Lean.Lib.Integers.Int.one := by
+    exact word_xor_zero_one_aux 32 (by decide)
+  have i10 :
+      CompCert4Lean.Lib.Integers.Int.xor
+        CompCert4Lean.Lib.Integers.Int.one
+        CompCert4Lean.Lib.Integers.Int.zero =
+      CompCert4Lean.Lib.Integers.Int.one := by
+    exact word_xor_one_zero_aux 32 (by decide)
+  have i11 :
+      CompCert4Lean.Lib.Integers.Int.xor
+        CompCert4Lean.Lib.Integers.Int.one
+        CompCert4Lean.Lib.Integers.Int.one =
+      CompCert4Lean.Lib.Integers.Int.zero := by
+    exact word_xor_one_one_aux 32 (by decide)
+  have hne64 :
+      CompCert4Lean.Lib.Integers.WordCore.repr 64
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z0 ≠
+        CompCert4Lean.Lib.Integers.WordCore.repr 64
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH) := by decide
+  have hne64' :
+      CompCert4Lean.Lib.Integers.WordCore.repr 64
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH) ≠
+        CompCert4Lean.Lib.Integers.WordCore.repr 64
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z0 := Ne.symm hne64
+  have haux := int64_lt_sub_overflow_aux x y
+  rcases hso with hso | hso <;> rcases hneg with hneg | hneg
+  all_goals
+    rw [hso, hneg] at haux ⊢
+    simp only [h64_00, h64_01, h64_10, h64_11] at haux
+    simp only [hz, ho, i00, i01, i10, i11] at ⊢
+    by_cases hlt : CompCert4Lean.Lib.Integers.Int64.lt x y = true
+    · simp [hlt] at haux ⊢ <;>
+        first | rfl | exact (hne64 haux).elim | exact (hne64' haux).elim
+    · simp [hlt] at haux ⊢ <;>
+        first | rfl | exact (hne64 haux).elim | exact (hne64' haux).elim
+
+
+end CompCert4Lean.X86.Asmgenproof1
