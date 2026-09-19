@@ -183,3 +183,20 @@ theorem round_FIX_IZR (ctx : ExactRealContext)
   exact ctx.certificate.orderedField.mul_one _
 
 end CompCert4Lean.Flocq.Core.FIX
+
+namespace CompCert4Lean.Flocq.Core.FIX
+
+theorem generic_format_FIX (ctx : ExactRealContext)
+    (magnitude : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Magnitude ctx) :
+    generic_format_FIXStatement ctx magnitude := by
+  intro beta emin x hfix
+  cases hfix with
+  | FIX_spec f hx he =>
+      subst x
+      apply CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_canonical
+        ctx magnitude beta (FIX_exp emin) f
+      unfold CompCert4Lean.Flocq.Core.Generic_fmt.Exact.canonical
+      change Fexp f = emin
+      exact he
+
+end CompCert4Lean.Flocq.Core.FIX

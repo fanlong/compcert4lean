@@ -4456,3 +4456,61 @@ theorem transl_final_states : transl_final_statesStatement := by
           exact CompCert4Lean.Backend.Cminor.final_state.final_state_intro r tm
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+
+private theorem cminorgenproof_val_inject_incr
+    {f1 f2 : Val.meminj} {v v' : val}
+    (hincr : inject_incr f1 f2) (hval : Val.inject f1 v v') :
+    Val.inject f2 v v' := by
+  cases hval with
+  | inject_int i => exact Val.inject.inject_int i
+  | inject_long i => exact Val.inject.inject_long i
+  | inject_float f => exact Val.inject.inject_float f
+  | inject_single f => exact Val.inject.inject_single f
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      exact Val.inject.inject_ptr b1 ofs1 b2 ofs2 delta (hincr b1 b2 delta hmap) hofs
+  | val_inject_undef => exact Val.inject.val_inject_undef _
+
+theorem match_env_invariant : match_env_invariantStatement := by
+  intro f1 cenv e sp lo hi f2 henv hincr hsame hbelow
+  refine {
+    me_vars := ?_,
+    me_low_high := henv.me_low_high,
+    me_bounded := henv.me_bounded,
+    me_inv := ?_,
+    me_incr := ?_ }
+  · intro id
+    have hvar := henv.me_vars id
+    cases he : PTree.get id e with
+    | none =>
+        cases hc : PTree.get id cenv with
+        | none =>
+            rw [he, hc] at hvar
+            exact .global
+        | some ofs =>
+            rw [he, hc] at hvar
+            cases hvar
+    | some bs =>
+        cases bs with
+        | mk b sz =>
+            cases hc : PTree.get id cenv with
+            | none =>
+                rw [he, hc] at hvar
+                cases hvar
+            | some ofs =>
+                rw [he, hc] at hvar
+                cases hvar with
+                | «local» hptr =>
+                    exact .local (cminorgenproof_val_inject_incr hincr hptr)
+  · intro b delta hmap
+    exact henv.me_inv b delta ((hsame b delta hmap))
+  · intro b tb delta hmap hlt
+    apply henv.me_incr b tb delta
+    · exact (hbelow b hlt).symm.trans hmap
+    · exact hlt
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

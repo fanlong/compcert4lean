@@ -4840,3 +4840,18 @@ theorem exp_0 :
 end Rtrigo_def
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem Ropp_plus_distr :
+    ∀ (ctx : ExactRealContext), Ropp_plus_distrStatement ctx := by
+  intro ctx r1 r2
+  change ctx.spec.neg (ctx.spec.add r1 r2) =
+    ctx.spec.add (ctx.spec.neg r1) (ctx.spec.neg r2)
+  exact exact_neg_add_suffix ctx r1 r2
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

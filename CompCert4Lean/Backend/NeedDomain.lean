@@ -8075,3 +8075,40 @@ theorem orlimm_redundant_sound : orlimm_redundant_soundStatement := by
   | All => simp [orlimm_redundant] at hred
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem nge_lub_l : nge_lub_lStatement := by
+  intro x y
+  cases x with
+  | Nothing => exact nge.nge_all y
+  | All =>
+      cases y <;> exact nge.nge_nothing All
+  | I m1 =>
+      cases y with
+      | Nothing =>
+          apply nge.nge_int m1 m1
+          intro i hi hm
+          exact hm
+      | I m2 =>
+          apply nge.nge_int (Int.or m1 m2) m1
+          intro i hi hm
+          rw [iagreeOrTestbit]
+          exact Bool.or_eq_true_iff.mpr (Or.inl hm)
+      | L m => exact nge.nge_nothing (I m1)
+      | All => exact nge.nge_nothing (I m1)
+  | L m1 =>
+      cases y with
+      | Nothing =>
+          apply nge.nge_long m1 m1
+          intro i hi hm
+          exact hm
+      | I m => exact nge.nge_nothing (L m1)
+      | L m2 =>
+          apply nge.nge_long (Int64.or m1 m2) m1
+          intro i hi hm
+          rw [lagreeOrTestbitForOr]
+          exact Bool.or_eq_true_iff.mpr (Or.inl hm)
+      | All => exact nge.nge_nothing (L m1)
+
+end CompCert4Lean.Backend.NeedDomain

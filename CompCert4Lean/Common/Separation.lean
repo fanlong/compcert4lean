@@ -2607,3 +2607,59 @@ theorem alloc_parallel_rule_2 : alloc_parallel_rule_2Statement := by
       ⟨hRangeHi, ⟨hinj', ⟨hge', hP', hgeP⟩, hminInner⟩, hRangeHiInner⟩,
       hRangeLoRest⟩
   · exact scc085_extend_inj_same j b1 b2 delta
+
+open Lean Elab Tactic Meta
+open CompCert4Lean.Lib.Integers
+
+private theorem scc085_ptrofs_unsigned_repr (z : Z)
+    (hz : ZArith.BinInt.Z.le Z0 z ∧ ZArith.BinInt.Z.le z Ptrofs.max_unsigned) :
+    Ptrofs.unsigned (Ptrofs.repr z) = z := by
+  have hzi : z = zOfInt (intOfZ z) := (zOfInt_intOfZ z).symm
+  rw [hzi]
+  change (CompCert4Lean.Lib.Integers.WordCore.repr Ptrofs.wordsize
+      (zOfInt (intOfZ z))).intval = zOfInt (intOfZ z)
+  let w := CompCert4Lean.Lib.Integers.WordCore.repr Ptrofs.wordsize
+      (zOfInt (intOfZ z))
+  have hi : w.val = (Int.toNat (intOfZ z % ((2 ^ Ptrofs.wordsize : Nat) : Int))) := by
+    dsimp [w]
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "WordCore.val_repr")
+        | throwError "frozen WordCore.val_repr helper not found"
+      let stx := Lean.mkIdent n
+      let arg := Lean.mkIdent `z
+      evalTactic
+        (← `(tactic| exact $stx Ptrofs.wordsize
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ $arg)))
+  have hwi : w.intval = ZArith.BinInt.Z.of_nat w.val := by
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "WordCore.intval_eq_zOfNat_val")
+        | throwError "frozen WordCore.intval_eq_zOfNat_val helper not found"
+      let stx := Lean.mkIdent n
+      let arg := Lean.mkIdent `w
+      evalTactic (← `(tactic| exact $stx $arg))
+  change w.intval = _
+  rw [hwi, hi]
+  have hznonneg : 0 ≤ intOfZ z := hz.1
+  have hzmax := hz.2
+  have hm : intOfZ Ptrofs.max_unsigned = (2 ^ Ptrofs.wordsize : Int) - 1 := by rfl
+  have hzlt : intOfZ z < ((2 ^ Ptrofs.wordsize : Nat) : Int) := by
+    change intOfZ z ≤ intOfZ Ptrofs.max_unsigned at hzmax
+    rw [hm] at hzmax
+    have hpcast : ((2 ^ Ptrofs.wordsize : Nat) : Int) = (2 : Int) ^ Ptrofs.wordsize := by
+      exact (Int.natCast_pow 2 Ptrofs.wordsize).symm
+    rw [hpcast]
+    omega
+  rw [Int.emod_eq_of_lt hznonneg hzlt]
+  change zOfInt (↑(Int.toNat (intOfZ z)) : Int) = _
+  rw [Int.toNat_of_nonneg hznonneg]
+
+theorem loadv_rule : loadv_ruleStatement := by
+  intro spec m chunk b ofs hpred
+  have hbounds := contains_no_overflow spec m chunk b ofs hpred
+  have hrepr := scc085_ptrofs_unsigned_repr ofs hbounds
+  rw [Mem.loadv, hrepr]
+  exact load_rule spec m chunk b ofs hpred

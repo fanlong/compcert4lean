@@ -1558,3 +1558,169 @@ theorem val_casted_has_argtype : val_casted_has_argtypeStatement := by
         CompCert4Lean.Common.Values.Val.has_argtype]
 
 end CompCert4Lean.Cfrontend.Cop
+
+namespace CompCert4Lean.Cfrontend.Cop
+
+theorem sem_binarith_inject :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      sem_binarith_injectStatement := by
+  intro _binary64_certificate _binary32_certificate f m m' hweak
+    sem_int sem_long sem_float sem_single v1 t1 v2 t2 v v1' v2' hsem hinj1 hinj2
+    hself_int hself_long hself_float hself_single
+  have SELF : ∀ ov v, ov = some v → optval_self_injects ov → Common.Values.Val.inject f v v := by
+    intro ov v0 hov hself
+    subst ov
+    cases v0 with
+    | Vptr b ofs => exact False.elim hself
+    | Vundef => exact Common.Values.Val.inject.val_inject_undef _
+    | Vint n => exact Common.Values.Val.inject.inject_int _
+    | Vlong n => exact Common.Values.Val.inject.inject_long _
+    | Vfloat x => exact Common.Values.Val.inject.inject_float _
+    | Vsingle x => exact Common.Values.Val.inject.inject_single _
+  unfold sem_binarith at hsem ⊢
+  let c := classify_binarith t1 t2
+  let t := binarith_type c
+  change (match sem_cast v1 t1 t m with
+    | none => none
+    | some v1' => match sem_cast v2 t2 t m with
+      | none => none
+      | some v2' => match c with
+        | .bin_case_i sg => match v1', v2' with | .Vint n1, .Vint n2 => sem_int sg n1 n2 | _, _ => none
+        | .bin_case_f => match v1', v2' with | .Vfloat n1, .Vfloat n2 => sem_float n1 n2 | _, _ => none
+        | .bin_case_s => match v1', v2' with | .Vsingle n1, .Vsingle n2 => sem_single n1 n2 | _, _ => none
+        | .bin_case_l sg => match v1', v2' with | .Vlong n1, .Vlong n2 => sem_long sg n1 n2 | _, _ => none
+        | .bin_default => none) = some v at hsem
+  cases hc1 : sem_cast v1 t1 t m with
+  | none => simp [hc1] at hsem
+  | some w1 =>
+      cases hc2 : sem_cast v2 t2 t m with
+      | none => simp [hc1, hc2] at hsem
+      | some w2 =>
+          have hi1 := sem_cast_inj (binary64_certificate := _binary64_certificate)
+            (binary32_certificate := _binary32_certificate) f m m' hweak v1 t1 t w1 v1' hc1 hinj1
+          have hi2 := sem_cast_inj (binary64_certificate := _binary64_certificate)
+            (binary32_certificate := _binary32_certificate) f m m' hweak v2 t2 t w2 v2' hc2 hinj2
+          rcases hi1 with ⟨w1', hc1', hinj1'⟩
+          rcases hi2 with ⟨w2', hc2', hinj2'⟩
+          dsimp [c, t] at hsem ⊢
+          cases hcase : classify_binarith t1 t2 with
+          | bin_case_i sg =>
+              rw [hcase] at hsem
+              have ht : t = binarith_type (.bin_case_i sg) := by
+                dsimp [t, c]
+                rw [hcase]
+              rw [ht] at hc1 hc2 hc1' hc2'
+              have hc1'' : sem_cast v1' t1 (binarith_type (.bin_case_i sg)) m' = some w1' := by
+                simpa [hcase] using hc1'
+              have hc2'' : sem_cast v2' t2 (binarith_type (.bin_case_i sg)) m' = some w2' := by
+                simpa [hcase] using hc2'
+              cases hinj1' with
+              | inject_int n1 =>
+                  cases hinj2' with
+                  | inject_int n2 =>
+                      rw [hc1, hc2] at hsem
+                      simp [hcase] at hsem
+                      have hself' : optval_self_injects (some v) := by
+                        rw [← hsem]
+                        exact hself_int sg n1 n2
+                      refine ⟨v, ?_, SELF (some v) v rfl hself'⟩
+                      simpa [hc1'', hc2'', hcase] using hsem
+                  | _ =>
+                      rw [hc1, hc2] at hsem
+                      simp at hsem
+              | _ =>
+                  rw [hc1, hc2] at hsem
+                  simp at hsem
+          | bin_case_l sg =>
+              rw [hcase] at hsem
+              have ht : t = binarith_type (.bin_case_l sg) := by
+                dsimp [t, c]
+                rw [hcase]
+              rw [ht] at hc1 hc2 hc1' hc2'
+              have hc1'' : sem_cast v1' t1 (binarith_type (.bin_case_l sg)) m' = some w1' := by
+                simpa [hcase] using hc1'
+              have hc2'' : sem_cast v2' t2 (binarith_type (.bin_case_l sg)) m' = some w2' := by
+                simpa [hcase] using hc2'
+              cases hinj1' with
+              | inject_long n1 =>
+                  cases hinj2' with
+                  | inject_long n2 =>
+                      rw [hc1, hc2] at hsem
+                      simp [hcase] at hsem
+                      have hself' : optval_self_injects (some v) := by
+                        rw [← hsem]
+                        exact hself_long sg n1 n2
+                      refine ⟨v, ?_, SELF (some v) v rfl hself'⟩
+                      simpa [hc1'', hc2'', hcase] using hsem
+                  | _ =>
+                      rw [hc1, hc2] at hsem
+                      simp at hsem
+              | _ =>
+                  rw [hc1, hc2] at hsem
+                  simp at hsem
+          | bin_case_f =>
+              rw [hcase] at hsem
+              have ht : t = binarith_type (.bin_case_f) := by
+                dsimp [t, c]
+                rw [hcase]
+              rw [ht] at hc1 hc2 hc1' hc2'
+              have hc1'' : sem_cast v1' t1 (binarith_type (.bin_case_f)) m' = some w1' := by
+                simpa [hcase] using hc1'
+              have hc2'' : sem_cast v2' t2 (binarith_type (.bin_case_f)) m' = some w2' := by
+                simpa [hcase] using hc2'
+              cases hinj1' with
+              | inject_float n1 =>
+                  cases hinj2' with
+                  | inject_float n2 =>
+                      rw [hc1, hc2] at hsem
+                      simp [hcase] at hsem
+                      have hself' : optval_self_injects (some v) := by
+                        rw [← hsem]
+                        exact hself_float n1 n2
+                      refine ⟨v, ?_, SELF (some v) v rfl hself'⟩
+                      simpa [hc1'', hc2'', hcase] using hsem
+                  | _ =>
+                      rw [hc1, hc2] at hsem
+                      simp at hsem
+              | _ =>
+                  rw [hc1, hc2] at hsem
+                  simp at hsem
+          | bin_case_s =>
+              rw [hcase] at hsem
+              have ht : t = binarith_type (.bin_case_s) := by
+                dsimp [t, c]
+                rw [hcase]
+              rw [ht] at hc1 hc2 hc1' hc2'
+              have hc1'' : sem_cast v1' t1 (binarith_type (.bin_case_s)) m' = some w1' := by
+                simpa [hcase] using hc1'
+              have hc2'' : sem_cast v2' t2 (binarith_type (.bin_case_s)) m' = some w2' := by
+                simpa [hcase] using hc2'
+              cases hinj1' with
+              | inject_single n1 =>
+                  cases hinj2' with
+                  | inject_single n2 =>
+                      rw [hc1, hc2] at hsem
+                      simp [hcase] at hsem
+                      have hself' : optval_self_injects (some v) := by
+                        rw [← hsem]
+                        exact hself_single n1 n2
+                      refine ⟨v, ?_, SELF (some v) v rfl hself'⟩
+                      simpa [hc1'', hc2'', hcase] using hsem
+                  | _ =>
+                      rw [hc1, hc2] at hsem
+                      simp at hsem
+              | _ =>
+                  rw [hc1, hc2] at hsem
+                  simp at hsem
+          | bin_default =>
+              have ht : t = binarith_type (.bin_default) := by
+                dsimp [t, c]
+                rw [hcase]
+              rw [ht] at hc1 hc2
+              rw [hcase] at hsem
+              rw [hc1, hc2] at hsem
+              simp at hsem
+
+
+end CompCert4Lean.Cfrontend.Cop

@@ -186,3 +186,50 @@ theorem wt_val_casted : wt_val_castedStatement := by
       exact wt_val.wt_val_void v
 
 end CompCert4Lean.Cfrontend.Ctyping
+
+namespace CompCert4Lean.Cfrontend.Ctyping
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Common.Values
+
+theorem pres_cast_int_int : pres_cast_int_intStatement := by
+  intro sz sg n
+  cases sz with
+  | I8 =>
+      cases sg with
+      | Signed =>
+          change CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 8)
+            (CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 8) n) =
+            CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 8) n
+          exact CompCert4Lean.Lib.Integers.Int.sign_ext_idem_proof
+            (zOfNat 8) n (by change 0 < (8 : Int); omega)
+      | Unsigned =>
+          change CompCert4Lean.Lib.Integers.Int.zero_ext (zOfNat 8)
+            (CompCert4Lean.Lib.Integers.Int.zero_ext (zOfNat 8) n) =
+            CompCert4Lean.Lib.Integers.Int.zero_ext (zOfNat 8) n
+          exact CompCert4Lean.Lib.Integers.Int.zero_ext_idem_proof_api
+            (zOfNat 8) n (by change 0 ≤ (8 : Int); omega)
+  | I16 =>
+      cases sg with
+      | Signed =>
+          change CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 16)
+            (CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 16) n) =
+            CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 16) n
+          exact CompCert4Lean.Lib.Integers.Int.sign_ext_idem_proof
+            (zOfNat 16) n (by change 0 < (16 : Int); omega)
+      | Unsigned =>
+          change CompCert4Lean.Lib.Integers.Int.zero_ext (zOfNat 16)
+            (CompCert4Lean.Lib.Integers.Int.zero_ext (zOfNat 16) n) =
+            CompCert4Lean.Lib.Integers.Int.zero_ext (zOfNat 16) n
+          exact CompCert4Lean.Lib.Integers.Int.zero_ext_idem_proof_api
+            (zOfNat 16) n (by change 0 ≤ (16 : Int); omega)
+  | I32 =>
+      simp [wt_int, cast_int_int]
+  | IBool =>
+      cases h : CompCert4Lean.Lib.Integers.Int.eq n
+          CompCert4Lean.Lib.Integers.Int.zero <;>
+        simp [wt_int, cast_int_int, h]
+
+end CompCert4Lean.Cfrontend.Ctyping

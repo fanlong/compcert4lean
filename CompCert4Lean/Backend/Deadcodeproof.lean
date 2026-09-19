@@ -2269,3 +2269,27 @@ theorem transf_final_states : ∀ cfg, transf_final_statesStatement cfg := by
           exact CompCert4Lean.Backend.RTL.final_state.intro r m'
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+ theorem magree_load : magree_loadStatement := by
+  intro m1 m2 P chunk b ofs v h hload hP
+  have hvalid := Mem.load_valid_access m1 chunk b ofs v hload
+  rcases Mem.load_loadbytes chunk m1 b ofs v hload with
+    ⟨bytes, hbytes, hv⟩
+  rcases magree_loadbytes m1 m2 P b ofs (size_chunk chunk) bytes h hbytes hP with
+    ⟨bytes', hbytes', hrel⟩
+  refine ⟨decode_val chunk bytes', ?_, ?_⟩
+  · exact Mem.loadbytes_load chunk m2 b ofs bytes' hbytes' hvalid.2
+  · rw [hv]
+    apply (val_inject_id _ _).mp
+    exact decode_val_inject inject_id bytes bytes' chunk hrel
+
+end CompCert4Lean.Backend.Deadcodeproof

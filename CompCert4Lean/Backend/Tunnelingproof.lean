@@ -1874,3 +1874,170 @@ theorem transf_final_states : transf_final_statesStatement := by
           exact final_state.intro tls tm r htarget
 
 end CompCert4Lean.Backend.Tunnelingproof
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Specif
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.UnionFind
+open CompCert4Lean.Lib.Maps
+
+private def record_cond_correct_aux
+    (fn : function) (c : code) (u : U.t) (changed : Bool)
+    (f : node → Nat) (pc : node) (b : bblock)
+    (BMC : branch_map_correct_2 fn c u f)
+    (GET1 : PTree.get pc fn.fn_code = some b)
+    (GET2 : PTree.get pc c ≠ none) :
+    let result := record_cond ((c, u), changed) pc b
+    sig (fun f' : node → Nat =>
+      branch_map_correct_2 fn result.1.1 result.1.2 f') := by
+  cases b with
+  | nil => exact ⟨f, by simpa [record_cond] using BMC⟩
+  | cons instr tail =>
+      cases instr with
+      | Lcond cond args s1 s2 =>
+          unfold record_cond
+          cases hpeq : peq (U.repr u s1) (U.repr u s2) with
+          | right hneq => exact ⟨f, by simp [hpeq, BMC]⟩
+          | left heq =>
+              simp [hpeq]
+              refine ⟨measure_cond u pc s1 s2 f, ?_⟩
+              have PC : U.repr u pc = pc := by
+                have h := BMC pc
+                rw [GET1] at h
+                exact h.elim id (fun h => False.elim (GET2 h.1))
+              have hmeasure : ∀ (x y : node),
+                  U.repr u x = U.repr u y → f x < f y →
+                  measure_cond u pc s1 s2 f x < measure_cond u pc s1 s2 f y := by
+                intro x y hxy hlt
+                unfold measure_cond
+                cases htest : peqNode (U.repr u s1) pc with
+                | left _ => simpa [htest] using hlt
+                | right _ =>
+                    cases hx : peqNode (U.repr u x) pc with
+                    | left heqx =>
+                        cases hy : peqNode (U.repr u y) pc with
+                        | left heqy =>
+                            simp [htest, hx, hy]
+                            omega
+                        | right hney =>
+                            exact False.elim (hney (hxy.symm.trans heqx))
+                    | right hnex =>
+                        cases hy : peqNode (U.repr u y) pc with
+                        | left heqy =>
+                            exact False.elim (hnex (hxy.trans heqy))
+                        | right _ => simpa [htest, hx, hy] using hlt
+              intro p
+              by_cases hpc : p = pc
+              · subst p
+                simp only [GET1]
+                have hpc1 : U.repr (U.union u pc s1) pc = U.repr u s1 :=
+                  tunnel_u_repr_union_2 u pc s1 pc rfl
+                have hpc2 : U.repr (U.union u pc s1) s1 = U.repr u s1 :=
+                  tunnel_u_repr_union_3 u pc s1
+                have hpc3 : U.repr (U.union u pc s1) s2 = U.repr u s2 := by
+                  by_cases hs : U.repr u s2 = U.repr u pc
+                  · calc
+                      U.repr (U.union u pc s1) s2 = U.repr u s1 :=
+                        tunnel_u_repr_union_2 u pc s1 s2 hs
+                      _ = U.repr u s2 := heq
+                  · exact tunnel_u_repr_union_1 u pc s1 s2 hs
+                rw [hpc1, hpc2, hpc3]
+                cases htest : peqNode (U.repr u s1) pc with
+                | left hsame => exact Or.inl hsame
+                | right hdiff =>
+                    right
+                    have hs2pc : U.repr u s2 ≠ pc := by
+                      intro hs
+                      apply hdiff
+                      exact heq.trans hs
+                    refine ⟨PTree.grs_proof (A := bblock) pc c, rfl, heq, ?_, ?_⟩
+                    · unfold measure_cond
+                      cases hpc' : peqNode (U.repr u pc) pc with
+                      | left _ =>
+                          simp [htest, hpc']
+                          calc
+                            f s1 ≤ Nat.max (f s1) (f s2) := Nat.le_max_left _ _
+                            _ < f pc + Nat.max (f s1) (f s2) + 1 := by omega
+                      | right hnepc => exact False.elim (hnepc PC)
+                    · unfold measure_cond
+                      cases hpc' : peqNode (U.repr u pc) pc with
+                      | left _ =>
+                          cases hs2' : peqNode (U.repr u s2) pc with
+                          | left heq2 => exact False.elim (hs2pc heq2)
+                          | right _ =>
+                              simp [htest, hpc', hs2']
+                              calc
+                                f s2 ≤ Nat.max (f s1) (f s2) := Nat.le_max_right _ _
+                                _ < f pc + Nat.max (f s1) (f s2) + 1 := by omega
+                      | right hnepc => exact False.elim (hnepc PC)
+              · have hpreserve : U.repr u p = p → U.repr (U.union u pc s1) p = p := by
+                  intro hp
+                  exact (tunnel_u_repr_union_1 u pc s1 p (by
+                    intro h
+                    exact hpc (hp.symm.trans (h.trans PC)))).trans hp
+                have hpB := BMC p
+                cases hpget : PTree.get p fn.fn_code with
+                | none =>
+                    simp [hpget] at hpB ⊢
+                    exact hpreserve hpB
+                | some block =>
+                    cases block with
+                    | nil =>
+                        simp [hpget] at hpB ⊢
+                        exact hpreserve hpB
+                    | cons pinstr ptail =>
+                        cases pinstr with
+                        | Lbranch ps =>
+                            simp only [hpget] at hpB
+                            simp only [branch_map_correct_2] at hpB ⊢
+                            cases hpB with
+                            | inl hp => exact Or.inl (hpreserve hp)
+                            | inr hp =>
+                                right
+                                refine ⟨tunnel_u_sameclass_union_2 u pc s1 p ps hp.1, ?_⟩
+                                exact hmeasure ps p hp.1.symm hp.2
+                        | Lop op args' res => simp [hpget] at hpB ⊢; exact hpreserve hpB
+                        | Lload chunk addr args' dst => simp [hpget] at hpB ⊢; exact hpreserve hpB
+                        | Lgetstack sl ofs ty dst => simp [hpget] at hpB ⊢; exact hpreserve hpB
+                        | Lsetstack src sl ofs ty => simp [hpget] at hpB ⊢; exact hpreserve hpB
+                        | Lstore chunk addr args' src => simp [hpget] at hpB ⊢; exact hpreserve hpB
+                        | Lcall sig ros => simp [hpget] at hpB ⊢; exact hpreserve hpB
+                        | Ltailcall sig ros => simp [hpget] at hpB ⊢; exact hpreserve hpB
+                        | Lbuiltin ef args' res => simp [hpget] at hpB ⊢; exact hpreserve hpB
+                        | Lcond cond' args' s1' s2' =>
+                            simp only [hpget] at hpB
+                            simp only [branch_map_correct_2] at hpB ⊢
+                            cases hpB with
+                            | inl hp => exact Or.inl (hpreserve hp)
+                            | inr hp =>
+                                right
+                                refine ⟨?_, tunnel_u_sameclass_union_2 u pc s1 p s1' hp.2.1, ?_, ?_, ?_⟩
+                                · have hremove := PTree.gro_proof c hpc
+                                  rw [hremove]
+                                  exact hp.1
+                                · exact tunnel_u_sameclass_union_2 u pc s1 p s2' hp.2.2.1
+                                · exact hmeasure s1' p hp.2.1.symm hp.2.2.2.1
+                                · exact hmeasure s2' p hp.2.2.1.symm hp.2.2.2.2
+                        | Ljumptable arg tbl => simp [hpget] at hpB ⊢; exact hpreserve hpB
+                        | Lreturn => simp [hpget] at hpB ⊢; exact hpreserve hpB
+      | Lop op args res => exact ⟨f, by simpa [record_cond] using BMC⟩
+      | Lload chunk addr args dst => exact ⟨f, by simpa [record_cond] using BMC⟩
+      | Lgetstack sl ofs ty dst => exact ⟨f, by simpa [record_cond] using BMC⟩
+      | Lsetstack src sl ofs ty => exact ⟨f, by simpa [record_cond] using BMC⟩
+      | Lstore chunk addr args src => exact ⟨f, by simpa [record_cond] using BMC⟩
+      | Lcall sig ros => exact ⟨f, by simpa [record_cond] using BMC⟩
+      | Ltailcall sig ros => exact ⟨f, by simpa [record_cond] using BMC⟩
+      | Lbuiltin ef args' res => exact ⟨f, by simpa [record_cond] using BMC⟩
+      | Lbranch succ => exact ⟨f, by simpa [record_cond] using BMC⟩
+      | Ljumptable arg tbl => exact ⟨f, by simpa [record_cond] using BMC⟩
+      | Lreturn => exact ⟨f, by simpa [record_cond] using BMC⟩
+
+
+def record_cond_correct : record_cond_correctStatement := by
+  intro fn c u changed f pc b BMC GET1 GET2
+  exact record_cond_correct_aux fn c u changed f pc b BMC GET1 GET2
+
+end CompCert4Lean.Backend.Tunnelingproof

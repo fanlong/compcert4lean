@@ -3933,3 +3933,109 @@ theorem fexp_round_odd : ∀ (ctx : ExactRealContext)
       emin prec hprec x hxpos
 
 end CompCert4Lean.Flocq.Prop.Round_odd
+
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+
+open CompCert4Lean.Flocq.Core
+
+private theorem pg_valid_rnd_odd_zle_refl (z : Z) : Zle z z := by
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z ≤
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z
+  exact Int.le_refl _
+
+private theorem pg_valid_rnd_odd_zle_trans (a b c : Z)
+    (hab : Zle a b) (hbc : Zle b c) : Zle a c := by
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a ≤
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b at hab
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b ≤
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ c at hbc
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a ≤
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ c
+  omega
+
+theorem valid_rnd_odd_certificate_proof :
+    ∀ (ctx : ExactRealContext), Valid_rnd_odd_Certificate ctx := by
+  intro ctx
+  constructor
+  · constructor
+    · intro x y hxy
+      have hfloor_xy : Zle (Zfloor ctx x) (Zfloor ctx y) :=
+        CompCert4Lean.Flocq.Core.Raux.Zfloor_le ctx x y hxy
+      have hfloor_y_rnd : Zle (Zfloor ctx y) (Zrnd_odd ctx y) := by
+        by_cases hy : y = IZR ctx (Zfloor ctx y)
+        · rw [round_odd_Zrnd_odd_eq_aux ctx y hy]
+          exact pg_valid_rnd_odd_zle_refl _
+        · cases hey : Zeven (Zfloor ctx y) with
+          | true =>
+              rw [round_odd_Zrnd_odd_ne_even_aux ctx y hy hey]
+              have hreal :=
+                ctx.certificate.orderedField.le_trans _ _ _
+                  (CompCert4Lean.Flocq.Core.Raux.Zfloor_lb ctx y)
+                  (CompCert4Lean.Flocq.Core.Raux.Zceil_ub ctx y)
+              exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.le_IZR
+                ctx _ _ hreal
+          | false =>
+              rw [round_odd_Zrnd_odd_ne_odd_aux ctx y hy hey]
+              exact pg_valid_rnd_odd_zle_refl _
+      have hfloor_x_rnd : Zle (Zfloor ctx x) (Zrnd_odd ctx y) :=
+        pg_valid_rnd_odd_zle_trans _ _ _ hfloor_xy hfloor_y_rnd
+      by_cases hx : x = IZR ctx (Zfloor ctx x)
+      · rw [round_odd_Zrnd_odd_eq_aux ctx x hx]
+        exact hfloor_x_rnd
+      · cases hex : Zeven (Zfloor ctx x) with
+        | false =>
+            rw [round_odd_Zrnd_odd_ne_odd_aux ctx x hx hex]
+            exact hfloor_x_rnd
+        | true =>
+            by_cases hy : y = IZR ctx (Zfloor ctx y)
+            · have hceil_le : Zle (Zceil ctx x) (Zfloor ctx y) := by
+                apply CompCert4Lean.Flocq.Core.Raux.Zceil_glb ctx (Zfloor ctx y) x
+                change ctx.spec.le x (ctx.spec.ofZ (Zfloor ctx y))
+                change ctx.spec.le x y at hxy
+                rw [hy] at hxy
+                exact hxy
+              simpa only [round_odd_Zrnd_odd_ne_even_aux ctx x hx hex,
+                round_odd_Zrnd_odd_eq_aux ctx y hy] using hceil_le
+            · cases hey : Zeven (Zfloor ctx y) with
+              | true =>
+                  simpa only [round_odd_Zrnd_odd_ne_even_aux ctx x hx hex,
+                    round_odd_Zrnd_odd_ne_even_aux ctx y hy hey] using
+                    CompCert4Lean.Flocq.Core.Raux.Zceil_le ctx x y hxy
+              | false =>
+                  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                      (Zfloor ctx x) ≤
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zfloor ctx y)
+                    at hfloor_xy
+                  rcases Int.lt_or_eq_of_le hfloor_xy with hlt | heq
+                  · have hceil :=
+                      CompCert4Lean.Flocq.Core.Raux.Zceil_floor_neq ctx x (Ne.symm hx)
+                    have hceil_le : Zle (Zceil ctx x) (Zfloor ctx y) := by
+                      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                          (CompCert4Lean.Flocq.Core.Raux.Exact.Zceil ctx x) ≤
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zfloor ctx y)
+                      rw [hceil]
+                      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                          (Zadd (Zfloor ctx x) Zone) ≤
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zfloor ctx y)
+                      simp only [Zadd,
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+                      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                          (Zfloor ctx x) + 1 ≤
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zfloor ctx y)
+                      omega
+                    simpa only [round_odd_Zrnd_odd_ne_even_aux ctx x hx hex,
+                      round_odd_Zrnd_odd_ne_odd_aux ctx y hy hey] using hceil_le
+                  · have hey' : Zeven (Zfloor ctx y) = true := by
+                      have hz : Zfloor ctx x = Zfloor ctx y :=
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective heq
+                      simpa only [hz] using hex
+                    have hfalse : (false : Bool) = true := hey.symm.trans hey'
+                    cases hfalse
+    · intro n
+      have hn : IZR ctx n = IZR ctx (Zfloor ctx (IZR ctx n)) :=
+        (congrArg (IZR ctx) (CompCert4Lean.Flocq.Core.Raux.Zfloor_IZR ctx n)).symm
+      rw [round_odd_Zrnd_odd_eq_aux ctx (IZR ctx n) hn]
+      exact CompCert4Lean.Flocq.Core.Raux.Zfloor_IZR ctx n
+
+end CompCert4Lean.Flocq.Prop.Round_odd

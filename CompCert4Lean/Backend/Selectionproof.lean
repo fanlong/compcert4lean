@@ -3766,3 +3766,37 @@ theorem find_label_commut : find_label_commutStatement cfg oracle := by
       simp [Cminor.find_label, CminorSel.find_label]
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Backend.Selection
+
+theorem transf_program_match
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (oracle : SelectionOracle) :
+    transf_program_matchStatement cfg oracle := by
+  intro p tp h
+  unfold CompCert4Lean.Backend.Selection.sel_program at h
+  cases hget : get_helpers (prog_defmap p) with
+  | Error msg =>
+      simp [hget] at h
+  | OK hf =>
+      simp [hget] at h
+      apply CompCert4Lean.Common.Linking.match_transform_partial_program_contextual
+        (match_fundef := fun cunit f tf =>
+          match_fundef cfg oracle cunit f tf)
+        (transf_fun := sel_fundef cfg oracle
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate)
+          (prog_defmap p) hf)
+      · exact h
+      · intro f tf htf
+        exact ⟨hf, get_helpers_correct p hf hget, htf⟩
+
+end CompCert4Lean.Backend.Selectionproof

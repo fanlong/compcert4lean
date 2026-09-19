@@ -2417,3 +2417,92 @@ theorem eval_safe_expr
     simp [safe_expr] at hs
 
 end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Backend.Cminor
+open CompCert4Lean.Common.AST
+
+theorem wt_find_label : wt_find_labelStatement := by
+  intro env tret lbl s
+  induction s with
+  | Sskip =>
+      intro k _ _
+      simp [find_label]
+  | Sassign id a =>
+      intro k _ _
+      simp [find_label]
+  | Sstore chunk a1 a2 =>
+      intro k _ _
+      simp [find_label]
+  | Scall optid sg a1 al =>
+      intro k _ _
+      simp [find_label]
+  | Stailcall sg a1 al =>
+      intro k _ _
+      simp [find_label]
+  | Sbuiltin optid ef al =>
+      intro k _ _
+      simp [find_label]
+  | Sseq s1 s2 ih1 ih2 =>
+      intro k hstmt hcont
+      cases hstmt with
+      | wt_Sseq s1 s2 hs1 hs2 =>
+          have hseq : wt_cont env tret (.Kseq s2 k) :=
+            wt_cont_Kseq env tret s2 k hs2 hcont
+          cases hfind : find_label lbl s1 (.Kseq s2 k) with
+          | none =>
+              have h2 := ih2 k hs2 hcont
+              simpa [find_label, hfind] using h2
+          | some sk =>
+              have h1 := ih1 (.Kseq s2 k) hs1 hseq
+              simpa [find_label, hfind] using h1
+  | Sifthenelse a s1 s2 ih1 ih2 =>
+      intro k hstmt hcont
+      cases hstmt with
+      | wt_Sifthenelse a s1 s2 ha hs1 hs2 =>
+          cases hfind : find_label lbl s1 k with
+          | none =>
+              have h2 := ih2 k hs2 hcont
+              simpa [find_label, hfind] using h2
+          | some sk =>
+              have h1 := ih1 k hs1 hcont
+              simpa [find_label, hfind] using h1
+  | Sloop s ih =>
+      intro k hstmt hcont
+      cases hstmt with
+      | wt_Sloop s hs =>
+          have hseq : wt_cont env tret (.Kseq (.Sloop s) k) :=
+            wt_cont_Kseq env tret (.Sloop s) k (wt_Sloop env tret s hs) hcont
+          simpa [find_label] using ih (.Kseq (.Sloop s) k) hs hseq
+  | Sblock s ih =>
+      intro k hstmt hcont
+      cases hstmt with
+      | wt_Sblock s hs =>
+          have hblock : wt_cont env tret (.Kblock k) :=
+            wt_cont_Kblock env tret k hcont
+          simpa [find_label] using ih (.Kblock k) hs hblock
+  | Sexit depth =>
+      intro k _ _
+      simp [find_label]
+  | Sswitch isLong a cases default =>
+      intro k _ _
+      simp [find_label]
+  | Sreturn value =>
+      intro k _ _
+      simp [find_label]
+  | Slabel label s ih =>
+      intro k hstmt hcont
+      cases hstmt with
+      | wt_Slabel label s hs =>
+          cases heq : ident_eq lbl label with
+          | left hsame =>
+              simp [find_label, heq]
+              exact ⟨hs, hcont⟩
+          | right hne =>
+              simpa [find_label, heq] using ih k hs hcont
+  | Sgoto label =>
+      intro k _ _
+      simp [find_label]
+
+end CompCert4Lean.Backend.Cminortyping

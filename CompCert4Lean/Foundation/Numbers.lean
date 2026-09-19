@@ -5210,3 +5210,34 @@ theorem ZArith.Zabs.Zabs_nat_Z_of_nat_proof :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zorder.Zlt_not_le :
+    ZArith.Zorder.Zlt_not_leStatement := by
+  intro n m hlt hle
+  exact (Int.not_lt_of_ge hle) hlt
+
+theorem ZArith.Zorder.Zle_not_gt :
+    ZArith.Zorder.Zle_not_gtStatement := by
+  intro n m hle hgt
+  exact (Int.not_lt_of_ge hle) hgt
+
+noncomputable def ZArith.Znumtheory.Zdivide_dec :
+    ZArith.Znumtheory.Zdivide_decStatement := by
+  intro a b
+  by_cases h : ZArith.BinInt.Z.divide a b
+  · exact .left h
+  · exact .right h
+
+theorem ZArith.Znumtheory.Zmod_divide :
+    ZArith.Znumtheory.Zmod_divideStatement := by
+  intro a b hb hmod
+  refine ⟨ZArith.BinInt.Z.div a b, ?_⟩
+  have h := ZArith.Zdiv.Z_div_mod_eq_full a b
+  rw [hmod, ZArith.BinInt.Z.add_0_r] at h
+  exact h
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

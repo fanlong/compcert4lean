@@ -4409,3 +4409,37 @@ theorem init_mem_transf : init_mem_transfStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+theorem find_symbol_exists : find_symbol_existsStatement := by
+  intro F V p id g hin
+  unfold globalenv
+  apply add_globals_ensures F V
+    (fun ge => ∃ b, find_symbol ge id = some b)
+    id g p.prog_defs (empty_genv F V p.prog_public)
+  · intro ge id' g' hP hmem
+    rcases hP with ⟨b, hb⟩
+    by_cases heq : id = id'
+    · subst id'
+      refine ⟨ge.genv_next, ?_⟩
+      change CompCert4Lean.Lib.Maps.PTree.get id
+        (CompCert4Lean.Lib.Maps.PTree.set id ge.genv_next ge.genv_symb) =
+          some ge.genv_next
+      exact CompCert4Lean.Lib.Maps.PTree.gss _ _ _
+    · refine ⟨b, ?_⟩
+      change CompCert4Lean.Lib.Maps.PTree.get id
+        (CompCert4Lean.Lib.Maps.PTree.set id' ge.genv_next ge.genv_symb) = some b
+      rw [CompCert4Lean.Lib.Maps.PTree.gso ge.genv_next ge.genv_symb heq]
+      exact hb
+  · intro ge
+    refine ⟨ge.genv_next, ?_⟩
+    change CompCert4Lean.Lib.Maps.PTree.get id
+      (CompCert4Lean.Lib.Maps.PTree.set id ge.genv_next ge.genv_symb) =
+        some ge.genv_next
+    exact CompCert4Lean.Lib.Maps.PTree.gss _ _ _
+  · exact hin
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

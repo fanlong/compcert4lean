@@ -4320,3 +4320,16 @@ theorem cond_Ropp_mult_l :
         ctx x y).symm
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem lt_bpow (ctx : ExactRealContext) : lt_bpowStatement ctx := by
+  intro r e1 e2 h
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e1 <
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e2
+  apply Int.lt_of_not_ge
+  intro hle
+  have hp := bpow_le ctx r e2 e1 (show Zle e2 e1 by exact hle)
+  exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h).2 hp
+
+end CompCert4Lean.Flocq.Core.Raux

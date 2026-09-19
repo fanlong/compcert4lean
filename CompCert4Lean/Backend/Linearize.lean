@@ -932,3 +932,14 @@ theorem law_obligation_proof : law_obligation := by
   · exact CompCert4Lean.Backend.Kildall.NodeSetForward.law_obligation_proof
 
 end CompCert4Lean.Backend.Linearize.DS
+
+namespace CompCert4Lean.Backend.Linearize.DS
+
+theorem fixpoint_solution_proof (laws : law_obligation) : fixpoint_solution laws := by
+  intro A code successors transf ep ev res n instr s hfix hcode hsucc hbot
+  unfold fixpoint at hfix
+  exact CompCert4Lean.Backend.Kildall.Dataflow_Solver.fixpoint_solution
+    (LAT := L) (NS := CompCert4Lean.Backend.Kildall.NodeSetForward)
+    laws.1 laws.2 code successors transf ep ev res n instr s hfix hcode hsucc hbot
+
+end CompCert4Lean.Backend.Linearize.DS

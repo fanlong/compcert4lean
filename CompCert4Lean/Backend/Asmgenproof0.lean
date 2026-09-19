@@ -1888,3 +1888,60 @@ theorem exec_straight_steps_2
         (code_tail_next_int_asmgenproof fn.fn_code ofs i c hlen htail)
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+private theorem extcall_loadv_extends_same
+    (chunk : CompCert4Lean.Common.AST.memory_chunk)
+    (m m' : Mem) (addr v : Val)
+    (hext : CompCert4Lean.Common.Memory.Mem.extends m m')
+    (hload : CompCert4Lean.Common.Memory.Mem.loadv chunk m addr = some v) :
+    ∃ v', CompCert4Lean.Common.Memory.Mem.loadv chunk m' addr = some v' ∧
+      CompCert4Lean.Common.Values.Val.lessdef v v' := by
+  cases addr with
+  | Vundef => simp [CompCert4Lean.Common.Memory.Mem.loadv] at hload
+  | Vint n => simp [CompCert4Lean.Common.Memory.Mem.loadv] at hload
+  | Vlong n => simp [CompCert4Lean.Common.Memory.Mem.loadv] at hload
+  | Vfloat n => simp [CompCert4Lean.Common.Memory.Mem.loadv] at hload
+  | Vsingle n => simp [CompCert4Lean.Common.Memory.Mem.loadv] at hload
+  | Vptr b ofs =>
+      simp only [CompCert4Lean.Common.Memory.Mem.loadv] at hload ⊢
+      exact CompCert4Lean.Common.Memory.Mem.load_extends chunk m m' b
+        (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) v hext hload
+
+theorem extcall_arg_match : extcall_arg_matchStatement := by
+  intro cfg ms sp rs m m' l v hagree hext harg
+  cases harg with
+  | extcall_arg_reg r =>
+      refine ⟨rs (CompCert4Lean.X86.Asm.preg_of r), ?_, ?_⟩
+      · exact CompCert4Lean.X86.Asm.extcall_arg.extcall_arg_reg r
+      · exact hagree.agree_mregs r
+  | extcall_arg_stack ofs ty v hload =>
+      have hsp : rs (.IR CompCert4Lean.X86.Asm.RSP) = sp := by
+        exact hagree.agree_sp
+      have hload' :
+          CompCert4Lean.Common.Memory.Mem.loadv
+            (CompCert4Lean.Common.AST.chunk_of_type ty) m
+            (CompCert4Lean.Common.Values.Val.offset_ptr
+              (rs (.IR CompCert4Lean.X86.Asm.RSP))
+              (CompCert4Lean.Lib.Integers.Ptrofs.repr
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+                  (CompCert4Lean.X86.Stacklayout.fe_ofs_arg cfg)
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+                    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 4) ofs)))) = some v := by
+        simpa [CompCert4Lean.Backend.Mach.load_stack, hsp] using hload
+      rcases extcall_loadv_extends_same
+          (CompCert4Lean.Common.AST.chunk_of_type ty) m m'
+          (CompCert4Lean.Common.Values.Val.offset_ptr
+            (rs (.IR CompCert4Lean.X86.Asm.RSP))
+            (CompCert4Lean.Lib.Integers.Ptrofs.repr
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+                (CompCert4Lean.X86.Stacklayout.fe_ofs_arg cfg)
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 4) ofs)))) v hext hload' with
+        ⟨v', hload'', hld⟩
+      refine ⟨v', ?_, hld⟩
+      exact CompCert4Lean.X86.Asm.extcall_arg.extcall_arg_stack ofs ty _ v'
+        rfl hload''
+
+end CompCert4Lean.Backend.Asmgenproof0
