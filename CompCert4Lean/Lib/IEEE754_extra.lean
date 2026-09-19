@@ -2926,3 +2926,51 @@ theorem integer_representable_n2p_wide :
       omega
 
 end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq (intOfZ intOfZ_injective intOfZ_zOfInt)
+
+private theorem integer_representable_n_zpower_zero :
+    Zpower Ztwo Z0 = Zone := by
+  apply intOfZ_injective
+  unfold Zpower
+  have hcond : ¬ intOfZ (Z0 : Z) < 0 := by simp [intOfZ]
+  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow, hcond,
+    ↓reduceIte]
+  rw [intOfZ_zOfInt]
+  change (intOfZ Ztwo) ^ (0 : Nat) = intOfZ Zone
+  decide
+
+private theorem integer_representable_n_mul_zpower_zero (n : Z) :
+    Zmul n (Zpower Ztwo Z0) = n := by
+  rw [integer_representable_n_zpower_zero]
+  apply intOfZ_injective
+  simp [Zmul, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+    intOfZ_zOfInt]
+  have hone : intOfZ Zone = 1 := by decide
+  rw [hone]
+  omega
+
+theorem integer_representable_n :
+    ∀ {prec emax : Z} [pgt : Prec_gt_0 prec]
+      [ple : Prec_lt_emax prec emax],
+      integer_representable_nStatement (prec := prec) (emax := emax) := by
+  intro prec emax pgt ple ctx magnitude n hn
+  have hprec : 0 < intOfZ prec := pgt
+  have hpe : intOfZ prec < intOfZ emax := ple.prec_lt_emax
+  have hpzero : Zle Z0 Z0 := by
+    change (0 : Int) ≤ 0
+    omega
+  have hpstrict : Zlt Z0 (Zsub emax prec) := by
+    change (0 : Int) < intOfZ (Zsub emax prec)
+    simp [Zsub, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+      intOfZ_zOfInt]
+    omega
+  have h := integer_representable_n2p_wide (prec := prec) (emax := emax)
+    ctx magnitude n Z0 hn hpzero hpstrict
+  rw [integer_representable_n_mul_zpower_zero] at h
+  exact h
+
+end CompCert4Lean.Lib.IEEE754_extra

@@ -404,3 +404,147 @@ theorem needs_of_addressing_64_sound : needs_of_addressing_64_soundStatement := 
     · exact vagree_same _ _
 
 end CompCert4Lean.X86.NeedOp
+
+namespace CompCert4Lean.X86.NeedOp
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+
+theorem operation_is_redundant_sound
+    [binary64_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    operation_is_redundant_soundStatement := by
+  intro ge sp m op nv arg1 args v arg1' args' hred heval hagree
+  cases op with
+  | Ocast8signed =>
+      change sign_ext_redundant (ZArith.BinInt.Z.of_nat 8) nv = true at hred
+      cases args with
+      | nil =>
+          change some (Val.sign_ext (ZArith.BinInt.Z.of_nat 8) arg1) = some v at heval
+          cases heval
+          change vagree_list [arg1] (arg1' :: args')
+            [sign_ext (ZArith.BinInt.Z.of_nat 8) nv] at hagree
+          cases hagree with
+          | vagree_list_cons a tail a' tail' n ns ha ht =>
+              cases ht
+              apply sign_ext_redundant_sound _ _ _ _ hred ha
+              change (0 : Int) < Int.ofNat 8
+              exact Int.natCast_pos.mpr (by decide)
+      | cons a l =>
+          change none = some v at heval
+          cases heval
+  | Ocast8unsigned =>
+      change zero_ext_redundant (ZArith.BinInt.Z.of_nat 8) nv = true at hred
+      cases args with
+      | nil =>
+          change some (Val.zero_ext (ZArith.BinInt.Z.of_nat 8) arg1) = some v at heval
+          cases heval
+          change vagree_list [arg1] (arg1' :: args')
+            [zero_ext (ZArith.BinInt.Z.of_nat 8) nv] at hagree
+          cases hagree with
+          | vagree_list_cons a tail a' tail' n ns ha ht =>
+              cases ht
+              apply zero_ext_redundant_sound _ _ _ _ hred ha
+              change (0 : Int) ≤ Int.ofNat 8
+              exact Int.natCast_nonneg _
+      | cons a l =>
+          change none = some v at heval
+          cases heval
+  | Ocast16signed =>
+      change sign_ext_redundant (ZArith.BinInt.Z.of_nat 16) nv = true at hred
+      cases args with
+      | nil =>
+          change some (Val.sign_ext (ZArith.BinInt.Z.of_nat 16) arg1) = some v at heval
+          cases heval
+          change vagree_list [arg1] (arg1' :: args')
+            [sign_ext (ZArith.BinInt.Z.of_nat 16) nv] at hagree
+          cases hagree with
+          | vagree_list_cons a tail a' tail' n ns ha ht =>
+              cases ht
+              apply sign_ext_redundant_sound _ _ _ _ hred ha
+              change (0 : Int) < Int.ofNat 16
+              exact Int.natCast_pos.mpr (by decide)
+      | cons a l =>
+          change none = some v at heval
+          cases heval
+  | Ocast16unsigned =>
+      change zero_ext_redundant (ZArith.BinInt.Z.of_nat 16) nv = true at hred
+      cases args with
+      | nil =>
+          change some (Val.zero_ext (ZArith.BinInt.Z.of_nat 16) arg1) = some v at heval
+          cases heval
+          change vagree_list [arg1] (arg1' :: args')
+            [zero_ext (ZArith.BinInt.Z.of_nat 16) nv] at hagree
+          cases hagree with
+          | vagree_list_cons a tail a' tail' n ns ha ht =>
+              cases ht
+              apply zero_ext_redundant_sound _ _ _ _ hred ha
+              change (0 : Int) ≤ Int.ofNat 16
+              exact Int.natCast_nonneg _
+      | cons a l =>
+          change none = some v at heval
+          cases heval
+  | Oandimm n =>
+      change andimm_redundant nv n = true at hred
+      cases args with
+      | nil =>
+          change some (Val.and arg1 (Vint n)) = some v at heval
+          cases heval
+          change vagree_list [arg1] (arg1' :: args') [andimm nv n] at hagree
+          cases hagree with
+          | vagree_list_cons a tail a' tail' n' ns ha ht =>
+              cases ht
+              exact andimm_redundant_sound _ _ _ _ hred ha
+      | cons a l =>
+          change none = some v at heval
+          cases heval
+  | Oorimm n =>
+      change orimm_redundant nv n = true at hred
+      cases args with
+      | nil =>
+          change some (Val.or arg1 (Vint n)) = some v at heval
+          cases heval
+          change vagree_list [arg1] (arg1' :: args') [orimm nv n] at hagree
+          cases hagree with
+          | vagree_list_cons a tail a' tail' n' ns ha ht =>
+              cases ht
+              exact orimm_redundant_sound _ _ _ _ hred ha
+      | cons a l =>
+          change none = some v at heval
+          cases heval
+  | Oandlimm n =>
+      change andlimm_redundant nv n = true at hred
+      cases args with
+      | nil =>
+          change some (Val.andl arg1 (Vlong n)) = some v at heval
+          cases heval
+          change vagree_list [arg1] (arg1' :: args') [andlimm nv n] at hagree
+          cases hagree with
+          | vagree_list_cons a tail a' tail' n' ns ha ht =>
+              cases ht
+              exact andlimm_redundant_sound _ _ _ _ hred ha
+      | cons a l =>
+          change none = some v at heval
+          cases heval
+  | Oorlimm n =>
+      change orlimm_redundant nv n = true at hred
+      cases args with
+      | nil =>
+          change some (Val.orl arg1 (Vlong n)) = some v at heval
+          cases heval
+          change vagree_list [arg1] (arg1' :: args') [orlimm nv n] at hagree
+          cases hagree with
+          | vagree_list_cons a tail a' tail' n' ns ha ht =>
+              cases ht
+              exact orlimm_redundant_sound _ _ _ _ hred ha
+      | cons a l =>
+          change none = some v at heval
+          cases heval
+  | _ => simp [operation_is_redundant] at hred
+
+end CompCert4Lean.X86.NeedOp
