@@ -6251,3 +6251,9 @@ theorem pred_ge_0 :
     (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hx |>.1
   rw [pred_eq_pos ctx magnitude beta fexp x hxle]
   exact pred_pos_ge_0 ctx magnitude beta fexp hvalid x hx hformat
+
+theorem pred_pos_plus_ulp_aux2 :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      pred_pos_plus_ulp_aux2Statement ctx magnitude := by
+  intro ctx magnitude
+  exact pg_sp_pred_pos_plus_ulp_aux2 ctx magnitude

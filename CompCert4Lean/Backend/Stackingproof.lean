@@ -4622,3 +4622,29 @@ theorem agree_regs_set_reg : agree_regs_set_regStatement := by
   exact stackingproof_agree_regs_set_reg j ls rs r v v' hagree hv
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+
+theorem agree_regs_set_pair : agree_regs_set_pairStatement := by
+  intro j p v v' ls rs hagree hv
+  cases p with
+  | One r =>
+      simpa [Locmap.setpair, Mach.set_pair] using
+        (stackingproof_agree_regs_set_reg j ls rs r v v' hagree hv)
+  | Twolong rhi rlo =>
+      have hhi := stackingproof_agree_regs_set_reg j ls rs rhi
+        (Val.hiword v) (Val.hiword v') hagree
+        (stackingproof_hiword_inject j v v' hv)
+      have hlo := stackingproof_agree_regs_set_reg j
+        (Locmap.set (R rhi) (Val.hiword v) ls)
+        (Regmap.set rhi (Val.hiword v') rs)
+        rlo (Val.loword v) (Val.loword v') hhi
+        (stackingproof_loword_inject j v v' hv)
+      simpa [Locmap.setpair, Mach.set_pair] using hlo
+
+end CompCert4Lean.Backend.Stackingproof

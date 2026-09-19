@@ -3158,3 +3158,1024 @@ theorem globalenv_inject_incr : globalenv_inject_incrStatement := by
                 simpa [htarget] using hlt
               exact (himage b1 b0 d0 hJ hlt0).trans htarget
       · exact hdisj
+
+section ExternalCallParallelProof
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Integers
+
+private theorem scc085_call_max_perm
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (ef : external_function) :
+    Events.external_call_max_perm xi ef := by
+  cases ef with
+  | EF_external name sg =>
+      exact (external_functions_properties xi name sg).ec_max_perm
+  | EF_builtin name sg | EF_runtime name sg =>
+      unfold Events.external_call_max_perm Events.external_call builtin_or_external_sem
+      cases hlookup : lookup_builtin_function name sg with
+      | none => simpa only [hlookup] using (external_functions_properties xi name sg).ec_max_perm
+      | some bf => simpa only [hlookup] using (known_builtin_ok bf).ec_max_perm
+  | EF_vload chunk => exact (volatile_load_ok chunk).ec_max_perm
+  | EF_vstore chunk => exact (volatile_store_ok chunk).ec_max_perm
+  | EF_malloc =>
+      intro ge vargs m1 t vres m2 b ofs p hcall hb hp
+      cases hcall with
+      | extcall_malloc_sem_intro sz m ma fresh mf halloc hstore =>
+          apply scc085_alloc_perm_old_inv _ _ _ ma fresh halloc b ofs Max p
+          · intro heq
+            subst b
+            exact Mem.fresh_block_alloc _ _ _ ma fresh halloc hb
+          · exact Mem.perm_store_2 Mptr ma fresh _ (Vptrofs sz) _ hstore
+              b ofs Max p hp
+  | EF_free =>
+      intro ge vargs m1 t vres m2 b ofs p hcall hb hp
+      cases hcall with
+      | extcall_free_sem_ptr b0 lo sz m mf hload hfree =>
+          exact scc085_perm_of_free _ _ b0 _ _ hfree b ofs Max p hp
+      | extcall_free_sem_null => exact hp
+  | EF_memcpy sz al =>
+      intro ge vargs m1 t vres m2 b ofs p hcall hb hp
+      cases hcall with
+      | extcall_memcpy_sem_intro bd od bs os m bytes mf ha hs hal has had hn hl hst =>
+          exact Mem.perm_storebytes_2 _ bd (Ptrofs.unsigned od) bytes _ hst
+            b ofs Max p hp
+  | EF_annot kind text targs => exact (extcall_annot_ok text targs).ec_max_perm
+  | EF_annot_val kind text targ =>
+      intro ge vargs m1 t vres m2 b ofs p hcall hb hp
+      cases hcall
+      exact hp
+  | EF_inline_asm text sg clobbers =>
+      exact (inline_assembly_properties xi text sg).ec_max_perm
+  | EF_debug kind text targs => exact (extcall_debug_ok targs).ec_max_perm
+
+private theorem scc085_call_frame (F V : Type) (ge : Genv.t F V)
+    (j j' : meminj) (m1 m1' m2 m2' : mem) (P : massert)
+    (hsep : (sepconj (minjection j m1)
+      (sepconj (globalenv_inject ge j) P)).m_pred m2)
+    (hinj : Mem.inject j' m1' m2')
+    (hunch : Mem.unchanged_on (loc_out_of_reach j m1) m2 m2')
+    (hincr : inject_incr j j')
+    (hseparate : inject_separated j j' m1 m2)
+    (hmax : ∀ b ofs p, Mem.valid_block m1 b →
+      Mem.perm m1' b ofs Max p → Mem.perm m1 b ofs Max p) :
+    (sepconj (minjection j' m1')
+      (sepconj (globalenv_inject ge j') P)).m_pred m2' := by
+  have hrest := globalenv_inject_incr j m1 F V ge m2 j' P hincr hseparate hsep.2.1
+  refine ⟨hinj, ?_, ?_⟩
+  · apply (sepconj (globalenv_inject ge j') P).m_invar m2 m2' hrest
+    apply unchangedOnRestrict (Q := loc_out_of_reach j m1) _ hunch
+    intro b ofs hfoot b0 delta hmap hp
+    have hfoot0 : (sepconj (globalenv_inject ge j) P).m_footprint b ofs := hfoot
+    exact hsep.2.2 b ofs ⟨b0, delta, hmap, hp⟩ hfoot0
+  · intro b ofs hmin hfoot
+    rcases hmin with ⟨b0, delta, hmap', hp'⟩
+    cases hj : j b0 with
+    | none =>
+        exact (hseparate b0 b delta hj hmap').2
+          ((sepconj (globalenv_inject ge j) P).m_valid m2 b ofs hsep.2.1 hfoot)
+    | some target =>
+        rcases target with ⟨bt, dt⟩
+        have heq := Option.some.inj ((hincr b0 bt dt hj).symm.trans hmap')
+        cases heq
+        have hb : Mem.valid_block m1 b0 := by
+          by_cases hv : Mem.valid_block m1 b0
+          · exact hv
+          · have hnmap := hsep.1.mi_freeblocks b0 hv
+            rw [hj] at hnmap
+            cases hnmap
+        exact hsep.2.2 b ofs ⟨b0, delta, hj, hmax b0 _ Nonempty hb hp'⟩ hfoot
+
+private theorem scc085_symbols_inject (F V : Type) (ge : Genv.t F V)
+    (j : meminj) (m : mem) (hge : (globalenv_inject ge j).m_pred m) :
+    symbols_inject j (Genv.to_senv ge) (Genv.to_senv ge) := by
+  have hglob := globalenv_inject_preserves_globals F V ge j m hge
+  refine ⟨fun _ => rfl, ?_, ?_, ?_⟩
+  · intro id b1 b2 delta hmap hfind
+    have heq := Option.some.inj ((hglob.1 id b1 hfind).symm.trans hmap)
+    cases heq
+    exact ⟨rfl, hfind⟩
+  · intro id b hpublic hfind
+    exact ⟨b, hglob.1 id b hfind, hfind⟩
+  · intro b1 b2 delta hmap
+    change Genv.block_is_volatile ge b2 = Genv.block_is_volatile ge b1
+    unfold Genv.block_is_volatile
+    cases hv1 : Genv.find_var_info ge b1 with
+    | some gv =>
+        have heq := Option.some.inj ((hglob.2.1 b1 gv hv1).symm.trans hmap)
+        cases heq
+        simp only [hv1]
+    | none =>
+        cases hv2 : Genv.find_var_info ge b2 with
+        | none => rfl
+        | some gv =>
+            have heq := hglob.2.2 b1 b2 delta gv hv2 hmap
+            subst b2
+            rw [hv1] at hv2
+            cases hv2
+
+private theorem scc085_zadd_zero (x : Z) : zAdd x z0 = x := by
+  apply intOfZ_injective
+  simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  change intOfZ x + 0 = intOfZ x
+  omega
+
+private theorem scc085_unchanged_refl (Q : block → Z → Prop) (m : mem) :
+    Mem.unchanged_on Q m m := by
+  exact ⟨Ple_refl _, fun _ _ _ _ _ _ => Iff.rfl, fun _ _ _ _ => rfl⟩
+
+private theorem scc085_unchanged_trans (Q : block → Z → Prop) (m m' m'' : mem)
+    (h1 : Mem.unchanged_on Q m m') (h2 : Mem.unchanged_on Q m' m'') :
+    Mem.unchanged_on Q m m'' := by
+  refine ⟨Ple_trans _ _ _ h1.1 h2.1, ?_, ?_⟩
+  · intro b ofs k p hq hb
+    exact (h1.2 b ofs k p hq hb).trans
+      (h2.2 b ofs k p hq (Plt_Ple_trans _ _ _ hb h1.1))
+  · intro b ofs hq hp
+    rw [h2.3 b ofs hq ((h1.2 b ofs Cur Readable hq (validBlockOfPerm hp)).mp hp)]
+    exact h1.3 b ofs hq hp
+
+private theorem scc085_address_inject (j : meminj) (m1 m2 : mem)
+    (b1 b2 : block) (ofs : Ptrofs.int) (delta : Z)
+    (hinj : Mem.inject j m1 m2) (hmap : j b1 = some (b2, delta))
+    (hp : Mem.perm m1 b1 (Ptrofs.unsigned ofs) Max Nonempty ∨
+      Mem.perm m1 b1 (zSub (Ptrofs.unsigned ofs) z1) Max Nonempty) :
+    Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta)) =
+      zAdd (Ptrofs.unsigned ofs) delta := by
+  obtain ⟨hdelta, hsum⟩ := hinj.mi_representable b1 b2 delta ofs hmap hp
+  have hu : 0 ≤ intOfZ (Ptrofs.unsigned ofs) := by
+    have h := ofs.intrange.1
+    change (-1 : _root_.Int) < intOfZ (Ptrofs.unsigned ofs) at h
+    omega
+  have hdmax : zLe delta Ptrofs.max_unsigned := by
+    have h := hsum.2
+    change intOfZ (zAdd (Ptrofs.unsigned ofs) delta) ≤ intOfZ Ptrofs.max_unsigned at h
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at h
+    change intOfZ delta ≤ intOfZ Ptrofs.max_unsigned
+    omega
+  change Ptrofs.unsigned (Ptrofs.repr
+    (zAdd (Ptrofs.unsigned ofs) (Ptrofs.unsigned (Ptrofs.repr delta)))) = _
+  rw [scc085_ptrofs_unsigned_repr delta ⟨hdelta, hdmax⟩]
+  exact scc085_ptrofs_unsigned_repr _ hsum
+
+private theorem scc085_alloc_same_bounds_inject
+    (j : meminj) (m1 m2 m1' m2' : mem) (lo hi : Z) (b1 b2 : block) (hinj : Mem.inject j m1 m2)
+    (halloc1 : Mem.alloc m1 lo hi = (m1', b1))
+    (halloc2 : Mem.alloc m2 lo hi = (m2', b2))
+ :
+    Mem.inject (scc085_extend_inj j b1 b2 z0) m1' m2' := by
+  let j' := scc085_extend_inj j b1 b2 z0
+  have hfresh1 : ¬ Mem.valid_block m1 b1 := by
+    intro hv
+    rw [scc085_alloc_fresh m1 lo hi m1' b1 halloc1] at hv
+    exact (Plt_ne _ _ hv) rfl
+  have hfresh2 : ¬ Mem.valid_block m2 b2 := by
+    intro hv
+    rw [scc085_alloc_fresh m2 lo hi m2' b2 halloc2] at hv
+    exact (Plt_ne _ _ hv) rfl
+  have hjnone : j b1 = none := hinj.mi_freeblocks b1 hfresh1
+  have hincr : CompCert4Lean.Common.Values.inject_incr j j' := by
+    intro b bt d hmap
+    by_cases hb : b = b1
+    · subst b
+      rw [hjnone] at hmap
+      cases hmap
+    · change scc085_extend_inj j b1 b2 z0 b = some (bt, d)
+      rw [scc085_extend_inj_other j b1 b2 z0 b hb]
+      exact hmap
+  have hsourceOld : ∀ b bt d, j b = some (bt, d) → b ≠ b1 := by
+    intro b bt d hmap hb
+    subst b
+    rw [hjnone] at hmap
+    cases hmap
+  have htargetOld : ∀ b bt d, j b = some (bt, d) → bt ≠ b2 := by
+    intro b bt d hmap hbt
+    subst bt
+    exact hfresh2 (hinj.mi_mappedblocks b b2 d hmap)
+  change Mem.inject j' m1' m2'
+  refine {
+    mi_inj := {
+      mi_perm := ?_,
+      mi_align := ?_,
+      mi_memval := ?_
+    },
+    mi_freeblocks := ?_,
+    mi_mappedblocks := ?_,
+    mi_no_overlap := ?_,
+    mi_representable := ?_,
+    mi_perm_inv := ?_
+  }
+  · intro b bt d ofs k p hmap hp
+    by_cases hb : b = b1
+    · subst b
+      change scc085_extend_inj j b1 b2 z0 b1 = some (bt, d) at hmap
+      rw [scc085_extend_inj_same] at hmap
+      cases hmap
+      have hsrc := scc085_alloc_perm_new_inv m1 lo hi m1' b1 halloc1
+        ofs k p hp
+      simpa only [scc085_zadd_zero] using scc085_perm_of_freeable
+        (scc085_alloc_perm_new m2 lo hi m2' b2 halloc2 ofs k hsrc)
+    · change scc085_extend_inj j b1 b2 z0 b = some (bt, d) at hmap
+      rw [scc085_extend_inj_other j b1 b2 z0 b hb] at hmap
+      have hpOld := scc085_alloc_perm_old_inv m1 lo hi m1' b1 halloc1
+        b ofs k p hb hp
+      have htOld := hinj.mi_inj.mi_perm b bt d ofs k p hmap hpOld
+      exact scc085_alloc_perm_old m2 lo hi m2' b2 halloc2 bt
+        (zAdd ofs d) k p (htargetOld b bt d hmap) htOld
+  · intro b bt d chunk ofs p hmap hrange
+    by_cases hb : b = b1
+    · subst b
+      change scc085_extend_inj j b1 b2 z0 b1 = some (bt, d) at hmap
+      rw [scc085_extend_inj_same] at hmap
+      cases hmap
+      exact ⟨z0, by
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+        change (0 : Int) = intOfZ (align_chunk chunk) * 0
+        omega⟩
+    · change scc085_extend_inj j b1 b2 z0 b = some (bt, d) at hmap
+      rw [scc085_extend_inj_other j b1 b2 z0 b hb] at hmap
+      apply hinj.mi_inj.mi_align b bt d chunk ofs p hmap
+      intro i hibounds
+      exact scc085_alloc_perm_old_inv m1 lo hi m1' b1 halloc1
+        b i Max p hb (hrange i hibounds)
+  · intro b ofs bt d hmap hp
+    by_cases hb : b = b1
+    · subst b
+      change scc085_extend_inj j b1 b2 z0 b1 = some (bt, d) at hmap
+      rw [scc085_extend_inj_same] at hmap
+      cases hmap
+      rw [scc085_alloc_contents_new m1 lo hi m1' b1 halloc1 ofs]
+      exact CompCert4Lean.Common.Memdata.memval_inject.undef j'
+        (ZMap.get (zAdd ofs z0) (PMap.get b2 m2'.mem_contents))
+    · change scc085_extend_inj j b1 b2 z0 b = some (bt, d) at hmap
+      rw [scc085_extend_inj_other j b1 b2 z0 b hb] at hmap
+      have hpOld := scc085_alloc_perm_old_inv m1 lo hi m1' b1 halloc1
+        b ofs Cur Readable hb hp
+      have hm := hinj.mi_inj.mi_memval b ofs bt d hmap hpOld
+      have hm' := CompCert4Lean.Common.Memdata.memval_inject_incr
+        j j'
+        (ZMap.get ofs (PMap.get b m1.mem_contents))
+        (ZMap.get (zAdd ofs d) (PMap.get bt m2.mem_contents)) hm hincr
+      rw [scc085_alloc_contents_old m1 lo hi m1' b1 halloc1 b ofs hb,
+        scc085_alloc_contents_old m2 lo hi m2' b2 halloc2 bt (zAdd ofs d)
+          (htargetOld b bt d hmap)]
+      exact hm'
+  · intro b hvalid
+    by_cases hb : b = b1
+    · subst b
+      exact False.elim (hvalid (scc085_alloc_valid_new m1 lo hi m1' b1 halloc1))
+    · change scc085_extend_inj j b1 b2 z0 b = none
+      rw [scc085_extend_inj_other j b1 b2 z0 b hb]
+      apply hinj.mi_freeblocks b
+      intro hv
+      apply hvalid
+      change Plt b m1'.nextblock
+      rw [scc085_alloc_nextblock m1 lo hi m1' b1 halloc1]
+      exact Plt_trans_succ b m1.nextblock hv
+  · intro b bt d hmap
+    by_cases hb : b = b1
+    · subst b
+      change scc085_extend_inj j b1 b2 z0 b1 = some (bt, d) at hmap
+      rw [scc085_extend_inj_same] at hmap
+      cases hmap
+      exact scc085_alloc_valid_new m2 lo hi m2' b2 halloc2
+    · change scc085_extend_inj j b1 b2 z0 b = some (bt, d) at hmap
+      rw [scc085_extend_inj_other j b1 b2 z0 b hb] at hmap
+      have hv := hinj.mi_mappedblocks b bt d hmap
+      change Plt bt m2'.nextblock
+      rw [scc085_alloc_nextblock m2 lo hi m2' b2 halloc2]
+      exact Plt_trans_succ bt m2.nextblock hv
+  · intro a ta da b bt db oa ob hab hma hmb hpa hpb
+    by_cases ha : a = b1
+    · subst a
+      have hb : b ≠ b1 := by exact fun h => hab h.symm
+      change scc085_extend_inj j b1 b2 z0 b1 = some (ta, da) at hma
+      rw [scc085_extend_inj_same] at hma
+      cases hma
+      change scc085_extend_inj j b1 b2 z0 b = some (bt, db) at hmb
+      rw [scc085_extend_inj_other j b1 b2 z0 b hb] at hmb
+      exact Or.inl (fun h => htargetOld b bt db hmb h.symm)
+    · by_cases hb : b = b1
+      · subst b
+        change scc085_extend_inj j b1 b2 z0 b1 = some (bt, db) at hmb
+        rw [scc085_extend_inj_same] at hmb
+        cases hmb
+        change scc085_extend_inj j b1 b2 z0 a = some (ta, da) at hma
+        rw [scc085_extend_inj_other j b1 b2 z0 a ha] at hma
+        exact Or.inl (htargetOld a ta da hma)
+      · change scc085_extend_inj j b1 b2 z0 a = some (ta, da) at hma
+        rw [scc085_extend_inj_other j b1 b2 z0 a ha] at hma
+        change scc085_extend_inj j b1 b2 z0 b = some (bt, db) at hmb
+        rw [scc085_extend_inj_other j b1 b2 z0 b hb] at hmb
+        apply hinj.mi_no_overlap a ta da b bt db oa ob hab hma hmb
+        · exact scc085_alloc_perm_old_inv m1 lo hi m1' b1 halloc1
+            a oa Max Nonempty ha hpa
+        · exact scc085_alloc_perm_old_inv m1 lo hi m1' b1 halloc1
+            b ob Max Nonempty hb hpb
+  · intro b bt d ofs hmap hp
+    by_cases hb : b = b1
+    · subst b
+      change scc085_extend_inj j b1 b2 z0 b1 = some (bt, d) at hmap
+      rw [scc085_extend_inj_same] at hmap
+      cases hmap
+      have hu0 : zLe z0 (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) := by
+        have h := ofs.intrange.1
+        change (-1 : Int) < intOfZ (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) at h
+        change (0 : Int) ≤ intOfZ (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)
+        omega
+      have huMax : zLe (Ptrofs.unsigned ofs) Ptrofs.max_unsigned := by
+        have h := ofs.intrange.2
+        change intOfZ (Ptrofs.unsigned ofs) < 18446744073709551616 at h
+        change intOfZ (Ptrofs.unsigned ofs) ≤ 18446744073709551615
+        omega
+      exact ⟨by exact Int.le_refl 0, by simpa only [scc085_zadd_zero] using hu0,
+        by simpa only [scc085_zadd_zero] using huMax⟩
+    · change scc085_extend_inj j b1 b2 z0 b = some (bt, d) at hmap
+      rw [scc085_extend_inj_other j b1 b2 z0 b hb] at hmap
+      apply hinj.mi_representable b bt d ofs hmap
+      rcases hp with hp | hp
+      · exact Or.inl (scc085_alloc_perm_old_inv m1 lo hi m1' b1 halloc1
+          b (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) Max Nonempty hb hp)
+      · exact Or.inr (scc085_alloc_perm_old_inv m1 lo hi m1' b1 halloc1
+          b (zSub (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) z1) Max Nonempty hb hp)
+  · intro b ofs bt d k p hmap ht
+    by_cases hb : b = b1
+    · subst b
+      change scc085_extend_inj j b1 b2 z0 b1 = some (bt, d) at hmap
+      rw [scc085_extend_inj_same] at hmap
+      cases hmap
+      by_cases hs : Mem.perm m1' b1 ofs Max Nonempty
+      · exact Or.inl (scc085_perm_of_freeable
+          (scc085_alloc_perm_new m1 lo hi m1' b1 halloc1 ofs k
+            (scc085_alloc_perm_new_inv m1 lo hi m1' b1 halloc1
+              ofs Max Nonempty hs)))
+      · exact Or.inr hs
+    · change scc085_extend_inj j b1 b2 z0 b = some (bt, d) at hmap
+      rw [scc085_extend_inj_other j b1 b2 z0 b hb] at hmap
+      have htOld := scc085_alloc_perm_old_inv m2 lo hi m2' b2 halloc2
+        bt (zAdd ofs d) k p (htargetOld b bt d hmap) ht
+      rcases hinj.mi_perm_inv b ofs bt d k p hmap htOld with hs | hs
+      · exact Or.inl (scc085_alloc_perm_old m1 lo hi m1' b1 halloc1
+          b ofs k p hb hs)
+      · exact Or.inr (fun hp => hs (scc085_alloc_perm_old_inv m1 lo hi m1'
+          b1 halloc1 b ofs Max Nonempty hb hp))
+
+
+private theorem scc085_store_unchanged_pred (P : block → Z → Prop)
+    (chunk : AST.memory_chunk) (m : Memory.mem) (b : Values.block) (ofs : Z)
+    (v : Values.val) (m' : Memory.mem)
+    (hstore : Mem.store chunk m b ofs v = some m')
+    (hout : ∀ i, zLe ofs i ∧ zLt i (zAdd ofs (size_chunk chunk)) →
+      ¬ P b i) :
+    Mem.unchanged_on P m m' := by
+  have hnext := Mem.nextblock_store chunk m b ofs v m' hstore
+  have hcontents := Mem.store_mem_contents chunk m b ofs v m' hstore
+  refine {
+    unchanged_on_nextblock := ?_,
+    unchanged_on_perm := ?_,
+    unchanged_on_contents := ?_ }
+  · change Ple m.nextblock m'.nextblock
+    rw [hnext]
+    exact Ple_refl _
+  · intro b' ofs' k p hP hvalid
+    constructor
+    · intro hp
+      exact Mem.perm_store_1 chunk m b ofs v m' hstore b' ofs' k p hp
+    · intro hp
+      exact Mem.perm_store_2 chunk m b ofs v m' hstore b' ofs' k p hp
+  · intro b' ofs' hP hp
+    rw [hcontents]
+    by_cases hb : b' = b
+    · subst b'
+      have hget : PMap.get b (PMap.set b
+          (Mem.setN (encode_val chunk v) ofs (PMap.get b m.mem_contents))
+          m.mem_contents) =
+          Mem.setN (encode_val chunk v) ofs (PMap.get b m.mem_contents) := by
+        exact scc085_pmap_get_set_same b _ m.mem_contents
+      rw [hget]
+      apply Mem.setN_other
+      intro i hi heq
+      subst i
+      apply hout ofs'
+      have hlen := CompCert4Lean.Common.Memdata.encode_val_length chunk v
+      have hi' := hi
+      rw [hlen] at hi'
+      have hsize' : ZArith.BinInt.Z.of_nat (size_chunk_nat chunk) = size_chunk chunk :=
+        (CompCert4Lean.Common.Memdata.size_chunk_conv chunk).symm
+      simpa [hsize'] using hi'
+      exact hP
+    · rw [scc085_pmap_get_set_other _ _ _ _ hb]
+
+private def scc085_extcall_injection (sem : extcall_sem) : Prop :=
+  ∀ ge1 ge2 vargs m1 t vres m1' j m2 vargs2,
+    symbols_inject j ge1 ge2 → sem ge1 vargs m1 t vres m1' →
+    Mem.inject j m1 m2 → Val.inject_list j vargs vargs2 →
+    ∃ j' vres2 m2', sem ge2 vargs2 m2 t vres2 m2' ∧
+      Val.inject j' vres vres2 ∧ Mem.inject j' m1' m2' ∧
+      Mem.unchanged_on (loc_out_of_reach j m1) m2 m2' ∧
+      inject_incr j j' ∧ inject_separated j j' m1 m2
+
+private theorem scc085_injection_of_properties (sem : extcall_sem) (sg : signature)
+    (h : extcall_properties sem sg) : scc085_extcall_injection sem := by
+  intro ge1 ge2 vargs m1 t vres m1' j m2 vargs2 hsym hcall hinj hargs
+  obtain ⟨j', vres2, m2', hc, hv, hi, _, hu, hn, hs⟩ :=
+    h.ec_mem_inject ge1 ge2 vargs m1 t vres m1' j m2 vargs2 hsym hcall hinj hargs
+  exact ⟨j', vres2, m2', hc, hv, hi, hu, hn, hs⟩
+
+private theorem scc085_alloc_store_unchanged (Q : block → Z → Prop)
+    (m ma mf : mem) (b : block) (lo hi : Z) (v : val)
+    (ha : Mem.alloc m lo hi = (ma, b))
+    (hs : Mem.store Mptr ma b lo v = some mf) : Mem.unchanged_on Q m mf := by
+  have halloc := scc085_alloc_unchanged_on (fun b' _ => b' ≠ b) m lo hi ma b ha
+  have hstore := scc085_store_unchanged_pred (fun b' _ => b' ≠ b) Mptr ma b lo v mf hs
+    (fun _ _ hn => hn rfl)
+  have hu := scc085_unchanged_trans _ _ _ _ halloc hstore
+  refine ⟨hu.1, ?_, ?_⟩
+  · intro b' ofs k p _ hb
+    apply hu.2 b' ofs k p
+    · intro heq
+      subst b'
+      exact Mem.fresh_block_alloc m lo hi ma b ha hb
+    · exact hb
+  · intro b' ofs _ hp
+    apply hu.3 b' ofs
+    · intro heq
+      subst b'
+      exact Mem.fresh_block_alloc m lo hi ma b ha (validBlockOfPerm hp)
+    · exact hp
+
+private theorem scc085_malloc_injection : scc085_extcall_injection extcall_malloc_sem := by
+  intro ge1 ge2 vargs m1 t vres m1' j m2 vargs2 hsym hcall hinj hargs
+  cases hcall with
+  | extcall_malloc_sem_intro sz _ ma b1 _ ha hs =>
+      cases hargs with
+      | inject_list_cons v1 v2 l1 l2 hv hl =>
+          cases hl
+          have heq : v2 = Vptrofs sz := by
+            change Val.inject j (Vlong (Ptrofs.to_int64 sz)) v2 at hv
+            cases hv
+            rfl
+          subst v2
+          obtain ⟨ma2, b2, ha2⟩ := show ∃ ma2 b2,
+              Mem.alloc m2 (ZArith.BinInt.Z.opp (size_chunk Mptr)) (Ptrofs.unsigned sz) =
+                (ma2, b2) from ⟨_, _, rfl⟩
+          let j' := scc085_extend_inj j b1 b2 z0
+          have hnew := scc085_alloc_same_bounds_inject j m1 m2 ma ma2 _ _ b1 b2 hinj ha ha2
+          have hmap : j' b1 = some (b2, z0) := scc085_extend_inj_same j b1 b2 z0
+          have hvsz : Val.inject j' (Vptrofs sz) (Vptrofs sz) := .inject_long (Ptrofs.to_int64 sz)
+          obtain ⟨mf2, hs2, hmem2⟩ := Mem.store_mapped_inj j' Mptr ma b1 _ (Vptrofs sz)
+            m1' ma2 b2 z0 (Vptrofs sz) hnew.mi_inj hs hnew.mi_no_overlap hmap hvsz
+          change Mem.store Mptr ma2 b2
+            (zAdd (ZArith.BinInt.Z.opp (size_chunk Mptr)) z0) (Vptrofs sz) = some mf2 at hs2
+          rw [scc085_zadd_zero] at hs2
+          have hfull := scc085_store_injection_transport j' Mptr ma m1' ma2 mf2
+            b1 b2 _ _ (Vptrofs sz) (Vptrofs sz) hnew hs hs2 hmem2
+          refine ⟨j', Vptr b2 Ptrofs.zero, mf2,
+            extcall_malloc_sem_intro sz m2 ma2 b2 mf2 ha2 hs2, ?_, hfull,
+            scc085_alloc_store_unchanged _ m2 ma2 mf2 b2 _ _ (Vptrofs sz) ha2 hs2, ?_, ?_⟩
+          · apply Val.inject.inject_ptr b1 Ptrofs.zero b2 Ptrofs.zero z0 hmap
+            rfl
+          · intro b bt d hm
+            by_cases hb : b = b1
+            · subst b
+              have hn := hinj.mi_freeblocks b1 (Mem.fresh_block_alloc m1 _ _ ma b1 ha)
+              rw [hn] at hm
+              cases hm
+            · exact (scc085_extend_inj_other j b1 b2 z0 b hb).trans hm
+          · intro b bt d hn hm
+            by_cases hb : b = b1
+            · subst b
+              rw [hmap] at hm
+              cases hm
+              exact ⟨Mem.fresh_block_alloc m1 _ _ ma b1 ha,
+                Mem.fresh_block_alloc m2 _ _ ma2 b2 ha2⟩
+            · change scc085_extend_inj j b1 b2 z0 b = some (bt, d) at hm
+              rw [scc085_extend_inj_other j b1 b2 z0 b hb, hn] at hm
+              cases hm
+
+private theorem scc085_free_shift_inject (j : meminj) (m1 m1' m2 : mem)
+    (b1 b2 : block) (lo hi delta : Z) (hinj : Mem.inject j m1 m2)
+    (hfree : Mem.free m1 b1 lo hi = some m1') (hmap : j b1 = some (b2, delta)) :
+    ∃ m2', Mem.free m2 b2 (zAdd lo delta) (zAdd hi delta) = some m2' ∧
+      Mem.inject j m1' m2' ∧
+      Mem.unchanged_on (loc_out_of_reach j m1) m2 m2' := by
+  have hrange := scc085_free_range_perm m1 b1 lo hi m1' hfree
+  have hrange2 := Mem.range_perm_inj j m1 m2 b1 lo hi Cur Freeable b2 delta
+    hinj.mi_inj hrange hmap
+  obtain ⟨m2', hfree2⟩ := scc085_range_perm_free m2 b2 _ _ hrange2
+  have hshift : ∀ i, zLe (zAdd lo delta) i ∧ zLt i (zAdd hi delta) →
+      zLe lo (zSub i delta) ∧ zLt (zSub i delta) hi := by
+    intro i hb
+    change intOfZ (zAdd lo delta) ≤ intOfZ i ∧ intOfZ i < intOfZ (zAdd hi delta) at hb
+    change intOfZ lo ≤ intOfZ (zSub i delta) ∧ intOfZ (zSub i delta) < intOfZ hi
+    simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub, intOfZ_zOfInt] at hb ⊢
+    omega
+  refine ⟨m2', hfree2, ?_, ?_⟩
+  · apply scc085_free_right_inject j m1' m2 m2' b2 _ _
+      (scc085_free_left_inject j m1 m1' m2 b1 lo hi hinj hfree) hfree2
+    intro b d ofs k p hm hp hb
+    have hpoint := hshift (zAdd ofs d) hb
+    by_cases heq : b = b1
+    · subst b
+      rw [hmap] at hm
+      cases hm
+      rw [zSubAddCancel] at hpoint
+      exact scc085_perm_free_2 m1 m1' b1 lo hi hfree ofs k p hpoint.1 hpoint.2 hp
+    · have hpold := scc085_perm_of_free m1 m1' b1 lo hi hfree b ofs k p hp
+      have hpfirst := hrange _ hpoint
+      have hno := hinj.mi_no_overlap b b2 d b1 b2 delta ofs
+        (zSub (zAdd ofs d) delta) heq hm hmap
+        (permMaxNonemptyOfPerm hpold) (permMaxNonemptyOfPerm hpfirst)
+      rcases hno with hne | hne
+      · exact hne rfl
+      · apply hne
+        apply intOfZ_injective
+        simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        omega
+  · apply scc085_free_unchanged_on _ m2 b2 _ _ m2' hfree2
+    intro i hi hout
+    exact hout b1 delta hmap (permMaxNonemptyOfPerm (hrange _ (hshift i hi)))
+
+private theorem scc085_inject_separated_refl (j : meminj) (m1 m2 : mem) :
+    inject_separated j j m1 m2 := by
+  intro b b' d hn hm
+  rw [hn] at hm
+  cases hm
+
+private theorem scc085_free_injection : scc085_extcall_injection extcall_free_sem := by
+  intro ge1 ge2 vargs m1 t vres m1' j m2 vargs2 hsym hcall hinj hargs
+  cases hcall with
+  | extcall_free_sem_ptr b lo sz _ _ hl hf =>
+      cases hargs with
+      | inject_list_cons _ v2 _ _ hp hnil =>
+          cases hnil
+          cases hp with
+          | inject_ptr _ _ b2 lo2 delta hm heq =>
+              obtain ⟨v, hl2, hv⟩ := Mem.load_inj j m1 m2 Mptr b _ b2 delta
+                (Vptrofs sz) hinj.mi_inj hl hm
+              have hev : v = Vptrofs sz := by
+                change Val.inject j (Vlong (Ptrofs.to_int64 sz)) v at hv
+                cases hv
+                rfl
+              subst v
+              have hrange := scc085_free_range_perm m1 b _ _ m1' hf
+              have hnear : Mem.perm m1 b (zSub (Ptrofs.unsigned lo) z1) Max Nonempty := by
+                apply permMaxNonemptyOfPerm (p := Freeable) (k := Cur)
+                apply hrange
+                have hsz := sz.intrange.1
+                change (-1 : Int) < intOfZ (Ptrofs.unsigned sz) at hsz
+                change intOfZ (zSub (Ptrofs.unsigned lo) (size_chunk Mptr)) ≤
+                    intOfZ (zSub (Ptrofs.unsigned lo) z1) ∧
+                  intOfZ (zSub (Ptrofs.unsigned lo) z1) <
+                    intOfZ (zAdd (Ptrofs.unsigned lo) (Ptrofs.unsigned sz))
+                simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+                change intOfZ (Ptrofs.unsigned lo) - 8 ≤ intOfZ (Ptrofs.unsigned lo) - 1 ∧
+                  intOfZ (Ptrofs.unsigned lo) - 1 <
+                    intOfZ (Ptrofs.unsigned lo) + intOfZ (Ptrofs.unsigned sz)
+                omega
+              have haddr := scc085_address_inject j m1 m2 b b2 lo delta hinj hm (Or.inr hnear)
+              have hlo : zSub (Ptrofs.unsigned lo2) (size_chunk Mptr) =
+                  zAdd (zSub (Ptrofs.unsigned lo) (size_chunk Mptr)) delta := by
+                rw [heq, haddr]
+                apply intOfZ_injective
+                simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+                omega
+              have hhi : zAdd (Ptrofs.unsigned lo2) (Ptrofs.unsigned sz) =
+                  zAdd (zAdd (Ptrofs.unsigned lo) (Ptrofs.unsigned sz)) delta := by
+                rw [heq, haddr]
+                apply intOfZ_injective
+                simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+                omega
+              obtain ⟨m2', hf2, hi2, hu2⟩ := scc085_free_shift_inject j m1 m1' m2
+                b b2 _ _ delta hinj hf hm
+              refine ⟨j, Vundef, m2', ?_, .val_inject_undef _, hi2, hu2,
+                (fun _ _ _ h => h), scc085_inject_separated_refl _ _ _⟩
+              apply extcall_free_sem_ptr b2 lo2 sz m2 m2'
+              · change Mem.load Mptr m2 b2 (zSub (Ptrofs.unsigned lo2) (size_chunk Mptr)) = _
+                rw [hlo]
+                exact hl2
+              · change Mem.free m2 b2 (zSub (Ptrofs.unsigned lo2) (size_chunk Mptr))
+                  (zAdd (Ptrofs.unsigned lo2) (Ptrofs.unsigned sz)) = _
+                rw [hlo, hhi]
+                exact hf2
+  | extcall_free_sem_null =>
+      cases hargs with
+      | inject_list_cons _ v2 _ _ hp hnil =>
+          cases hnil
+          change Val.inject j (Vlong Int64.zero) v2 at hp
+          cases hp
+          exact ⟨j, Vundef, m2, extcall_free_sem_null m2, .val_inject_undef _, hinj,
+            scc085_unchanged_refl _ _, (fun _ _ _ h => h),
+            scc085_inject_separated_refl _ _ _⟩
+
+private theorem scc085_storebytes_injection_transport
+    (f : meminj)
+    (m1 m1' m2 m2' : Memory.mem)
+    (sb1 sb2 : Values.block) (sofs1 sofs2 : Z)
+    (bytes1 bytes2 : List memval)
+    (hinj : Mem.inject f m1 m2)
+    (hstore1 : Mem.storebytes m1 sb1 sofs1 bytes1 = some m1')
+    (hstore2 : Mem.storebytes m2 sb2 sofs2 bytes2 = some m2')
+    (hmem : Mem.mem_inj f m1' m2') : Mem.inject f m1' m2' := by
+  refine {
+    mi_inj := hmem,
+    mi_freeblocks := ?_,
+    mi_mappedblocks := ?_,
+    mi_no_overlap := ?_,
+    mi_representable := ?_,
+    mi_perm_inv := ?_ }
+  · intro b hb
+    change ¬ Plt b m1'.nextblock at hb
+    apply hinj.mi_freeblocks b
+    intro hb1
+    apply hb
+    rw [Mem.nextblock_storebytes m1 sb1 sofs1 bytes1 m1' hstore1]
+    exact hb1
+  · intro b b' delta hmap
+    apply Mem.storebytes_valid_block_1 m2 sb2 sofs2 bytes2 m2' hstore2
+    exact hinj.mi_mappedblocks b b' delta hmap
+  · intro b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 hne hmap1 hmap2 hp1 hp2
+    apply hinj.mi_no_overlap b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 hne hmap1 hmap2
+    · exact Mem.perm_storebytes_2 m1 sb1 sofs1 bytes1 m1' hstore1 b1 ofs1 Max Nonempty hp1
+    · exact Mem.perm_storebytes_2 m1 sb1 sofs1 bytes1 m1' hstore1 b2 ofs2 Max Nonempty hp2
+  · intro b b' delta ofs hmap hp
+    apply hinj.mi_representable b b' delta ofs hmap
+    rcases hp with hp | hp
+    · exact Or.inl (Mem.perm_storebytes_2 m1 sb1 sofs1 bytes1 m1' hstore1
+        b (Ptrofs.unsigned ofs) Max Nonempty hp)
+    · exact Or.inr (Mem.perm_storebytes_2 m1 sb1 sofs1 bytes1 m1' hstore1
+        b (zSub (Ptrofs.unsigned ofs) z1) Max Nonempty hp)
+  · intro b ofs b' delta k p hmap hp
+    obtain hp2 := Mem.perm_storebytes_2 m2 sb2 sofs2 bytes2 m2' hstore2
+      b' (zAdd ofs delta) k p hp
+    obtain hp1 | hn := hinj.mi_perm_inv b ofs b' delta k p hmap hp2
+    · exact Or.inl (Mem.perm_storebytes_1 m1 sb1 sofs1 bytes1 m1' hstore1 b ofs k p hp1)
+    · exact Or.inr (fun hp1' => hn
+        (Mem.perm_storebytes_2 m1 sb1 sofs1 bytes1 m1' hstore1 b ofs Max Nonempty hp1'))
+
+private theorem scc085_storebytes_unchanged (Q : block → Z → Prop)
+    (m m' : mem) (b : block) (ofs : Z) (bytes : List memval)
+    (hs : Mem.storebytes m b ofs bytes = some m')
+    (hout : ∀ i, zLe ofs i ∧ zLt i (zAdd ofs (ZArith.BinInt.Z.of_nat bytes.length)) →
+      ¬ Q b i) : Mem.unchanged_on Q m m' := by
+  refine ⟨?_, ?_, ?_⟩
+  · rw [Mem.nextblock_storebytes m b ofs bytes m' hs]
+    exact Ple_refl _
+  · intro b' ofs' k p _ _
+    exact ⟨Mem.perm_storebytes_1 m b ofs bytes m' hs b' ofs' k p,
+      Mem.perm_storebytes_2 m b ofs bytes m' hs b' ofs' k p⟩
+  · intro b' ofs' hq hp
+    rw [Mem.storebytes_mem_contents m b ofs bytes m' hs]
+    by_cases hb : b' = b
+    · subst b'
+      have hget := scc085_pmap_get_set_same b
+        (Mem.setN bytes ofs (PMap.get b m.mem_contents)) m.mem_contents
+      rw [hget]
+      apply Mem.setN_other
+      intro i hi heq
+      subst i
+      exact hout ofs' hi hq
+    · rw [scc085_pmap_get_set_other _ _ _ _ hb]
+
+private theorem scc085_aligned_area (j : meminj) (m1 m2 : mem)
+    (b1 b2 : block) (ofs delta al sz : Z) (hinj : Mem.inject j m1 m2)
+    (hal : al = z1 ∨ al = ZArith.BinInt.Z.of_nat 2 ∨
+      al = ZArith.BinInt.Z.of_nat 4 ∨ al = ZArith.BinInt.Z.of_nat 8)
+    (hsz : zLt z0 sz) (hdiv : zDivide al sz)
+    (hrange : Mem.range_perm m1 b1 ofs (zAdd ofs sz) Max Nonempty)
+    (hofs : zDivide al ofs) (hmap : j b1 = some (b2, delta)) :
+    zDivide al (zAdd ofs delta) := by
+  have hlen : zLe al sz := by
+    rcases hdiv with ⟨k, hk⟩
+    have heq := congrArg intOfZ hk
+    change 0 < intOfZ sz at hsz
+    change intOfZ al ≤ intOfZ sz
+    simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt] at heq
+    rcases hal with ha | ha | ha | ha <;> subst al
+    · change intOfZ sz = 1 * intOfZ k at heq
+      change (1 : Int) ≤ intOfZ sz
+      omega
+    · change intOfZ sz = 2 * intOfZ k at heq
+      change (2 : Int) ≤ intOfZ sz
+      omega
+    · change intOfZ sz = 4 * intOfZ k at heq
+      change (4 : Int) ≤ intOfZ sz
+      omega
+    · change intOfZ sz = 8 * intOfZ k at heq
+      change (8 : Int) ≤ intOfZ sz
+      omega
+
+  obtain ⟨chunk, hsize, halign⟩ : ∃ chunk : memory_chunk,
+      size_chunk chunk = al ∧ align_chunk chunk = al := by
+    rcases hal with ha | ha | ha | ha <;> subst al
+    · exact ⟨Mint8unsigned, rfl, rfl⟩
+    · exact ⟨Mint16unsigned, rfl, rfl⟩
+    · exact ⟨Mint32, rfl, rfl⟩
+    · exact ⟨Mint64, rfl, rfl⟩
+  have hdelta : zDivide al delta := by
+    rw [← halign]
+    apply hinj.mi_inj.mi_align b1 b2 delta chunk ofs Nonempty hmap
+    intro i hi
+    apply hrange i
+    rw [hsize] at hi
+    have hi1 := hi.1
+    have hi2 := hi.2
+    change intOfZ ofs ≤ intOfZ i at hi1
+    change intOfZ i < intOfZ (zAdd ofs al) at hi2
+    change intOfZ al ≤ intOfZ sz at hlen
+    change intOfZ ofs ≤ intOfZ i ∧ intOfZ i < intOfZ (zAdd ofs sz)
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hi2 ⊢
+    omega
+  obtain ⟨k1, hk1⟩ := hofs
+  obtain ⟨k2, hk2⟩ := hdelta
+  refine ⟨zAdd k1 k2, ?_⟩
+  rw [hk1, hk2]
+  apply intOfZ_injective
+  simp only [zAdd, ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt, Int.mul_add]
+
+private theorem scc085_disjoint_inject (j : meminj) (m1 m2 : mem)
+    (b1 b1' b2 b2' : block) (d1 d2 ofs1 ofs2 sz : Z)
+    (hinj : Mem.inject j m1 m2)
+    (hm1 : j b1 = some (b1', d1)) (hm2 : j b2 = some (b2', d2))
+    (hp1 : Mem.range_perm m1 b1 ofs1 (zAdd ofs1 sz) Max Nonempty)
+    (hp2 : Mem.range_perm m1 b2 ofs2 (zAdd ofs2 sz) Max Nonempty)
+    (hsz : zLt z0 sz)
+    (hdisj : b1 ≠ b2 ∨ ofs1 = ofs2 ∨ zLe (zAdd ofs1 sz) ofs2 ∨
+      zLe (zAdd ofs2 sz) ofs1) :
+    b1' ≠ b2' ∨ zAdd ofs1 d1 = zAdd ofs2 d2 ∨
+      zLe (zAdd (zAdd ofs1 d1) sz) (zAdd ofs2 d2) ∨
+      zLe (zAdd (zAdd ofs2 d2) sz) (zAdd ofs1 d1) := by
+  by_cases hb : b1' = b2'
+  · subst b2'
+    by_cases hs : b1 = b2
+    · subst b2
+      have heq := Option.some.inj (hm1.symm.trans hm2)
+      have hd : d1 = d2 := congrArg Prod.snd heq
+      subst d2
+      rcases hdisj with hn | he | hl | hr
+      · exact (hn rfl).elim
+      · exact Or.inr (Or.inl (congrArg (fun x => zAdd x d1) he))
+      · right; right; left
+        change intOfZ (zAdd (zAdd ofs1 d1) sz) ≤ intOfZ (zAdd ofs2 d1)
+        change intOfZ (zAdd ofs1 sz) ≤ intOfZ ofs2 at hl
+        simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hl ⊢
+        omega
+      · right; right; right
+        change intOfZ (zAdd (zAdd ofs2 d1) sz) ≤ intOfZ (zAdd ofs1 d1)
+        change intOfZ (zAdd ofs2 sz) ≤ intOfZ ofs1 at hr
+        simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hr ⊢
+        omega
+    · by_cases hl : zLe (zAdd (zAdd ofs1 d1) sz) (zAdd ofs2 d2)
+      · exact Or.inr (Or.inr (Or.inl hl))
+      by_cases hr : zLe (zAdd (zAdd ofs2 d2) sz) (zAdd ofs1 d1)
+      · exact Or.inr (Or.inr (Or.inr hr))
+      let q := zOfInt (max (intOfZ ofs1 + intOfZ d1) (intOfZ ofs2 + intOfZ d2))
+      have hbounds : (zLe ofs1 (zSub q d1) ∧ zLt (zSub q d1) (zAdd ofs1 sz)) ∧
+          (zLe ofs2 (zSub q d2) ∧ zLt (zSub q d2) (zAdd ofs2 sz)) := by
+        change 0 < intOfZ sz at hsz
+        change ¬ intOfZ (zAdd (zAdd ofs1 d1) sz) ≤ intOfZ (zAdd ofs2 d2) at hl
+        change ¬ intOfZ (zAdd (zAdd ofs2 d2) sz) ≤ intOfZ (zAdd ofs1 d1) at hr
+        change (intOfZ ofs1 ≤ intOfZ (zSub q d1) ∧
+            intOfZ (zSub q d1) < intOfZ (zAdd ofs1 sz)) ∧
+          (intOfZ ofs2 ≤ intOfZ (zSub q d2) ∧
+            intOfZ (zSub q d2) < intOfZ (zAdd ofs2 sz))
+        simp only [q, zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+          intOfZ_zOfInt] at hl hr ⊢
+        omega
+      have hno := hinj.mi_no_overlap b1 b1' d1 b2 b1' d2 (zSub q d1) (zSub q d2)
+        hs hm1 hm2 (hp1 _ hbounds.1) (hp2 _ hbounds.2)
+      rcases hno with hn | hn
+      · exact (hn rfl).elim
+      · apply False.elim
+        apply hn
+        apply intOfZ_injective
+        simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        omega
+  · exact Or.inl hb
+
+private theorem scc085_memcpy_injection (sz al : Z) :
+    scc085_extcall_injection (extcall_memcpy_sem sz al) := by
+  intro ge1 ge2 vargs m1 t vres m1' j m2 vargs2 hsym hcall hinj hargs
+  cases hcall with
+  | extcall_memcpy_sem_intro bd od bs os _ bytes _ hal hsz hdiv hs hd hdisj hl hst =>
+      cases hargs with
+      | inject_list_cons _ _ _ _ hpd htail =>
+          cases htail with
+          | inject_list_cons _ _ _ _ hps hnil =>
+              cases hnil
+              cases hpd with
+              | inject_ptr _ _ bd2 od2 dd hmd hed =>
+                  cases hps with
+                  | inject_ptr _ _ bs2 os2 ds hms hes =>
+                      have hlen : ZArith.BinInt.Z.of_nat bytes.length = sz := by
+                        have hh := Mem.loadbytes_length m1 bs (Ptrofs.unsigned os) sz bytes hl
+                        apply intOfZ_injective
+                        rw [hh]
+                        change intOfZ (zOfInt (Int.ofNat (Int.toNat (intOfZ sz)))) = intOfZ sz
+                        rw [intOfZ_zOfInt]
+                        change (0 : Int) ≤ intOfZ sz at hsz
+                        exact Int.toNat_of_nonneg hsz
+                      by_cases hz : sz = z0
+                      · cases hz
+                        have hempty : bytes = [] := by
+                          apply List.eq_nil_of_length_eq_zero
+                          have hh := congrArg intOfZ hlen
+                          change intOfZ (zOfInt (Int.ofNat bytes.length)) = 0 at hh
+                          rw [intOfZ_zOfInt] at hh
+                          exact Int.ofNat.inj hh
+                        subst bytes
+                        have hzeroRange : ∀ (m : mem) b ofs,
+                            Mem.range_perm m b ofs (zAdd ofs (ZArith.BinInt.Z.of_nat 0)) Cur Writable := by
+                          intro m b ofs i hi
+                          change intOfZ ofs ≤ intOfZ i ∧
+                            intOfZ i < intOfZ (zAdd ofs z0) at hi
+                          rw [scc085_zadd_zero] at hi
+                          omega
+                        obtain ⟨m2', hst2⟩ := Mem.range_perm_storebytes m2 bd2 (Ptrofs.unsigned od2) []
+                          (hzeroRange m2 bd2 (Ptrofs.unsigned od2))
+                        have himem := Mem.storebytes_empty_inj j m1 bd (Ptrofs.unsigned od) m1'
+                          m2 bd2 (Ptrofs.unsigned od2) m2' hinj.mi_inj hst hst2
+                        have hi := scc085_storebytes_injection_transport j m1 m1' m2 m2'
+                          bd bd2 _ _ [] [] hinj hst hst2 himem
+                        refine ⟨j, Vundef, m2', ?_, .val_inject_undef _, hi, ?_,
+                          (fun _ _ _ h => h), scc085_inject_separated_refl _ _ _⟩
+                        · apply extcall_memcpy_sem_intro bd2 od2 bs2 os2 m2 [] m2'
+                            hal hsz hdiv
+                          · intro hn
+                            exact (Int.lt_irrefl 0 hn).elim
+                          · intro hn
+                            exact (Int.lt_irrefl 0 hn).elim
+                          · right; right
+                            by_cases hle : zLe (Ptrofs.unsigned os2) (Ptrofs.unsigned od2)
+                            · left
+                              simpa only [scc085_zadd_zero] using hle
+                            · right
+                              change intOfZ (zAdd (Ptrofs.unsigned od2) z0) ≤ intOfZ (Ptrofs.unsigned os2)
+                              rw [scc085_zadd_zero]
+                              change ¬ intOfZ (Ptrofs.unsigned os2) ≤ intOfZ (Ptrofs.unsigned od2) at hle
+                              omega
+                          · exact Mem.loadbytes_empty m2 bs2 (Ptrofs.unsigned os2) z0 (Int.le_refl 0)
+                          · exact hst2
+                        · apply scc085_storebytes_unchanged _ m2 m2' bd2 _ [] hst2
+                          intro i hi hout
+                          change intOfZ (Ptrofs.unsigned od2) ≤ intOfZ i ∧
+                            intOfZ i < intOfZ (zAdd (Ptrofs.unsigned od2) z0) at hi
+                          rw [scc085_zadd_zero] at hi
+                          omega
+                      · have hpos : zLt z0 sz := by
+                          change (0 : Int) < intOfZ sz
+                          change (0 : Int) ≤ intOfZ sz at hsz
+                          have hn : intOfZ sz ≠ 0 := by
+                            intro heq
+                            exact hz (intOfZ_injective heq)
+                          omega
+                        have hrs : Mem.range_perm m1 bs (Ptrofs.unsigned os)
+                            (zAdd (Ptrofs.unsigned os) sz) Max Nonempty := by
+                          intro i hi
+                          exact permMaxNonemptyOfPerm
+                            (Mem.loadbytes_range_perm m1 bs (Ptrofs.unsigned os) sz bytes hl i hi)
+                        have hrd : Mem.range_perm m1 bd (Ptrofs.unsigned od)
+                            (zAdd (Ptrofs.unsigned od) sz) Max Nonempty := by
+                          intro i hi
+                          apply permMaxNonemptyOfPerm
+                            (Mem.storebytes_range_perm m1 bd (Ptrofs.unsigned od) bytes m1' hst i _)
+                          change zLe (Ptrofs.unsigned od) i ∧
+                            zLt i (zAdd (Ptrofs.unsigned od) (ZArith.BinInt.Z.of_nat bytes.length))
+                          rw [hlen]
+                          exact hi
+                        have hstart : ∀ ofs, zLe ofs ofs ∧ zLt ofs (zAdd ofs sz) := by
+                          intro ofs
+                          change (0 : Int) < intOfZ sz at hpos
+                          change intOfZ ofs ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ (zAdd ofs sz)
+                          simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+                          omega
+                        have had : Ptrofs.unsigned od2 = zAdd (Ptrofs.unsigned od) dd := by
+                          rw [hed]
+                          exact scc085_address_inject j m1 m2 bd bd2 od dd hinj hmd
+                            (Or.inl (hrd _ (hstart _)))
+                        have has : Ptrofs.unsigned os2 = zAdd (Ptrofs.unsigned os) ds := by
+                          rw [hes]
+                          exact scc085_address_inject j m1 m2 bs bs2 os ds hinj hms
+                            (Or.inl (hrs _ (hstart _)))
+                        obtain ⟨bytes2, hl2, hbytes⟩ := Mem.loadbytes_inj j m1 m2 sz bs
+                          (Ptrofs.unsigned os) bs2 ds bytes hinj.mi_inj hl hms
+                        obtain ⟨m2', hst2, himem⟩ := Mem.storebytes_mapped_inj j m1 bd
+                          (Ptrofs.unsigned od) bytes m1' m2 bd2 dd bytes2 hinj.mi_inj hst
+                          hinj.mi_no_overlap hmd hbytes
+                        have hi := scc085_storebytes_injection_transport j m1 m1' m2 m2'
+                          bd bd2 _ _ bytes bytes2 hinj hst hst2 himem
+                        refine ⟨j, Vundef, m2', ?_, .val_inject_undef _, hi, ?_,
+                          (fun _ _ _ h => h), scc085_inject_separated_refl _ _ _⟩
+                        · apply extcall_memcpy_sem_intro bd2 od2 bs2 os2 m2 bytes2 m2' hal hsz hdiv
+                          · intro _
+                            rw [has]
+                            exact scc085_aligned_area j m1 m2 bs bs2 _ ds al sz hinj hal
+                              hpos hdiv hrs (hs hpos) hms
+                          · intro _
+                            rw [had]
+                            exact scc085_aligned_area j m1 m2 bd bd2 _ dd al sz hinj hal
+                              hpos hdiv hrd (hd hpos) hmd
+                          · change bs2 ≠ bd2 ∨ Ptrofs.unsigned os2 = Ptrofs.unsigned od2 ∨
+                              zLe (zAdd (Ptrofs.unsigned os2) sz) (Ptrofs.unsigned od2) ∨
+                              zLe (zAdd (Ptrofs.unsigned od2) sz) (Ptrofs.unsigned os2)
+                            rw [has, had]
+                            exact scc085_disjoint_inject j m1 m2 bs bs2 bd bd2 ds dd
+                              _ _ sz hinj hms hmd hrs hrd hpos hdisj
+                          · change Mem.loadbytes m2 bs2 (Ptrofs.unsigned os2) sz = _
+                            rw [has]
+                            exact hl2
+                          · change Mem.storebytes m2 bd2 (Ptrofs.unsigned od2) bytes2 = _
+                            rw [had]
+                            exact hst2
+                        · apply scc085_storebytes_unchanged _ m2 m2' bd2 _ bytes2 hst2
+                          intro i hi hout
+                          apply hout bd dd hmd
+                          apply hrd
+                          have hlen2 : ZArith.BinInt.Z.of_nat bytes2.length = sz := by
+                            rw [← list_forall2_length _ _ _ bytes bytes2 hbytes]
+                            exact hlen
+                          rw [hlen2] at hi
+                          change intOfZ (zAdd (Ptrofs.unsigned od) dd) ≤ intOfZ i ∧
+                            intOfZ i < intOfZ (zAdd (zAdd (Ptrofs.unsigned od) dd) sz) at hi
+                          change intOfZ (Ptrofs.unsigned od) ≤ intOfZ (zSub i dd) ∧
+                            intOfZ (zSub i dd) < intOfZ (zAdd (Ptrofs.unsigned od) sz)
+                          simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+                            intOfZ_zOfInt] at hi ⊢
+                          omega
+
+private theorem scc085_annot_val_injection (text) (targ) :
+    scc085_extcall_injection (extcall_annot_val_sem text targ) := by
+  intro ge1 ge2 vargs m1 t vres m1' j m2 vargs2 hsym hcall hinj hargs
+  cases hcall with
+  | extcall_annot_val_sem_intro varg _ arg hmatch =>
+      cases hargs with
+      | inject_list_cons _ v2 _ _ hv hnil =>
+          cases hnil
+          exact ⟨j, v2, m2, extcall_annot_val_sem_intro v2 m2 arg
+            (eventval_match_inject j ge1 ge2 hsym arg targ _ v2 hmatch hv),
+            hv, hinj, scc085_unchanged_refl _ _, (fun _ _ _ h => h),
+            scc085_inject_separated_refl _ _ _⟩
+
+private theorem scc085_external_injection
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (ef : external_function) :
+    scc085_extcall_injection (Events.external_call xi ef) := by
+  cases ef with
+  | EF_external name sg =>
+      exact scc085_injection_of_properties _ _ (external_functions_properties xi name sg)
+  | EF_builtin name sg | EF_runtime name sg =>
+      cases hl : lookup_builtin_function name sg with
+      | none =>
+          simpa only [Events.external_call, builtin_or_external_sem, hl] using
+            scc085_injection_of_properties _ _ (external_functions_properties xi name sg)
+      | some bf =>
+          simpa only [Events.external_call, builtin_or_external_sem, hl] using
+            scc085_injection_of_properties _ _ (known_builtin_ok bf)
+  | EF_vload chunk => exact scc085_injection_of_properties _ _ (volatile_load_ok chunk)
+  | EF_vstore chunk => exact scc085_injection_of_properties _ _ (volatile_store_ok chunk)
+  | EF_malloc => exact scc085_malloc_injection
+  | EF_free => exact scc085_free_injection
+  | EF_memcpy sz al => exact scc085_memcpy_injection sz al
+  | EF_annot kind text targs =>
+      exact scc085_injection_of_properties _ _ (extcall_annot_ok text targs)
+  | EF_annot_val kind text targ => exact scc085_annot_val_injection text targ
+  | EF_inline_asm text sg clobbers =>
+      exact scc085_injection_of_properties _ _ (inline_assembly_properties xi text sg)
+  | EF_debug kind text targs => exact scc085_injection_of_properties _ _ (extcall_debug_ok targs)
+
+theorem external_call_parallel_rule
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    external_call_parallel_ruleStatement := by
+  intro xi F V ef ge vargs1 m1 t vres1 m1' m2 j P vargs2 hcall hsep hargs
+  have hsymbols := scc085_symbols_inject F V ge j m2 hsep.2.1.1
+  obtain ⟨j', vres2, m2', hcall2, hv, hi, hu, hincr, hseparate⟩ :=
+    scc085_external_injection xi ef (Genv.to_senv ge) (Genv.to_senv ge)
+      vargs1 m1 t vres1 m1' j m2 vargs2 hsymbols hcall hsep.1 hargs
+  refine ⟨j', vres2, m2', hcall2, hv, ?_, hincr, hseparate⟩
+  apply scc085_call_frame F V ge j j' m1 m1' m2 m2' P hsep hi hu hincr hseparate
+  intro b ofs p hb hp
+  exact scc085_call_max_perm xi ef (Genv.to_senv ge) vargs1 m1 t vres1 m1'
+    b ofs p hcall hb hp
+
+end ExternalCallParallelProof

@@ -3399,3 +3399,113 @@ theorem extcall_memcpy_ok : extcall_memcpy_okStatement := by
         subst m2
         constructor <;> rfl
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Globalenvs
+
+ theorem extcall_annot_val_ok : extcall_annot_val_okStatement := by
+  intro text targ
+  refine {
+    ec_well_typed := ?_
+    ec_symbols_preserved := ?_
+    ec_valid_block := ?_
+    ec_max_perm := ?_
+    ec_readonly := ?_
+    ec_mem_extends := ?_
+    ec_mem_inject := ?_
+    ec_trace_length := ?_
+    ec_receptive := ?_
+    ec_determ := ?_ }
+  · intro ge vargs m1 t vres m2 hsem
+    cases hsem
+    exact Val.has_inj_type vres targ (eventval_match_type ge _ targ vres (by assumption))
+  · intro ge1 ge2 vargs m1 t vres m2 heq hsem
+    cases hsem with
+    | extcall_annot_val_sem_intro varg m arg hmatch =>
+        apply extcall_annot_val_sem_intro
+        exact eventval_match_preserved ge1 ge2 heq.2.1 heq.1 arg targ vres hmatch
+  · intro ge vargs m1 t vres m2 b hsem hb
+    cases hsem
+    exact hb
+  · intro ge vargs m1 t vres m2 b ofs p hsem hb hp
+    cases hsem
+    exact hp
+  · intro ge vargs m1 t vres m2 b ofs n bytes hsem hb hload hreadonly
+    cases hsem
+    exact hload
+  · intro ge vargs m1 t vres m2 m1' vargs' hsem hext hless
+    cases hsem with
+    | extcall_annot_val_sem_intro varg m arg hmatch =>
+      cases hless with
+      | lessdef_list_cons _ v2 _ vl2 hh htld =>
+        cases htld
+        refine ⟨v2, m1', ?_, hh, hext, ?_⟩
+        · apply extcall_annot_val_sem_intro
+          exact eventval_match_lessdef ge arg targ vres v2 hmatch hh
+        · exact extcall_debug_unchanged_on_refl (loc_out_of_bounds m1) m1'
+  · intro ge1 ge2 vargs m1 t vres m2 f m1' vargs' hsymbols hsem hinj hvlist
+    cases hsem with
+    | extcall_annot_val_sem_intro varg m arg hmatch =>
+      cases hvlist with
+      | inject_list_cons _ v2 _ vl2 hh htld =>
+        cases htld
+        refine ⟨f, v2, m1', ?_, ?_, hinj, ?_, ?_, ?_, ?_⟩
+        · apply extcall_annot_val_sem_intro
+          exact eventval_match_inject f ge1 ge2 hsymbols arg targ vres v2 hmatch hh
+        · exact hh
+        · exact extcall_debug_unchanged_on_refl (loc_unmapped f) m1
+        · exact extcall_debug_unchanged_on_refl (loc_out_of_reach f m1) m1'
+        · intro b b' delta h
+          exact h
+        · intro b1 b2 delta hnone hsome
+          rw [hnone] at hsome
+          cases hsome
+  · intro ge vargs m t vres m' hsem
+    cases hsem
+    simp [E0]
+  · intro ge vargs m t1 vres1 m1 t2 hsem hmatch
+    cases hsem with
+    | extcall_annot_val_sem_intro varg m arg hmatch' =>
+      cases hmatch
+      exact ⟨vres1, m, extcall_annot_val_sem_intro vres1 m arg hmatch'⟩
+  · intro ge vargs m t1 vres1 m1 t2 vres2 m2 hsem1 hsem2
+    cases hsem1 with
+    | extcall_annot_val_sem_intro varg m arg hmatch1 =>
+      cases hsem2 with
+      | extcall_annot_val_sem_intro varg' m' arg' hmatch2 =>
+        have harg := eventval_match_determ_2 ge arg arg' targ vres1 hmatch1 hmatch2
+        subst arg'
+        exact ⟨match_traces_annot _ _, by intro; exact ⟨rfl, rfl⟩⟩
+
+end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.Common.Values
+
+ theorem builtin_or_external_sem_ok
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    builtin_or_external_sem_okStatement := by
+  intro xi name sg
+  unfold builtin_or_external_sem
+  cases h : lookup_builtin_function name sg with
+  | some bf =>
+      have hs := lookup_builtin_function_sig name sg bf h
+      subst sg
+      exact known_builtin_ok bf
+  | none =>
+      exact external_functions_properties xi name sg
+
+end CompCert4Lean.Common.Events

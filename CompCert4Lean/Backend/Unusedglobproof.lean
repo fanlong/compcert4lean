@@ -4814,3 +4814,405 @@ theorem init_mem_inj_2 : init_mem_inj_2Statement := by
   exact ug_init_mem_inj_2 p tp used hvalid hmatch m tm hmem htmem
 
 end CompCert4Lean.Backend.Unusedglobproof
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.Unusedglob
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem ug_link_union_iff (s1 s2 : IS.t) (id : ident) :
+    IS.In id (IS.union s1 s2) ↔ IS.In id s1 ∨ IS.In id s2 := by
+  constructor
+  · exact CompCert4Lean.Lib.FSetAVLplus.Make.union_1 s1 s2 id
+  · intro h
+    cases h with
+    | inl h => exact CompCert4Lean.Lib.FSetAVLplus.Make.union_2 s1 s2 id h
+    | inr h => exact CompCert4Lean.Lib.FSetAVLplus.Make.union_3 s1 s2 id h
+
+private theorem ug_link_union_mem (s1 s2 : IS.t) (id : ident) :
+    IS.mem id (IS.union s1 s2) = (IS.mem id s1 || IS.mem id s2) := by
+  cases h1 : IS.mem id s1 <;> cases h2 : IS.mem id s2
+  · cases hu : IS.mem id (IS.union s1 s2)
+    · rfl
+    · have hin := CompCert4Lean.Backend.Unusedglob.IS.mem_2_proof _ _ hu
+      rcases (ug_link_union_iff s1 s2 id).mp hin with hin | hin
+      · exact False.elim (Bool.noConfusion
+          (h1.symm.trans (CompCert4Lean.Backend.Unusedglob.IS.mem_1_proof _ _ hin)))
+      · exact False.elim (Bool.noConfusion
+          (h2.symm.trans (CompCert4Lean.Backend.Unusedglob.IS.mem_1_proof _ _ hin)))
+  · have hin := CompCert4Lean.Backend.Unusedglob.IS.mem_2_proof s2 id h2
+    exact CompCert4Lean.Backend.Unusedglob.IS.mem_1_proof _ _
+      ((ug_link_union_iff s1 s2 id).mpr (Or.inr hin))
+  · have hin := CompCert4Lean.Backend.Unusedglob.IS.mem_2_proof s1 id h1
+    exact CompCert4Lean.Backend.Unusedglob.IS.mem_1_proof _ _
+      ((ug_link_union_iff s1 s2 id).mpr (Or.inl hin))
+  · have hin := CompCert4Lean.Backend.Unusedglob.IS.mem_2_proof s1 id h1
+    exact CompCert4Lean.Backend.Unusedglob.IS.mem_1_proof _ _
+      ((ug_link_union_iff s1 s2 id).mpr (Or.inl hin))
+
+private theorem ug_link_used_not_defined
+    (p : RTL.program) (used : IS.t) (id : ident)
+    (hvalid : valid_used_set p used)
+    (hget : PTree.get id (prog_defmap p) = none) :
+    IS.mem id used = false ∨ id = p.prog_main := by
+  cases hmem : IS.mem id used with
+  | false => exact Or.inl rfl
+  | true =>
+      rcases hvalid.used_defined id
+          (CompCert4Lean.Backend.Unusedglob.IS.mem_2_proof used id hmem) with
+        hdefined | hmain
+      · rcases prog_defmap_dom RTL.fundef Unit p id hdefined with ⟨gd, hgd⟩
+        rw [hget] at hgd
+        contradiction
+      · exact Or.inr hmain
+
+private theorem ug_link_used_not_defined_2
+    (p : RTL.program) (used : IS.t) (id : ident)
+    (hvalid : valid_used_set p used) (hne : id ≠ p.prog_main)
+    (hget : PTree.get id (prog_defmap p) = none) :
+    ¬ IS.In id used := by
+  rcases ug_link_used_not_defined p used id hvalid hget with hmem | hmain
+  · intro hin
+    have hmem' := CompCert4Lean.Backend.Unusedglob.IS.mem_1_proof used id hin
+    rw [hmem] at hmem'
+    contradiction
+  · exact False.elim (hne hmain)
+
+private theorem ug_link_varinit_either
+    (i1 i2 i : List init_data) (hlink : link_varinit i1 i2 = some i) :
+    i = i1 ∨ i = i2 := by
+  unfold link_varinit at hlink
+  cases h1 : classify_init i1 <;> cases h2 : classify_init i2 <;>
+    simp_all
+  all_goals split at hlink <;> simp_all
+
+private theorem ug_link_def_either
+    (gd1 gd2 gd : globdef RTL.fundef Unit)
+    (hlink : @link_def RTL.fundef Unit
+      (Linker_fundef RTL.function) Linker_unit gd1 gd2 = some gd) :
+    gd = gd1 ∨ gd = gd2 := by
+  cases gd1 with
+  | Gfun fd1 =>
+      cases gd2 with
+      | Gvar v2 => simp [link_def, Linker.link, Linker_fundef] at hlink
+      | Gfun fd2 =>
+          cases fd1 with
+          | Internal f1 =>
+              cases fd2 with
+              | Internal f2 => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+              | External ef2 =>
+                  cases ef2 with
+                  | EF_external name sg =>
+                      simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                      subst gd
+                      exact Or.inl rfl
+                  | EF_builtin name sg => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_runtime name sg => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_vload c => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_vstore c => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_malloc => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_free => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_memcpy sz al => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_annot k txt ts => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_annot_val k txt t => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_inline_asm txt sg cs => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_debug k txt ts => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+          | External ef1 =>
+              cases fd2 with
+              | Internal f2 =>
+                  cases ef1 with
+                  | EF_external name sg =>
+                      simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                      subst gd
+                      exact Or.inr rfl
+                  | EF_builtin name sg => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_runtime name sg => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_vload c => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_vstore c => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_malloc => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_free => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_memcpy sz al => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_annot k txt ts => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_annot_val k txt t => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_inline_asm txt sg cs => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+                  | EF_debug k txt ts => simp [link_def, Linker.link, Linker_fundef, link_fundef] at hlink
+              | External ef2 =>
+                  cases heq : external_function_eq ef1 ef2 with
+                  | left heq =>
+                      simp [link_def, Linker.link, Linker_fundef, link_fundef, heq] at hlink
+                      subst ef2
+                      subst gd
+                      exact Or.inl rfl
+                  | right hne => simp [link_def, Linker.link, Linker_fundef, link_fundef, heq] at hlink
+  | Gvar v1 =>
+      cases gd2 with
+      | Gfun fd2 => simp [link_def, Linker.link, Linker_fundef] at hlink
+      | Gvar v2 =>
+          rcases v1 with ⟨info1, i1, ro1, vo1⟩
+          rcases v2 with ⟨info2, i2, ro2, vo2⟩
+          cases info1
+          cases info2
+          unfold link_def link_vardef at hlink
+          simp only [Linker_unit, Linker.link] at hlink
+          cases hi : link_varinit i1 i2 with
+          | none => simp [hi] at hlink
+          | some i =>
+              simp only [hi] at hlink
+              by_cases hflags : ro1 = ro2 ∧ vo1 = vo2
+              · simp [hi, hflags] at hlink
+                subst gd
+                rcases hflags with ⟨rfl, rfl⟩
+                rcases ug_link_varinit_either i1 i2 i hi with rfl | rfl
+                · exact Or.inl rfl
+                · exact Or.inr rfl
+              · simp [hi, hflags] at hlink
+
+end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.Unusedglob
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+local instance ug_link_rtl_fundef : Linker RTL.fundef := Linker_fundef RTL.function
+
+private theorem ug_link_map (p1 p2 p : RTL.program)
+    (hl : link_prog p1 p2 = some p) (id : ident) :
+    PTree.get id (prog_defmap p) =
+      link_prog_merge (PTree.get id (prog_defmap p1)) (PTree.get id (prog_defmap p2)) := by
+  obtain ⟨_, _, rfl⟩ := link_prog_inv_proof p1 p2 p hl
+  exact (prog_defmap_elements_proof _ _ _ id).trans
+    (PTree.gcombine_proof (f := link_prog_merge) (by rfl) _ _ id)
+
+private theorem ug_link_used_transfer
+    (p1 p2 : RTL.program) (u1 u2 : IS.t) (id : ident)
+    (v1 : valid_used_set p1 u1) (v2 : valid_used_set p2 u2)
+    (hm : p1.prog_main = p2.prog_main)
+    (hn : PTree.get id (prog_defmap p2) = none)
+    (hu : IS.In id u1 ∨ IS.In id u2) : IS.In id u1 := by
+  rcases hu with hu | hu
+  · exact hu
+  · rcases v2.used_defined id hu with hd | he
+    · obtain ⟨gd, hg⟩ := prog_defmap_dom RTL.fundef Unit p2 id hd
+      rw [hn] at hg
+      contradiction
+    · rw [he, ← hm]
+      exact v1.used_main
+
+private theorem ug_link_valid_used_set
+    (p1 p2 p : RTL.program) (u1 u2 : IS.t)
+    (hl : link_prog p1 p2 = some p)
+    (v1 : valid_used_set p1 u1) (v2 : valid_used_set p2 u2) :
+    valid_used_set p (IS.union u1 u2) := by
+  obtain ⟨hm, hc, hp⟩ := link_prog_inv_proof p1 p2 p hl
+  have hmap := ug_link_map p1 p2 p hl
+  constructor
+  · intro id gd id' hu hg hr
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at id
+    rw [hmap id] at hg
+    have hu' := (ug_link_union_iff u1 u2 id).mp hu
+    apply (ug_link_union_iff u1 u2 id').mpr
+    cases h1 : PTree.get id (prog_defmap p1) with
+    | none =>
+        cases h2 : PTree.get id (prog_defmap p2) with
+        | none => simp [h1, h2, link_prog_merge] at hg
+        | some gd2 =>
+            have he : gd2 = gd := by simpa [h1, h2, link_prog_merge] using hg
+            subst gd
+            exact Or.inr (v2.used_closed id gd2 id'
+              (ug_link_used_transfer p2 p1 u2 u1 id v2 v1 hm.symm h1 hu'.symm) h2 hr)
+    | some gd1 =>
+        cases h2 : PTree.get id (prog_defmap p2) with
+        | none =>
+            have he : gd1 = gd := by simpa [h1, h2, link_prog_merge] using hg
+            subst gd
+            exact Or.inl (v1.used_closed id gd1 id'
+              (ug_link_used_transfer p1 p2 u1 u2 id v1 v2 hm h2 hu') h1 hr)
+        | some gd2 =>
+            have hd : link_def gd1 gd2 = some gd := by
+              simpa [h1, h2, link_prog_merge] using hg
+            obtain ⟨pub1, pub2, _⟩ := hc id gd1 gd2 h1 h2
+            rcases ug_link_def_either gd1 gd2 gd hd with he | he
+            · rw [he] at hr
+              exact Or.inl (v1.used_closed id gd1 id' (v1.used_public id pub1) h1 hr)
+            · rw [he] at hr
+              exact Or.inr (v2.used_closed id gd2 id' (v2.used_public id pub2) h2 hr)
+  · rw [hp]
+    exact (ug_link_union_iff u1 u2 p1.prog_main).mpr (Or.inl v1.used_main)
+  · intro id hi
+    rw [hp] at hi
+    apply (ug_link_union_iff u1 u2 id).mpr
+    rcases List.mem_append.mp hi with hi | hi
+    · exact Or.inl (v1.used_public id hi)
+    · exact Or.inr (v2.used_public id hi)
+  · intro id hu
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at id
+    have orders := (Linker_prog RTL.fundef Unit).link_linkorder p1 p2 p hl
+    rcases (ug_link_union_iff u1 u2 id).mp hu with hu | hu
+    · rcases v1.used_defined id hu with hi | hi
+      · obtain ⟨gd, hg⟩ := prog_defmap_dom RTL.fundef Unit p1 id hi
+        obtain ⟨gd', hg', _⟩ := prog_defmap_linkorder_proof p1 p id gd orders.1 hg
+        exact Or.inl (List.mem_map.mpr ⟨(id, gd'), in_prog_defmap _ _ p id gd' hg', rfl⟩)
+      · right
+        simpa [hp] using hi
+    · rcases v2.used_defined id hu with hi | hi
+      · obtain ⟨gd, hg⟩ := prog_defmap_dom RTL.fundef Unit p2 id hi
+        obtain ⟨gd', hg', _⟩ := prog_defmap_linkorder_proof p2 p id gd orders.2 hg
+        exact Or.inl (List.mem_map.mpr ⟨(id, gd'), in_prog_defmap _ _ p id gd' hg', rfl⟩)
+      · right
+        simpa [hp, hm] using hi
+
+end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.Unusedglob
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+ theorem link_match_program_proof : link_match_programStatement := by
+  letI : Linker RTL.fundef := Linker_fundef RTL.function
+  intro p1 p2 tp1 tp2 p hlink hm1 hm2
+  rcases hm1 with ⟨used1, hvalid1, hmatch1⟩
+  rcases hm2 with ⟨used2, hvalid2, hmatch2⟩
+  obtain ⟨hmain, hcompat, hp⟩ := link_prog_inv_proof p1 p2 p hlink
+  have hcheck : PTree_Properties.for_all (prog_defmap tp1)
+      (link_prog_check tp1 tp2) = true := by
+    apply (PTree_Properties.for_all_correct_proof _ _ _).mpr
+    intro id gd1 hget1
+    have hr1 := hmatch1.match_prog_def id
+    rw [hget1] at hr1
+    cases hmem1 : IS.mem id used1 with
+    | false => simp [hmem1] at hr1
+    | true =>
+        have hgetp1 : PTree.get id (prog_defmap p1) = some gd1 := by
+          simpa [hmem1] using hr1.symm
+        cases hgetp2 : PTree.get id (prog_defmap p2) with
+        | none =>
+            have hr2 := hmatch2.match_prog_def id
+            rw [hgetp2] at hr2
+            have hnone : PTree.get id (prog_defmap tp2) = none := by
+              simpa using hr2
+            simp [link_prog_check, hnone]
+        | some gd2 =>
+            have hr2 := hmatch2.match_prog_def id
+            rw [hgetp2] at hr2
+            cases hmem2 : IS.mem id used2 with
+            | false =>
+                have hnone : PTree.get id (prog_defmap tp2) = none := by
+                  simpa [hmem2] using hr2
+                simp [link_prog_check, hnone]
+            | true =>
+                have hgettp2 : PTree.get id (prog_defmap tp2) = some gd2 := by
+                  simpa [hmem2] using hr2
+                obtain ⟨hpub1, hpub2, gd, hgd⟩ := hcompat id gd1 gd2 hgetp1 hgetp2
+                have hpub1' : id ∈ tp1.prog_public := by
+                  rw [hmatch1.match_prog_public]
+                  exact hpub1
+                have hpub2' : id ∈ tp2.prog_public := by
+                  rw [hmatch2.match_prog_public]
+                  exact hpub2
+                simp only [link_prog_check, hgettp2]
+                cases d1 : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec
+                    peq id tp1.prog_public with
+                | right hn => exact False.elim (hn hpub1')
+                | left _ =>
+                    cases d2 : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec
+                        peq id tp2.prog_public with
+                    | right hn => exact False.elim (hn hpub2')
+                    | left _ => simp [hgd]
+  let tp : CompCert4Lean.Common.AST.program RTL.fundef Unit :=
+    { prog_main := tp1.prog_main
+      prog_public := tp1.prog_public ++ tp2.prog_public
+      prog_defs := PTree.elements
+        (PTree.combine link_prog_merge (prog_defmap tp1) (prog_defmap tp2)) }
+  refine ⟨tp, ?_, ?_⟩
+  · change link_prog tp1 tp2 = some tp
+    unfold link_prog
+    have htmain : tp1.prog_main = tp2.prog_main :=
+      hmatch1.match_prog_main.trans (hmain.trans hmatch2.match_prog_main.symm)
+    cases d : ident_eq tp1.prog_main tp2.prog_main with
+    | right hn => exact False.elim (hn htmain)
+    | left _ => simpa [hcheck, tp]
+  · refine ⟨IS.union used1 used2, ug_link_valid_used_set p1 p2 p used1 used2 hlink hvalid1 hvalid2, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_⟩
+    · simpa [tp, hp] using hmatch1.match_prog_main
+    · simp [tp, hp, hmatch1.match_prog_public, hmatch2.match_prog_public]
+    · intro id
+      dsimp [tp]
+      rw [hp]
+      rw [prog_defmap_elements_proof (F := RTL.fundef) (V := Unit)
+        (m := PTree.combine link_prog_merge (prog_defmap tp1) (prog_defmap tp2))
+        (pub := tp1.prog_public ++ tp2.prog_public) (mn := tp1.prog_main) (x := id)]
+      rw [PTree.gcombine_proof (f := link_prog_merge) (by rfl)]
+      rw [prog_defmap_elements_proof (F := RTL.fundef) (V := Unit)
+        (m := PTree.combine link_prog_merge (prog_defmap p1) (prog_defmap p2))
+        (pub := p1.prog_public ++ p2.prog_public) (mn := p1.prog_main) (x := id)]
+      rw [PTree.gcombine_proof (f := link_prog_merge) (by rfl)]
+      rw [hmatch1.match_prog_def id, hmatch2.match_prog_def id]
+      rw [ug_link_union_mem used1 used2 id]
+      cases h1 : PTree.get id (prog_defmap p1) with
+      | none =>
+          cases h2 : PTree.get id (prog_defmap p2) with
+          | none => simp [h1, h2, link_prog_merge]
+          | some gd2 =>
+              cases m2 : IS.mem id used2 with
+              | true => simp [h1, h2, m2, link_prog_merge]
+              | false =>
+                  have hcases := ug_link_used_not_defined p1 used1 id hvalid1 h1
+                  cases hcases with
+                  | inl hm1 => simp [hm1, m2, h1, h2, link_prog_merge]
+                  | inr hmain' =>
+                      have hu2 : IS.In id used2 := by
+                        rw [hmain', hmain]
+                        exact hvalid2.used_main
+                      have hm2' := IS.mem_1_proof used2 id hu2
+                      rw [m2] at hm2'
+                      contradiction
+      | some gd1 =>
+          cases h2 : PTree.get id (prog_defmap p2) with
+          | none =>
+              cases m1 : IS.mem id used1 with
+              | true => simp [h1, h2, m1, link_prog_merge]
+              | false =>
+                  have hcases := ug_link_used_not_defined p2 used2 id hvalid2 h2
+                  cases hcases with
+                  | inl hm2 => simp [hm2, m1, h1, h2, link_prog_merge]
+                  | inr hmain' =>
+                      have hu1 : IS.In id used1 := by
+                        rw [hmain', hmain.symm]
+                        exact hvalid1.used_main
+                      have hm1' := IS.mem_1_proof used1 id hu1
+                      rw [m1] at hm1'
+                      contradiction
+          | some gd2 =>
+              obtain ⟨hpub1, hpub2, gd, hgd⟩ := hcompat id gd1 gd2 h1 h2
+              cases m1 : IS.mem id used1 with
+              | false =>
+                  have hu1 : IS.In id used1 := hvalid1.used_public id hpub1
+                  have hm1' := IS.mem_1_proof used1 id hu1
+                  rw [m1] at hm1'
+                  contradiction
+              | true =>
+                  cases m2 : IS.mem id used2 with
+                  | false =>
+                      have hu2 : IS.In id used2 := hvalid2.used_public id hpub2
+                      have hm2' := IS.mem_1_proof used2 id hu2
+                      rw [m2] at hm2'
+                      contradiction
+                  | true => simp [h1, h2, m1, m2, hgd, link_prog_merge]
+    · change CompCert4Lean.Lib.Coqlib.list_norepet
+        (List.map Prod.fst
+          (PTree.elements (PTree.combine link_prog_merge
+            (prog_defmap tp1) (prog_defmap tp2))))
+      exact PTree.elements_keys_norepet
+        (PTree.combine link_prog_merge (prog_defmap tp1) (prog_defmap tp2))
+end CompCert4Lean.Backend.Unusedglobproof

@@ -7739,3 +7739,111 @@ theorem free_right_extends : free_right_extendsStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem valid_access_extends : valid_access_extendsStatement := by
+  intro m1 m2 chunk b ofs p hext hv
+  have hmap : inject_id b = some (b, (.Z0 : Z)) := by rfl
+  have h := valid_access_inj inject_id m1 m2 b b (.Z0 : Z) chunk ofs p
+    hext.mext_inj hmap hv
+  have hzadd : zAdd ofs (.Z0 : Z) = ofs := by
+    apply intOfZ_injective
+    change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+    rw [intOfZ_zOfInt]
+    simp
+  simpa [hzadd] using h
+
+theorem valid_pointer_extends : valid_pointer_extendsStatement := by
+  intro m1 m2 b ofs hext hv
+  rw [valid_pointer_valid_access] at hv ⊢
+  exact valid_access_extends m1 m2 Mint8unsigned b ofs Memtype.Nonempty hext hv
+
+theorem weak_valid_pointer_extends : weak_valid_pointer_extendsStatement := by
+  intro m1 m2 b ofs hext hv
+  unfold weak_valid_pointer at hv ⊢
+  rcases Bool.or_eq_true_iff.mp hv with h | h
+  · apply Bool.or_eq_true_iff.mpr
+    left
+    exact valid_pointer_extends m1 m2 b ofs hext h
+  · apply Bool.or_eq_true_iff.mpr
+    right
+    exact valid_pointer_extends m1 m2 b (zSub ofs z1) hext h
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem free_parallel_extends : free_parallel_extendsStatement := by
+  intro m1 m2 b lo hi m1' hext hfree
+  have hperm1 : range_perm m1 b lo hi Cur Freeable :=
+    free_range_perm m1 b lo hi m1' hfree
+  have hperm2 : range_perm m2 b lo hi Cur Freeable := by
+    intro ofs hofs
+    have hp := hperm1 ofs hofs
+    have hp2 := hext.mext_inj.mi_perm b b (.Z0 : Z) ofs Cur Freeable
+      (by rfl) hp
+    have hzadd : zAdd ofs (.Z0 : Z) = ofs := by
+      apply intOfZ_injective
+      change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+      rw [intOfZ_zOfInt]
+      simp
+    simpa [hzadd] using hp2
+  obtain ⟨m2', hfree2⟩ := range_perm_free m2 b lo hi hperm2
+  refine ⟨m2', hfree2, ?_⟩
+  have hleft : «extends» m1' m2 := free_left_extends m1 m2 b lo hi m1' hext hfree
+  constructor
+  · rw [nextblock_free m1 b lo hi m1' hfree,
+      nextblock_free m2 b lo hi m2' hfree2]
+    exact hext.mext_next
+  · apply free_right_inj inject_id m1' m2 b lo hi m2' hleft.mext_inj hfree2
+    intro b' delta ofs k p hmap hp hrange
+    have heq : (b', (.Z0 : Z)) = (b, delta) := Option.some.inj hmap
+    cases heq
+    apply (perm_free_2 m1 b lo hi m1' hfree ofs k p ?_) hp
+    have hzadd : zAdd ofs (.Z0 : Z) = ofs := by
+      apply intOfZ_injective
+      change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+      rw [intOfZ_zOfInt]
+      simp
+    simpa [hzadd] using hrange
+  · intro b' ofs k p hp
+    have hp2 := perm_free_3 m2 b lo hi m2' hfree2 b' ofs k p hp
+    rcases hext.mext_perm_inv b' ofs k p hp2 with hp1 | hn
+    · rcases perm_free_inv m1 b lo hi m1' hfree b' ofs k p hp1 with
+        ⟨hb, hlo, hhi⟩ | hp1'
+      · subst b'
+        right
+        exact perm_free_2 m1 b lo hi m1' hfree ofs Max Nonempty ⟨hlo, hhi⟩
+      · exact Or.inl hp1'
+    · right
+      intro hp1'
+      exact hn (perm_free_3 m1 b lo hi m1' hfree b' ofs Max Nonempty hp1')
+
+end Mem
+
+end CompCert4Lean.Common.Memory

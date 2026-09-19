@@ -5340,3 +5340,47 @@ set_option maxHeartbeats 1600000 in
 
 end
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Cfrontend.SimplExprspec
+
+theorem transl_initial_states :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      transl_initial_statesStatement := by
+  intro binary64_certificate binary32_certificate
+  letI : Linker cprogram :=
+    Ctypes.Linker_program cfunction Ctypes.linker_program_certificate_proof
+  intro p tp hmatch S hinit
+  cases hinit with
+  | @intro b f m0 hmem hsymbol hfun htype =>
+      obtain ⟨cu, tf, hfind, htr, hlink⟩ :=
+        function_ptr_translated p tp hmatch b f hfun
+      have hmatchgen :=
+        (pg3898_match_iff Ctypes.linker_program_certificate_proof p tp).mp hmatch
+      have hmem' : CompCert4Lean.Common.Globalenvs.Genv.init_mem
+          (Ctypes.program_of_program tp) = some m0 := by
+        exact @CompCert4Lean.Common.Globalenvs.Genv.init_mem_match
+          cprogram cfundef ctype tfundef ctype
+          (Ctypes.Linker_program cfunction Ctypes.linker_program_certificate_proof)
+          tr_fundef Eq p (Ctypes.program_of_program p)
+          (Ctypes.program_of_program tp) hmatchgen.1 m0 hmem
+      have hmain : tp.prog_main = p.prog_main := hmatch.1.2.1
+      have hsymbol' :
+          CompCert4Lean.Common.Globalenvs.Genv.find_symbol
+              (CompCert4Lean.Common.Globalenvs.Genv.globalenv
+                (Ctypes.program_of_program tp)) tp.prog_main =
+            some b := by
+        rw [hmain]
+        exact (symbols_preserved p tp hmatch p.prog_main).trans hsymbol
+      have htype' : Clight.type_of_fundef tf = Csyntax.type_of_fundef f :=
+        type_of_fundef_preserved cu f tf htr
+      refine ⟨.Callstate tf [] .Kstop m0, ?_, ?_⟩
+      · exact Clight.initial_state.intro b tf m0 hmem' hsymbol' hfind (htype'.trans htype)
+      · apply match_states.match_callstates _ _ _ _ _ _ cu hlink htr
+        intro ce
+        exact match_cont.match_Kstop ce
+
+end CompCert4Lean.Cfrontend.SimplExprproof

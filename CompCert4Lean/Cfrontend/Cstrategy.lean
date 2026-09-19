@@ -4069,3 +4069,639 @@ theorem progress
     · exact ⟨t, S', Or.inr hs⟩
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+open CompCert4Lean.Cfrontend.Csem
+
+private theorem strategy_external_call_trace_length
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ef : CompCert4Lean.Common.AST.external_function) :
+    forall ge vargs m t vres m',
+      CompCert4Lean.Common.Events.external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ef ge vargs m t vres m' ->
+      t.length <= 1 := by
+  intro ge vargs m t vres m' h
+  cases ef with
+  | EF_external name sg =>
+      exact (xi.external.properties name sg).ec_trace_length ge vargs m t vres m' h
+  | EF_builtin name sg =>
+      change CompCert4Lean.Common.Events.builtin_or_external_sem
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi name sg ge vargs m t vres m' at h
+      unfold CompCert4Lean.Common.Events.builtin_or_external_sem at h
+      cases hlookup : CompCert4Lean.Common.Builtins.lookup_builtin_function name sg with
+      | none =>
+          rw [hlookup] at h
+          exact (xi.external.properties name sg).ec_trace_length ge vargs m t vres m' h
+      | some bf =>
+          rw [hlookup] at h
+          cases h
+          simp [CompCert4Lean.Common.Events.E0]
+  | EF_runtime name sg =>
+      change CompCert4Lean.Common.Events.builtin_or_external_sem
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi name sg ge vargs m t vres m' at h
+      unfold CompCert4Lean.Common.Events.builtin_or_external_sem at h
+      cases hlookup : CompCert4Lean.Common.Builtins.lookup_builtin_function name sg with
+      | none =>
+          rw [hlookup] at h
+          exact (xi.external.properties name sg).ec_trace_length ge vargs m t vres m' h
+      | some bf =>
+          rw [hlookup] at h
+          cases h
+          simp [CompCert4Lean.Common.Events.E0]
+  | EF_vload chunk =>
+      cases h with
+      | volatile_load_sem_intro b ofs m t v load =>
+          cases load <;> simp [CompCert4Lean.Common.Events.trace,
+            CompCert4Lean.Common.Events.E0]
+  | EF_vstore chunk =>
+      cases h with
+      | volatile_store_sem_intro b ofs m v t m' store =>
+          cases store <;> simp [CompCert4Lean.Common.Events.trace,
+            CompCert4Lean.Common.Events.E0]
+  | EF_malloc => cases h <;> simp [CompCert4Lean.Common.Events.trace, CompCert4Lean.Common.Events.E0]
+  | EF_free => cases h <;> simp [CompCert4Lean.Common.Events.trace, CompCert4Lean.Common.Events.E0]
+  | EF_memcpy sz al => cases h <;> simp [CompCert4Lean.Common.Events.trace, CompCert4Lean.Common.Events.E0]
+  | EF_annot id text targs => cases h <;> simp [CompCert4Lean.Common.Events.trace, CompCert4Lean.Common.Events.E0]
+  | EF_annot_val id text targ => cases h <;> simp [CompCert4Lean.Common.Events.trace, CompCert4Lean.Common.Events.E0]
+  | EF_inline_asm text sg clobbers =>
+      exact (xi.inlineAssembly.properties text sg).ec_trace_length ge vargs m t vres m' h
+  | EF_debug kind text targs => cases h <;> simp [CompCert4Lean.Common.Events.trace, CompCert4Lean.Common.Events.E0]
+
+private theorem strategy_external_call_receptive
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ef : CompCert4Lean.Common.AST.external_function) :
+    forall ge vargs m t1 vres1 m1 t2,
+      CompCert4Lean.Common.Events.external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ef ge vargs m t1 vres1 m1 ->
+      CompCert4Lean.Common.Events.match_traces ge t1 t2 ->
+      exists vres2 m2,
+        CompCert4Lean.Common.Events.external_call
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi ef ge vargs m t2 vres2 m2 := by
+  intro ge vargs m t1 vres1 m1 t2 h hm
+  cases ef with
+  | EF_external name sg =>
+      simpa [CompCert4Lean.Common.Events.external_call,
+        CompCert4Lean.Common.Events.external_functions_sem] using
+        ((xi.external.properties name sg).ec_receptive ge vargs m t1 vres1 m1 t2 h hm)
+  | EF_builtin name sg =>
+      change CompCert4Lean.Common.Events.builtin_or_external_sem
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi name sg ge vargs m t1 vres1 m1 at h
+      unfold CompCert4Lean.Common.Events.builtin_or_external_sem at h
+      cases hlookup : CompCert4Lean.Common.Builtins.lookup_builtin_function name sg with
+      | none =>
+          rw [hlookup] at h
+          simpa [CompCert4Lean.Common.Events.external_call,
+            CompCert4Lean.Common.Events.external_functions_sem,
+            CompCert4Lean.Common.Events.builtin_or_external_sem, hlookup] using
+            ((xi.external.properties name sg).ec_receptive ge vargs m t1 vres1 m1 t2 h hm)
+      | some bf =>
+          rw [hlookup] at h
+          cases h <;> cases hm
+          exact ⟨_, _, by
+            simp [CompCert4Lean.Common.Events.external_call,
+              CompCert4Lean.Common.Events.builtin_or_external_sem, hlookup]
+            constructor <;> assumption⟩
+  | EF_runtime name sg =>
+      change CompCert4Lean.Common.Events.builtin_or_external_sem
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi name sg ge vargs m t1 vres1 m1 at h
+      unfold CompCert4Lean.Common.Events.builtin_or_external_sem at h
+      cases hlookup : CompCert4Lean.Common.Builtins.lookup_builtin_function name sg with
+      | none =>
+          rw [hlookup] at h
+          simpa [CompCert4Lean.Common.Events.external_call,
+            CompCert4Lean.Common.Events.external_functions_sem,
+            CompCert4Lean.Common.Events.builtin_or_external_sem, hlookup] using
+            ((xi.external.properties name sg).ec_receptive ge vargs m t1 vres1 m1 t2 h hm)
+      | some bf =>
+          rw [hlookup] at h
+          cases h <;> cases hm
+          exact ⟨_, _, by
+            simp [CompCert4Lean.Common.Events.external_call,
+              CompCert4Lean.Common.Events.builtin_or_external_sem, hlookup]
+            constructor <;> assumption⟩
+  | EF_vload chunk =>
+      cases h with
+      | volatile_load_sem_intro b ofs _ _ _ load =>
+          have hm' := CompCert4Lean.Common.Events.volatile_load_receptive
+            ge chunk m b ofs t1 t2 vres1 load hm
+          rcases hm' with ⟨v', load'⟩
+          exact ⟨v', m, .volatile_load_sem_intro b ofs m t2 v' load'⟩
+  | EF_vstore chunk =>
+      cases h with
+      | volatile_store_sem_intro b ofs _ v _ _ store =>
+          have heq := CompCert4Lean.Common.Events.volatile_store_receptive
+            ge chunk m b ofs v t1 m1 t2 store hm
+          subst t2
+          exact ⟨.Vundef, m1, .volatile_store_sem_intro b ofs m v t1 m1 store⟩
+  | EF_malloc => cases h <;> cases hm <;> exact ⟨_, _, by constructor <;> assumption⟩
+  | EF_free => cases h <;> cases hm <;> exact ⟨_, _, by constructor <;> assumption⟩
+  | EF_memcpy sz al => cases h <;> cases hm <;> exact ⟨_, _, by constructor <;> assumption⟩
+  | EF_annot id text targs => cases h <;> cases hm <;> exact ⟨_, _, by constructor <;> assumption⟩
+  | EF_annot_val id text targ => cases h <;> cases hm <;> exact ⟨_, _, by constructor <;> assumption⟩
+  | EF_inline_asm text sg clobbers =>
+      simpa [CompCert4Lean.Common.Events.external_call,
+        CompCert4Lean.Common.Events.inline_assembly_sem] using
+        ((xi.inlineAssembly.properties text sg).ec_receptive ge vargs m t1 vres1 m1 t2 h hm)
+  | EF_debug kind text targs => cases h <;> cases hm <;> exact ⟨_, _, by constructor <;> assumption⟩
+
+private theorem strategy_deref_tail_output
+    (ge : genv) (ty : type) (m : mem) (b : block) (ofs : ptrofs)
+    (bf : bitfield) (t : trace) (v : val)
+    (h : deref_loc ge ty m b ofs bf t v) :
+    match t with
+    | [] => True
+    | _ :: tl => CompCert4Lean.Common.Events.output_trace tl := by
+  have htr := deref_loc_trace ge ty m b ofs bf t v h
+  cases t with
+  | nil => simp [CompCert4Lean.Common.Events.output_trace]
+  | cons ev tl =>
+      cases tl with
+      | nil => simp [CompCert4Lean.Common.Events.output_trace]
+      | cons ev' tl' => simp at htr
+
+private theorem strategy_assign_tail_output
+    (ge : genv) (ty : type) (m : mem) (b : block) (ofs : ptrofs)
+    (bf : bitfield) (v : val) (t : trace) (m' : mem) (v' : val)
+    (h : assign_loc ge ty m b ofs bf v t m' v') :
+    match t with
+    | [] => True
+    | _ :: tl => CompCert4Lean.Common.Events.output_trace tl := by
+  have htr := assign_loc_trace ge ty m b ofs bf t v m' v' h
+  cases t with
+  | nil => simp
+  | cons ev tl =>
+      cases tl with
+      | nil => simp [CompCert4Lean.Common.Events.output_trace]
+      | cons ev' tl' => simp at htr
+
+private theorem strategy_deref_assign_tail_output
+    (ge : genv) (ty : type) (m : mem) (b : block) (ofs : ptrofs)
+    (bf : bitfield) (t1 t2 : trace) (v1 v4 v' : val) (m' : mem)
+    (hderef : deref_loc ge ty m b ofs bf t1 v1)
+    (hassign : assign_loc ge ty m b ofs bf v4 t2 m' v') :
+    match CompCert4Lean.Common.Events.Eapp t1 t2 with
+    | [] => True
+    | _ :: tl => CompCert4Lean.Common.Events.output_trace tl := by
+  have htr1 := deref_loc_trace ge ty m b ofs bf t1 v1 hderef
+  have htr2 := assign_loc_trace ge ty m b ofs bf t2 v4 m' v' hassign
+  cases t1 with
+  | nil =>
+      cases t2 with
+      | nil => simp [CompCert4Lean.Common.Events.Eapp,
+          CompCert4Lean.Common.Events.output_trace]
+      | cons ev tl =>
+          cases tl with
+          | nil => simp [CompCert4Lean.Common.Events.Eapp,
+              CompCert4Lean.Common.Events.output_trace]
+          | cons ev' tl' => simp at htr2
+  | cons ev tl =>
+      cases tl with
+      | nil =>
+          cases t2 with
+          | nil => simp [CompCert4Lean.Common.Events.Eapp,
+              CompCert4Lean.Common.Events.output_trace]
+          | cons ev' tl' =>
+              cases tl' with
+              | nil =>
+                  simpa [CompCert4Lean.Common.Events.Eapp,
+                    CompCert4Lean.Common.Events.output_trace] using htr2
+              | cons ev'' tl'' => simp at htr2
+      | cons ev' tl' => simp at htr1
+
+private theorem strategy_external_tail_output
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ef : CompCert4Lean.Common.AST.external_function)
+    (ge : CompCert4Lean.Common.Globalenvs.Senv.t) (vargs : List val)
+    (m : mem) (t : trace) (vres : val) (m' : mem)
+    (h : CompCert4Lean.Common.Events.external_call
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ef ge vargs m t vres m') :
+    match t with
+    | [] => True
+    | _ :: tl => CompCert4Lean.Common.Events.output_trace tl := by
+  have hlen := strategy_external_call_trace_length xi ef ge vargs m t vres m' h
+  cases t with
+  | nil => simp [CompCert4Lean.Common.Events.output_trace]
+  | cons ev tl =>
+      cases tl with
+      | nil => simp [CompCert4Lean.Common.Events.output_trace]
+      | cons ev' tl' => simp at hlen
+
+theorem semantics_strongly_receptive
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    semantics_strongly_receptiveStatement := by
+  unfold semantics_strongly_receptiveStatement
+  intro xi p
+  constructor
+  · intro s ev1 t1 s1 ev2 hstep hm
+    change (estep xi (globalenv p) s (ev1 :: t1) s1 ∨
+      Csem.sstep xi (globalenv p) s (ev1 :: t1) s1) at hstep
+    change CompCert4Lean.Common.Events.match_traces
+      (CompCert4Lean.Common.Globalenvs.Genv.to_senv (globalenv p).genv_genv)
+      [ev1] [ev2] at hm
+    change ∃ s2 t2, (estep xi (globalenv p) s (ev2 :: t2) s2 ∨
+      Csem.sstep xi (globalenv p) s (ev2 :: t2) s2)
+    cases hstep with
+    | inl he =>
+        cases he with
+        | step_rvalof_volatile hctx hlvalue hderef htype hvolatile =>
+            rename_i f C l ty k e m b ofs bf v
+            rcases deref_loc_receptive
+              (ge := globalenv p) (ty := _) (m := _) (b := _) (ofs := _)
+              (bf := _) (ev1 := ev1) (t1 := t1) (v := v) (ev2 := ev2)
+              hderef hm with ⟨ht, ⟨v', hderef'⟩⟩
+            cases ht
+            exact ⟨.ExprState f (C (.Eval v' ty)) k e m, [],
+              Or.inl (.step_rvalof_volatile hctx hlvalue hderef' htype hvolatile)⟩
+        | step_assign hctx hlvalue hrvalue hcast hassign htype =>
+            rename_i f C l r ty k e m b ofs bf v v1 m' v'
+            have ht := assign_loc_receptive
+              (ge := globalenv p) (ty := _) (m := _) (b := _) (ofs := _)
+              (bf := _) (ev1 := ev1) (t1 := t1) (v := v1) (m' := m') (v' := v')
+              (ev2 := ev2) hassign hm
+            cases ht
+            exact ⟨.ExprState f (C (.Eval v' ty)) k e m', [],
+              Or.inl (.step_assign hctx hlvalue hrvalue hcast hassign htype)⟩
+        | step_assignop hctx hlvalue hderef hrvalue hbinary hcast hassign htype htrace =>
+            rename_i f C op l r tyres ty k e m b ofs bf v1 v2 v3 v4 tr1 tr2 m' v'
+            have htr1 := deref_loc_trace (globalenv p) (Csyntax.typeof l) m b ofs bf tr1 v1 hderef
+            have htr2 := assign_loc_trace (globalenv p) (Csyntax.typeof l) m b ofs bf tr2 v4 m' v' hassign
+            classical
+            have hnew : ∀ (v1' : val),
+                Csem.deref_loc (globalenv p) (Csyntax.typeof l) m b ofs bf [ev2] v1' →
+                ∃ s2 t2, estep xi (globalenv p)
+                  (.ExprState f (C (.Eassignop op l r tyres ty)) k e m)
+                  (ev2 :: t2) s2 := by
+              intro v1' hderef'
+              cases hop : Cop.sem_binary_operation (globalenv p).genv_cenv op v1'
+                  (Csyntax.typeof l) v2 (Csyntax.typeof r) m with
+              | none =>
+                  refine ⟨.Stuckstate, [], .step_assignop_stuck hctx hlvalue hderef' hrvalue ?_ htype⟩
+                  simp [hop]
+              | some v3' =>
+                  cases hcast' : Cop.sem_cast v3' tyres (Csyntax.typeof l) m with
+                  | none =>
+                      refine ⟨.Stuckstate, [], .step_assignop_stuck hctx hlvalue hderef' hrvalue ?_ htype⟩
+                      simp [hop, hcast']
+                  | some v4' =>
+                      by_cases hex : ∃ t2' m'' v'',
+                          Csem.assign_loc (globalenv p) (Csyntax.typeof l) m b ofs bf v4' t2' m'' v''
+                      · rcases hex with ⟨t2', m'', v'', hassign'⟩
+                        refine ⟨.ExprState f (C (.Eval v'' ty)) k e m'', t2',
+                          .step_assignop (v1 := v1') (v3 := v3') (v4 := v4')
+                            hctx hlvalue hderef' hrvalue ?_ ?_ hassign' htype ?_⟩
+                        · exact hop
+                        · exact hcast'
+                        · rfl
+                      · refine ⟨.Stuckstate, [], .step_assignop_stuck
+                          (v1 := v1') hctx hlvalue hderef' hrvalue ?_ htype⟩
+                        simp only [hop]
+                        rw [hcast']
+                        intro t2'' m'' v'' h
+                        exact hex ⟨t2'', m'', v'', h⟩
+            cases tr1 with
+            | nil =>
+                cases tr2 with
+                | nil => cases htrace
+                | cons ev tl =>
+                    cases tl with
+                    | nil =>
+                        cases htrace
+                        have ht := assign_loc_receptive
+                          (ge := globalenv p) (ty := Csyntax.typeof l) (m := m)
+                          (b := b) (ofs := ofs) (bf := bf) (ev1 := ev1) (t1 := [])
+                          (v := v4) (m' := m') (v' := v') (ev2 := ev2) hassign hm
+                        cases ht
+                        exact ⟨.ExprState f (C (.Eval v' ty)) k e m', [],
+                          Or.inl (.step_assignop hctx hlvalue hderef hrvalue hbinary hcast
+                            hassign htype rfl)⟩
+                    | cons ev' tl' => simp at htr2
+            | cons ev tl =>
+                cases tl with
+                | nil =>
+                    cases tr2 with
+                    | nil =>
+                        cases htrace
+                        rcases deref_loc_receptive
+                          (ge := globalenv p) (ty := Csyntax.typeof l) (m := m)
+                          (b := b) (ofs := ofs) (bf := bf) (ev1 := ev1) (t1 := [])
+                          (v := v1) (ev2 := ev2) hderef hm with
+                          ⟨_, ⟨v1', hderef'⟩⟩
+                        rcases hnew v1' hderef' with ⟨s2, t2, hs2⟩
+                        exact ⟨s2, t2, Or.inl hs2⟩
+                    | cons ev' tl' =>
+                        cases tl' with
+                        | nil =>
+                            cases htrace
+                            rcases deref_loc_receptive
+                              (ge := globalenv p) (ty := Csyntax.typeof l) (m := m)
+                              (b := b) (ofs := ofs) (bf := bf) (ev1 := ev1) (t1 := [])
+                              (v := v1) (ev2 := ev2) hderef hm with
+                              ⟨_, ⟨v1', hderef'⟩⟩
+                            rcases hnew v1' hderef' with ⟨s2, t2, hs2⟩
+                            exact ⟨s2, t2, Or.inl hs2⟩
+                        | cons ev'' tl'' => simp at htr2
+                | cons ev' tl' => simp at htr1
+        | step_assignop_stuck hctx hlvalue hderef hrvalue hstuck htype =>
+            rename_i f C op l r tyres ty k e m b ofs bf v1 v2
+            rcases deref_loc_receptive
+              (ge := globalenv p) (ty := Csyntax.typeof l) (m := m) (b := b)
+              (ofs := ofs) (bf := bf) (ev1 := ev1) (t1 := t1) (v := v1)
+              (ev2 := ev2) hderef hm with ⟨ht, ⟨v1', hderef'⟩⟩
+            cases hop : Cop.sem_binary_operation (globalenv p).genv_cenv op v1'
+                (Csyntax.typeof l) v2 (Csyntax.typeof r) m with
+            | none =>
+                exact ⟨.Stuckstate, [], Or.inl (.step_assignop_stuck
+                  (v1 := v1') hctx hlvalue hderef' hrvalue (by simp [hop]) htype)⟩
+            | some v3' =>
+                cases hcast' : Cop.sem_cast v3' tyres (Csyntax.typeof l) m with
+                | none =>
+                    exact ⟨.Stuckstate, [], Or.inl (.step_assignop_stuck
+                      (v1 := v1') hctx hlvalue hderef' hrvalue (by simp [hop, hcast']) htype)⟩
+                | some v4' =>
+                    by_cases hex : ∃ t2' m'' v'',
+                        Csem.assign_loc (globalenv p) (Csyntax.typeof l) m b ofs bf v4' t2' m'' v''
+                    · rcases hex with ⟨t2', m'', v'', hassign'⟩
+                      exact ⟨.ExprState f (C (.Eval v'' ty)) k e m'', t2',
+                        Or.inl (.step_assignop (v1 := v1') (v3 := v3') (v4 := v4')
+                          hctx hlvalue hderef' hrvalue hop hcast' hassign' htype rfl)⟩
+                    · refine ⟨.Stuckstate, [], Or.inl (.step_assignop_stuck
+                        (v1 := v1') hctx hlvalue hderef' hrvalue ?_ htype)⟩
+                      simp only [hop]
+                      rw [hcast']
+                      intro t2'' m'' v'' h
+                      exact hex ⟨t2'', m'', v'', h⟩
+        | step_postincr hctx hlvalue hderef hincr hcast hassign htype htrace =>
+            rename_i f C id l ty k e m b ofs bf v1 v2 v3 tr1 tr2 m' v'
+            have htr1 := deref_loc_trace (globalenv p) ty m b ofs bf tr1 v1 hderef
+            have htr2 := assign_loc_trace (globalenv p) ty m b ofs bf tr2 v3 m' v' hassign
+            cases tr1 with
+            | nil =>
+                cases tr2 with
+                | nil => cases htrace
+                | cons ev tl =>
+                    cases tl with
+                    | nil =>
+                        cases htrace
+                        have ht := assign_loc_receptive
+                          (ge := globalenv p) (ty := ty) (m := m) (b := b) (ofs := ofs)
+                          (bf := bf) (ev1 := ev1) (t1 := []) (v := v3) (m' := m')
+                          (v' := v') (ev2 := ev2) hassign hm
+                        cases ht
+                        exact ⟨.ExprState f (C (.Eval v1 ty)) k e m', [],
+                          Or.inl (.step_postincr hctx hlvalue hderef hincr hcast
+                            hassign htype rfl)⟩
+                    | cons ev' tl' => simp at htr2
+            | cons ev tl =>
+                cases tl with
+                | nil =>
+                    cases tr2 with
+                    | nil =>
+                        cases htrace
+                        rcases deref_loc_receptive
+                          (ge := globalenv p) (ty := ty) (m := m) (b := b) (ofs := ofs)
+                          (bf := bf) (ev1 := ev1) (t1 := []) (v := v1) (ev2 := ev2)
+                          hderef hm with ⟨_, ⟨v1', hderef'⟩⟩
+                        cases hop : Cop.sem_incrdecr (globalenv p).genv_cenv id v1' ty m with
+                        | none => exact ⟨.Stuckstate, [], Or.inl (.step_postincr_stuck
+                            hctx hlvalue hderef' (by simp [hop]) htype)⟩
+                        | some v2' =>
+                            cases hcast' : Cop.sem_cast v2' (Cop.incrdecr_type ty) ty m with
+                            | none => exact ⟨.Stuckstate, [], Or.inl (.step_postincr_stuck
+                                hctx hlvalue hderef' (by simp [hop, hcast']) htype)⟩
+                            | some v3' =>
+                                by_cases hex : ∃ t2' m'' v'',
+                                    Csem.assign_loc (globalenv p) ty m b ofs bf v3' t2' m'' v''
+                                · rcases hex with ⟨t2', m'', v'', hassign'⟩
+                                  exact ⟨.ExprState f (C (.Eval v1' ty)) k e m'', t2',
+                                    Or.inl (.step_postincr (v1 := v1') (v2 := v2') (v3 := v3')
+                                      hctx hlvalue hderef' hop hcast' hassign' htype rfl)⟩
+                                · refine ⟨.Stuckstate, [], Or.inl (.step_postincr_stuck
+                                    hctx hlvalue hderef' ?_ htype)⟩
+                                  simp only [hop]
+                                  rw [hcast']
+                                  intro t2'' m'' v'' h
+                                  exact hex ⟨t2'', m'', v'', by simpa [htype] using h⟩
+                    | cons ev' tl' =>
+                        cases tl' with
+                        | nil =>
+                            cases htrace
+                            rcases deref_loc_receptive
+                              (ge := globalenv p) (ty := ty) (m := m) (b := b) (ofs := ofs)
+                              (bf := bf) (ev1 := ev1) (t1 := []) (v := v1) (ev2 := ev2)
+                              hderef hm with ⟨_, ⟨v1', hderef'⟩⟩
+                            cases hop : Cop.sem_incrdecr (globalenv p).genv_cenv id v1' ty m with
+                            | none =>
+                                exact ⟨.Stuckstate, [], Or.inl (.step_postincr_stuck
+                                  hctx hlvalue hderef' (by simp [hop]) htype)⟩
+                            | some v2' =>
+                                cases hcast' : Cop.sem_cast v2' (Cop.incrdecr_type ty) ty m with
+                                | none =>
+                                    exact ⟨.Stuckstate, [], Or.inl (.step_postincr_stuck
+                                      hctx hlvalue hderef' (by simp [hop, hcast']) htype)⟩
+                                | some v3' =>
+                                    by_cases hex : ∃ t2' m'' v'',
+                                        Csem.assign_loc (globalenv p) ty m b ofs bf v3' t2' m'' v''
+                                    · rcases hex with ⟨t2', m'', v'', hassign'⟩
+                                      exact ⟨.ExprState f (C (.Eval v1' ty)) k e m'', t2',
+                                        Or.inl (.step_postincr (v1 := v1') (v2 := v2') (v3 := v3')
+                                          hctx hlvalue hderef' hop hcast' hassign' htype rfl)⟩
+                                    · refine ⟨.Stuckstate, [], Or.inl (.step_postincr_stuck
+                                        hctx hlvalue hderef' ?_ htype)⟩
+                                      simp only [hop]
+                                      rw [hcast']
+                                      intro t2' m'' v'' h
+                                      exact hex ⟨t2', m'', v'', by simpa [htype] using h⟩
+                        | cons ev'' tl'' => simp at htr2
+                | cons ev' tl' => simp at htr1
+        | step_postincr_stuck hctx hlvalue hderef hstuck htype =>
+            rename_i f C id l ty k e m b ofs bf v1
+            rcases deref_loc_receptive
+              (ge := globalenv p) (ty := ty) (m := m) (b := b) (ofs := ofs)
+              (bf := bf) (ev1 := ev1) (t1 := t1) (v := v1) (ev2 := ev2)
+              hderef hm with ⟨ht, ⟨v1', hderef'⟩⟩
+            cases hop : Cop.sem_incrdecr (globalenv p).genv_cenv id v1' ty m with
+            | none =>
+                exact ⟨.Stuckstate, [], Or.inl (.step_postincr_stuck
+                  hctx hlvalue hderef' (by simp [hop]) htype)⟩
+            | some v2' =>
+                cases hcast' : Cop.sem_cast v2' (Cop.incrdecr_type ty) ty m with
+                | none =>
+                    exact ⟨.Stuckstate, [], Or.inl (.step_postincr_stuck
+                      hctx hlvalue hderef' (by simp [hop, hcast']) htype)⟩
+                | some v3' =>
+                    by_cases hex : ∃ t2' m'' v'',
+                        Csem.assign_loc (globalenv p) ty m b ofs bf v3' t2' m'' v''
+                    · rcases hex with ⟨t2', m'', v'', hassign'⟩
+                      exact ⟨.ExprState f (C (.Eval v1' ty)) k e m'', t2',
+                        Or.inl (.step_postincr (v1 := v1') (v2 := v2') (v3 := v3')
+                          hctx hlvalue hderef' hop hcast' hassign' htype
+                            (by rfl))⟩
+                    · refine ⟨.Stuckstate, [], Or.inl (.step_postincr_stuck
+                        hctx hlvalue hderef' ?_ htype)⟩
+                      simp only [hop]
+                      rw [hcast']
+                      intro t2' m'' v' h
+                      exact hex ⟨t2', m'', v', by simpa [htype] using h⟩
+        | step_builtin hctx hargs hexternal =>
+            have hlen := strategy_external_call_trace_length xi _ _ _ _ _ _ _ hexternal
+            have ht : t1 = [] := by
+              cases t1 with
+              | nil => rfl
+              | cons ev' tl => cases tl <;> simp at hlen
+            cases ht
+            rcases strategy_external_call_receptive xi _ _ _ _ [ev1] _ _ [ev2]
+              hexternal hm with ⟨vres2, m2, hexternal'⟩
+            exact ⟨_, [], Or.inl (.step_builtin hctx hargs hexternal')⟩
+    | inr hs =>
+        cases hs with
+        | externalFunction hexternal =>
+            have hlen := strategy_external_call_trace_length xi _ _ _ _ _ _ _ hexternal
+            have ht : t1 = [] := by
+              cases t1 with
+              | nil => rfl
+              | cons ev' tl => cases tl <;> simp at hlen
+            cases ht
+            rcases strategy_external_call_receptive xi _ _ _ _ [ev1] _ _ [ev2]
+              hexternal hm with ⟨vres2, m2, hexternal'⟩
+            exact ⟨_, [], Or.inr (.externalFunction hexternal')⟩
+  · intro s t s' hstep
+    change (estep xi (globalenv p) s t s' ∨
+      Csem.sstep xi (globalenv p) s t s') at hstep
+    cases hstep with
+    | inl he =>
+        cases he with
+        | step_rvalof_volatile _ _ hderef _ _ =>
+            cases t with
+            | nil => simp
+            | cons ev tl =>
+                cases tl with
+                | nil => exact True.intro
+                | cons ev' tl' =>
+                    have htr := deref_loc_trace _ _ _ _ _ _ _ _ hderef
+                    simp at htr
+        | step_assign _ _ _ _ hassign _ =>
+            cases t with
+            | nil => simp
+            | cons ev tl =>
+                cases tl with
+                | nil => exact True.intro
+                | cons ev' tl' =>
+                    have htr := assign_loc_trace _ _ _ _ _ _ _ _ _ _ hassign
+                    simp at htr
+        | step_assignop hctx hlvalue hderef hrvalue hbinary hcast hassign htype htrace =>
+            rw [htrace]
+            rename_i f C op l r tyres ty k e m b ofs bf v1 v2 v3 v4 tr1 tr2 m' v'
+            cases tr1 with
+            | nil =>
+                cases tr2 with
+                | nil => exact True.intro
+                | cons ev tl =>
+                    cases tl with
+                    | nil => exact True.intro
+                    | cons ev' tl' =>
+                        have htr := assign_loc_trace _ _ _ _ _ _ _ _ _ _ hassign
+                        simp at htr
+            | cons ev tl =>
+                cases tl with
+                | nil =>
+                    cases tr2 with
+                    | nil => exact True.intro
+                    | cons ev' tl' =>
+                        cases tl' with
+                        | nil =>
+                            have htr := assign_loc_trace _ _ _ _ _ _ _ _ _ _ hassign
+                            simpa [CompCert4Lean.Common.Events.Eapp,
+                              CompCert4Lean.Common.Events.output_trace] using htr
+                        | cons ev'' tl'' =>
+                            have htr := assign_loc_trace _ _ _ _ _ _ _ _ _ _ hassign
+                            simp at htr
+                | cons ev' tl' =>
+                    have htr := deref_loc_trace _ _ _ _ _ _ _ _ hderef
+                    simp at htr
+        | step_assignop_stuck _ _ hderef _ _ _ =>
+            cases t with
+            | nil => simp
+            | cons ev tl =>
+                cases tl with
+                | nil => exact True.intro
+                | cons ev' tl' =>
+                    have htr := deref_loc_trace _ _ _ _ _ _ _ _ hderef
+                    simp at htr
+        | step_postincr hctx hlvalue hderef hincr hcast hassign htype htrace =>
+            rw [htrace]
+            rename_i f C id l ty k e m b ofs bf v1 v2 v3 tr1 tr2 m' v'
+            cases tr1 with
+            | nil =>
+                cases tr2 with
+                | nil => exact True.intro
+                | cons ev tl =>
+                    cases tl with
+                    | nil => exact True.intro
+                    | cons ev' tl' =>
+                        have htr := assign_loc_trace _ _ _ _ _ _ _ _ _ _ hassign
+                        simp at htr
+            | cons ev tl =>
+                cases tl with
+                | nil =>
+                    cases tr2 with
+                    | nil => exact True.intro
+                    | cons ev' tl' =>
+                        cases tl' with
+                        | nil =>
+                            have htr := assign_loc_trace _ _ _ _ _ _ _ _ _ _ hassign
+                            simpa [CompCert4Lean.Common.Events.Eapp,
+                              CompCert4Lean.Common.Events.output_trace] using htr
+                        | cons ev'' tl'' =>
+                            have htr := assign_loc_trace _ _ _ _ _ _ _ _ _ _ hassign
+                            simp at htr
+                | cons ev' tl' =>
+                    have htr := deref_loc_trace _ _ _ _ _ _ _ _ hderef
+                    simp at htr
+        | step_postincr_stuck _ _ hderef _ _ =>
+            cases t with
+            | nil => simp
+            | cons ev tl =>
+                cases tl with
+                | nil => exact True.intro
+                | cons ev' tl' =>
+                    have htr := deref_loc_trace _ _ _ _ _ _ _ _ hderef
+                    simp at htr
+        | step_builtin _ _ hexternal =>
+            cases t with
+            | nil => simp
+            | cons ev tl =>
+                cases tl with
+                | nil => exact True.intro
+                | cons ev' tl' =>
+                    have hlen := strategy_external_call_trace_length xi _ _ _ _ _ _ _ hexternal
+                    simp at hlen
+        | _ => simp [CompCert4Lean.Common.Events.output_trace,
+            CompCert4Lean.Common.Events.E0]
+    | inr hs =>
+        cases hs with
+        | externalFunction hexternal =>
+            cases t with
+            | nil => simp
+            | cons ev tl =>
+                cases tl with
+                | nil => simp [CompCert4Lean.Common.Events.output_trace]
+                | cons ev' tl' =>
+                    have hlen := strategy_external_call_trace_length xi _ _ _ _ _ _ _ hexternal
+                    simp at hlen
+        | _ => simp [CompCert4Lean.Common.Events.output_trace,
+            CompCert4Lean.Common.Events.E0]
+
+end CompCert4Lean.Cfrontend.Cstrategy

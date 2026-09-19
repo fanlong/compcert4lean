@@ -4396,3 +4396,298 @@ theorem shrx_shr : shrx_shrStatement := by
     next hq => cases h
 
 end CompCert4Lean.Common.Values.Val
+
+
+namespace CompCert4Lean.Common.Values
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Common.Values
+
+private theorem shrxlimm_uint_val {bits : Nat} (x : WordCore.Word bits) :
+    intOfZ (WordCore.unsigned x) = (x.val : _root_.Int) := by
+  have h := x.intrange.1
+  change (-1 : _root_.Int) < intOfZ x.intval at h
+  change intOfZ x.intval = _root_.Int.ofNat (_root_.Int.toNat (intOfZ x.intval))
+  exact (_root_.Int.toNat_of_nonneg (by omega)).symm
+
+private theorem shrxlimm_repr_val (bits : Nat) (i : _root_.Int) :
+    (WordCore.repr bits (zOfInt i)).val =
+      _root_.Int.toNat (i % ((2 ^ bits : Nat) : _root_.Int)) := by
+  run_tac
+    let env ← Lean.getEnv
+    let ns := env.constants.toList.filterMap fun (n, _) =>
+      if n.toString.endsWith ".WordCore.val_repr" then some n else none
+    Lean.Elab.Tactic.evalTactic (← `(tactic| exact $(Lean.mkIdent ns.head!) _ _))
+
+private theorem shrxlimm_uint_repr (bits : Nat) (z : Z) :
+    intOfZ (WordCore.unsigned (WordCore.repr bits z)) =
+      intOfZ z % ((2 ^ bits : Nat) : _root_.Int) := by
+  rw [shrxlimm_uint_val]
+  have h := shrxlimm_repr_val bits (intOfZ z)
+  rw [zOfInt_intOfZ] at h
+  rw [h]
+  exact _root_.Int.toNat_of_nonneg
+    (_root_.Int.emod_nonneg _ (_root_.Int.ne_of_gt
+      (_root_.Int.natCast_pos.mpr (Nat.two_pow_pos bits))))
+
+private theorem shrxlimm_signed (x : int64) :
+    intOfZ (CompCert4Lean.Lib.Integers.Int64.signed x) =
+      if intOfZ x.intval < 9223372036854775808 then intOfZ x.intval
+      else intOfZ x.intval - 18446744073709551616 := by
+  unfold CompCert4Lean.Lib.Integers.Int64.signed WordCore.signed
+  run_tac
+    let g ← Lean.Elab.Tactic.getMainGoal
+    let t ← Lean.Meta.transform (← g.getType) (post := fun e => do
+      if e.getAppFn.constName?.any (fun n =>
+          n.toString.startsWith "_private.CompCert4Lean.Lib.Integers.") then
+        return .visit (← Lean.Meta.unfoldDefinition e)
+      else return .continue)
+    Lean.Elab.Tactic.replaceMainGoal [← g.replaceTargetDefEq t]
+  dsimp only
+  cases CompCert4Lean.Lib.Coqlib.zlt (WordCore.unsigned x) (two_power_nat (CompCert4Lean.Lib.Integers.Int64.wordsize - 1)) with
+  | left h =>
+      change intOfZ x.intval < 9223372036854775808 at h
+      simp [h]
+      rfl
+  | right h =>
+      change 9223372036854775808 ≤ intOfZ x.intval at h
+      simp [show ¬intOfZ x.intval < 9223372036854775808 by omega,
+        ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+      rfl
+
+private theorem shrxlimm_ltu (x y : int) :
+    CompCert4Lean.Lib.Integers.Int.ltu x y =
+      decide (intOfZ x.intval < intOfZ y.intval) := by
+  unfold CompCert4Lean.Lib.Integers.Int.ltu WordCore.ltu
+  run_tac
+    let g ← Lean.Elab.Tactic.getMainGoal
+    let t ← Lean.Meta.transform (← g.getType) (post := fun e => do
+      if e.getAppFn.constName?.any (fun n =>
+          n.toString.startsWith "_private.CompCert4Lean.Lib.Integers.") then
+        return .visit (← Lean.Meta.unfoldDefinition e)
+      else return .continue)
+    Lean.Elab.Tactic.replaceMainGoal [← g.replaceTargetDefEq t]
+  dsimp only
+  cases CompCert4Lean.Lib.Coqlib.zlt (WordCore.unsigned x) (WordCore.unsigned y) with
+  | left h => simp [show intOfZ x.intval < intOfZ y.intval from h]
+  | right h => simp [show ¬intOfZ x.intval < intOfZ y.intval by exact _root_.Int.not_lt.mpr h]
+
+private theorem shrxlimm_repr_intval (bits : Nat) (z : Z) :
+    intOfZ (WordCore.repr bits z).intval =
+      intOfZ z % ((2 ^ bits : Nat) : _root_.Int) := shrxlimm_uint_repr bits z
+
+private theorem shrxlimm_signed_core (x : WordCore.Word 64) :
+    intOfZ (WordCore.signed x) =
+      if intOfZ x.intval < 9223372036854775808 then intOfZ x.intval
+      else intOfZ x.intval - 18446744073709551616 := shrxlimm_signed x
+
+set_option maxHeartbeats 16000000 in
+private theorem shrxlimm_word (x : int64) (n : int)
+    (hrange : 0 < intOfZ n.intval ∧ intOfZ n.intval < 63) :
+    CompCert4Lean.Lib.Integers.Int64.shrx' x n =
+      CompCert4Lean.Lib.Integers.Int64.shr'
+        (CompCert4Lean.Lib.Integers.Int64.add x
+          (CompCert4Lean.Lib.Integers.Int64.shru'
+            (CompCert4Lean.Lib.Integers.Int64.shr' x
+              (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.of_nat 63)))
+            (CompCert4Lean.Lib.Integers.Int.sub
+              (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.of_nat 64)) n))) n := by
+  change WordCore.Word 64 at x
+  change WordCore.Word 32 at n
+  have hx := x.intrange
+  change (-1 : _root_.Int) < intOfZ x.intval ∧
+    intOfZ x.intval < 18446744073709551616 at hx
+  have hcases : intOfZ n.intval = 1 ∨
+      intOfZ n.intval = 2 ∨
+      intOfZ n.intval = 3 ∨
+      intOfZ n.intval = 4 ∨
+      intOfZ n.intval = 5 ∨
+      intOfZ n.intval = 6 ∨
+      intOfZ n.intval = 7 ∨
+      intOfZ n.intval = 8 ∨
+      intOfZ n.intval = 9 ∨
+      intOfZ n.intval = 10 ∨
+      intOfZ n.intval = 11 ∨
+      intOfZ n.intval = 12 ∨
+      intOfZ n.intval = 13 ∨
+      intOfZ n.intval = 14 ∨
+      intOfZ n.intval = 15 ∨
+      intOfZ n.intval = 16 ∨
+      intOfZ n.intval = 17 ∨
+      intOfZ n.intval = 18 ∨
+      intOfZ n.intval = 19 ∨
+      intOfZ n.intval = 20 ∨
+      intOfZ n.intval = 21 ∨
+      intOfZ n.intval = 22 ∨
+      intOfZ n.intval = 23 ∨
+      intOfZ n.intval = 24 ∨
+      intOfZ n.intval = 25 ∨
+      intOfZ n.intval = 26 ∨
+      intOfZ n.intval = 27 ∨
+      intOfZ n.intval = 28 ∨
+      intOfZ n.intval = 29 ∨
+      intOfZ n.intval = 30 ∨
+      intOfZ n.intval = 31 ∨
+      intOfZ n.intval = 32 ∨
+      intOfZ n.intval = 33 ∨
+      intOfZ n.intval = 34 ∨
+      intOfZ n.intval = 35 ∨
+      intOfZ n.intval = 36 ∨
+      intOfZ n.intval = 37 ∨
+      intOfZ n.intval = 38 ∨
+      intOfZ n.intval = 39 ∨
+      intOfZ n.intval = 40 ∨
+      intOfZ n.intval = 41 ∨
+      intOfZ n.intval = 42 ∨
+      intOfZ n.intval = 43 ∨
+      intOfZ n.intval = 44 ∨
+      intOfZ n.intval = 45 ∨
+      intOfZ n.intval = 46 ∨
+      intOfZ n.intval = 47 ∨
+      intOfZ n.intval = 48 ∨
+      intOfZ n.intval = 49 ∨
+      intOfZ n.intval = 50 ∨
+      intOfZ n.intval = 51 ∨
+      intOfZ n.intval = 52 ∨
+      intOfZ n.intval = 53 ∨
+      intOfZ n.intval = 54 ∨
+      intOfZ n.intval = 55 ∨
+      intOfZ n.intval = 56 ∨
+      intOfZ n.intval = 57 ∨
+      intOfZ n.intval = 58 ∨
+      intOfZ n.intval = 59 ∨
+      intOfZ n.intval = 60 ∨
+      intOfZ n.intval = 61 ∨
+      intOfZ n.intval = 62 := by omega
+  rcases hcases with hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn | hn
+  all_goals
+    apply WordCore.ext
+    apply intOfZ_injective
+    simp [CompCert4Lean.Lib.Integers.Int64.shrx',
+      CompCert4Lean.Lib.Integers.Int64.divs, WordCore.divs,
+      CompCert4Lean.Lib.Integers.Int64.signed,
+      CompCert4Lean.Lib.Integers.Int64.shr',
+      CompCert4Lean.Lib.Integers.Int64.shru',
+      CompCert4Lean.Lib.Integers.Int64.shl',
+      CompCert4Lean.Lib.Integers.Int64.add, WordCore.add,
+      CompCert4Lean.Lib.Integers.Int64.repr,
+      CompCert4Lean.Lib.Integers.Int.sub, WordCore.sub,
+      CompCert4Lean.Lib.Integers.Int.repr, shrxlimm_repr_intval,
+      shrxlimm_signed, shrxlimm_signed_core,
+      CompCert4Lean.Lib.Integers.Int.unsigned,
+      CompCert4Lean.Lib.Integers.Int64.unsigned,
+      CompCert4Lean.Lib.Integers.Int.wordsize,
+      CompCert4Lean.Lib.Integers.Int64.wordsize,
+      show CompCert4Lean.Lib.Integers.Int64.one =
+        WordCore.repr 64 (zOfInt 1) from rfl,
+      WordCore.unsigned, ZArith.BinInt.Z.add,
+      ZArith.BinInt.Z.sub, ZArith.BinInt.Z.shiftr,
+      ZArith.BinInt.Z.shiftl, ZArith.BinInt.Z.quot, intOfZ_zOfInt,
+      hn]
+    simp [shrxlimm_signed_core, shrxlimm_signed, shrxlimm_repr_intval,
+      ZArith.BinInt.Z.of_nat, intOfZ_zOfInt, _root_.Int.pow,
+      show intOfZ (WordCore.unsigned (WordCore.one 64)) = 1 from rfl]
+    simp only [_root_.Int.tdiv_cases, ← _root_.Int.div_def]
+    omega
+
+private theorem shrxlimm_word_zero (x : int64) (n : int)
+    (hn : intOfZ n.intval = 0) :
+    CompCert4Lean.Lib.Integers.Int64.shrx' x n = x := by
+  change WordCore.Word 64 at x
+  change WordCore.Word 32 at n
+  have hx := x.intrange
+  change (-1 : _root_.Int) < intOfZ x.intval ∧
+    intOfZ x.intval < 18446744073709551616 at hx
+  apply WordCore.ext
+  apply intOfZ_injective
+  simp [CompCert4Lean.Lib.Integers.Int64.shrx',
+    CompCert4Lean.Lib.Integers.Int64.divs, WordCore.divs,
+    CompCert4Lean.Lib.Integers.Int64.signed,
+    CompCert4Lean.Lib.Integers.Int64.shl',
+    CompCert4Lean.Lib.Integers.Int64.repr,
+    CompCert4Lean.Lib.Integers.Int.unsigned,
+    CompCert4Lean.Lib.Integers.Int64.unsigned, WordCore.unsigned,
+    CompCert4Lean.Lib.Integers.Int64.wordsize,
+    show CompCert4Lean.Lib.Integers.Int64.one =
+      WordCore.repr 64 (zOfInt 1) from rfl,
+    shrxlimm_repr_intval, shrxlimm_signed_core,
+    ZArith.BinInt.Z.shiftl, ZArith.BinInt.Z.quot, intOfZ_zOfInt, hn]
+  simp [shrxlimm_signed_core, shrxlimm_repr_intval, intOfZ_zOfInt,
+    _root_.Int.pow]
+  omega
+
+private theorem shrxlimm_eq_zero (n : int) :
+    CompCert4Lean.Lib.Integers.Int.eq n CompCert4Lean.Lib.Integers.Int.zero =
+      decide (intOfZ n.intval = 0) := by
+  change decide (n.intval = Z0) = decide (intOfZ n.intval = 0)
+  congr 1
+  apply propext
+  constructor
+  · intro h
+    rw [h]
+    rfl
+  · intro h
+    apply intOfZ_injective
+    exact h
+
+private theorem shrxl_shrl_2_core : Val.shrxl_shrl_2Statement := by
+  intro n x z h
+  cases x <;> try { simp [Val.shrxl] at h }
+  rename_i x
+  have hn : CompCert4Lean.Lib.Integers.Int.ltu n
+      (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.of_nat 63)) = true := by
+    cases hc : CompCert4Lean.Lib.Integers.Int.ltu n
+        (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.of_nat 63))
+    · simp [Val.shrxl, hc] at h
+    · rfl
+  simp only [Val.shrxl, hn, if_true, Option.some.injEq] at h
+  subst z
+  have hlt : intOfZ n.intval < 63 := by
+    rw [shrxlimm_ltu] at hn
+    change decide (intOfZ n.intval < 63) = true at hn
+    exact of_decide_eq_true hn
+  by_cases hz : CompCert4Lean.Lib.Integers.Int.eq n
+      CompCert4Lean.Lib.Integers.Int.zero = true
+  · rw [if_pos hz]
+    have hz0 : intOfZ n.intval = 0 := by
+      rw [shrxlimm_eq_zero] at hz
+      exact of_decide_eq_true hz
+    exact congrArg Vlong (shrxlimm_word_zero x n hz0)
+  · rw [if_neg hz]
+    have hn0 : intOfZ n.intval ≠ 0 := by
+      rw [shrxlimm_eq_zero] at hz
+      simpa only [decide_eq_true_eq] using hz
+    have hr := n.intrange.1
+    change (-1 : _root_.Int) < intOfZ n.intval at hr
+    have hrange : 0 < intOfZ n.intval ∧ intOfZ n.intval < 63 := by omega
+    have hn64 : CompCert4Lean.Lib.Integers.Int.ltu n
+        CompCert4Lean.Lib.Integers.Int64.iwordsize' = true := by
+      rw [shrxlimm_ltu]
+      change decide (intOfZ n.intval < 64) = true
+      exact decide_eq_true (by omega)
+    have hs64 : CompCert4Lean.Lib.Integers.Int.ltu
+        (CompCert4Lean.Lib.Integers.Int.sub
+          (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.of_nat 64)) n)
+        CompCert4Lean.Lib.Integers.Int64.iwordsize' = true := by
+      rw [shrxlimm_ltu]
+      change decide (intOfZ (WordCore.repr 32
+        (ZArith.BinInt.Z.sub (ZArith.BinInt.Z.of_nat 64) n.intval)).intval < 64) = true
+      rw [shrxlimm_repr_intval]
+      simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+      change decide ((64 - intOfZ n.intval) % 4294967296 < 64) = true
+      exact decide_eq_true (by omega)
+    have h63 : CompCert4Lean.Lib.Integers.Int.ltu
+        (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.of_nat 63))
+        CompCert4Lean.Lib.Integers.Int64.iwordsize' = true := by decide
+    simp only [Val.shrl, Val.shrlu, Val.addl, hn64, hs64, h63, if_true]
+    exact congrArg Vlong (shrxlimm_word x n hrange)
+
+end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values.Val
+
+theorem shrxl_shrl_2 : shrxl_shrl_2Statement :=
+  CompCert4Lean.Common.Values.shrxl_shrl_2_core
+
+end CompCert4Lean.Common.Values.Val

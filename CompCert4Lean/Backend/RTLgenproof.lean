@@ -5761,3 +5761,93 @@ theorem transl_condexpr_correct
     (transl_condexpr_CElet_correct xi prog tprog sp e m)
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Backend.RTLgenspec
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+
+private theorem rtlgen_val_lessdef_vint {n : CompCert4Lean.Lib.Integers.Int.int} {v : val} :
+    Val.lessdef (.Vint n) v → v = (.Vint n) := by
+  intro h
+  cases h with
+  | lessdef_refl => rfl
+
+theorem transl_exitexpr_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_exitexpr_correctStatement := by
+  intro xi prog tprog hprog sp e m
+  intro le a x heval
+  induction heval with
+  | exit le x =>
+      intro tm cs f map ns nexits rs hmw htr hme hext
+      cases htr with
+      | tr_XEcond map x n nexits h =>
+          exact ⟨ns, rs, tm, star_refl _ _ _, h, hme, hext⟩
+  | jumptable le a table n x heval hlookup =>
+      intro tm cs f map ns nexits rs hmw htr hme hext
+      cases htr with
+      | tr_XEjumptable map a table ns nexits n1 r tbl' hjt harg hcode =>
+          obtain ⟨rs1, tm1, hstar, hme1, hres, hstable, hext1⟩ :=
+            (transl_expr_correct xi prog tprog hprog sp e m le a (.Vint n)) heval
+              tm cs f map [] ns n1 r rs none hmw harg hme hext
+          obtain ⟨nd, hnd, hnth⟩ := hjt (Int.unsigned n) x hlookup
+          refine ⟨nd, rs1, tm1, ?_, hnth, hme1, hext1⟩
+          have hreq : Regmap.get r rs1 = (.Vint n) :=
+            rtlgen_val_lessdef_vint hres
+          exact star_right _ _ _ _ _ _ _ _ _ _ hstar
+            (RTL.step.exec_Ijumptable cs f sp n1 rs1 tm1 r tbl' n nd hcode
+              hreq hnd) rfl
+  | eval_XEcondition le a b c va x hcondition hbranch ihbranch =>
+      intro tm cs f map ns nexits rs hmw htr hme hext
+      cases htr with
+      | tr_XEcondition map a1 a2 a3 ns nexits n2 n3 hcond h2 h3 =>
+          cases va with
+          | false =>
+              have hcond' :=
+                (transl_condexpr_correct xi prog tprog hprog sp e m le a false) hcondition
+                  tm cs f map [] ns n2 n3 rs hmw hcond hme hext
+              obtain ⟨rs1, tm1, hstar1, hme1, hstable1, hext1⟩ := hcond'
+              obtain ⟨nd, rs2, tm2, hstar2, hnd, hme2, hext2⟩ :=
+                ihbranch tm1 cs f map n3 nexits rs1 hmw h3 hme1 hext1
+              refine ⟨nd, rs2, tm2, ?_, hnd, hme2, hext2⟩
+              exact star_trans _ _ _ _ _ _ _
+                (plus_star _ _ _ _ _ _ _ hstar1) _ _ _ hstar2 rfl
+          | true =>
+              have hcond' :=
+                (transl_condexpr_correct xi prog tprog hprog sp e m le a true) hcondition
+                  tm cs f map [] ns n2 n3 rs hmw hcond hme hext
+              obtain ⟨rs1, tm1, hstar1, hme1, hstable1, hext1⟩ := hcond'
+              obtain ⟨nd, rs2, tm2, hstar2, hnd, hme2, hext2⟩ :=
+                ihbranch tm1 cs f map n2 nexits rs1 hmw h2 hme1 hext1
+              refine ⟨nd, rs2, tm2, ?_, hnd, hme2, hext2⟩
+              exact star_trans _ _ _ _ _ _ _
+                (plus_star _ _ _ _ _ _ _ hstar1) _ _ _ hstar2 rfl
+  | letBinding le a b v x hbound hbody ihbody =>
+      intro tm cs f map ns nexits rs hmw htr hme hext
+      cases htr with
+      | tr_XElet map a b ns nexits r n1 hfresh hbound' hbody' =>
+          have hmw' := add_letvar_wf map r hmw hfresh
+          obtain ⟨rs1, tm1, hstar1, hme1, hres1, hstable1, hext1⟩ :=
+            (transl_expr_correct xi prog tprog hprog sp e m le a v) hbound
+              tm cs f map [] ns n1 r rs none hmw hbound' hme hext
+          have hme1' := match_env_bind_letvar map e le rs1 r v hme1 hres1
+          obtain ⟨nd, rs2, tm2, hstar2, hnd, hme2, hext2⟩ :=
+            ihbody tm1 cs f (RTLgen.add_letvar map r) n1 nexits rs1
+              hmw' hbody' hme1' hext1
+          refine ⟨nd, rs2, tm2, ?_, hnd, ?_, hext2⟩
+          · exact star_trans _ _ _ _ _ _ _ hstar1 _ _ _ hstar2 rfl
+          · exact match_env_unbind_letvar map e le rs2 r v hme2
+
+end CompCert4Lean.Backend.RTLgenproof

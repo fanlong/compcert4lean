@@ -6249,3 +6249,47 @@ theorem make_ptrofs_of_int_correct
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
     make_ptrofs_of_int_correctStatement :=
   make_ptrofs_of_int_correct_aux
+
+
+theorem transl_binop_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_binop_correctStatement := by
+  intro cunit prog hlink ge op a tya b tyb c va vb v e le m hmake hsem h1 h2
+  cases op with
+  | Oadd =>
+      exact make_add_correct cunit prog hlink ge a tya b tyb c va vb v e le m
+        hsem hmake h1 h2
+  | Osub =>
+      exact make_sub_correct cunit prog hlink ge a tya b tyb c va vb v e le m
+        hsem hmake h1 h2
+  | Omul =>
+      exact make_mul_correct ge a tya b tyb c va vb v e le m hsem hmake h1 h2
+  | Odiv =>
+      exact make_div_correct ge a tya b tyb c va vb v e le m hsem hmake h1 h2
+  | Omod =>
+      exact make_mod_correct ge a tya b tyb c va vb v e le m hsem hmake h1 h2
+  | Oand =>
+      exact make_and_correct ge a tya b tyb c va vb v e le m hsem hmake h1 h2
+  | Oor =>
+      exact make_or_correct ge a tya b tyb c va vb v e le m hsem hmake h1 h2
+  | Oxor =>
+      exact make_xor_correct ge a tya b tyb c va vb v e le m hsem hmake h1 h2
+  | Oshl =>
+      exact make_shl_correct ge a tya b tyb c va vb v e le m hsem hmake h1 h2
+  | Oshr =>
+      exact make_shr_correct ge a tya b tyb c va vb v e le m hsem hmake h1 h2
+  | Oeq =>
+      exact make_cmp_correct ge .Ceq a tya b tyb c va vb v e le m hsem hmake h1 h2
+  | One =>
+      exact make_cmp_correct ge .Cne a tya b tyb c va vb v e le m hsem hmake h1 h2
+  | Olt =>
+      exact make_cmp_correct ge .Clt a tya b tyb c va vb v e le m hsem hmake h1 h2
+  | Ogt =>
+      exact make_cmp_correct ge .Cgt a tya b tyb c va vb v e le m hsem hmake h1 h2
+  | Ole =>
+      exact make_cmp_correct ge .Cle a tya b tyb c va vb v e le m hsem hmake h1 h2
+  | Oge =>
+      exact make_cmp_correct ge .Cge a tya b tyb c va vb v e le m hsem hmake h1 h2
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

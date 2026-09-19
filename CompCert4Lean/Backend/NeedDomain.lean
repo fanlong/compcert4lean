@@ -8681,3 +8681,107 @@ theorem hiword_sound : hiword_soundStatement := by
       exact hv ▸ CompCert4Lean.Common.Values.Val.lessdef_refl _
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Common.Values
+
+private theorem pgMakelongReprVal (a : Int.int) :
+    (Int64.repr (Int.unsigned a)).val = a.val := by
+  change (CompCert4Lean.Lib.Integers.Int64.repr (Int.unsigned a)).val = _
+  unfold CompCert4Lean.Lib.Integers.Int64.repr
+  rw [lagreeIntUnsignedAsNatFinal, lagreeValReprOfNat]
+  apply Nat.mod_eq_of_lt
+  exact Nat.lt_of_lt_of_le (iagreeWordValLt a)
+    (Nat.pow_le_pow_right (by decide) (by decide))
+
+private theorem pgMakelongVal (hi lo : Int.int) :
+    (Int64.ofwords hi lo).val =
+      Nat.lor ((hi.val * 2 ^ 32) % (2 ^ 64)) lo.val := by
+  change (CompCert4Lean.Lib.Integers.Int64.ofwords hi lo).val = _
+  unfold CompCert4Lean.Lib.Integers.Int64.ofwords
+  rw [lagreeOrValForOr, pgMakelongReprVal]
+  have hs : Int64.shl (Int64.repr (Int.unsigned hi))
+      (Int64.repr Int.zwordsize) =
+      Int64.shl' (Int64.repr (Int.unsigned hi))
+        (Int.repr Int.zwordsize) := by rfl
+  rw [hs, lagreeShlValFinal, pgMakelongReprVal]
+  rfl
+
+private theorem pgMakelongBitNat (hi lo : Int.int) (k : Nat) (hk : k < 64) :
+    Int64.testbit (Int64.ofwords hi lo) (ZArith.BinInt.Z.of_nat k) =
+      if k < 32 then Int.testbit lo (ZArith.BinInt.Z.of_nat k)
+      else Int.testbit hi (ZArith.BinInt.Z.of_nat (k - 32)) := by
+  rw [lagreeTestbitOfNatFinal, pgMakelongVal, Nat.lor_eq,
+    Nat.testBit_or, Nat.testBit_mod_two_pow,
+    decide_eq_true hk, Bool.true_and, Nat.testBit_mul_two_pow]
+  by_cases h : k < 32
+  · simp [h, Nat.not_le.mpr h, test_iagreeTestbitOfNat]
+  · have hge : 32 ≤ k := by omega
+    have hlo : lo.val.testBit k = false :=
+      Nat.testBit_lt_two_pow (Nat.lt_of_lt_of_le (iagreeWordValLt lo)
+        (Nat.pow_le_pow_right (by decide) hge))
+    simp [h, hge, hlo, test_iagreeTestbitOfNat]
+
+private theorem pgMakelongAgreeNat (a b c d : Int.int) (m : Int64.int)
+    (hhi : iagree a b (Int64.hiword m))
+    (hlo : iagree c d (Int64.loword m))
+    (k : Nat) (hk : k < 64)
+    (hm : Int64.testbit m (ZArith.BinInt.Z.of_nat k) = true) :
+    Int64.testbit (Int64.ofwords a c) (ZArith.BinInt.Z.of_nat k) =
+      Int64.testbit (Int64.ofwords b d) (ZArith.BinInt.Z.of_nat k) := by
+  rw [pgMakelongBitNat a c k hk, pgMakelongBitNat b d k hk]
+  by_cases h : k < 32
+  · simp only [if_pos h]
+    apply hlo _ (pgIagreeNatIndexRange k h)
+    rw [test_loword_testbit m _ (pgIagreeNatIndexRange k h)]
+    exact hm
+  · simp only [if_neg h]
+    have hsub : k - 32 < 32 := by omega
+    apply hhi _ (pgIagreeNatIndexRange (k - 32) hsub)
+    rw [pgHiwordBitNat m (k - 32) hsub]
+    simpa only [Nat.sub_add_cancel (by omega : 32 ≤ k)] using hm
+
+private theorem pgMakelongAgree (a b c d : Int.int) (m : Int64.int)
+    (hhi : iagree a b (Int64.hiword m))
+    (hlo : iagree c d (Int64.loword m)) :
+    lagree (Int64.ofwords a c) (Int64.ofwords b d) m := by
+  intro k hk hm
+  cases k with
+  | Zneg p =>
+      exfalso
+      have h0 := hk.1
+      change (0 : Int) ≤ -(Int.ofNat (posToNat p)) at h0
+      have hp : (0 : Int) < Int.ofNat (posToNat p) :=
+        Int.natCast_pos.mpr (posToNat_positive p)
+      omega
+  | Z0 => exact pgMakelongAgreeNat a b c d m hhi hlo 0 (by decide) hm
+  | Zpos p =>
+      have hpz := hk.2
+      change (Int.ofNat (posToNat p) : Int) < Int.ofNat 64 at hpz
+      have hp : posToNat p < 64 := Int.ofNat_lt.mp hpz
+      have hz : ZArith.BinInt.Z.of_nat (posToNat p) = .Zpos p := by
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+        rfl
+      rw [← hz] at hm ⊢
+      exact pgMakelongAgreeNat a b c d m hhi hlo (posToNat p) hp hm
+
+theorem makelong_sound : makelong_soundStatement := by
+  intro v1 w1 v2 w2 x hhi hlo
+  cases x with
+  | Nothing => trivial
+  | I m =>
+      cases v1 <;> cases v2 <;>
+        simp [Val.longofwords, vagree, iVagree]
+  | L m =>
+      cases v1 <;> cases v2 <;>
+        simp [Val.longofwords, vagree, lVagree]
+      cases w1 <;> cases w2 <;>
+        simp [makelong_hi, makelong_lo, vagree, iVagree,
+          Val.longofwords, lVagree] at hhi hlo ⊢
+      exact pgMakelongAgree _ _ _ _ m hhi hlo
+  | All => exact Val.longofwords_lessdef _ _ _ _ hhi hlo
+
+end CompCert4Lean.Backend.NeedDomain

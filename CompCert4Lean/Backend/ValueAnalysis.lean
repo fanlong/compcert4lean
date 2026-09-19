@@ -2963,3 +2963,80 @@ theorem return_from_private_call : return_from_private_callStatement := by
     exact (hbc_other b hbs).trans (hsame b (Plt_trans b sp bound hb hspbelow) hbs).symm
 
 end CompCert4Lean.Backend.ValueAnalysis
+namespace CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Coqlib
+
+theorem sound_stack_ext
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    sound_stack_extStatement := by
+  intro cfg prog ge m' bc stk m bound hstk
+  induction hstk with
+  | sound_stack_nil =>
+      rename_i bcNil mNil boundNil
+      intro _
+      exact sound_stack_nil (cfg := cfg) (prog := prog) (ge := ge) bcNil m' boundNil
+  | sound_stack_public_call =>
+      rename_i bcOuter res f sp pc e stkInner mInner boundInner bc0 bound0 ae stkProof incr below spClass spClass' same geMatch analyze ematch ih
+      intro INV
+      have hspBelow : Plt sp bound0 := by
+        apply below
+        simp [spClass']
+      have hstk' : sound_stack cfg prog ge bc0 stkInner m' sp := by
+        apply ih
+        intro b ofs n bytes hb hbinv hn hload
+        have hb0 : Plt b bound0 := Plt_trans b sp bound0 hb hspBelow
+        have hne : b ≠ sp := by
+          intro heq
+          subst b
+          exact Plt_strict _ hb
+        have houter : bcOuter b = BCinvalid := by
+          rw [same b hb0 hne]
+          exact hbinv
+        exact INV b ofs n bytes (Plt_Ple_trans b bound0 boundInner hb0 incr)
+          houter hn hload
+      exact sound_stack_public_call
+        (cfg := cfg) (prog := prog) (ge := ge)
+        (bc := bcOuter) (res := res) (f := f) (sp := sp) (pc := pc) (e := e)
+        (stk := stkInner) (m := m') (bound := boundInner)
+        (bc' := bc0) (bound' := bound0) (ae := ae)
+        (STK := hstk') (INCR := incr) (BELOW := below)
+        (SP := spClass) (SP' := spClass') (SAME := same) (GE := geMatch)
+        (AN := analyze) (EM := ematch)
+  | sound_stack_private_call =>
+      rename_i bcOuter res f sp pc e stkInner mInner boundInner bc0 bound0 ae am stkProof incr below spClass spClass' same geMatch analyze ematch contents ih
+      intro INV
+      have hspBelow : Plt sp bound0 := by
+        apply below
+        simp [spClass']
+      have hstk' : sound_stack cfg prog ge bc0 stkInner m' sp := by
+        apply ih
+        intro b ofs n bytes hb hbinv hn hload
+        have hb0 : Plt b bound0 := Plt_trans b sp bound0 hb hspBelow
+        have hne : b ≠ sp := by
+          intro heq
+          subst b
+          exact Plt_strict _ hb
+        have houter : bcOuter b = BCinvalid := by
+          rw [same b hb0 hne]
+          exact hbinv
+        exact INV b ofs n bytes (Plt_Ple_trans b bound0 boundInner hb0 incr)
+          houter hn hload
+      have hspBound : Plt sp boundInner :=
+        Plt_Ple_trans sp bound0 boundInner hspBelow incr
+      have hcontents' : bmatch bc0 m' sp am.am_stack := by
+        apply bmatch_ext bc0 mInner sp am.am_stack m' contents
+        intro ofs n bytes hload hn
+        exact INV sp ofs n bytes hspBound spClass hn hload
+      exact sound_stack_private_call
+        (cfg := cfg) (prog := prog) (ge := ge)
+        (bc := bcOuter) (res := res) (f := f) (sp := sp) (pc := pc) (e := e)
+        (stk := stkInner) (m := m') (bound := boundInner)
+        (bc' := bc0) (bound' := bound0) (ae := ae) (am := am)
+        (STK := hstk') (INCR := incr) (BELOW := below)
+        (SP := spClass) (SP' := spClass') (SAME := same) (GE := geMatch)
+        (AN := analyze) (EM := ematch) (CONTENTS := hcontents')
+
+end CompCert4Lean.Backend.ValueAnalysis
