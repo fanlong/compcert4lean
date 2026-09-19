@@ -6384,3 +6384,17 @@ theorem round_DN_minus_eps_pos :
       exact htmp
     exact pg_sllt_round_DN_plus_eps_strict ctx magnitude beta fexp y
       hypos hyformat delta ⟨hdelta0, hdelta_lt⟩
+
+theorem le_pred_pos_lt :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      le_pred_pos_ltStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x y hxformat hyformat hxy
+  rcases hxy with ⟨hxnonneg, hxylt⟩
+  have hypos : Exact.Rlt ctx (Exact.R0 ctx) y :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rle_lt_trans
+      ctx _ _ _ hxnonneg hxylt
+  have hpred := pg_pred_ge_gt_pred_eq_pos ctx magnitude beta fexp y hypos
+  have hge := pred_ge_gt ctx magnitude beta fexp hvalid x y
+    hxformat hyformat hxylt
+  rw [hpred] at hge
+  exact hge

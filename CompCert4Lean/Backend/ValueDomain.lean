@@ -5915,3 +5915,16 @@ theorem ablock_load_anywhere_sound : ablock_load_anywhere_soundStatement := by
     (hbm.1.1 chunk ofs v hload)
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem ablock_init_sound : ablock_init_soundStatement := by
+  intro bc m b p hsmatch
+  constructor
+  · exact hsmatch
+  · intro chunk ofs v hload
+    unfold ablock_load ablock_init
+    simp
+    exact vnormalize_cast bc chunk m b ofs v p hload (hsmatch.1 chunk ofs v hload)
+
+end CompCert4Lean.Backend.ValueDomain

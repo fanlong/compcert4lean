@@ -8871,3 +8871,66 @@ theorem bits_shr_proof : bits_shr := by
   exact bits_shr_proof_worker
 
 end CompCert4Lean.Lib.Integers.Int
+namespace CompCert4Lean.Lib.Integers.Int64
+
+theorem swap_cmpu_proof : swap_cmpu := by
+  intro c x y
+  cases c <;> simp [cmpu, WordCore.cmpu, swap_comparison, WordCore.eq, eq_comm]
+
+theorem negate_cmp_proof : negate_cmp := by
+  intro c x y
+  cases c <;> simp [cmp, WordCore.cmp, negate_comparison]
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem suffix_int64_eqm_unsigned_repr :
+    ∀ a : Z, eqm a (unsigned (repr a)) := by
+  intro a
+  unfold eqm WordCore.eqm CompCert4Lean.Lib.Zbits.eqmod
+  refine ⟨ZArith.BinInt.Z.div a modulus, ?_⟩
+  rw [suffix_int64_unsigned_repr_eq_exact]
+  have hd := ZArith.Zdiv.Z_div_mod_eq_full a modulus
+  apply intOfZ_injective
+  have hd' := congrArg intOfZ hd
+  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+    intOfZ_zOfInt] at hd' ⊢
+  change intOfZ a = intOfZ (ZArith.BinInt.Z.div a modulus) *
+      intOfZ modulus + intOfZ (zMod a modulus)
+  change intOfZ a = intOfZ modulus *
+      intOfZ (ZArith.BinInt.Z.div a modulus) + intOfZ (zMod a modulus) at hd'
+  rw [Int.mul_comm]
+  exact hd'
+
+theorem eqm_unsigned_repr_proof : eqm_unsigned_repr := by
+  exact suffix_int64_eqm_unsigned_repr
+
+theorem eqm_samerepr_proof : eqm_samerepr := by
+  intro x y h
+  apply WordCore.ext_of_val_eq
+  rw [show x = zOfInt (intOfZ x) by exact (zOfInt_intOfZ x).symm,
+    show y = zOfInt (intOfZ y) by exact (zOfInt_intOfZ y).symm]
+  change (WordCore.repr wordsize (zOfInt (intOfZ x))).val =
+    (WordCore.repr wordsize (zOfInt (intOfZ y))).val
+  rw [WordCore.val_repr, WordCore.val_repr]
+  have hm : intOfZ modulus = (2 ^ wordsize : Int) := by
+    unfold modulus
+    rw [WordCore.twoPowerNat_eq_zOfNat_twoPow]
+    rfl
+  unfold eqm at h
+  unfold WordCore.eqm CompCert4Lean.Lib.Zbits.eqmod at h
+  rcases h with ⟨k, hk⟩
+  have hk' := congrArg intOfZ hk
+  simp only [zAdd, zMul, ZArith.BinInt.Z.add,
+    ZArith.BinInt.Z.mul, intOfZ_zOfInt] at hk'
+  change intOfZ x = intOfZ k * intOfZ modulus + intOfZ y at hk'
+  have hrem : intOfZ x % intOfZ modulus = intOfZ y % intOfZ modulus := by
+    rw [hk', Int.add_emod, Int.mul_emod]
+    simp
+  rw [hm] at hrem
+  exact congrArg Int.toNat hrem
+
+end CompCert4Lean.Lib.Integers.Int64

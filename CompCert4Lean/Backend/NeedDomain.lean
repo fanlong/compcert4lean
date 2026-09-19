@@ -9292,3 +9292,141 @@ theorem store_argument_sound : store_argument_soundStatement := by
       simpa [memval_lessdef] using
         (encode_val_inject inject_id v w _ ((val_inject_id v w).mpr h))
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+open Lean Elab Tactic Meta
+
+private theorem pg_ptrofs_add_zero (ofs : Ptrofs.int) : Ptrofs.add ofs Ptrofs.zero = ofs := by
+  run_tac
+    let env ← getEnv
+    let some (n, _) := env.constants.toList.find?
+        (fun (n, _) => (toString n).endsWith "suffixPtrofsAddZero")
+      | throwError "frozen helper not found"
+    let stx := Lean.mkIdent n
+    let arg := Lean.mkIdent `ofs
+    evalTactic (← `(tactic| exact $stx $arg))
+
+private theorem pg_vagree_1 (vl1 vl2 : List val) : vagree_list vl1 vl2 [All] → Val.lessdef_list vl1 vl2 := by
+  intro h
+  cases h with
+  | vagree_list_nil => exact Val.lessdef_list_nil
+  | vagree_list_cons v1 vl1 v2 vl2 nv nvl hhead htail =>
+      exact Val.lessdef_list_cons v1 v2 vl1 vl2 (vagree_lessdef v1 v2 All hhead)
+        (lessdef_vagree_list vl1 vl2 htail)
+
+private theorem pg_vagree_2 (vl1 vl2 : List val) : vagree_list vl1 vl2 [All, All] → Val.lessdef_list vl1 vl2 := by
+  intro h
+  cases h with
+  | vagree_list_nil => exact Val.lessdef_list_nil
+  | vagree_list_cons v1 vl1 v2 vl2 nv nvl hhead htail =>
+      exact Val.lessdef_list_cons v1 v2 vl1 vl2 (vagree_lessdef v1 v2 All hhead)
+        (pg_vagree_1 vl1 vl2 htail)
+
+private theorem pg_vagree_3 (vl1 vl2 : List val) : vagree_list vl1 vl2 [All, All, All] → Val.lessdef_list vl1 vl2 := by
+  intro h
+  cases h with
+  | vagree_list_nil => exact Val.lessdef_list_nil
+  | vagree_list_cons v1 vl1 v2 vl2 nv nvl hhead htail =>
+      exact Val.lessdef_list_cons v1 v2 vl1 vl2 (vagree_lessdef v1 v2 All hhead)
+        (pg_vagree_2 vl1 vl2 htail)
+
+theorem default_needs_of_operation_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    default_needs_of_operation_soundStatement := by
+  intro ge sp m1 m2 hperm op args1 v1 args2 nv heval hargs hnv
+  have hdef : default nv = All := by cases nv <;> simp [default] at hnv ⊢
+  simp only [hdef] at hargs
+  have hless : Val.lessdef_list args1 args2 := by
+    rcases hargs with h | h | h | h
+    · exact lessdef_vagree_list args1 args2 h
+    · exact pg_vagree_1 args1 args2 h
+    · exact pg_vagree_2 args1 args2 h
+    · exact pg_vagree_3 args1 args2 h
+  let f : Val.meminj := fun b => some (b, z0)
+  have hvalid0 : ∀ b q, Mem.valid_pointer m1 b q = true → Mem.valid_pointer m2 b q = true := by
+    intro b q hp
+    apply (Mem.valid_pointer_nonempty_perm m2 b q).mpr
+    exact hperm b q Cur Nonempty ((Mem.valid_pointer_nonempty_perm m1 b q).mp hp)
+  have hvalid : ∀ b1 ofs b2 delta, f b1 = some (b2, delta) →
+      Mem.valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true →
+      Mem.valid_pointer m2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true := by
+    intro b1 ofs b2 delta hm hp
+    have hp' := Option.some.inj hm
+    cases hp'
+    have hadd : Ptrofs.add ofs (Ptrofs.repr z0) = ofs := by
+      rw [show Ptrofs.repr z0 = Ptrofs.zero by rfl, pg_ptrofs_add_zero]
+    rw [hadd]
+    exact hvalid0 b1 _ hp
+  have hweak : ∀ b1 ofs b2 delta, f b1 = some (b2, delta) →
+      Mem.weak_valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true →
+      Mem.weak_valid_pointer m2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true := by
+    intro b1 ofs b2 delta hm hp
+    have hp' := Option.some.inj hm
+    cases hp'
+    have hadd : Ptrofs.add ofs (Ptrofs.repr z0) = ofs := by
+      rw [show Ptrofs.repr z0 = Ptrofs.zero by rfl, pg_ptrofs_add_zero]
+    rw [hadd]
+    apply (Mem.weak_valid_pointer_spec m2 b1 (Ptrofs.unsigned ofs)).2
+    rcases (Mem.weak_valid_pointer_spec m1 b1 (Ptrofs.unsigned ofs)).1 hp with hp | hp
+    · exact Or.inl (hvalid0 b1 _ hp)
+    · exact Or.inr (hvalid0 b1 _ hp)
+  have hbound : ∀ b1 ofs b2 delta, f b1 = some (b2, delta) →
+      Mem.weak_valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true →
+      ZArith.BinInt.Z.le z0 (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) (Ptrofs.unsigned (Ptrofs.repr delta))) ∧
+      ZArith.BinInt.Z.le (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) (Ptrofs.unsigned (Ptrofs.repr delta))) Ptrofs.max_unsigned := by
+    intro b1 ofs b2 delta hm hp
+    have hp' := Option.some.inj hm
+    cases hp'
+    have huzero : Ptrofs.unsigned Ptrofs.zero = z0 := by rfl
+    rw [show Ptrofs.repr z0 = Ptrofs.zero by rfl, huzero]
+    have hzadd : ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) z0 = Ptrofs.unsigned ofs := by
+      apply intOfZ_injective
+      simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+      change intOfZ (Ptrofs.unsigned ofs) + intOfZ z0 = intOfZ (Ptrofs.unsigned ofs)
+      rw [show intOfZ z0 = (0 : Int) by rfl, Int.add_zero]
+    rw [hzadd]
+    have h := ofs.intrange.1
+    have h' := ofs.intrange.2
+    constructor
+    · change 0 ≤ intOfZ (Ptrofs.unsigned ofs)
+      change (-1 : Int) < intOfZ (Ptrofs.unsigned ofs) at h
+      omega
+    · change intOfZ (Ptrofs.unsigned ofs) ≤ intOfZ Ptrofs.max_unsigned
+      change intOfZ (Ptrofs.unsigned ofs) < intOfZ Ptrofs.modulus at h'
+      change intOfZ (Ptrofs.unsigned ofs) ≤ (2 ^ Ptrofs.wordsize : Int) - 1
+      change intOfZ (Ptrofs.unsigned ofs) < (2 ^ Ptrofs.wordsize : Int) at h'
+      omega
+  have hdiff : ∀ b1 ofs1 b2 ofs2 b1' delta1 b2' delta2, b1 ≠ b2 →
+      Mem.valid_pointer m1 b1 (Ptrofs.unsigned ofs1) = true →
+      Mem.valid_pointer m1 b2 (Ptrofs.unsigned ofs2) = true →
+      f b1 = some (b1', delta1) → f b2 = some (b2', delta2) →
+      b1' ≠ b2' ∨ Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta1)) ≠ Ptrofs.unsigned (Ptrofs.add ofs2 (Ptrofs.repr delta2)) := by
+    intro b1 ofs1 b2 ofs2 b1' delta1 b2' delta2 hne _ _ hm1 hm2
+    left
+    intro heq
+    have p1 : b1 = b1' := congrArg Prod.fst (Option.some.inj hm1)
+    have p2 : b2 = b2' := congrArg Prod.fst (Option.some.inj hm2)
+    exact hne (p1.trans (heq.trans p2.symm))
+  have hglobals : ∀ id ofs, id ∈ globals_operation op →
+      Val.inject f (Genv.symbol_address ge id ofs) (Genv.symbol_address ge id ofs) := by
+    intro id ofs _
+    exact (CompCert4Lean.Common.Values.val_inject_lessdef _ _).mp (Val.lessdef.lessdef_refl _)
+  have hsp : Val.inject f (Vptr sp Ptrofs.zero) (Vptr sp Ptrofs.zero) :=
+    (CompCert4Lean.Common.Values.val_inject_lessdef _ _).mp (Val.lessdef.lessdef_refl _)
+  have hargs' : Val.inject_list f args1 args2 :=
+    (CompCert4Lean.Common.Values.val_inject_list_lessdef args1 args2).mp hless
+  obtain ⟨v2, heval2, hinj⟩ := eval_operation_inj _ _ _ _ ge ge f m1 m2
+    hvalid hweak hbound hdiff op (Vptr sp Ptrofs.zero) args1
+      (Vptr sp Ptrofs.zero) args2 v1 hglobals hsp hargs' heval
+  exact ⟨v2, heval2, vagree_lessdef v1 v2 nv
+      ((CompCert4Lean.Common.Values.val_inject_lessdef v1 v2).mpr hinj)⟩
+
+end CompCert4Lean.Backend.NeedDomain
