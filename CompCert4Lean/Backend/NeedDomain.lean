@@ -8179,3 +8179,50 @@ theorem iagree_rol : iagree_rolStatement := by
   exact test_iagree_rol
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+ theorem eqmod_iagree : eqmod_iagreeStatement := by
+  intro m x y hxy
+  have hs := local_size_range_eqmod m
+  let n := ZArith.BinInt.Z.to_nat (Int.size m)
+  have hsize : ZArith.BinInt.Z.of_nat n = Int.size m := by
+    dsimp [n]
+    exact ZArith.Znat.Z2Nat.id (Int.size m) hs.1
+  have hpow : CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat n =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p (Int.size m) := by
+    rw [CompCert4Lean.Lib.Coqlib.two_power_nat_two_p, hsize]
+  rw [← hpow] at hxy
+  intro i hi hmask
+  have hiSize : ZArith.BinInt.Z.lt i (Int.size m) := by
+    by_cases hge : ZArith.BinInt.Z.le (Int.size m) i
+    · have hz := pg_bits_size_2 m i hge
+      rw [hz] at hmask
+      cases hmask
+    · change intOfZ i < intOfZ (Int.size m)
+      change ¬ intOfZ (Int.size m) ≤ intOfZ i at hge
+      omega
+  have hiWord : ZArith.BinInt.Z.lt i Int.zwordsize := by
+    change intOfZ i < intOfZ (Int.size m) at hiSize
+    have hs2 := hs.2
+    change intOfZ (Int.size m) ≤ intOfZ Int.zwordsize at hs2
+    change intOfZ i < intOfZ Int.zwordsize
+    omega
+  have hbits := CompCert4Lean.Lib.Zbits.same_bits_eqmod n x y i hxy ⟨hi.1, by
+    change intOfZ i < intOfZ (ZArith.BinInt.Z.of_nat n)
+    rw [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    have hiSize' := hiSize
+    change intOfZ i < intOfZ (Int.size m) at hiSize'
+    rw [← hsize] at hiSize'
+    have hz : intOfZ (ZArith.BinInt.Z.of_nat n) = Int.ofNat n := by
+      rw [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    rw [hz] at hiSize'
+    exact hiSize'⟩
+  rw [CompCert4Lean.Lib.Integers.Int.testbit_repr_proof x i hi,
+    CompCert4Lean.Lib.Integers.Int.testbit_repr_proof y i hi]
+  exact hbits
+
+end CompCert4Lean.Backend.NeedDomain

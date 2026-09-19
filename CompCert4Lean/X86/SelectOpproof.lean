@@ -4634,3 +4634,14 @@ theorem eval_shlimm
   exact eval_shlimm_for_eval_shl_local xi ge sp e m n
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+theorem eval_shruimm
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_shruimmStatement := by
+  intro xi ge sp e m n
+  exact eval_shruimm_for_eval_shru_local xi ge sp e m n
+
+end CompCert4Lean.X86.SelectOpproof

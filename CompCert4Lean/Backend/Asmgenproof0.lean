@@ -2176,3 +2176,13 @@ theorem return_address_exists : return_address_existsStatement := by
       exact hofs
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem lessdef_parent_ra : lessdef_parent_raStatement := by
+  intro ge s v hs hld
+  exact lessdef_eq_of_ne_undef_asmgenproof
+    (CompCert4Lean.Backend.Mach.parent_ra s) v
+    (parent_ra_def ge s hs) hld
+
+end CompCert4Lean.Backend.Asmgenproof0
