@@ -287,3 +287,32 @@ theorem DN_UP_parity_aux :
         simpa only [Bool.not_not] using hp2
 
 end CompCert4Lean.Flocq.Core.Round_NE
+
+namespace CompCert4Lean.Flocq.Core.Round_NE
+
+open CompCert4Lean.Flocq.Core
+
+theorem round_NE_opp :
+    ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
+      round_NE_oppStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x
+  have hchoice :
+      (fun t : Z => Bool.not (Bool.not (Zeven (Zaux.Zopp (Zadd t Zone))))) =
+        (fun t : Z => Bool.not (Zeven t)) := by
+    funext t
+    simp only [Bool.not_not]
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add t Zone)) =
+      Bool.not (Zeven t)
+    rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even_opp,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even_add]
+    change CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.eqb
+      (Zeven t) false = Bool.not (Zeven t)
+    cases Zeven t <;> rfl
+  have h := Generic_fmt.round_N_opp ctx magnitude beta fexp
+    (fun t => Bool.not (Zeven t)) x
+  rw [hchoice] at h
+  exact h
+
+end CompCert4Lean.Flocq.Core.Round_NE

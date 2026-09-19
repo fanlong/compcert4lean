@@ -7907,3 +7907,42 @@ theorem subst_reg_kind_satisf_makelong :
       exact hsat q hmem
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+
+theorem partial_fold_ind : partial_fold_indStatement := by
+  intro A P f init final s hfold hEmpty hStep
+  let g : EqSet2.elt → Option A → Option A := fun x oa =>
+    match oa with
+    | none => none
+    | some a => f x a
+  let Q := fun (s : EqSet2M.t) oa =>
+    {h : match oa with
+      | none => True
+      | some a => P s a // True}
+  have hQ := ESP2.fold_rec_proof (A := Option A) (P := Q) (f := g)
+      (i := some init) (s := s)
+      (by
+        intro s' hs'
+        exact ⟨hEmpty s' hs', trivial⟩)
+      (by
+        intro x oa s' s'' hx hnot hadd hPa
+        cases oa with
+        | none => exact ⟨trivial, trivial⟩
+        | some a =>
+            cases hfa : f x a with
+            | none =>
+                simp only [g, hfa]
+                exact ⟨trivial, trivial⟩
+            | some a' =>
+                simp only [g, hfa]
+                exact ⟨hStep x a a' s' s'' hx hnot hadd hfa hPa.1, trivial⟩)
+  have hQ' : Q s (some final) := by
+    rw [← hfold]
+    change Q s (EqSet2.fold g s (some init))
+    exact hQ
+  exact hQ'.1
+
+end CompCert4Lean.Backend.Allocproof

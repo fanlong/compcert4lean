@@ -3282,3 +3282,10 @@ theorem function_ptr_translated : function_ptr_translatedStatement :=
   rtlgen_function_ptr_translated
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+theorem sig_transl_function : sig_transl_functionStatement :=
+  rtlgen_sig_transl_fundef
+
+end CompCert4Lean.Backend.RTLgenproof

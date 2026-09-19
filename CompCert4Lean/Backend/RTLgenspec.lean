@@ -2677,3 +2677,48 @@ theorem transl_exitexpr_charact : transl_exitexpr_charactStatement := by
                         (add_letvar_valid map s0 r hmap0 hr0)))
 
 end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Maps
+
+theorem convert_builtin_res_charact : convert_builtin_res_charactStatement := by
+  intro map oty res s res' s' i hconvert hmap
+  cases res with
+  | BR id =>
+      change RTLgen.bind (RTLgen.find_var map id)
+        (fun r => RTLgen.ret (.BR r)) s = .OK res' s' i at hconvert
+      cases hfind : PTree.get id map.map_vars with
+      | none =>
+          simp [RTLgen.find_var, hfind, RTLgen.error, RTLgen.bind] at hconvert
+      | some r =>
+          simp [RTLgen.find_var, hfind, RTLgen.ret, RTLgen.bind] at hconvert
+          rcases hconvert with ⟨hr, hs⟩
+          cases hr
+          cases hs
+          exact tr_builtin_res.tr_builtin_res_var map id r hfind
+  | BR_none =>
+      by_cases hvoid : oty = Xvoid
+      · simp [RTLgen.convert_builtin_res, hvoid, RTLgen.ret] at hconvert
+        rcases hconvert with ⟨hr, hs⟩
+        cases hr
+        cases hs
+        exact tr_builtin_res.tr_builtin_res_none map
+      · change (if oty = Xvoid then RTLgen.ret .BR_none else
+          RTLgen.bind RTLgen.new_reg (fun r => RTLgen.ret (.BR r))) s =
+            .OK res' s' i at hconvert
+        rw [if_neg hvoid] at hconvert
+        cases hnew : RTLgen.new_reg s with
+        | Error msg => simp [RTLgen.bind, hnew] at hconvert
+        | OK r s0 inew =>
+            simp [RTLgen.bind, hnew, RTLgen.ret] at hconvert
+            rcases hconvert with ⟨hr, hs⟩
+            cases hr
+            cases hs
+            exact tr_builtin_res.tr_builtin_res_fresh map r
+              (new_reg_not_in_map s s' map r inew hnew hmap)
+  | BR_splitlong hi lo =>
+      simp [RTLgen.convert_builtin_res, RTLgen.error] at hconvert
+
+end CompCert4Lean.Backend.RTLgenspec

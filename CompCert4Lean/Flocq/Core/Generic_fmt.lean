@@ -4615,3 +4615,12 @@ theorem generic_format_0 :
   exact pg_worker_generic_format_zero ctx magnitude beta fexp
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem cexp_opp :
+    ∀ ctx magnitude, cexp_oppStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x
+  exact pg_cexp_opp ctx magnitude beta fexp x
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

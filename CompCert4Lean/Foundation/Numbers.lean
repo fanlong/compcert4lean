@@ -5314,3 +5314,51 @@ theorem ZArith.Zorder.Zle_succ_le :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zorder.Zlt_succ_pred :
+    ZArith.Zorder.Zlt_succ_predStatement := by
+  intro n m h
+  change intOfZ (ZArith.BinInt.Z.succ n) < intOfZ m at h
+  change intOfZ n < intOfZ (ZArith.BinInt.Z.pred m)
+  simp only [ZArith.BinInt.Z.succ, ZArith.BinInt.Z.add, intOfZ_zOfInt] at h
+  simp only [ZArith.BinInt.Z.pred, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+  have hone : intOfZ (Zpos xH) = 1 := by simp [intOfZ, posToNat]
+  rw [hone] at h ⊢
+  omega
+
+theorem ZArith.Zorder.Zlt_0_le_0_pred :
+    ZArith.Zorder.Zlt_0_le_0_predStatement := by
+  intro n h
+  change (0 : Int) < intOfZ n at h
+  change (0 : Int) ≤ intOfZ (ZArith.BinInt.Z.pred n)
+  simp only [ZArith.BinInt.Z.pred, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+  have hone : intOfZ (Zpos xH) = 1 := by simp [intOfZ, posToNat]
+  rw [hone]
+  omega
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zorder.Zle_0_nat :
+    ZArith.Zorder.Zle_0_natStatement := by
+  intro n
+  change (0 : Int) ≤ intOfZ (ZArith.BinInt.Z.of_nat n)
+  simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  exact Int.natCast_nonneg n
+
+theorem ZArith.Zorder.Zplus_le_compat_r :
+    ZArith.Zorder.Zplus_le_compat_rStatement := by
+  intro n m p h
+  change intOfZ n ≤ intOfZ m at h
+  change intOfZ (ZArith.BinInt.Z.add n p) ≤ intOfZ (ZArith.BinInt.Z.add m p)
+  simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  omega
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

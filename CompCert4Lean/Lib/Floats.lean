@@ -3533,3 +3533,13 @@ theorem quiet_nan_32_result_obligation_proof : quiet_nan_32_result_obligation :=
   quiet_nan_32_result_obligation_proof_local
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+theorem Float.binop_nan_result_obligation_proof : Float.binop_nan_result_obligation := by
+  intro x y _hx _hy
+  exact quiet_nan_64_result_obligation_proof_local
+    (CompCert4Lean.X86_64.Archi.choose_nan_64
+      (Float.cons_pl x (Float.cons_pl y [])))
+
+end CompCert4Lean.Lib.Floats

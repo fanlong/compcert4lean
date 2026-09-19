@@ -1758,3 +1758,11 @@ theorem Ztestbit_mod_two_p : Ztestbit_mod_two_pStatement := by
       · change intOfZ (zOfNat N) ≤ intOfZ i
         rw [← hrepr]
         exact hge
+
+theorem Ziter_base : Ziter_baseStatement := by
+  intro A n f x hn
+  unfold zIter ZArith.BinInt.Z.iter
+  change intOfZ n ≤ intOfZ zZero at hn
+  rw [show intOfZ zZero = (0 : Int) by rfl] at hn
+  rw [Int.toNat_of_nonpos hn]
+  rfl

@@ -3872,3 +3872,28 @@ theorem xorl_assoc : xorl_assocStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values.Val
+
+theorem load_result_xtype : load_result_xtypeStatement := by
+  intro chunk v
+  cases chunk <;> cases v <;>
+    simp [load_result, has_rettype, CompCert4Lean.Common.AST.xtype_of_chunk,
+      CompCert4Lean.X86_64.Archi.ptr64]
+  case Mbool.Vint n =>
+    rcases norm_bool_cases (Vint (intZeroExt (zOfNat 8) n)) with h | h | h <;>
+      simp [h, Vfalse, Vtrue]
+  case Mint8signed.Vint n =>
+    exact (CompCert4Lean.Lib.Integers.Int.sign_ext_idem_proof
+      (zOfNat 8) n (by change (0 : _root_.Int) < 8; decide)).symm
+  case Mint8unsigned.Vint n =>
+    exact (CompCert4Lean.Lib.Integers.Int.zero_ext_idem_proof_api
+      (zOfNat 8) n (by change (0 : _root_.Int) ≤ 8; decide)).symm
+  case Mint16signed.Vint n =>
+    exact (CompCert4Lean.Lib.Integers.Int.sign_ext_idem_proof
+      (zOfNat 16) n (by change (0 : _root_.Int) < 16; decide)).symm
+  case Mint16unsigned.Vint n =>
+    exact (CompCert4Lean.Lib.Integers.Int.zero_ext_idem_proof_api
+      (zOfNat 16) n (by change (0 : _root_.Int) ≤ 16; decide)).symm
+
+end CompCert4Lean.Common.Values.Val

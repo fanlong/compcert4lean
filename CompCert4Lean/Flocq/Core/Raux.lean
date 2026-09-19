@@ -4442,3 +4442,55 @@ theorem Rcompare_half_l (ctx : ExactRealContext) : Rcompare_half_lStatement ctx 
       (Rcompare_sym ctx _ _).symm
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Ztrunc_opp (ctx : ExactRealContext) :
+    Ztrunc_oppStatement ctx := by
+  intro x
+  cases h : Exact.Rlt_bool ctx x (Exact.R0 ctx) with
+  | true =>
+      have hspec := Rlt_bool_spec ctx x (Exact.R0 ctx)
+      rw [h] at hspec
+      cases hspec with
+      | Rlt_bool_true_ hx =>
+          have hxle : ctx.spec.le x ctx.spec.zero :=
+            (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hx |>.1
+          have hneg_nonneg : ctx.spec.le ctx.spec.zero (ctx.spec.neg x) := by
+            have hneg := pg_neg_le_contravar ctx hxle
+            rw [show ctx.spec.neg ctx.spec.zero = ctx.spec.zero by
+              calc
+                ctx.spec.neg ctx.spec.zero =
+                    ctx.spec.add (ctx.spec.neg ctx.spec.zero) ctx.spec.zero :=
+                  (ctx.certificate.orderedField.add_zero _).symm
+                _ = ctx.spec.zero :=
+                  ctx.certificate.orderedField.neg_add_cancel _] at hneg
+            exact hneg
+          rw [Ztrunc_floor ctx (Exact.Ropp ctx x) hneg_nonneg]
+          rw [Ztrunc_ceil ctx x hxle]
+          unfold Exact.Zceil
+          rw [pg_zopp_zopp]
+  | false =>
+      have hspec := Rlt_bool_spec ctx x (Exact.R0 ctx)
+      rw [h] at hspec
+      cases hspec with
+      | Rlt_bool_false_ hx =>
+          have hneg_nonpos : ctx.spec.le (ctx.spec.neg x) ctx.spec.zero := by
+            have hneg := pg_neg_le_contravar ctx hx
+            change ctx.spec.le (ctx.spec.neg x)
+              (ctx.spec.neg ctx.spec.zero) at hneg
+            rw [show ctx.spec.neg ctx.spec.zero = ctx.spec.zero by
+              calc
+                ctx.spec.neg ctx.spec.zero =
+                    ctx.spec.add (ctx.spec.neg ctx.spec.zero) ctx.spec.zero :=
+                  (ctx.certificate.orderedField.add_zero _).symm
+                _ = ctx.spec.zero :=
+                  ctx.certificate.orderedField.neg_add_cancel _] at hneg
+            exact hneg
+          rw [Ztrunc_ceil ctx (Exact.Ropp ctx x) hneg_nonpos]
+          unfold Exact.Zceil
+          rw [show Exact.Ropp ctx (Exact.Ropp ctx x) = x by
+            exact pg_neg_neg ctx x]
+          rw [Ztrunc_floor ctx x hx]
+
+end CompCert4Lean.Flocq.Core.Raux

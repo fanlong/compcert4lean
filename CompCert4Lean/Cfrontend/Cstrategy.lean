@@ -3140,3 +3140,19 @@ theorem safe_inv
     xi ge e k a m himm
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+theorem eval_simple_steps
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_simple_stepsStatement := by
+  unfold eval_simple_stepsStatement
+  intro xi ge f k e m
+  constructor
+  · intro a v h C hC
+    exact eval_simple_rvalue_steps xi ge f k e m a v h C hC
+  · intro a b ofs bf h C hC
+    exact eval_simple_lvalue_steps xi ge f k e m a b ofs bf h C hC
+
+end CompCert4Lean.Cfrontend.Cstrategy

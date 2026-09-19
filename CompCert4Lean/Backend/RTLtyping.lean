@@ -2491,3 +2491,224 @@ theorem wt_exec_Ibuiltin : wt_exec_IbuiltinStatement := by
 
 end
 end CompCert4Lean.Backend.RTLtyping
+
+namespace CompCert4Lean.Backend.RTLtyping
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.X86.Op
+
+section
+
+variable
+    [binary64_certificate :
+      BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+
+set_option maxHeartbeats 4000000
+set_option maxRecDepth 4000
+set_option linter.unusedSimpArgs false
+private theorem subject_operation_type_aux
+    (ge : genv) (sp : val) (op : operation) (vl : List val) (m : mem) (v : val)
+    (hop : op ≠ Omove) (heval : eval_operation (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge sp op vl m = some v) :
+    Val.has_type v (type_of_operation op).2 := by
+  cases op
+  case Omove => exact False.elim (hop rfl)
+  case Olea addr => exact type_of_addressing32_sound _ _ ge addr vl sp v heval
+  case Oleal addr => exact type_of_addressing64_sound _ _ ge addr vl sp v heval
+  all_goals
+    rcases vl with _ | ⟨a, _ | ⟨b, _ | ⟨c, vl⟩⟩⟩ <;>
+      dsimp only [eval_operation] at heval
+  all_goals try simp only [Option.some.injEq, reduceCtorEq] at heval
+  all_goals try (subst v)
+  all_goals simp only [type_of_operation]
+
+  all_goals
+    try simp only [
+      Val.absf, Val.absfs, Val.addf, Val.addfs, Val.addl,
+      Val.and, Val.andl, Val.divf, Val.divfs, Val.divls,
+      Val.divlu, Val.divs, Val.divu, Val.floatofint, Val.floatoflong,
+      Val.floatofsingle, Val.hiword, Val.intoffloat, Val.intofsingle, Val.longoffloat,
+      Val.longofint, Val.longofintu, Val.longofsingle, Val.longofwords, Val.loword,
+      Val.modls, Val.modlu, Val.mods, Val.modu, Val.mul,
+      Val.mulf, Val.mulfs, Val.mulhs, Val.mulhu, Val.mull,
+      Val.mullhs, Val.mullhu, Val.neg, Val.negf, Val.negfs,
+      Val.negl, Val.notint, Val.notl, Val.of_optbool, Val.or,
+      Val.orl, Val.ror, Val.rorl, Val.shl, Val.shll,
+      Val.shr, Val.shrl, Val.shrlu, Val.shru, Val.shrx,
+      Val.shrxl, Val.sign_ext, Val.singleoffloat, Val.singleofint, Val.singleoflong,
+      Val.sub, Val.subf, Val.subfs, Val.subl, Val.xor,
+      Val.xorl, Val.zero_ext, Val.select, maxf, minf,
+      Genv.symbol_address, Option.map, Tptr, CompCert4Lean.X86_64.Archi.ptr64] at heval
+    try simp only [
+      Val.absf, Val.absfs, Val.addf, Val.addfs, Val.addl,
+      Val.and, Val.andl, Val.divf, Val.divfs, Val.divls,
+      Val.divlu, Val.divs, Val.divu, Val.floatofint, Val.floatoflong,
+      Val.floatofsingle, Val.hiword, Val.intoffloat, Val.intofsingle, Val.longoffloat,
+      Val.longofint, Val.longofintu, Val.longofsingle, Val.longofwords, Val.loword,
+      Val.modls, Val.modlu, Val.mods, Val.modu, Val.mul,
+      Val.mulf, Val.mulfs, Val.mulhs, Val.mulhu, Val.mull,
+      Val.mullhs, Val.mullhu, Val.neg, Val.negf, Val.negfs,
+      Val.negl, Val.notint, Val.notl, Val.of_optbool, Val.or,
+      Val.orl, Val.ror, Val.rorl, Val.shl, Val.shll,
+      Val.shr, Val.shrl, Val.shrlu, Val.shru, Val.shrx,
+      Val.shrxl, Val.sign_ext, Val.singleoffloat, Val.singleofint, Val.singleoflong,
+      Val.sub, Val.subf, Val.subfs, Val.subl, Val.xor,
+      Val.xorl, Val.zero_ext, Val.select, maxf, minf,
+      Genv.symbol_address, Option.map, Tptr, CompCert4Lean.X86_64.Archi.ptr64]
+    repeat' first
+      | exact True.intro
+      | exact Val.normalize_type _ _
+      | (cases heval; exact True.intro)
+      | (solve | simp_all only [Val.has_type, CompCert4Lean.X86_64.Archi.ptr64,
+          Bool.false_eq_true, Bool.true_eq_false, if_true, if_false,
+          Option.some.injEq, reduceCtorEq, Val.normalize_type])
+      | split at heval
+      | split
+
+private theorem subject_exec_op_aux : wt_exec_IopStatement := by
+  intro cfg ge env f sp op args res s rs m v hwt heval hrs
+  cases hwt with
+  | wt_Iopmove r1 r s hty hsucc =>
+      change some (Regmap.get r1 rs) = some v at heval
+      cases heval
+      apply wt_regset_assign env rs _ _ hrs
+      rw [hty]
+      exact hrs r1
+  | wt_Iop op args res s hop hargs hres hsucc =>
+      apply wt_regset_assign env rs v res hrs
+      rw [hres]
+      exact subject_operation_type_aux ge sp op _ m v hop heval
+
+omit binary64_certificate binary32_certificate in
+private theorem subject_find_function_aux
+    (cfg : CompilerConfig) (p : program) (hwt : wt_program cfg p)
+    (ros : Sum reg ident) (rs : regset) (fd : fundef)
+    (hfind : find_function (Genv.globalenv p) ros rs = some fd) :
+    wt_fundef cfg fd := by
+  cases ros with
+  | inl r =>
+      exact Genv.find_funct_prop (F := fundef) (V := Unit)
+        (P := wt_fundef cfg) (p := p) (v := Regmap.get r rs) (f := fd) hwt hfind
+  | inr id =>
+      unfold find_function at hfind
+      cases hs : Genv.find_symbol (Genv.globalenv p) id with
+      | none => simp [hs] at hfind
+      | some b =>
+          simp only [hs] at hfind
+          exact Genv.find_funct_ptr_prop (F := fundef) (V := Unit)
+            (P := wt_fundef cfg) (p := p) (b := b) (f := fd) hwt hfind
+
+theorem subject_reduction : subject_reductionStatement := by
+  intro cfg xi p hp st1 t st2 hstep hwt
+  cases hstep with
+  | exec_Inop s f sp pc rs m pc' hcode =>
+      cases hwt
+      rename_i env hfn hstk hrs
+      exact wt_state_intro _ _ _ _ _ _ env hstk hfn hrs
+  | exec_Iop s f sp pc rs m op args res pc' v hcode heval =>
+      cases hwt
+      rename_i env hfn hstk hrs
+      apply wt_state_intro _ _ _ _ _ _ env hstk hfn
+      exact subject_exec_op_aux cfg (Genv.globalenv p) env f sp op args res pc'
+        rs m v (hfn.wt_instrs pc _ hcode) heval hrs
+  | exec_Iload s f sp pc rs m chunk addr args dst pc' a v hcode haddr hload =>
+      cases hwt
+      rename_i env hfn hstk hrs
+      apply wt_state_intro _ _ _ _ _ _ env hstk hfn
+      exact wt_exec_Iload cfg env f chunk addr args dst pc' m a v rs
+        (hfn.wt_instrs pc _ hcode) hload hrs
+  | exec_Istore s f sp pc rs m chunk addr args src pc' a m' hcode haddr hstore =>
+      cases hwt
+      rename_i env hfn hstk hrs
+      exact wt_state_intro _ _ _ _ _ _ env hstk hfn hrs
+  | exec_Icall s f sp pc rs m sg ros args res pc' fd hcode hfind hsig =>
+      cases hwt
+      rename_i env hfn hstk hrs
+      have hi := hfn.wt_instrs pc _ hcode
+      cases hi with
+      | wt_Icall sg ros args res pc' hros hargs hres hsucc =>
+          apply wt_state_call
+          · apply wt_stackframes_cons _ _ _ _ _ _ env _ hfn hrs
+            · rw [hsig]
+              exact hres
+            · exact hstk
+          · exact subject_find_function_aux cfg p hp ros rs fd hfind
+          · rw [hsig, ← hargs]
+            exact wt_regset_list env rs hrs args
+  | exec_Itailcall s f stk pc rs m sg ros args fd m' hcode hfind hsig hfree =>
+      cases hwt
+      rename_i env hfn hstk hrs
+      have hi := hfn.wt_instrs pc _ hcode
+      cases hi with
+      | wt_Itailcall sg ros args hros hargs hres hpossible =>
+          apply wt_state_call
+          · apply wt_stackframes_change_sig cfg s f.fn_sig (funsig fd) _ hstk
+            rw [hsig]
+            exact hres.symm
+          · exact subject_find_function_aux cfg p hp ros rs fd hfind
+          · rw [hsig, ← hargs]
+            exact wt_regset_list env rs hrs args
+  | exec_Ibuiltin s f sp pc rs m ef args res pc' vargs t vres m' hcode hargs hcall =>
+      cases hwt
+      rename_i env hfn hstk hrs
+      apply wt_state_intro _ _ _ _ _ _ env hstk hfn
+      exact wt_exec_Ibuiltin cfg xi env f ef (Genv.globalenv p) args res pc'
+        vargs m t vres m' rs (hfn.wt_instrs pc _ hcode) hcall hrs
+  | exec_Icond s f sp pc rs m cond args ifso ifnot b pc' hcode heval hpc =>
+      cases hwt
+      rename_i env hfn hstk hrs
+      exact wt_state_intro _ _ _ _ _ _ env hstk hfn hrs
+  | exec_Ijumptable s f sp pc rs m arg tbl n pc' hcode harg hnth =>
+      cases hwt
+      rename_i env hfn hstk hrs
+      exact wt_state_intro _ _ _ _ _ _ env hstk hfn hrs
+  | exec_Ireturn s f stk pc rs m ores m' hcode hfree =>
+      cases hwt
+      rename_i env hfn hstk hrs
+      apply wt_state_return _ _ _ f.fn_sig hstk
+      have hi := hfn.wt_instrs pc _ hcode
+      cases hi with
+      | wt_Ireturn_none hres => exact True.intro
+      | wt_Ireturn_some arg ty hres harg hty =>
+          change Val.has_type (Regmap.get arg rs) (proj_sig_res f.fn_sig)
+          rw [← harg]
+          exact hrs arg
+  | exec_function_internal s f args m m' stk htypes halloc =>
+      cases hwt
+      rename_i hfn hstk hargs
+      cases hfn with
+      | wt_function_internal f env hfn =>
+          apply wt_state_intro _ _ _ _ _ _ env hstk hfn
+          apply wt_init_regs
+          rw [hfn.wt_params]
+          exact hargs
+  | exec_function_external s ef args res t m m' hcall =>
+      cases hwt
+      rename_i hfn hstk hargs
+      apply wt_state_return _ _ _ (ef_sig ef) hstk
+      exact wt_Ibuiltin_external_type_aux xi ef (Genv.to_senv (Genv.globalenv p))
+        args m t res m' hcall
+  | exec_return res f sp pc rs s vres m =>
+      cases hwt
+      rename_i sg hstk hv
+      cases hstk
+      rename_i env hfn hrs hstk hres
+      apply wt_state_intro _ _ _ _ _ _ env hstk hfn
+      apply wt_regset_assign env rs vres res hrs
+      rw [hres]
+      exact hv
+
+end
+end CompCert4Lean.Backend.RTLtyping

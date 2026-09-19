@@ -2812,3 +2812,74 @@ theorem divs_mul_shift_1 : divs_mul_shift_1Statement := by
   rw [hmrepr]
 
 end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open Lean Elab Tactic
+
+theorem divs_mul_shift_2 : divs_mul_shift_2Statement := by
+  intro x y m p hparams hge
+  obtain ⟨hm, hp, hgen⟩ := divs_mul_shift_gen x y m p hparams
+  refine ⟨hp, ?_⟩
+  have hmrepr : intSigned (intRepr m) =
+      zSub m CompCert4Lean.Lib.Integers.Int.modulus := by
+    change CompCert4Lean.Lib.Integers.Int.signed
+      (CompCert4Lean.Lib.Integers.Int.repr m) = _
+    rw [CompCert4Lean.Lib.Integers.Int.signed_repr_eq_proof]
+    have hmod : ZArith.BinInt.Z.modulo m
+        CompCert4Lean.Lib.Integers.Int.modulus = m :=
+      ZArith.BinInt.Z.mod_small _ _ hm
+    run_tac
+      let env ← getEnv
+      for suffix in ["Integers.zMod", "Integers.zltSelect",
+          "Integers.sumboolSelect", "Integers.zSub"] do
+        let some (n, _) := env.constants.toList.find?
+            (fun (n, _) => (toString n).endsWith suffix)
+          | throwError "frozen integer representation helper not found"
+        evalTactic (← `(tactic| unfold $(Lean.mkIdent n)))
+    rw [hmod]
+    unfold zSub
+    cases CompCert4Lean.Lib.Coqlib.zlt m
+        CompCert4Lean.Lib.Integers.Int.half_modulus with
+    | left hlt =>
+      change intOfZ m < (2147483648 : Int) at hlt
+      change (2147483648 : Int) ≤ intOfZ m at hge
+      omega
+    | right _ => rfl
+  have hquot :
+      zDiv (zMul (intSigned x) m) CompCert4Lean.Lib.Integers.Int.modulus =
+      zAdd (zDiv (zMul (intSigned x)
+        (zSub m CompCert4Lean.Lib.Integers.Int.modulus))
+        CompCert4Lean.Lib.Integers.Int.modulus) (intSigned x) := by
+    rw [zdiv_pos_int_local _ _ (by decide), zdiv_pos_int_local _ _ (by decide)]
+    apply intOfZ_injective
+    simp only [zAdd, zMul, zSub, ZArith.BinInt.Z.add,
+      ZArith.BinInt.Z.mul, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    change (intOfZ (intSigned x) * intOfZ m) / (4294967296 : Int) =
+      (intOfZ (intSigned x) * (intOfZ m - 4294967296)) / 4294967296 +
+        intOfZ (intSigned x)
+    rw [Int.mul_sub, Int.sub_mul_ediv_right _ _ (by decide)]
+    omega
+  rw [hgen]
+  apply congrArg (fun t => intAdd (intShr t (intRepr p))
+    (intShru x (intRepr (zSub CompCert4Lean.Lib.Integers.Int.zwordsize z1))))
+  unfold intMulhs
+  rw [zshiftr_div_two_p_local _ _ (by change (0 : Int) ≤ 32; omega)]
+  have hmodulus : CompCert4Lean.Lib.Integers.Int.modulus =
+      two_p CompCert4Lean.Lib.Integers.Int.zwordsize :=
+    CompCert4Lean.Lib.Integers.Int.modulus_power_proof
+  rw [← hmodulus, hmrepr]
+  change intRepr (zDiv (zMul (intSigned x) m)
+      CompCert4Lean.Lib.Integers.Int.modulus) =
+    intRepr (zAdd (intUnsigned (intRepr (zDiv (zMul (intSigned x)
+      (zSub m CompCert4Lean.Lib.Integers.Int.modulus))
+      CompCert4Lean.Lib.Integers.Int.modulus))) (intUnsigned x))
+  rw [hquot]
+  apply CompCert4Lean.Lib.Integers.Int.eqm_samerepr_proof
+  apply CompCert4Lean.Lib.Integers.Int.eqm_add_proof
+  · exact CompCert4Lean.Lib.Integers.Int.eqm_unsigned_repr_r_proof _ _
+      (CompCert4Lean.Lib.Integers.Int.eqm_refl_proof _)
+  · exact CompCert4Lean.Lib.Integers.Int.eqm_signed_unsigned_proof x
+
+end CompCert4Lean.Backend.SelectDivproof

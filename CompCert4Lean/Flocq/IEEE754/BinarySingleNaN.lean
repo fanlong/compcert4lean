@@ -3132,3 +3132,15 @@ theorem canonical_canonical_mantissa :
           (cond_Zopp sx (Zpos mx)) ex))))
   rw [hmag, habs]
   exact hmant.symm
+
+
+theorem canonical_bounded :
+    ∀ {prec emax : Z} (ctx : ExactRealContext)
+      (magnitude : Exact.Magnitude ctx),
+      canonical_boundedStatement (prec := prec) (emax := emax)
+        ctx magnitude := by
+  intro prec emax ctx magnitude sx mx ex h
+  apply canonical_canonical_mantissa ctx magnitude sx mx ex
+  exact (Bool.and_eq_true_iff.mp h).1
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN

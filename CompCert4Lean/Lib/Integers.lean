@@ -8352,3 +8352,52 @@ theorem bits_rol_proof : bits_rol := by
           rw [hmod]
 
 end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem sign_ext_widen_proof : sign_ext_widen := by
+  intro x n n' hn
+  have hnpos : (0 : Int) < intOfZ n := hn.1
+  have hnn' : intOfZ n ≤ intOfZ n' := hn.2
+  have hsub (k : Z) : intOfZ (zSub k zOne) = intOfZ k - 1 := by
+    simp only [zSub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    rfl
+  apply same_bits_eq_proof
+  intro i hi
+  rw [bits_sign_ext_proof n' (sign_ext n x) i hi]
+  cases hsel : CompCert4Lean.Lib.Coqlib.zlt i n' with
+  | left hlt =>
+      simp only [zltSelect, sumboolSelect, hsel]
+  | right hge =>
+      simp only [zltSelect, sumboolSelect, hsel]
+      have hge' : intOfZ n' ≤ intOfZ i := hge
+      have hiw : intOfZ i < intOfZ zwordsize := hi.2
+      have hpred : zLe zZero (zSub n' zOne) ∧
+          zLt (zSub n' zOne) zwordsize := by
+        change (0 : Int) ≤ intOfZ (zSub n' zOne) ∧
+          intOfZ (zSub n' zOne) < intOfZ zwordsize
+        rw [hsub]
+        omega
+      rw [bits_sign_ext_proof n x (zSub n' zOne) hpred,
+        bits_sign_ext_proof n x i hi]
+      cases hseln : CompCert4Lean.Lib.Coqlib.zlt i n with
+      | left hlt =>
+          have hlt' : intOfZ i < intOfZ n := hlt
+          omega
+      | right _ =>
+          simp only [zltSelect, sumboolSelect, hseln]
+          cases hselpred : CompCert4Lean.Lib.Coqlib.zlt (zSub n' zOne) n with
+          | left hlt =>
+              have hlt' : intOfZ (zSub n' zOne) < intOfZ n := hlt
+              have heq : zSub n' zOne = zSub n zOne := by
+                apply intOfZ_injective
+                rw [hsub, hsub]
+                rw [hsub] at hlt'
+                omega
+              simp only [hselpred, heq, sumboolSelect]
+          | right _ =>
+              simp only [hselpred, sumboolSelect]
+
+end CompCert4Lean.Lib.Integers.Int

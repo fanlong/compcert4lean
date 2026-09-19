@@ -3618,3 +3618,93 @@ theorem type_of_fundef_preserved :
       rfl
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Cfrontend.SimplExpr
+open CompCert4Lean.Lib.Integers
+
+private theorem pg4057_shift_bound (width : Z)
+    (hpos : ZArith.BinInt.Z.lt .Z0 width)
+    (hle : ZArith.BinInt.Z.le width Int.zwordsize) :
+    Int.ltu (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.sub Int.zwordsize width))
+      Int.iwordsize = true := by
+  have hval : intOfZ (ZArith.BinInt.Z.sub Int.zwordsize width) =
+      32 - intOfZ width := by
+    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    rfl
+  have hrange :
+      ZArith.BinInt.Z.le .Z0 (ZArith.BinInt.Z.sub Int.zwordsize width) ∧
+      ZArith.BinInt.Z.le (ZArith.BinInt.Z.sub Int.zwordsize width)
+        Int.max_unsigned := by
+    change 0 < intOfZ width at hpos
+    change intOfZ width ≤ 32 at hle
+    change 0 ≤ intOfZ (ZArith.BinInt.Z.sub Int.zwordsize width) ∧
+      intOfZ (ZArith.BinInt.Z.sub Int.zwordsize width) ≤ 4294967295
+    rw [hval]
+    omega
+  have hlt : ZArith.BinInt.Z.lt
+      (Int.unsigned (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.sub Int.zwordsize width)))
+      (Int.unsigned Int.iwordsize) := by
+    rw [Int.unsigned_repr_proof_api _ hrange, Int.unsigned_repr_wordsize_proof]
+    change intOfZ (ZArith.BinInt.Z.sub Int.zwordsize width) < 32
+    rw [hval]
+    change 0 < intOfZ width at hpos
+    omega
+  exact CompCert4Lean.Lib.Coqlib.zlt_true Bool _ _ true false hlt
+
+theorem eval_make_normalize :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      eval_make_normalizeStatement := by
+  intro binary64_certificate binary32_certificate
+  intro ge e le m a n sz sg sg1 attr width hpos hwidth hty heval
+  have hle : ZArith.BinInt.Z.le width Int.zwordsize := by
+    change intOfZ width ≤ 32
+    have hb : intOfZ (bitsize_intsize sz) ≤ 32 := by
+      cases sz <;> decide
+    exact _root_.Int.le_trans hwidth hb
+  have hnneg : ZArith.BinInt.Z.le .Z0 width := by
+    change 0 ≤ intOfZ width
+    change 0 < intOfZ width at hpos
+    omega
+  have hzero : Clight.eval_expr ge e le m
+      (.Ebinop .Oand a
+        (.Econst_int (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.sub (two_p width) (.Zpos .xH)))
+          type_int32s) (Clight.typeof a)) (.Vint (Int.zero_ext width n)) := by
+    rw [Int.zero_ext_and_proof width n hnneg]
+    apply Clight.eval_expr.binary
+    · exact heval
+    · exact Clight.eval_expr.const_int _ _
+    · rw [hty]
+      cases sz <;> cases sg1 <;> rfl
+  have hsigned : Clight.eval_expr ge e le m
+      (.Ebinop .Oshr
+        (.Ebinop .Oshl a
+          (.Econst_int (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.sub Int.zwordsize width))
+            type_int32s) type_int32s)
+        (.Econst_int (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.sub Int.zwordsize width))
+          type_int32s) (Clight.typeof a)) (.Vint (Int.sign_ext width n)) := by
+    rw [Int.sign_ext_shr_shl_proof width n ⟨hpos, hle⟩]
+    have hlt := pg4057_shift_bound width hpos hle
+    apply Clight.eval_expr.binary (v1 := .Vint (Int.shl n
+      (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.sub Int.zwordsize width))))
+    · apply Clight.eval_expr.binary
+      · exact heval
+      · exact Clight.eval_expr.const_int _ _
+      · rw [hty]
+        cases sz <;> cases sg1 <;>
+          simp only [sem_binary_operation, sem_shl, sem_shift, classify_shift,
+            typeconv, remove_attributes, change_attributes, type_int32s, Clight.typeof,
+            hlt, if_true]
+    · exact Clight.eval_expr.const_int _ _
+    · simp only [sem_binary_operation, sem_shr, sem_shift, classify_shift,
+        typeconv, remove_attributes, change_attributes, type_int32s, Clight.typeof,
+            hlt, if_true]
+  cases sz <;> cases sg <;>
+    first | exact hzero | exact hsigned
+
+end CompCert4Lean.Cfrontend.SimplExprproof

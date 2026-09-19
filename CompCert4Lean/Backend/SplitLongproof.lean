@@ -3301,3 +3301,53 @@ theorem eval_splitlong2_strict : eval_splitlong2_strictStatement := by
             (.Vlong va :: le) (.Vlong vb)
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_lowlong : eval_lowlongStatement := by
+  intro xi prog sp e m le a x ha
+  cases hm : lowlong_match a with
+  | lowlong_case1 e1 e2 =>
+      simp only [lowlong, hm]
+      obtain ⟨v1, v2, hv1, hv2, hx⟩ :=
+        splitlong_eval_makelong_any_local xi (Genv.globalenv prog) sp e m le
+          e1 e2 x (by simpa [hm] using ha)
+      refine ⟨v2, hv2, ?_⟩
+      rw [hx]
+      cases v1 with
+      | Vint p =>
+          cases v2 with
+          | Vint q =>
+              change CompCert4Lean.Common.Values.Val.lessdef
+                (.Vint (int64Loword (int64Ofwords p q))) (.Vint q)
+              rw [splitlong_lo_ofwords]
+              exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+          | _ =>
+              simp [CompCert4Lean.Common.Values.Val.longofwords,
+                CompCert4Lean.Common.Values.Val.loword]
+              exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | _ =>
+          simp [CompCert4Lean.Common.Values.Val.longofwords,
+            CompCert4Lean.Common.Values.Val.loword]
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+  | lowlong_default a' =>
+      simp only [lowlong, hm]
+      refine ⟨CompCert4Lean.Common.Values.Val.loword x, ?_,
+        CompCert4Lean.Common.Values.Val.lessdef_refl _⟩
+      apply eval_expr.eval_Eop le Olowlong (Econs a Enil) [x]
+        (CompCert4Lean.Common.Values.Val.loword x)
+      · exact eval_exprlist.cons le a Enil x [] ha (eval_exprlist.nil le)
+      · rfl
+
+end CompCert4Lean.Backend.SplitLongproof

@@ -4727,3 +4727,205 @@ theorem store_init_data_loadbytes : store_init_data_loadbytesStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+namespace CompCert4Lean.Common.Globalenvs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+
+namespace Genv
+
+private theorem pg_list_loadbytes_unchanged
+    (P : block → Z → Prop) (m m' : mem) (b : block) (ofs n : Z)
+    (bytes : List memval) (hunch : Mem.unchanged_on P m m')
+    (hn : zLe z0 n)
+    (hP : ∀ i, zLe ofs i ∧ zLt i (zAdd ofs n) → P b i)
+    (hload : Mem.loadbytes m b ofs n = some bytes) :
+    Mem.loadbytes m' b ofs n = some bytes := by
+  unfold Mem.loadbytes at hload ⊢
+  cases hdec : Mem.range_perm_dec m b ofs (zAdd ofs n) Cur Readable with
+  | right hnot =>
+      rw [hdec] at hload
+      change none = some bytes at hload
+      cases hload
+  | left hrange =>
+      have hrange' : Mem.range_perm m' b ofs (zAdd ofs n) Cur Readable := by
+        intro i hi
+        have hperm := hrange i hi
+        exact (hunch.unchanged_on_perm b i Cur Readable (hP i hi)
+          (Mem.perm_valid_block m b i Cur Readable hperm)).mp hperm
+      cases hdec' : Mem.range_perm_dec m' b ofs (zAdd ofs n) Cur Readable with
+      | right hnot => exact False.elim (hnot hrange')
+      | left _ =>
+          rw [hdec] at hload
+          change some (Mem.getN (ZArith.BinInt.Z.to_nat n) ofs
+            (PMap.get b m.mem_contents)) = some bytes at hload
+          change some (Mem.getN (ZArith.BinInt.Z.to_nat n) ofs
+            (PMap.get b m'.mem_contents)) = some bytes
+          simp only [Option.some.injEq] at hload ⊢
+          rw [← hload]
+          apply Mem.getN_exten
+          intro i hi
+          have hnid : zOfNat (ZArith.BinInt.Z.to_nat n) = n :=
+            ZArith.Znat.Z2Nat.id n hn
+          have hi' : zLe ofs i ∧ zLt i (zAdd ofs n) := by
+            simpa [hnid] using hi
+          exact hunch.unchanged_on_contents b i (hP i hi') (hrange i hi')
+
+private theorem pg_list_store_init_data_loadbytes_one
+    (F V : Type) (ge : Genv.t F V) (m : mem) (b : block) (p : Z)
+    (i : init_data) (m' : mem)
+    (hstore : store_init_data ge m b p i = some m')
+    (hzero : readbytes_as_zero m b p (init_data_size i)) :
+    Mem.loadbytes m' b p (init_data_size i) = some (bytes_of_init_data ge i) := by
+  cases i with
+  | Init_int8 n =>
+      exact Mem.loadbytes_store_same Mint8unsigned m b p (Vint n) m' hstore
+  | Init_int16 n =>
+      exact Mem.loadbytes_store_same Mint16unsigned m b p (Vint n) m' hstore
+  | Init_int32 n =>
+      exact Mem.loadbytes_store_same Mint32 m b p (Vint n) m' hstore
+  | Init_int64 n =>
+      exact Mem.loadbytes_store_same Mint64 m b p (Vlong n) m' hstore
+  | Init_float32 n =>
+      exact Mem.loadbytes_store_same Mfloat32 m b p (Vsingle n) m' hstore
+  | Init_float64 n =>
+      exact Mem.loadbytes_store_same Mfloat64 m b p (Vfloat n) m' hstore
+  | Init_space n =>
+      change some m = some m' at hstore
+      cases hstore
+      have heq := pg_init_ofNat_toNat_max n
+      have hz := hzero p (ZArith.BinInt.Z.to_nat n)
+        (by change intOfZ p ≤ intOfZ p; omega)
+        (by
+          change intOfZ (zAdd p
+              (ZArith.BinInt.Z.of_nat (ZArith.BinInt.Z.to_nat n))) ≤
+            intOfZ (zAdd p (ZArith.BinInt.Z.max n Z0))
+          rw [heq]
+          omega)
+      change Mem.loadbytes m b p
+          (ZArith.BinInt.Z.of_nat (ZArith.BinInt.Z.to_nat n)) =
+        some (List.replicate (ZArith.BinInt.Z.to_nat n)
+          (Byte (CompCert4Lean.Lib.Integers.Byte.repr Z0))) at hz
+      rw [heq] at hz
+      simpa [init_data_size, bytes_of_init_data] using hz
+  | Init_addrof id ofs =>
+      cases hfind : Genv.find_symbol ge id with
+      | none => simp [store_init_data, hfind] at hstore
+      | some b' =>
+          have hs := Mem.loadbytes_store_same Mptr m b p (Vptr b' ofs) m' (by
+            simpa [store_init_data, hfind] using hstore)
+          have hsize : init_data_size (Init_addrof id ofs) = size_chunk Mptr := rfl
+          rw [hsize, hs]
+          congr 1
+          simp [bytes_of_init_data, hfind, Mptr, encode_val,
+            CompCert4Lean.X86_64.Archi.ptr64]
+
+private theorem pg_list_store_init_data_loadbytes
+    (F V : Type) (ge : Genv.t F V) (b : block) (il : List init_data)
+    (m : mem) (p : Z) (m' : mem)
+    (hstore : store_init_data_list ge m b p il = some m')
+    (hzero : readbytes_as_zero m b p (init_data_list_size il)) :
+    Mem.loadbytes m' b p (init_data_list_size il) =
+      some (bytes_of_init_data_list ge il) := by
+  induction il generalizing m p with
+  | nil =>
+      change some m = some m' at hstore
+      cases hstore
+      simpa [init_data_list_size, bytes_of_init_data_list] using
+        (Mem.loadbytes_empty m' b p Z0 (by change (0 : Int) ≤ 0; omega))
+  | cons i rest ih =>
+      change (match store_init_data ge m b p i with
+        | none => none
+        | some m1 => store_init_data_list ge m1 b
+          (zAdd p (init_data_size i)) rest) = some m' at hstore
+      cases hhead : store_init_data ge m b p i with
+      | none => simp [hhead] at hstore
+      | some m1 =>
+          have htail : store_init_data_list ge m1 b
+              (zAdd p (init_data_size i)) rest = some m' := by
+            simpa [hhead] using hstore
+          let Phead : block → Z → Prop := fun _ ofs =>
+            zLt ofs (zAdd p (init_data_size i))
+          have hunchtail : Mem.unchanged_on Phead m1 m' := by
+            apply Genv.store_init_data_list_unchanged F V ge Phead b rest m1
+              (zAdd p (init_data_size i)) m' htail
+            intro ofs hlo hp
+            change intOfZ (zAdd p (init_data_size i)) ≤ intOfZ ofs at hlo
+            change intOfZ ofs < intOfZ (zAdd p (init_data_size i)) at hp
+            omega
+          have hzerohead : readbytes_as_zero m b p (init_data_size i) := by
+            intro q len hlo hhi
+            apply hzero q len hlo
+            change intOfZ (zAdd q (zOfNat len)) ≤
+              intOfZ (zAdd p (init_data_list_size (i :: rest)))
+            change intOfZ (zAdd q (zOfNat len)) ≤
+              intOfZ (zAdd p (init_data_size i)) at hhi
+            simp only [init_data_list_size, ZArith.BinInt.Z.add,
+              intOfZ_zOfInt] at hhi ⊢
+            have hrestnonneg := init_data_list_size_pos rest
+            change (0 : Int) ≤ intOfZ (init_data_list_size rest) at hrestnonneg
+            omega
+          have hloadhead1 := pg_list_store_init_data_loadbytes_one F V ge m b p i m1
+            hhead hzerohead
+          have hloadhead : Mem.loadbytes m' b p (init_data_size i) =
+              some (bytes_of_init_data ge i) := by
+            apply pg_list_loadbytes_unchanged Phead m1 m' b p
+              (init_data_size i) _ hunchtail (init_data_size_pos i)
+            · intro ofs hi
+              exact hi.2
+            · exact hloadhead1
+          let Ptail : block → Z → Prop := fun _ ofs =>
+            zLe (zAdd p (init_data_size i)) ofs
+          have hunchhead : Mem.unchanged_on Ptail m m1 := by
+            apply Genv.store_init_data_unchanged F V ge Ptail b i m p m1 hhead
+            intro ofs hi hp
+            have hupper := hi.2
+            change intOfZ ofs < intOfZ (zAdd p (init_data_size i)) at hupper
+            change intOfZ (zAdd p (init_data_size i)) ≤ intOfZ ofs at hp
+            omega
+          have hzerotail : readbytes_as_zero m1 b
+              (zAdd p (init_data_size i)) (init_data_list_size rest) := by
+            intro q len hlo hhi
+            apply pg_list_loadbytes_unchanged Ptail m m1 b q (zOfNat len) _
+              hunchhead (pg_init_zOfNat_nonneg len)
+            · intro ofs hi
+              change intOfZ (zAdd p (init_data_size i)) ≤ intOfZ ofs
+              change intOfZ (zAdd p (init_data_size i)) ≤ intOfZ q at hlo
+              have hilower := hi.1
+              change intOfZ q ≤ intOfZ ofs at hilower
+              omega
+            · apply hzero q len
+              · change intOfZ p ≤ intOfZ q
+                change intOfZ (zAdd p (init_data_size i)) ≤ intOfZ q at hlo
+                simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt] at hlo
+                have hinonneg := init_data_size_pos i
+                change (0 : Int) ≤ intOfZ (init_data_size i) at hinonneg
+                omega
+              · change intOfZ (zAdd q (zOfNat len)) ≤
+                  intOfZ (zAdd p (init_data_list_size (i :: rest)))
+                change intOfZ (zAdd q (zOfNat len)) ≤
+                  intOfZ (zAdd (zAdd p (init_data_size i))
+                    (init_data_list_size rest)) at hhi
+                simp only [init_data_list_size, ZArith.BinInt.Z.add,
+                  intOfZ_zOfInt] at hhi ⊢
+                omega
+          have hloadtail := ih m1 (zAdd p (init_data_size i)) htail hzerotail
+          have hcat := Mem.loadbytes_concat m' b p (init_data_size i)
+            (init_data_list_size rest) (bytes_of_init_data ge i)
+            (bytes_of_init_data_list ge rest) hloadhead hloadtail
+            (init_data_size_pos i) (init_data_list_size_pos rest)
+          simpa [init_data_list_size, bytes_of_init_data_list] using hcat
+
+theorem store_init_data_list_loadbytes : store_init_data_list_loadbytesStatement := by
+  exact pg_list_store_init_data_loadbytes
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

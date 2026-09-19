@@ -3408,3 +3408,10 @@ theorem bb_simulation : bb_simulationStatement :=
   smallstep_bb_simulation
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+theorem f2b_simulation_step : f2b_simulation_stepStatement :=
+  smallstep_f2b_simulation_step
+
+end CompCert4Lean.Common.Smallstep

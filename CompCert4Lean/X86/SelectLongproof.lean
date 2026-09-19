@@ -2800,3 +2800,13 @@ theorem eval_orl
       simpa only [orl, hmatch] using hdefault
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+theorem eval_xorlimm
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_xorlimmStatement binary64_certificate binary32_certificate := by
+  exact eval_xorlimm_aux
+
+end CompCert4Lean.X86.SelectLongproof

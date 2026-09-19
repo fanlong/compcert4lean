@@ -5769,3 +5769,13 @@ theorem pred_eq_pos :
       (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h).2 hx)
 
 end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+theorem succ_eq_pos :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      succ_eq_posStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x hx
+  exact pg_sllt_succ_eq_pos ctx magnitude beta fexp x hx
+
+end CompCert4Lean.Flocq.Core.Ulp

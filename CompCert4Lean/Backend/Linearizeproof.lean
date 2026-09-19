@@ -2392,3 +2392,16 @@ theorem transf_step_correct : transf_step_correctStatement := by
 end
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+theorem transf_final_states : transf_final_statesStatement := by
+  intro service st1 st2 r hmatch hfinal
+  cases hfinal with
+  | intro rs m retcode hresult =>
+      cases hmatch with
+      | match_states_return _ _ _ ts hstack =>
+          cases hstack
+          exact Linear.final_state.final_state_intro rs m r hresult
+
+end CompCert4Lean.Backend.Linearizeproof

@@ -4684,3 +4684,96 @@ theorem filter_globdefs_domain : filter_globdefs_domainStatement :=
   filter_globdefs_domain_local
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+private theorem ug_symbols_public_mem {F V : Type} (ge : Genv.t F V)
+    (id : ident) (b : block) (hfind : Genv.find_symbol ge id = some b) :
+    Genv.public_symbol ge id = true ↔ id ∈ ge.genv_public := by
+  unfold Genv.public_symbol
+  rw [hfind]
+  generalize ge.genv_public = l
+  induction l with
+  | nil =>
+      change false = true ↔ id ∈ ([] : List ident)
+      simp
+  | cons a l ih =>
+      change (match peq id a with
+        | .left _ => true
+        | .right _ => _) = true ↔ id ∈ a :: l
+      cases hcmp : peq id a with
+      | left heq => simp [heq]
+      | right hne =>
+          constructor
+          · intro h
+            exact List.mem_cons_of_mem a (ih.mp h)
+          · intro h
+            rcases List.mem_cons.mp h with heq | hmem
+            · exact False.elim (hne heq)
+            · exact ih.mpr hmem
+
+theorem globals_symbols_inject : globals_symbols_injectStatement := by
+  intro p tp used hvalid hmatch j hj
+  have hp := Genv.globalenv_public RTL.fundef Unit p
+  have htp := Genv.globalenv_public RTL.fundef Unit tp
+  have hpub : (Genv.globalenv tp).genv_public = (Genv.globalenv p).genv_public := by
+    rw [hp, htp, hmatch.match_prog_public]
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro id
+    change Genv.public_symbol (Genv.globalenv tp) id =
+      Genv.public_symbol (Genv.globalenv p) id
+    cases ht : Genv.find_symbol (Genv.globalenv tp) id with
+    | some b' =>
+        obtain ⟨b, hs, _⟩ := hj.symbols_inject_3 id b' ht
+        simp only [Genv.public_symbol, ht, hs, hpub]
+    | none =>
+        cases hs : Genv.find_symbol (Genv.globalenv p) id with
+        | none => simp only [Genv.public_symbol, ht, hs]
+        | some b =>
+            have hfalse : Genv.public_symbol (Genv.globalenv p) id = false := by
+              cases hv : Genv.public_symbol (Genv.globalenv p) id with
+              | false => rfl
+              | true =>
+                  have hin := (ug_symbols_public_mem (Genv.globalenv p) id b hs).mp hv
+                  rw [hp] at hin
+                  obtain ⟨b', hb', _⟩ := hj.symbols_inject_2 id b
+                    (hvalid.used_public id hin) hs
+                  rw [ht] at hb'
+                  contradiction
+            rw [hfalse]
+            simp only [Genv.public_symbol, ht]
+  · intro id b b' delta hinj hfind
+    exact hj.symbols_inject_1 id b b' delta hinj hfind
+  · intro id b hpublic hfind
+    have hin := (ug_symbols_public_mem (Genv.globalenv p) id b hfind).mp hpublic
+    rw [hp] at hin
+    obtain ⟨b', hfind', hinj⟩ := hj.symbols_inject_2 id b
+      (hvalid.used_public id hin) hfind
+    exact ⟨b', hinj, hfind'⟩
+  · intro b b' delta hinj
+    change Genv.block_is_volatile (Genv.globalenv tp) b' =
+      Genv.block_is_volatile (Genv.globalenv p) b
+    unfold Genv.block_is_volatile
+    cases hv : Genv.find_var_info (Genv.globalenv p) b with
+    | some gv =>
+        have hd := (Genv.find_var_info_iff _ _ _ _ _).mp hv
+        have hd' := (hj.defs_inject b b' delta (.Gvar gv) hinj hd).1
+        have hv' := (Genv.find_var_info_iff _ _ _ _ _).mpr hd'
+        rw [hv']
+    | none =>
+        cases hv' : Genv.find_var_info (Genv.globalenv tp) b' with
+        | none => rfl
+        | some gv =>
+            have hd' := (Genv.find_var_info_iff _ _ _ _ _).mp hv'
+            have hd := (hj.defs_rev_inject b b' delta (.Gvar gv) hinj hd').1
+            have hv1 := (Genv.find_var_info_iff _ _ _ _ _).mpr hd
+            rw [hv] at hv1
+            contradiction
+
+end CompCert4Lean.Backend.Unusedglobproof

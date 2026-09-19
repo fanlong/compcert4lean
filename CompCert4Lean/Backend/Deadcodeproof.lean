@@ -2489,3 +2489,21 @@ open CompCert4Lean.Lib.Integers
   exact ⟨m2', Mem.storebytes_store m2 b ofs chunk v2 m2' hbytes2 hvalid.2, hagree⟩
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+
+theorem magree_store_left : magree_store_leftStatement := by
+  intro m1 m2 P chunk b ofs v1 m1' hma hstore hP
+  apply magree_storebytes_left m1 m2 P b ofs (encode_val chunk v1) m1' hma
+    (Mem.store_storebytes m1 b ofs chunk v1 m1' hstore)
+  intro i hi
+  have hsize : zOfNat (encode_val chunk v1).length = size_chunk chunk := by
+    rw [encode_val_length chunk v1]
+    exact (size_chunk_conv chunk).symm
+  rw [hsize] at hi
+  exact hP i hi
+
+end CompCert4Lean.Backend.Deadcodeproof

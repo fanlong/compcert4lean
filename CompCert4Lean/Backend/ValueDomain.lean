@@ -5527,3 +5527,75 @@ theorem is_uns_zero_ext : is_uns_zero_extStatement := by
         run_tac isUnsZeroExtSimpPrivate ["CompCert4Lean.Lib.Integers.sumboolSelect"]
         rfl
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem is_sgn_sign_ext : is_sgn_sign_extStatement := by
+  intro n i hn
+  have hnsub : intOfZ (zSub n z1) = intOfZ n - 1 := by
+    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    rfl
+  change 0 < intOfZ n at hn
+  constructor
+  · intro hs
+    apply CompCert4Lean.Lib.Integers.Int.same_bits_eq_proof
+    intro m hm
+    rw [CompCert4Lean.Lib.Integers.Int.bits_sign_ext_proof n i m hm]
+    run_tac isUnsZeroExtSimpPrivate ["CompCert4Lean.Lib.Integers.zltSelect"]
+    cases hmn : CompCert4Lean.Lib.Coqlib.zlt m n with
+    | left hlt =>
+        run_tac isUnsZeroExtSimpPrivate ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+        rfl
+    | right hge =>
+        run_tac isUnsZeroExtSimpPrivate ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+        have hm' : 0 ≤ intOfZ m ∧ intOfZ m < 32 := hm
+        change intOfZ n ≤ intOfZ m at hge
+        have hnm : zLe (zSub n z1) m := by
+          change intOfZ (zSub n z1) ≤ intOfZ m
+          omega
+        have hnb : zLe z0 (zSub n z1) ∧
+            zLt (zSub n z1) CompCert4Lean.Lib.Integers.Int.zwordsize := by
+          change 0 ≤ intOfZ (zSub n z1) ∧ intOfZ (zSub n z1) < 32
+          omega
+        exact (hs (zSub n z1) hnb (by
+          change intOfZ (zSub n z1) ≤ intOfZ (zSub n z1)
+          omega)).trans (hs m hm hnm).symm
+  · intro heq m hm hnm
+    have hbits (k : Z)
+        (hk : zLe z0 k ∧ zLt k CompCert4Lean.Lib.Integers.Int.zwordsize)
+        (hnk : zLe (zSub n z1) k) :
+        CompCert4Lean.Lib.Integers.Int.testbit
+            (CompCert4Lean.Lib.Integers.Int.sign_ext n i) k =
+          CompCert4Lean.Lib.Integers.Int.testbit i (zSub n z1) := by
+      rw [CompCert4Lean.Lib.Integers.Int.bits_sign_ext_proof n i k hk]
+      run_tac isUnsZeroExtSimpPrivate ["CompCert4Lean.Lib.Integers.zltSelect"]
+      cases hkn : CompCert4Lean.Lib.Coqlib.zlt k n with
+      | left hlt =>
+          run_tac isUnsZeroExtSimpPrivate ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+          congr 1
+          apply intOfZ_injective
+          change intOfZ k < intOfZ n at hlt
+          change intOfZ (zSub n z1) ≤ intOfZ k at hnk
+          omega
+      | right hge =>
+          run_tac isUnsZeroExtSimpPrivate ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+          rfl
+    have htop : zLe z0 (zSub CompCert4Lean.Lib.Integers.Int.zwordsize z1) ∧
+        zLt (zSub CompCert4Lean.Lib.Integers.Int.zwordsize z1)
+          CompCert4Lean.Lib.Integers.Int.zwordsize := by
+      change (0 : _root_.Int) ≤ 31 ∧ (31 : _root_.Int) < 32
+      decide
+    have hntop : zLe (zSub n z1)
+        (zSub CompCert4Lean.Lib.Integers.Int.zwordsize z1) := by
+      change intOfZ (zSub n z1) ≤ 31
+      change intOfZ (zSub n z1) ≤ intOfZ m at hnm
+      have hm' : 0 ≤ intOfZ m ∧ intOfZ m < 32 := hm
+      omega
+    have hleft := hbits m hm hnm
+    have hright := hbits (zSub CompCert4Lean.Lib.Integers.Int.zwordsize z1) htop hntop
+    rw [heq] at hleft hright
+    exact hleft.trans hright.symm
+
+end CompCert4Lean.Backend.ValueDomain

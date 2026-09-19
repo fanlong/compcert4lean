@@ -966,3 +966,205 @@ theorem transf_function_at : transf_function_atStatement := by
       exact renum_cfg_nodes (pnum f) hinj f.fn_code pc pc' i hcode hnum
 
 end CompCert4Lean.Backend.Renumberproof
+
+namespace CompCert4Lean.Backend.Renumberproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.X86.Op
+
+private theorem renumber_step_senv_ext (se1 se2 : Senv.t)
+    (he : Senv.equiv se1 se2) (hn : se2.nextblock = se1.nextblock) :
+    se2 = se1 := by
+  have hf : se2.find_symbol = se1.find_symbol := funext he.1
+  have hp : se2.public_symbol = se1.public_symbol := funext he.2.1
+  have hv : se2.block_is_volatile = se1.block_is_volatile := funext he.2.2
+  have hi : se2.invert_symbol = se1.invert_symbol := by
+    funext b
+    cases h1 : se1.invert_symbol b with
+    | some id =>
+        exact se2.find_invert_symbol id ((he.1 id).trans
+          (se1.invert_find_symbol b h1))
+    | none =>
+        cases h2 : se2.invert_symbol b with
+        | none => rfl
+        | some id =>
+            have hs := se2.invert_find_symbol b h2
+            rw [he.1 id] at hs
+            have hc := se1.find_invert_symbol id hs
+            rw [h1] at hc
+            cases hc
+  cases se1
+  cases se2
+  cases hf
+  cases hp
+  cases hv
+  cases hi
+  cases hn
+  rfl
+
+private theorem renumber_step_senv_eq (prog tprog : program)
+    (hm : match_prog prog tprog) :
+    Genv.to_senv (Genv.globalenv tprog) =
+      Genv.to_senv (Genv.globalenv prog) := by
+  letI : Linker fundef := Linker_fundef function
+  letI : Linker Unit := Linker_unit
+  letI : Linker program := Linker_prog fundef Unit
+  apply renumber_step_senv_ext _ _ (senv_preserved prog tprog hm)
+  have hinit : renum_symb_next_rel
+      (Genv.empty_genv fundef Unit prog.prog_public)
+      (Genv.empty_genv fundef Unit tprog.prog_public) := ⟨rfl, rfl⟩
+  exact (renum_symb_next_add_globals prog.prog_defs tprog.prog_defs
+    hm.1 _ _ hinit).2
+
+set_option maxHeartbeats 800000 in
+ theorem step_simulation
+    [binary64_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    step_simulationStatement := by
+  intro xi prog tprog hprog S1 t S2 hstep S1' hmatch
+  have hsym := symbols_preserved prog tprog hprog
+  have hse := renumber_step_senv_eq prog tprog hprog
+  cases hstep with
+  | exec_Inop s f sp pc rs m pc' hcode =>
+      cases hmatch with
+      | match_regular_states _ _ _ _ _ _ ts hst hr =>
+          refine ⟨_, ?_, match_regular_states s f sp pc' rs m ts hst
+            (reach_succ f pc _ pc' hcode (by simp [successors_instr]) hr)⟩
+          apply step.exec_Inop
+          exact transf_function_at f pc _ hcode hr
+  | exec_Iop s f sp pc rs m op args res pc' v hcode heval =>
+      cases hmatch with
+      | match_regular_states _ _ _ _ _ _ ts hst hr =>
+          refine ⟨_, ?_, match_regular_states s f sp pc' (Regmap.set res v rs) m ts hst
+            (reach_succ f pc _ pc' hcode (by simp [successors_instr]) hr)⟩
+          apply step.exec_Iop (op := op) (args := args)
+          · exact transf_function_at f pc _ hcode hr
+          · rw [eval_operation_preserved _ _ _ _ _ _ hsym]
+            exact heval
+  | exec_Iload s f sp pc rs m chunk addr args dst pc' a v hcode haddr hload =>
+      cases hmatch with
+      | match_regular_states _ _ _ _ _ _ ts hst hr =>
+          refine ⟨_, ?_, match_regular_states s f sp pc' (Regmap.set dst v rs) m ts hst
+            (reach_succ f pc _ pc' hcode (by simp [successors_instr]) hr)⟩
+          apply step.exec_Iload (chunk := chunk) (addr := addr) (args := args) (a := a)
+          · exact transf_function_at f pc _ hcode hr
+          · rw [eval_addressing_preserved _ _ _ _ _ _ hsym]
+            exact haddr
+          · exact hload
+  | exec_Istore s f sp pc rs m chunk addr args src pc' a m' hcode haddr hstore =>
+      cases hmatch with
+      | match_regular_states _ _ _ _ _ _ ts hst hr =>
+          refine ⟨_, ?_, match_regular_states s f sp pc' rs m' ts hst
+            (reach_succ f pc _ pc' hcode (by simp [successors_instr]) hr)⟩
+          apply step.exec_Istore (chunk := chunk) (addr := addr) (args := args)
+            (src := src) (a := a)
+          · exact transf_function_at f pc _ hcode hr
+          · rw [eval_addressing_preserved _ _ _ _ _ _ hsym]
+            exact haddr
+          · exact hstore
+  | exec_Icall s f sp pc rs m sig ros args res pc' fd hcode hfind hsig =>
+      cases hmatch with
+      | match_regular_states _ _ _ _ _ _ ts hst hr =>
+          have hr' := reach_succ f pc _ pc' hcode (by simp [successors_instr]) hr
+          refine ⟨_, ?_, match_callstates _ fd _ m _
+            (list_forall2.cons _ _ (match_frames_intro res f sp pc' rs hr') hst)⟩
+          apply step.exec_Icall (sig := sig) (ros := ros)
+          · exact transf_function_at f pc _ hcode hr
+          · exact find_function_translated prog tprog hprog ros rs fd hfind
+          · rw [sig_preserved]
+            exact hsig
+  | exec_Itailcall s f stk pc rs m sig ros args fd m' hcode hfind hsig hfree =>
+      cases hmatch with
+      | match_regular_states _ _ _ _ _ _ ts hst hr =>
+          refine ⟨_, ?_, match_callstates s fd _ m' ts hst⟩
+          apply step.exec_Itailcall (sig := sig) (ros := ros)
+          · exact transf_function_at f pc _ hcode hr
+          · exact find_function_translated prog tprog hprog ros rs fd hfind
+          · rw [sig_preserved]
+            exact hsig
+          · exact hfree
+  | exec_Ibuiltin s f sp pc rs m ef args res pc' vargs tr vres m' hcode hargs hcall =>
+      cases hmatch with
+      | match_regular_states _ _ _ _ _ _ ts hst hr =>
+          refine ⟨_, ?_, match_regular_states s f sp pc' (regmap_setres res vres rs) m' ts hst
+            (reach_succ f pc _ pc' hcode (by simp [successors_instr]) hr)⟩
+          apply step.exec_Ibuiltin (ef := ef) (args := args) (vargs := vargs)
+          · exact transf_function_at f pc _ hcode hr
+          · rw [hse]
+            exact hargs
+          · rw [hse]
+            exact hcall
+  | exec_Icond s f sp pc rs m cond args ifso ifnot b pc' hcode heval hpc =>
+      cases hmatch with
+      | match_regular_states _ _ _ _ _ _ ts hst hr =>
+          have hr' : reach f pc' := reach_succ f pc _ pc' hcode (by
+            rw [hpc]
+            cases b <;> simp [successors_instr]) hr
+          refine ⟨_, ?_, match_regular_states s f sp pc' rs m ts hst hr'⟩
+          apply step.exec_Icond (cond := cond) (args := args)
+            (ifso := Renumber.renum_pc (pnum f) ifso)
+            (ifnot := Renumber.renum_pc (pnum f) ifnot) (b := b)
+          · exact transf_function_at f pc _ hcode hr
+          · exact heval
+          · rw [hpc]
+            cases b <;> rfl
+  | exec_Ijumptable s f sp pc rs m arg tbl n pc' hcode harg hnth =>
+      cases hmatch with
+      | match_regular_states _ _ _ _ _ _ ts hst hr =>
+          have hr' : reach f pc' := reach_succ f pc _ pc' hcode
+            (list_nth_z_in _ _ _ _ hnth) hr
+          refine ⟨_, ?_, match_regular_states s f sp pc' rs m ts hst hr'⟩
+          apply step.exec_Ijumptable (arg := arg) (tbl := tbl.map (Renumber.renum_pc (pnum f)))
+            (n := n)
+          · exact transf_function_at f pc _ hcode hr
+          · exact harg
+          · rw [list_nth_z_map, hnth]
+            rfl
+  | exec_Ireturn s f stk pc rs m ores m' hcode hfree =>
+      cases hmatch with
+      | match_regular_states _ _ _ _ _ _ ts hst hr =>
+          refine ⟨_, ?_, match_returnstates s _ m' ts hst⟩
+          apply step.exec_Ireturn
+          · exact transf_function_at f pc _ hcode hr
+          · exact hfree
+  | exec_function_internal s f args m m' stk htypes halloc =>
+      cases hmatch with
+      | match_callstates _ _ _ _ ts hst =>
+          refine ⟨_, ?_, match_regular_states s f (Vptr stk Ptrofs.zero) f.fn_entrypoint
+            (init_regs args f.fn_params) m' ts hst
+            CompCert4Lean.Lib.Postorder.reachable.reachable_root⟩
+          exact step.exec_function_internal ts (Renumber.transf_function f) args m m' stk
+            htypes halloc
+  | exec_function_external s ef args res tr m m' hcall =>
+      cases hmatch with
+      | match_callstates _ _ _ _ ts hst =>
+          refine ⟨_, ?_, match_returnstates s res m' ts hst⟩
+          apply step.exec_function_external
+          rw [hse]
+          exact hcall
+  | exec_return res f sp pc rs s vres m =>
+      cases hmatch with
+      | match_returnstates _ _ _ ts hst =>
+          cases hst with
+          | cons sf tsf hframe htail =>
+              cases hframe with
+              | match_frames_intro _ _ _ _ _ hr =>
+                  refine ⟨_, ?_, match_regular_states s f sp pc (Regmap.set res vres rs)
+                    m _ htail hr⟩
+                  exact step.exec_return _ _ _ _ _ _ _ _
+
+end CompCert4Lean.Backend.Renumberproof

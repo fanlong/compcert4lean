@@ -5074,3 +5074,137 @@ theorem make_ptrofsconst_correct
   exact make_longconst_correct ge (CompCert4Lean.Lib.Integers.Int64.repr n) e le m
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Csharpminor
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+
+theorem make_boolean_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_boolean_correctStatement := by
+  intro ge e le m a v ty b hval hbool
+  unfold make_boolean
+  cases hclass : classify_bool ty with
+  | bool_case_i =>
+      cases v with
+      | Vint n =>
+          have hb : b = !(Int.eq n Int.zero) := by
+            simpa [bool_val, hclass] using hbool.symm
+          refine ⟨_, make_cmpu_ne_zero_correct ge e le m a n hval, ?_⟩
+          rw [hb]
+          cases heq : Int.eq n Int.zero <;> simp [heq] <;>
+            exact CompCert4Lean.Common.Values.Val.bool_of_val_int _
+      | Vptr block ofs =>
+          simp [bool_val, hclass, CompCert4Lean.X86_64.Archi.ptr64] at hbool
+      | Vlong n | Vfloat n | Vsingle n | Vundef =>
+          simp [bool_val, hclass, CompCert4Lean.X86_64.Archi.ptr64] at hbool
+  | bool_case_l =>
+      cases v with
+      | Vlong n =>
+          have hb : b = !(Int64.eq n Int64.zero) := by
+            simpa [bool_val, hclass] using hbool.symm
+          refine ⟨.Vint (if Int64.eq n Int64.zero then Int.zero else Int.one), ?_, ?_⟩
+          · apply Csharpminor.eval_Ebinop
+            · exact hval
+            · exact make_longconst_correct ge Int64.zero e le m
+            · change Option.map Val.of_bool
+                (Val.cmplu_bool (CompCert4Lean.Common.Memory.Mem.valid_pointer m) .Cne
+                  (.Vlong n) (.Vlong Int64.zero)) = some _
+              cases hEq : decide (n.intval = Int64.zero.intval) <;>
+                simp [Val.cmplu_bool, Val.of_bool, Int64.cmpu,
+                  Int64.eq, WordCore.cmpu, WordCore.eq,
+                  Vtrue, Vfalse, hEq]
+          · rw [hb]
+            cases heq : Int64.eq n Int64.zero <;> simp [heq] <;>
+              exact CompCert4Lean.Common.Values.Val.bool_of_val_int _
+      | Vptr block ofs =>
+          have hh : CompCert4Lean.Common.Memory.Mem.weak_valid_pointer m block
+              (Ptrofs.unsigned ofs) = true ∧ b = true := by
+            simpa [bool_val, hclass, CompCert4Lean.X86_64.Archi.ptr64] using hbool
+          have hv : CompCert4Lean.Common.Memory.Mem.weak_valid_pointer m block
+              (Ptrofs.unsigned ofs) = true := by
+            exact hh.1
+          refine ⟨CompCert4Lean.Common.Values.Vone, ?_, ?_⟩
+          · apply Csharpminor.eval_Ebinop
+            · exact hval
+            · exact make_longconst_correct ge Int64.zero e le m
+            · change Option.map Val.of_bool
+                (Val.cmplu_bool (CompCert4Lean.Common.Memory.Mem.valid_pointer m) .Cne
+                  (.Vptr block ofs) (.Vlong Int64.zero)) = some CompCert4Lean.Common.Values.Vone
+              simp [CompCert4Lean.Common.Memory.Mem.weak_valid_pointer] at hv ⊢
+              simp [Val.cmplu_bool, Val.of_bool, CompCert4Lean.X86_64.Archi.ptr64,
+                hv, Val.cmp_different_blocks, Int64.eq, WordCore.eq,
+                Vtrue, Vfalse, CompCert4Lean.Common.Values.Vone]
+          · rw [hh.2]
+            exact .bool_of_val_int _
+      | Vint n | Vfloat n | Vsingle n | Vundef =>
+          simp [bool_val, hclass, CompCert4Lean.X86_64.Archi.ptr64] at hbool
+  | bool_case_f =>
+      cases v with
+      | Vfloat f =>
+          have hb : b = !(CompCert4Lean.Lib.Floats.Float.cmp .Ceq f
+              CompCert4Lean.Lib.Floats.Float.zero) := by
+            simpa [bool_val, hclass] using hbool.symm
+          refine ⟨.Vint (if CompCert4Lean.Lib.Floats.Float.cmp .Ceq f
+              CompCert4Lean.Lib.Floats.Float.zero then Int.zero else Int.one), ?_, ?_⟩
+          · apply Csharpminor.eval_Ebinop
+            · exact hval
+            · exact make_floatconst_correct ge CompCert4Lean.Lib.Floats.Float.zero e le m
+            · change some (Val.cmpf .Cne (.Vfloat f)
+                (.Vfloat CompCert4Lean.Lib.Floats.Float.zero)) = some _
+              cases hcmp : CompCert4Lean.Lib.Floats.Float.compare f
+                  CompCert4Lean.Lib.Floats.Float.zero with
+              | none =>
+                  simp [Val.cmpf, Val.cmpf_bool, Val.of_optbool,
+                    Vtrue, Vfalse, CompCert4Lean.Lib.Floats.Float.cmp,
+                    CompCert4Lean.Lib.Floats.cmp_of_comparison, hcmp]
+              | some c =>
+                  cases c <;>
+                    simp [Val.cmpf, Val.cmpf_bool, Val.of_optbool,
+                      Vtrue, Vfalse, CompCert4Lean.Lib.Floats.Float.cmp,
+                      CompCert4Lean.Lib.Floats.cmp_of_comparison, hcmp]
+          · rw [hb]
+            cases hEq : CompCert4Lean.Lib.Floats.Float.cmp .Ceq f
+                CompCert4Lean.Lib.Floats.Float.zero <;>
+              simp [hEq] <;> exact .bool_of_val_int _
+      | Vint n | Vlong n | Vsingle n | Vptr n _ | Vundef =>
+          simp [bool_val, hclass] at hbool
+  | bool_case_s =>
+      cases v with
+      | Vsingle f =>
+          have hb : b = !(CompCert4Lean.Lib.Floats.Float32.cmp .Ceq f
+              CompCert4Lean.Lib.Floats.Float32.zero) := by
+            simpa [bool_val, hclass] using hbool.symm
+          refine ⟨.Vint (if CompCert4Lean.Lib.Floats.Float32.cmp .Ceq f
+              CompCert4Lean.Lib.Floats.Float32.zero then Int.zero else Int.one), ?_, ?_⟩
+          · apply Csharpminor.eval_Ebinop
+            · exact hval
+            · exact make_singleconst_correct ge CompCert4Lean.Lib.Floats.Float32.zero e le m
+            · change some (Val.cmpfs .Cne (.Vsingle f)
+                (.Vsingle CompCert4Lean.Lib.Floats.Float32.zero)) = some _
+              cases hcmp : CompCert4Lean.Lib.Floats.Float32.compare f
+                  CompCert4Lean.Lib.Floats.Float32.zero with
+              | none =>
+                  simp [Val.cmpfs, Val.cmpfs_bool, Val.of_optbool,
+                    Vtrue, Vfalse, CompCert4Lean.Lib.Floats.Float32.cmp,
+                    CompCert4Lean.Lib.Floats.cmp_of_comparison, hcmp]
+              | some c =>
+                  cases c <;>
+                    simp [Val.cmpfs, Val.cmpfs_bool, Val.of_optbool,
+                      Vtrue, Vfalse, CompCert4Lean.Lib.Floats.Float32.cmp,
+                      CompCert4Lean.Lib.Floats.cmp_of_comparison, hcmp]
+          · rw [hb]
+            cases hEq : CompCert4Lean.Lib.Floats.Float32.cmp .Ceq f
+                CompCert4Lean.Lib.Floats.Float32.zero <;>
+              simp [hEq] <;> exact .bool_of_val_int _
+      | Vint n | Vlong n | Vfloat n | Vptr n _ | Vundef =>
+          simp [bool_val, hclass] at hbool
+  | bool_default =>
+      simp [bool_val, hclass] at hbool
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

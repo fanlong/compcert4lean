@@ -2161,3 +2161,32 @@ noncomputable def record_conds_correct : record_conds_correctStatement := by
   exact Hrec cu hcompat hmap
 
 end CompCert4Lean.Backend.Tunnelingproof
+
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Lib.Maps
+
+noncomputable def record_gotos_correct_1 : record_gotos_correct_1Statement := by
+  intro fn
+  apply record_conds_correct fn (fn.fn_code, record_branches fn)
+  · rcases record_branches_correct fn with ⟨f, BMC⟩
+    refine ⟨f, ?_⟩
+    intro pc
+    have H := BMC pc
+    cases GET : PTree.get pc fn.fn_code with
+    | none => simpa [branch_map_correct_2, GET] using H
+    | some bb =>
+        cases bb with
+        | nil => simpa [branch_map_correct_2, GET] using H
+        | cons instr tail =>
+            cases instr with
+            | Lcond cond args s1 s2 =>
+                left
+                simpa [GET] using H
+            | _ => simpa [branch_map_correct_2, GET] using H
+  · intro pc b GET
+    exact GET
+
+end CompCert4Lean.Backend.Tunnelingproof

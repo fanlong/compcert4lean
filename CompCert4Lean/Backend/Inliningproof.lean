@@ -3481,3 +3481,10 @@ theorem tr_builtin_args : tr_builtin_argsStatement := by
         Val.inject_list_cons F v v' _ vl' hv hvl⟩
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+theorem match_stacks_invariant : match_stacks_invariantStatement :=
+  match_stacks_invariant_local
+
+end CompCert4Lean.Backend.Inliningproof

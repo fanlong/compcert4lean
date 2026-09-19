@@ -1994,3 +1994,70 @@ theorem extcall_arguments_match : extcall_arguments_matchStatement := by
     (CompCert4Lean.X86.Conventions1.loc_arguments cfg sg) args hargs
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+private theorem builtin_arg_lessdef_aux_asmgenproof
+    (ge : Senv.t) (ms : MachRegset) (sp : Val) (rs : AsmRegset)
+    (m m' : Mem) (a : builtin_arg Mreg) (v : Val)
+    (hagree : agree ms sp rs) (hext : Mem.extends m m')
+    (harg : eval_builtin_arg ge ms sp m a v) :
+    ∃ v', eval_builtin_arg ge
+        (fun r => rs (CompCert4Lean.X86.Asm.preg_of r)) sp m' a v' ∧
+      Val.lessdef v v' := by
+  induction harg with
+  | eval_BA r =>
+      exact ⟨_, eval_BA r, hagree.agree_mregs r⟩
+  | eval_BA_int n =>
+      exact ⟨_, eval_BA_int n, Val.lessdef_refl _⟩
+  | eval_BA_long n =>
+      exact ⟨_, eval_BA_long n, Val.lessdef_refl _⟩
+  | eval_BA_float n =>
+      exact ⟨_, eval_BA_float n, Val.lessdef_refl _⟩
+  | eval_BA_single n =>
+      exact ⟨_, eval_BA_single n, Val.lessdef_refl _⟩
+  | eval_BA_loadstack chunk ofs v hload =>
+      rcases extcall_loadv_extends_same chunk m m'
+        (Val.offset_ptr sp ofs) v hext hload with ⟨v', hload', hld⟩
+      exact ⟨v', eval_BA_loadstack chunk ofs v' hload', hld⟩
+  | eval_BA_addrstack ofs =>
+      exact ⟨_, eval_BA_addrstack ofs, Val.lessdef_refl _⟩
+  | eval_BA_loadglobal chunk id ofs v hload =>
+      rcases extcall_loadv_extends_same chunk m m'
+        (Senv.symbol_address ge id ofs) v hext hload with ⟨v', hload', hld⟩
+      exact ⟨v', eval_BA_loadglobal chunk id ofs v' hload', hld⟩
+  | eval_BA_addrglobal id ofs =>
+      exact ⟨_, eval_BA_addrglobal id ofs, Val.lessdef_refl _⟩
+  | eval_BA_splitlong hi lo vhi vlo hhi hlo ihhi ihlo =>
+      rcases ihhi with ⟨vhi', hhi', hldhi⟩
+      rcases ihlo with ⟨vlo', hlo', hldlo⟩
+      exact ⟨_, eval_BA_splitlong hi lo vhi' vlo' hhi' hlo',
+        Val.longofwords_lessdef vhi vlo vhi' vlo' hldhi hldlo⟩
+  | eval_BA_addptr a1 a2 v1 v2 h1 h2 ih1 ih2 =>
+      rcases ih1 with ⟨v1', h1', hld1⟩
+      rcases ih2 with ⟨v2', h2', hld2⟩
+      refine ⟨_, eval_BA_addptr a1 a2 v1' v2' h1' h2', ?_⟩
+      simpa only [CompCert4Lean.X86_64.Archi.ptr64, if_true] using
+        (Val.addl_lessdef v1 v1' v2 v2' hld1 hld2)
+
+theorem builtin_args_match : builtin_args_matchStatement := by
+  intro ge ms sp rs m m' hagree hext al vl hargs
+  induction hargs with
+  | nil =>
+      exact ⟨[], list_forall2.nil _, Val.lessdef_list_nil⟩
+  | @cons a al v vl ha htail ih =>
+      rcases builtin_arg_lessdef_aux_asmgenproof ge ms sp rs m m' a v
+        hagree hext ha with ⟨v', ha', hld⟩
+      rcases ih with ⟨vl', htail', hldtail⟩
+      exact ⟨v' :: vl',
+        list_forall2.cons _ _ (builtin_arg_match ge rs sp m' a v' ha') htail',
+        Val.lessdef_list_cons _ _ _ _ hld hldtail⟩
+
+end CompCert4Lean.Backend.Asmgenproof0

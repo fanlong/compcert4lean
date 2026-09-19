@@ -3979,3 +3979,138 @@ theorem forget_reg_charact : forget_reg_charactStatement := by
   exact cse_forget_reg_charact
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+
+private theorem cse_store_disjoint
+    (sz1 : Z) (b1 : block) (ofs1 : ptrofs)
+    (bc1 : block_classification) (p1 : aptr) (sz2 : Z) (b2 : block)
+    (ofs2 : ptrofs) (bc2 : block_classification) (p2 : aptr)
+    (ge : genv) (sp : block)
+    (hd : pdisjoint p1 sz1 p2 sz2 = true)
+    (hp1 : pmatch bc1 b1 ofs1 p1) (hp2 : pmatch bc2 b2 ofs2 p2)
+    (hg1 : genv_match bc1 ge) (hs1 : bc1 sp = BCstack)
+    (hg2 : genv_match bc2 ge) (hs2 : bc2 sp = BCstack) :
+    b1 ≠ b2 ∨
+      zLe (zAdd (Ptrofs.unsigned ofs1) sz1) (Ptrofs.unsigned ofs2) ∨
+      zLe (zAdd (Ptrofs.unsigned ofs2) sz2) (Ptrofs.unsigned ofs1) := by
+  by_cases hb : b1 = b2
+  · subst b2
+    have hg : ∀ id, bc1 b1 = BCglob id ↔ bc2 b1 = BCglob id :=
+      fun id => (hg1.1 id b1).symm.trans (hg2.1 id b1)
+    have hs : bc1 b1 = BCstack ↔ bc2 b1 = BCstack := by
+      constructor
+      · intro h
+        have he := bc1.bc_stack b1 sp h hs1
+        simpa [he] using hs2
+      · intro h
+        have he := bc2.bc_stack b1 sp h hs2
+        simpa [he] using hs1
+    cases hp1 <;> cases hp2 <;> simp_all [pdisjoint]
+    all_goals
+      run_tac
+        let env ← Lean.getEnv
+        let findDef := fun (stem : String) => do
+          let some (nm, _) := env.constants.toList.find? (fun (n, _) =>
+            n.toString.endsWith (".CompCert4Lean.Backend.ValueDomain." ++ stem))
+            | throwError "Missing Boolean comparison definition"
+          pure (Lean.mkIdent nm)
+        let zl ← findDef "zle"
+        let pe ← findDef "peqBool"
+        let bs ← findDef "boolOfSumbool"
+        let za ← findDef "zAdd"
+        let pu ← findDef "Ptrofs.unsigned"
+        Lean.Elab.Tactic.evalTactic (← `(tactic| dsimp only [$zl:ident, $pe:ident, $bs:ident, $za:ident, $pu:ident] at $(Lean.mkIdent `hd):ident))
+    case gl.gl =>
+      rcases hd with hl | hr
+      · cases hz : CompCert4Lean.Lib.Coqlib.zle
+          (zAdd (Ptrofs.unsigned ofs1) sz1) (Ptrofs.unsigned ofs2) with
+        | left hle => exact Or.inl hle
+        | right hgt => simp [hz] at hl
+      · cases hz : CompCert4Lean.Lib.Coqlib.zle
+          (zAdd (Ptrofs.unsigned ofs2) sz2) (Ptrofs.unsigned ofs1) with
+        | left hle => exact Or.inr hle
+        | right hgt => simp [hz] at hr
+    case stk.stk =>
+      rcases hd with hl | hr
+      · cases hz : CompCert4Lean.Lib.Coqlib.zle
+          (zAdd (Ptrofs.unsigned ofs1) sz1) (Ptrofs.unsigned ofs2) with
+        | left hle => exact Or.inl hle
+        | right hgt => simp [hz] at hl
+      · cases hz : CompCert4Lean.Lib.Coqlib.zle
+          (zAdd (Ptrofs.unsigned ofs2) sz2) (Ptrofs.unsigned ofs1) with
+        | left hle => exact Or.inr hle
+        | right hgt => simp [hz] at hr
+    all_goals
+      rename_i id1 id2 h1 h2
+      have hid : id1 = id2 := (hg id2).mpr rfl
+      subst id2
+      cases he : CompCert4Lean.Lib.Coqlib.peq id1 id1 with
+      | left heq => simp [he] at hd
+      | right hne => exact False.elim (hne rfl)
+  · exact Or.inl hb
+
+
+theorem kill_loads_after_store_holds
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    ∀ cfg, kill_loads_after_store_holdsStatement cfg := by
+  intro cfg valu ge sp rs m n addr args a chunk v m' bc approx ae am
+    hnum haddr hstore hge hsp hem happ
+  subst approx
+  cases a <;> simp [Mem.storev] at hstore
+  rename_i b ofs
+  have hp : pmatch bc b ofs (aaddressing cfg (VA.State ae am) addr args) := by
+    apply match_aptr_of_aval cfg bc b ofs
+    exact CompCert4Lean.X86.ValueAOp.eval_static_addressing_64_sound
+      bc ge hge sp hsp addr _ _ _ haddr (aregs_sound bc rs ae args hem)
+  apply kill_equations_hold valu ge (Vptr sp Ptrofs.zero) rs m n
+    (CSE.filter_after_store n (aaddressing cfg (VA.State ae am) addr args)
+      (size_chunk chunk)) m' hnum
+  intro rh res hfilter hvalid hev
+  cases hev with
+  | op_eval_to op vl res heval =>
+      have hop := cse_operation_memory_independent
+        (F := RTL.fundef) (V := Unit) ge (Vptr sp Ptrofs.zero) op
+        (List.map valu vl) m m' hfilter
+      exact rhs_eval_to.op_eval_to op vl res (by rw [← hop]; exact heval)
+  | load_eval_to chunk' addr' vl a' res p haddr' hload =>
+      cases hvalid with
+      | load_valid _ _ _ _ _ b' ofs' bc' ha' hp' hg' hs' =>
+          have heqa : a' = Vptr b' ofs' := Option.some.inj (haddr'.symm.trans ha')
+          subst a'
+          apply rhs_eval_to.load_eval_to chunk' addr' vl (Vptr b' ofs') res p haddr'
+          change Mem.load chunk' m' b' (Ptrofs.unsigned ofs') = some res
+          change Mem.load chunk' m b' (Ptrofs.unsigned ofs') = some res at hload
+          have hd : pdisjoint p (size_chunk chunk')
+              (aaddressing cfg (VA.State ae am) addr args) (size_chunk chunk) = true := by
+            change (!pdisjoint p (size_chunk chunk')
+              (aaddressing cfg (VA.State ae am) addr args) (size_chunk chunk)) = false at hfilter
+            cases hd' : pdisjoint p (size_chunk chunk')
+              (aaddressing cfg (VA.State ae am) addr args) (size_chunk chunk) <;>
+              simp_all
+          rw [Mem.load_store_other chunk m b (Ptrofs.unsigned ofs) v m' hstore
+            chunk' b' (Ptrofs.unsigned ofs')
+            (cse_store_disjoint (size_chunk chunk') b' ofs' bc' p
+              (size_chunk chunk) b ofs bc
+              (aaddressing cfg (VA.State ae am) addr args) ge sp
+              hd hp' hp hg' hs' hge hsp)]
+          exact hload
+  | builtin_eval_to bf args' vargs res hargs hsem =>
+      exact rhs_eval_to.builtin_eval_to bf args' vargs res
+        (cse_builtin_args_memory_independent m'
+          (CompCert4Lean.Common.Globalenvs.Genv.to_senv ge) valu
+          (Vptr sp Ptrofs.zero) m args' vargs hargs hfilter) hsem
+
+end CompCert4Lean.Backend.CSEproof

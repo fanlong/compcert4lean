@@ -618,3 +618,59 @@ theorem generic_format_plus_weak :
       ((magnitude.value beta y).mag_bound hy0).2).1
 
 end CompCert4Lean.Flocq.Prop.Sterbenz
+
+namespace CompCert4Lean.Flocq.Prop.Sterbenz
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.Core.Generic_fmt
+
+ theorem sterbenz_aux :
+    ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
+      sterbenz_auxStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid hmono x y hfx hfy hxy
+  rcases hxy with ⟨hyx, hxtwo⟩
+  change ctx.spec.le y x at hyx
+  change ctx.spec.le x
+    (ctx.spec.mul (ctx.spec.add ctx.spec.one ctx.spec.one) y) at hxtwo
+  have htwo : ctx.spec.mul (ctx.spec.add ctx.spec.one ctx.spec.one) y =
+      ctx.spec.add y y := by
+    rw [ctx.certificate.orderedField.mul_comm,
+      ctx.certificate.orderedField.left_distrib,
+      ctx.certificate.orderedField.mul_one]
+  rw [htwo] at hxtwo
+  have hcancel : ctx.spec.add (ctx.spec.neg y) (ctx.spec.add y y) = y := by
+    rw [← ctx.certificate.orderedField.add_assoc,
+      ctx.certificate.orderedField.neg_add_cancel,
+      ctx.certificate.orderedField.zero_add]
+  have hy0 : ctx.spec.le ctx.spec.zero y := by
+    have h := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_le_compat_l
+      ctx (ctx.spec.neg y) y (ctx.spec.add y y)
+      (ctx.certificate.orderedField.le_trans _ _ _ hyx hxtwo)
+    change ctx.spec.le (ctx.spec.add (ctx.spec.neg y) y)
+      (ctx.spec.add (ctx.spec.neg y) (ctx.spec.add y y)) at h
+    rw [ctx.certificate.orderedField.neg_add_cancel, hcancel] at h
+    exact h
+  have hx0 : ctx.spec.le ctx.spec.zero x :=
+    ctx.certificate.orderedField.le_trans _ _ _ hy0 hyx
+  have hd0 : ctx.spec.le ctx.spec.zero (ctx.spec.add x (ctx.spec.neg y)) :=
+    CompCert4Lean.Flocq.Core.Raux.Rle_0_minus ctx y x hyx
+  have hdy : ctx.spec.le (ctx.spec.add x (ctx.spec.neg y)) y := by
+    have h := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_le_compat_l
+      ctx (ctx.spec.neg y) x (ctx.spec.add y y) hxtwo
+    change ctx.spec.le (ctx.spec.add (ctx.spec.neg y) x)
+      (ctx.spec.add (ctx.spec.neg y) (ctx.spec.add y y)) at h
+    rw [hcancel, ctx.certificate.orderedField.add_comm (ctx.spec.neg y) x] at h
+    exact h
+  apply generic_format_plus_weak ctx magnitude beta fexp hvalid hmono
+    x (Exact.Ropp ctx y) hfx (generic_format_opp ctx magnitude beta fexp y hfy)
+  change ctx.spec.le (ctx.spec.abs (ctx.spec.add x (ctx.spec.neg y)))
+    (ctx.spec.min (ctx.spec.abs x) (ctx.spec.abs (ctx.spec.neg y)))
+  have habsneg : ctx.spec.abs (ctx.spec.neg y) = ctx.spec.abs y :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rbasic_fun.Rabs_Ropp ctx y
+  rw [ctx.certificate.sourceLaws.abs_nonnegative _ hd0,
+    ctx.certificate.sourceLaws.abs_nonnegative x hx0,
+    habsneg, ctx.certificate.sourceLaws.abs_nonnegative y hy0,
+    ctx.certificate.sourceLaws.min_eq_right x y hyx]
+  exact hdy
+
+end CompCert4Lean.Flocq.Prop.Sterbenz

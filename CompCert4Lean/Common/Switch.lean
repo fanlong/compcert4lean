@@ -842,3 +842,24 @@ theorem validate_correct_rec : validate_correct_recStatement := by
               exact ih outside lo hi hother hbound
 
 end CompCert4Lean.Common.Switch
+
+namespace CompCert4Lean.Common.Switch
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem validate_switch_correct : validate_switch_correctStatement := by
+  intro modulus hmod default t cases hvalid
+  constructor
+  · exact validate_wf modulus default t cases z0 (zSub modulus z1) hvalid
+  · intro v hv
+    apply validate_correct_rec modulus hmod default v hv t cases z0
+      (zSub modulus z1) hvalid
+    refine ⟨hv.1, ?_⟩
+    have hupper := hv.2
+    change intOfZ v < intOfZ modulus at hupper
+    change intOfZ v ≤ intOfZ (zSub modulus z1)
+    simp only [zSub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    change intOfZ v ≤ intOfZ modulus - 1
+    omega
+
+end CompCert4Lean.Common.Switch

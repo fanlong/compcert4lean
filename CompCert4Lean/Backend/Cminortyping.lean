@@ -2603,3 +2603,29 @@ theorem wt_eval_expr
       | Vsingle f => cases hload
 
 end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Cminor
+
+theorem wt_eval_exprlist
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    wt_eval_exprlistStatement := by
+  intro p env sp e m al vl heval
+  induction heval with
+  | eval_Enil =>
+      intro tl hwt henv
+      cases hwt
+      trivial
+  | eval_Econs a1 al v1 vl ha1 hal ih =>
+      intro tl hwt henv
+      cases hwt with
+      | cons a t hhead htail =>
+          have hv : Val.has_type v1 t :=
+            wt_eval_expr p env sp e m a1 v1 ha1 t hhead henv
+          have hvl := ih _ htail henv
+          exact ⟨hv, hvl⟩
+
+end CompCert4Lean.Backend.Cminortyping

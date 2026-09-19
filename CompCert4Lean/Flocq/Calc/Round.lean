@@ -1984,3 +1984,317 @@ theorem inbetween_float_round_sign : ∀ (ctx : ExactRealContext)
   exact pg_inbetween_int_scaled ctx magnitude beta fexp x m _ l hbetween rfl
 
 end CompCert4Lean.Flocq.Calc.Round
+
+namespace CompCert4Lean.Flocq.Calc.Round
+
+open CompCert4Lean.Flocq.Core.Generic_fmt
+
+private theorem pg_N_sign_nearest_opp (ctx : ExactRealContext)
+    (choice : Z → Bool) (x : Exact.R ctx) :
+    Exact.Znearest ctx choice (Exact.Ropp ctx x) =
+      Zopp (Exact.Znearest ctx
+        (fun t => Bool.not (choice (Zopp (Zadd t Zone)))) x) := by
+  have hnearest_izr : ∀ (ch : Z → Bool) (n : Z),
+      Exact.Znearest ctx ch (Exact.IZR ctx n) = n := by
+    intro ch n
+    rcases Znearest_DN_or_UP ctx ch (Exact.IZR ctx n) with hfloor | hceil
+    ·
+      calc
+        Exact.Znearest ctx ch (Exact.IZR ctx n) =
+            Exact.Zfloor ctx (Exact.IZR ctx n) := hfloor
+        _ = n := CompCert4Lean.Flocq.Core.Raux.Zfloor_IZR ctx n
+    ·
+      calc
+        Exact.Znearest ctx ch (Exact.IZR ctx n) =
+            Exact.Zceil ctx (Exact.IZR ctx n) := hceil
+        _ = n := CompCert4Lean.Flocq.Core.Raux.Zceil_IZR ctx n
+  by_cases hx : Exact.IZR ctx (Exact.Zfloor ctx x) = x
+  · have hnegizr : Exact.Ropp ctx (Exact.IZR ctx (Exact.Zfloor ctx x)) =
+        Exact.IZR ctx (Zopp (Exact.Zfloor ctx x)) := by
+      change ctx.spec.neg (ctx.spec.ofZ (Exact.Zfloor ctx x)) =
+        ctx.spec.ofZ (Zopp (Exact.Zfloor ctx x))
+      exact (ctx.certificate.sourceLaws.ofZ_neg _).symm
+    calc
+      Exact.Znearest ctx choice (Exact.Ropp ctx x) =
+          Exact.Znearest ctx choice
+            (Exact.IZR ctx (Zopp (Exact.Zfloor ctx x))) := by
+        have harg : Exact.Ropp ctx x =
+            Exact.IZR ctx (Zopp (Exact.Zfloor ctx x)) := by
+          exact (congrArg (Exact.Ropp ctx) hx.symm).trans hnegizr
+        rw [harg]
+      _ = Zopp (Exact.Zfloor ctx x) := hnearest_izr choice _
+      _ = Zopp (Exact.Znearest ctx
+          (fun t => Bool.not (choice (Zopp (Zadd t Zone)))) x) := by
+        have hnearx : Exact.Znearest ctx
+            (fun t => Bool.not (choice (Zopp (Zadd t Zone)))) x =
+            Exact.Zfloor ctx x := by
+          calc
+            Exact.Znearest ctx
+                (fun t => Bool.not (choice (Zopp (Zadd t Zone)))) x =
+                Exact.Znearest ctx
+                  (fun t => Bool.not (choice (Zopp (Zadd t Zone))))
+                  (Exact.IZR ctx (Exact.Zfloor ctx x)) := by
+              exact congrArg (Exact.Znearest ctx
+                (fun t => Bool.not (choice (Zopp (Zadd t Zone))))) hx.symm
+            _ = Exact.Zfloor ctx x := hnearest_izr _ _
+        exact congrArg Zopp hnearx.symm
+  · have hceil : Exact.Zceil ctx x = Zadd (Exact.Zfloor ctx x) Zone :=
+      CompCert4Lean.Flocq.Core.Raux.Zceil_floor_neq ctx x hx
+    have hfloor_opp : Exact.Zfloor ctx (Exact.Ropp ctx x) =
+        Zopp (Exact.Zceil ctx x) := by
+      unfold Exact.Zceil
+      exact (pg_zopp_zopp _).symm
+    have hceil_opp : Exact.Zceil ctx (Exact.Ropp ctx x) =
+        Zopp (Exact.Zfloor ctx x) := by
+      change Zopp (Exact.Zfloor ctx (Exact.Ropp ctx (Exact.Ropp ctx x))) =
+        Zopp (Exact.Zfloor ctx x)
+      have hnn : Exact.Ropp ctx (Exact.Ropp ctx x) = x := pg_neg_neg ctx x
+      rw [hnn]
+    have hdiff : Exact.Rminus ctx (Exact.Ropp ctx x)
+        (Exact.IZR ctx (Exact.Zfloor ctx (Exact.Ropp ctx x))) =
+        Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx x)) x := by
+      rw [hfloor_opp]
+      change ctx.spec.add (ctx.spec.neg x)
+          (ctx.spec.neg (ctx.spec.ofZ (Zopp (Exact.Zceil ctx x)))) =
+        ctx.spec.add (ctx.spec.ofZ (Exact.Zceil ctx x)) (ctx.spec.neg x)
+      rw [ctx.certificate.sourceLaws.ofZ_neg]
+      change ctx.spec.add (ctx.spec.neg x)
+          (ctx.spec.neg (ctx.spec.neg (ctx.spec.ofZ (Exact.Zceil ctx x)))) =
+        ctx.spec.add (ctx.spec.ofZ (Exact.Zceil ctx x)) (ctx.spec.neg x)
+      have hnn : ctx.spec.neg (ctx.spec.neg (ctx.spec.ofZ (Exact.Zceil ctx x))) =
+          ctx.spec.ofZ (Exact.Zceil ctx x) := pg_neg_neg ctx _
+      rw [hnn]
+      exact ctx.certificate.orderedField.add_comm _ _
+    have hcmp_ceil :
+        Exact.Rcompare ctx (Exact.Rminus ctx
+          (Exact.IZR ctx (Exact.Zceil ctx x)) x)
+          (Exact.Rdiv ctx (Exact.Rone ctx) (Exact.Rtwo ctx)) =
+        Exact.Rcompare ctx (Exact.Rminus ctx
+          (Exact.IZR ctx (Exact.Zceil ctx x)) x)
+          (Exact.Rminus ctx x (Exact.IZR ctx (Exact.Zfloor ctx x))) := by
+      simpa [CompCert4Lean.Flocq.Core.Raux.Exact.Rhalf] using
+        (CompCert4Lean.Flocq.Core.Raux.Rcompare_ceil_floor_middle ctx x hx)
+    have hcmp_floor :
+        Exact.Rcompare ctx (Exact.Rminus ctx x
+          (Exact.IZR ctx (Exact.Zfloor ctx x)))
+          (Exact.Rdiv ctx (Exact.Rone ctx) (Exact.Rtwo ctx)) =
+        Exact.Rcompare ctx (Exact.Rminus ctx x
+          (Exact.IZR ctx (Exact.Zfloor ctx x)))
+          (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx x)) x) := by
+      simpa [CompCert4Lean.Flocq.Core.Raux.Exact.Rhalf] using
+        (CompCert4Lean.Flocq.Core.Raux.Rcompare_floor_ceil_middle ctx x hx)
+    have hcmp_sym := CompCert4Lean.Flocq.Core.Raux.Rcompare_sym ctx
+      (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx x)) x)
+      (Exact.Rminus ctx x (Exact.IZR ctx (Exact.Zfloor ctx x)))
+    unfold Exact.Znearest
+    rw [hdiff, hcmp_ceil, hcmp_floor]
+    cases hcmp : Exact.Rcompare ctx
+        (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx x)) x)
+        (Exact.Rminus ctx x (Exact.IZR ctx (Exact.Zfloor ctx x))) with
+    | Lt =>
+        have hcmpR : CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+            (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx x)) x)
+            (Exact.Rminus ctx x (Exact.IZR ctx (Exact.Zfloor ctx x))) = .Lt := hcmp
+        have hcmp' : CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+            (Exact.Rminus ctx x (Exact.IZR ctx (Exact.Zfloor ctx x)))
+            (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx x)) x) =
+            .Gt := by
+          have hh := hcmp_sym
+          rw [hcmpR] at hh
+          cases hrev : CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+              (Exact.Rminus ctx x (Exact.IZR ctx (Exact.Zfloor ctx x)))
+              (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx x)) x) with
+          | Lt => simp [hrev,
+              CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.CompOpp] at hh
+          | Eq => simp [hrev,
+              CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.CompOpp] at hh
+          | Gt => simp [hrev]
+        have hcmp'' : Exact.Rcompare ctx
+            (Exact.Rminus ctx x (Exact.IZR ctx (Exact.Zfloor ctx x)))
+            (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx x)) x) = .Gt := hcmp'
+        rw [hcmp'']
+        simp [hfloor_opp, hceil_opp, hceil, pg_zopp_zopp]
+    | Eq =>
+        have hcmpR : CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+            (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx x)) x)
+            (Exact.Rminus ctx x (Exact.IZR ctx (Exact.Zfloor ctx x))) = .Eq := hcmp
+        have hcmp' : CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+            (Exact.Rminus ctx x (Exact.IZR ctx (Exact.Zfloor ctx x)))
+            (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx x)) x) =
+            .Eq := by
+          have hh := hcmp_sym
+          rw [hcmpR] at hh
+          cases hrev : CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+              (Exact.Rminus ctx x (Exact.IZR ctx (Exact.Zfloor ctx x)))
+              (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx x)) x) with
+          | Lt => simp [hrev,
+              CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.CompOpp] at hh
+          | Eq => simp [hrev]
+          | Gt => simp [hrev,
+              CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.CompOpp] at hh
+        have hcmp'' : Exact.Rcompare ctx
+            (Exact.Rminus ctx x (Exact.IZR ctx (Exact.Zfloor ctx x)))
+            (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx x)) x) = .Eq := hcmp'
+        rw [hcmp'']
+        by_cases hc : choice (Zopp (Zadd (Exact.Zfloor ctx x) Zone))
+        · simp [hc, hfloor_opp, hceil_opp, hceil, pg_zopp_zopp]
+        · simp [hc, hfloor_opp, hceil_opp, hceil, pg_zopp_zopp]
+    | Gt =>
+        have hcmpR : CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+            (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx x)) x)
+            (Exact.Rminus ctx x (Exact.IZR ctx (Exact.Zfloor ctx x))) = .Gt := hcmp
+        have hcmp' : CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+            (Exact.Rminus ctx x (Exact.IZR ctx (Exact.Zfloor ctx x)))
+            (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx x)) x) =
+            .Lt := by
+          have hh := hcmp_sym
+          rw [hcmpR] at hh
+          cases hrev : CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+              (Exact.Rminus ctx x (Exact.IZR ctx (Exact.Zfloor ctx x)))
+              (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx x)) x) with
+          | Lt => simp [hrev]
+          | Eq => simp [hrev,
+              CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.CompOpp] at hh
+          | Gt => simp [hrev,
+              CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.CompOpp] at hh
+        have hcmp'' : Exact.Rcompare ctx
+            (Exact.Rminus ctx x (Exact.IZR ctx (Exact.Zfloor ctx x)))
+            (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx x)) x) = .Lt := hcmp'
+        rw [hcmp'']
+        simp [hfloor_opp, hceil_opp, hceil, pg_zopp_zopp]
+
+
+private theorem pg_N_sign_midpoint (ctx : ExactRealContext) (m : Z) :
+    CompCert4Lean.Flocq.Calc.Bracket.Rdiv ctx
+      (CompCert4Lean.Flocq.Calc.Bracket.Rplus ctx (ctx.spec.ofZ m)
+        (ctx.spec.ofZ (Zadd m Zone)))
+      (CompCert4Lean.Flocq.Calc.Bracket.Rtwo ctx) =
+    ctx.spec.add (ctx.spec.ofZ m)
+      (Exact.Rdiv ctx (Exact.Rone ctx) (Exact.Rtwo ctx)) := by
+  have h := CompCert4Lean.Flocq.Calc.Bracket.middle_range ctx
+    (ctx.spec.ofZ m) ctx.spec.one Zone
+  change ctx.spec.div
+      (ctx.spec.add (ctx.spec.ofZ m)
+        (ctx.spec.add (ctx.spec.ofZ m)
+          (ctx.spec.mul (ctx.spec.ofZ Zone) ctx.spec.one)))
+      (ctx.spec.add ctx.spec.one ctx.spec.one) =
+    ctx.spec.add (ctx.spec.ofZ m)
+      (ctx.spec.mul (ctx.spec.div (ctx.spec.ofZ Zone)
+        (ctx.spec.add ctx.spec.one ctx.spec.one)) ctx.spec.one) at h
+  simp only [ctx.certificate.sourceLaws.ofZ_one,
+    ctx.certificate.orderedField.mul_one] at h
+  change ctx.spec.div
+      (ctx.spec.add (ctx.spec.ofZ m) (ctx.spec.ofZ (Zadd m Zone)))
+      (ctx.spec.add ctx.spec.one ctx.spec.one) =
+    ctx.spec.add (ctx.spec.ofZ m)
+      (ctx.spec.div ctx.spec.one (ctx.spec.add ctx.spec.one ctx.spec.one))
+  rw [ctx.certificate.sourceLaws.ofZ_add, ctx.certificate.sourceLaws.ofZ_one]
+  exact h
+
+private theorem pg_N_sign_unsigned (ctx : ExactRealContext)
+    (choice : Z → Bool) (x : ExactR ctx) (m : Z) (l : location)
+    (hx : CompCert4Lean.Flocq.Calc.Bracket.inbetween_int ctx m x l) :
+    Exact.Znearest ctx choice x = cond_incr (round_N (choice m) l) m := by
+  cases hx with
+  | inbetween_Exact h =>
+      change x = ctx.spec.ofZ m at h
+      rw [h]
+      rcases Znearest_DN_or_UP ctx choice (ctx.spec.ofZ m) with hd | hu
+      · simpa only [round_N, cond_incr, Bool.false_eq_true, if_false,
+          pg_floor_izr] using hd
+      · simpa only [round_N, cond_incr, Bool.false_eq_true, if_false,
+          pg_ceil_izr] using hu
+  | inbetween_Inexact c hbounds hmiddle =>
+      have hfloor : Exact.Zfloor ctx x = m :=
+        pg_floor_imp ctx m x
+          ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hbounds.1).1
+          hbounds.2
+      have hneq : Exact.IZR ctx (Exact.Zfloor ctx x) ≠ x := by
+        rw [hfloor]
+        intro heq
+        have hlt := hbounds.1
+        change ctx.spec.lt (ctx.spec.ofZ m) x at hlt
+        change ctx.spec.ofZ m = x at heq
+        rw [heq] at hlt
+        exact ctx.certificate.orderedField.lt_irrefl _ hlt
+      have hceil : Exact.Zceil ctx x = Zadd m Zone := by
+        calc
+          Exact.Zceil ctx x = Zadd (Exact.Zfloor ctx x) Zone :=
+            CompCert4Lean.Flocq.Core.Raux.Zceil_floor_neq ctx x hneq
+          _ = Zadd m Zone := by rw [hfloor]
+      have hmid := pg_N_sign_midpoint ctx m
+      have hshift := CompCert4Lean.Flocq.Core.Raux.Rcompare_plus_r ctx
+        (ctx.spec.neg (ctx.spec.ofZ m)) x
+        (ctx.spec.add (ctx.spec.ofZ m)
+          (Exact.Rdiv ctx (Exact.Rone ctx) (Exact.Rtwo ctx)))
+      have hcancel : ctx.spec.add
+          (ctx.spec.add (ctx.spec.ofZ m)
+            (Exact.Rdiv ctx (Exact.Rone ctx) (Exact.Rtwo ctx)))
+          (ctx.spec.neg (ctx.spec.ofZ m)) =
+          Exact.Rdiv ctx (Exact.Rone ctx) (Exact.Rtwo ctx) := by
+        rw [ctx.certificate.orderedField.add_comm (ctx.spec.ofZ m),
+          ctx.certificate.orderedField.add_assoc,
+          ctx.certificate.orderedField.add_comm (ctx.spec.ofZ m)
+            (ctx.spec.neg (ctx.spec.ofZ m)),
+          ctx.certificate.orderedField.neg_add_cancel,
+          ctx.certificate.orderedField.add_zero]
+      change Exact.Rcompare ctx
+          (ctx.spec.add x (ctx.spec.neg (ctx.spec.ofZ m)))
+          (ctx.spec.add (ctx.spec.add (ctx.spec.ofZ m)
+            (Exact.Rdiv ctx (Exact.Rone ctx) (Exact.Rtwo ctx)))
+            (ctx.spec.neg (ctx.spec.ofZ m))) =
+        Exact.Rcompare ctx x
+          (ctx.spec.add (ctx.spec.ofZ m)
+            (Exact.Rdiv ctx (Exact.Rone ctx) (Exact.Rtwo ctx))) at hshift
+      rw [hcancel] at hshift
+      have hcmp : Exact.Rcompare ctx (Exact.Rminus ctx x (Exact.IZR ctx m))
+          (Exact.Rdiv ctx (Exact.Rone ctx) (Exact.Rtwo ctx)) = c := by
+        have hcmp0 : Exact.Rcompare ctx
+            (ctx.spec.add x (ctx.spec.neg (ctx.spec.ofZ m)))
+            (Exact.Rdiv ctx (Exact.Rone ctx) (Exact.Rtwo ctx)) = c := by
+          rw [hshift, ← hmid]
+          exact hmiddle
+        exact hcmp0
+      unfold Exact.Znearest
+      rw [hfloor, hceil, hcmp]
+      cases c <;> cases choice m <;> rfl
+
+theorem inbetween_int_N_sign (ctx : ExactRealContext) :
+    inbetween_int_N_signStatement ctx := by
+  intro choice x m l hx
+  change Exact.Znearest ctx choice x =
+    cond_Zopp (CompCert4Lean.Flocq.Core.Raux.Exact.Rlt_bool ctx x ctx.spec.zero)
+      (cond_incr (round_N
+        (if CompCert4Lean.Flocq.Core.Raux.Exact.Rlt_bool ctx x ctx.spec.zero then
+          Bool.not (choice (Zopp (Zadd m Zone))) else choice m) l) m)
+  change CompCert4Lean.Flocq.Calc.Bracket.inbetween_int ctx m
+    (CompCert4Lean.Flocq.Core.Raux.Exact.Rabs ctx x) l at hx
+  by_cases hneg : ctx.spec.lt x ctx.spec.zero
+  · have hbool := pg_rlt_bool_true ctx x hneg
+    rw [hbool]
+    have habs : CompCert4Lean.Flocq.Core.Raux.Exact.Rabs ctx x = ctx.spec.neg x :=
+      ctx.certificate.sourceLaws.abs_negative x hneg
+    have hbase := pg_N_sign_unsigned ctx
+      (fun z => Bool.not (choice (Zopp (Zadd z Zone))))
+      (ctx.spec.neg x) m l (by simpa [habs] using hx)
+    have hopp := pg_N_sign_nearest_opp ctx choice (ctx.spec.neg x)
+    change Exact.Znearest ctx choice (ctx.spec.neg (ctx.spec.neg x)) = _ at hopp
+    rw [pg_neg_neg ctx x] at hopp
+    change Exact.Znearest ctx choice x =
+      Zopp (cond_incr (round_N (Bool.not (choice (Zopp (Zadd m Zone)))) l) m)
+    exact hopp.trans (congrArg Zopp hbase)
+  · have hnonneg : ctx.spec.le ctx.spec.zero x := by
+      rcases ctx.certificate.total_order x ctx.spec.zero with h | h
+      · rcases h with hlt | heq
+        · exact (hneg hlt).elim
+        · rw [heq]
+          exact ctx.certificate.orderedField.le_refl _
+      · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h |>.1
+    have hbool := pg_rlt_bool_false ctx x hnonneg
+    rw [hbool]
+    have habs : CompCert4Lean.Flocq.Core.Raux.Exact.Rabs ctx x = x :=
+      ctx.certificate.sourceLaws.abs_nonnegative x hnonneg
+    have hbase := pg_N_sign_unsigned ctx choice x m l (by simpa [habs] using hx)
+    exact hbase
+
+end CompCert4Lean.Flocq.Calc.Round

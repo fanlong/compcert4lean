@@ -1816,3 +1816,98 @@ theorem mk_setcc_base_label : mk_setcc_base_labelStatement := by
   exact asmgenproof_mk_setcc_base_label xc rd k
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+open CompCert4Lean.Backend.Asmgenproof0
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.X86.Asmgen
+
+private theorem asmgenproof_op_tail_refl (k : AsmCode) : tail_nolabel k k :=
+  ⟨CompCert4Lean.Lib.Coqlib.is_tail.refl _, fun _ => rfl⟩
+
+private theorem asmgenproof_op_tail_cons {k c : AsmCode}
+    {i : CompCert4Lean.X86.Asm.instruction}
+    (hi : ∀ lbl, CompCert4Lean.X86.Asm.is_label lbl i = false)
+    (hc : tail_nolabel k c) : tail_nolabel k (i :: c) := by
+  constructor
+  · exact CompCert4Lean.Lib.Coqlib.is_tail.cons i hc.1
+  · intro lbl
+    simp only [find_label, hi, Bool.false_eq_true, if_false]
+    exact hc.2 lbl
+
+private theorem asmgenproof_op_bind {α : Type} {x : res α}
+    {f : α → res AsmCode} {k c : AsmCode}
+    (h : CompCert4Lean.Common.Errors.bind x f = .OK c)
+    (hf : ∀ a, f a = .OK c → tail_nolabel k c) : tail_nolabel k c := by
+  cases x with
+  | Error msg => cases h
+  | OK a => exact hf a h
+
+private theorem asmgenproof_op_assert {x y : Mreg} {r : res AsmCode}
+    {k c : AsmCode}
+    (h : (match CompCert4Lean.Backend.Mach.RegEq.eq x y with
+      | .left _ => r
+      | .right _ => assertion_failed) = .OK c)
+    (hr : r = .OK c → tail_nolabel k c) : tail_nolabel k c := by
+  cases heq : CompCert4Lean.Backend.Mach.RegEq.eq x y with
+  | left _ =>
+      rw [heq] at h
+      exact hr h
+  | right _ =>
+      rw [heq] at h
+      cases h
+
+private theorem asmgenproof_op_ok {k c c' : AsmCode}
+    (h : (res.OK c' : res AsmCode) = .OK c)
+    (hc : tail_nolabel k c') : tail_nolabel k c := by
+  cases h
+  exact hc
+
+private theorem asmgenproof_op_cond {cond : Condition} {args : List Mreg}
+    {k k' c : AsmCode} (h : transl_cond cond args k' = .OK c)
+    (hk : tail_nolabel k k') : tail_nolabel k c :=
+  tail_nolabel_trans k k' c (transl_cond_label cond args k' c h) hk
+
+private theorem asmgenproof_op_sel {cond : Condition} {args : List Mreg}
+    {rd r2 : Ireg} {k c : AsmCode}
+    (h : transl_sel cond args rd r2 k = .OK c) : tail_nolabel k c := by
+  unfold transl_sel at h
+  split at h
+  · apply asmgenproof_op_ok h
+    exact asmgenproof_tail_nolabel_cons_local k _ (by intro lbl; rfl)
+  · change CompCert4Lean.Common.Errors.bind
+      (mk_sel (testcond_for_condition cond) rd r2 k)
+      (fun k' => transl_cond cond args k') = .OK c at h
+    obtain ⟨k', hk', h'⟩ := bind_inversion _ _ _ _ _ h
+    exact tail_nolabel_trans k k' c
+      (transl_cond_label cond args k' c h')
+      (mk_sel_label _ rd r2 k k' hk')
+
+set_option maxHeartbeats 8000000 in
+theorem transl_op_label : transl_op_labelStatement := by
+  intro op args dst k c h
+  cases op
+  all_goals rcases args with _ | ⟨a1, _ | ⟨a2, _ | ⟨a3, rest⟩⟩⟩
+  all_goals delta transl_op at h
+  all_goals dsimp only at h
+  all_goals
+    repeat first
+      | exact asmgenproof_op_tail_refl _
+      | exact mk_setcc_label _ _ _
+      | (with_reducible exact asmgenproof_op_sel h)
+      | (with_reducible apply asmgenproof_op_cond h; clear h)
+      | (apply asmgenproof_op_ok h; clear h)
+      | (apply asmgenproof_op_bind h; clear h; intro a h)
+      | (apply asmgenproof_op_assert h; clear h; intro h)
+      | (refine asmgenproof_op_tail_cons (by intro lbl; rfl) ?_)
+      | apply asmgenproof_tail_nolabel_if
+      | contradiction
+      | unfold mk_mov at h
+      | unfold mk_shrximm at h
+      | unfold mk_shrxlimm at h
+      | unfold mk_intconv at h
+      | split at h
+      | split
+
+end CompCert4Lean.X86.Asmgenproof

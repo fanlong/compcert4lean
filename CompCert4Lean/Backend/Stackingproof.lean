@@ -4073,3 +4073,44 @@ theorem hasvalue_get_stack : hasvalue_get_stackStatement := by
   exact heq ▸ hload
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Locations
+
+theorem get_location : get_locationStatement := by
+  intro return_address_offset tprog m j sp pos bound sl ls ofs ty hcontains hofs hbound halign
+  rcases hcontains with ⟨hdiv, hpos, hover, hperm, hload⟩
+  rcases hload ofs ty hofs hbound halign with ⟨v, hv, hinj⟩
+  refine ⟨v, ?_, hinj⟩
+  unfold Mach.load_stack Mem.loadv
+  simp only [Val.offset_ptr]
+  have hadd : Ptrofs.add Ptrofs.zero
+      (Ptrofs.repr (zAdd pos (zMul z4 ofs))) =
+      Ptrofs.repr (zAdd pos (zMul z4 ofs)) := by
+    change WordCore.add (WordCore.zero Ptrofs.wordsize)
+      (WordCore.repr Ptrofs.wordsize (zAdd pos (zMul z4 ofs))) =
+      WordCore.repr Ptrofs.wordsize (zAdd pos (zMul z4 ofs))
+    apply WordCore.ext_of_val_eq
+    rw [stackingproof_wordcore_add_val]
+    have hzero : (WordCore.zero Ptrofs.wordsize).val = 0 := by
+      rfl
+    rw [hzero, Nat.zero_add]
+    exact Nat.mod_eq_of_lt (stackingproof_wordcore_val_lt _)
+  rw [hadd]
+  change Mem.load (chunk_of_type ty) m sp
+      (Ptrofs.unsigned (Ptrofs.repr (zAdd pos (zMul z4 ofs)))) = some v
+  have haddr0 : zLe z0 (zAdd pos (zMul z4 ofs)) :=
+    locationAddrNonneg pos ofs hpos hofs
+  have haddrmax : zLe (zAdd pos (zMul z4 ofs)) Ptrofs.max_unsigned :=
+    locationAddrMax pos bound ofs ty hover hbound
+  rw [stackingproof_ptrofs_unsigned_repr _ ⟨haddr0, haddrmax⟩]
+  exact hv
+
+end CompCert4Lean.Backend.Stackingproof

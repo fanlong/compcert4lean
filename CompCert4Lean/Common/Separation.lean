@@ -2663,3 +2663,7 @@ theorem loadv_rule : loadv_ruleStatement := by
   have hrepr := scc085_ptrofs_unsigned_repr ofs hbounds
   rw [Mem.loadv, hrepr]
   exact load_rule spec m chunk b ofs hpred
+
+theorem minjection_obligation_1 : minjection_obligation_1Statement := by
+  intro j m0 m m' hinj hunch
+  exact (minjection j m0).m_invar m m' hinj hunch

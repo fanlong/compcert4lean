@@ -6613,3 +6613,161 @@ theorem setN_outside : setN_outsideStatement := by
 
 end Mem
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+namespace Mem
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem load_result_xtype_local :
+    ∀ chunk v, Val.has_rettype (Val.load_result chunk v) (xtype_of_chunk chunk) := by
+  intro chunk v
+  cases chunk with
+  | Mbool =>
+      cases v with
+      | Vint n =>
+          rcases Val.norm_bool_cases (Vint (CompCert4Lean.Lib.Integers.Int.zero_ext
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8) n)) with h | h | h
+          · simp [Val.load_result, Val.has_rettype, xtype_of_chunk, h, Vfalse, Vtrue]
+          · simp [Val.load_result, Val.has_rettype, xtype_of_chunk, h, Vfalse, Vtrue]
+          · simp [Val.load_result, Val.has_rettype, xtype_of_chunk, h, Vfalse, Vtrue]
+      | _ => simp [Val.load_result, Val.has_rettype, xtype_of_chunk]
+  | Mint8signed =>
+      cases v with
+      | Vint n =>
+          simp only [Val.load_result, xtype_of_chunk, Val.has_rettype]
+          simpa using (CompCert4Lean.Lib.Integers.Int.sign_ext_idem_proof
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8) n
+            (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt
+                .Z0 (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8) by
+              change 0 < (8 : Int); omega)).symm
+      | _ => simp [Val.load_result, Val.has_rettype, xtype_of_chunk]
+  | Mint8unsigned =>
+      cases v with
+      | Vint n =>
+          simp only [Val.load_result, xtype_of_chunk, Val.has_rettype]
+          simpa using (CompCert4Lean.Lib.Integers.Int.zero_ext_idem_proof_api
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8) n
+            (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+                .Z0 (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8) by
+              change 0 ≤ (8 : Int); omega)).symm
+      | _ => simp [Val.load_result, Val.has_rettype, xtype_of_chunk]
+  | Mint16signed =>
+      cases v with
+      | Vint n =>
+          simp only [Val.load_result, xtype_of_chunk, Val.has_rettype]
+          simpa using (CompCert4Lean.Lib.Integers.Int.sign_ext_idem_proof
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 16) n
+            (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt
+                .Z0 (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 16) by
+              change 0 < (16 : Int); omega)).symm
+      | _ => simp [Val.load_result, Val.has_rettype, xtype_of_chunk]
+  | Mint16unsigned =>
+      cases v with
+      | Vint n =>
+          simp only [Val.load_result, xtype_of_chunk, Val.has_rettype]
+          simpa using (CompCert4Lean.Lib.Integers.Int.zero_ext_idem_proof_api
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 16) n
+            (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+                .Z0 (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 16) by
+              change 0 ≤ (16 : Int); omega)).symm
+      | _ => simp [Val.load_result, Val.has_rettype, xtype_of_chunk]
+  | Mint32 | Mint64 | Mfloat32 | Mfloat64 | Many32 | Many64 =>
+      cases v <;>
+        simp [Val.load_result, Val.has_rettype, xtype_of_chunk,
+          CompCert4Lean.X86_64.Archi.ptr64]
+
+private theorem decode_val_xtype_local :
+    CompCert4Lean.Common.Memdata.decode_val_xtypeStatement := by
+  intro chunk cl
+  cases h : proj_bytes cl with
+  | none =>
+      cases chunk with
+      | Mbool => simp [decode_val, h, Val.has_rettype, xtype_of_chunk]
+      | Mint8signed => simp [decode_val, h, Val.has_rettype, xtype_of_chunk]
+      | Mint8unsigned => simp [decode_val, h, Val.has_rettype, xtype_of_chunk]
+      | Mint16signed => simp [decode_val, h, Val.has_rettype, xtype_of_chunk]
+      | Mint16unsigned => simp [decode_val, h, Val.has_rettype, xtype_of_chunk]
+      | Mint32 =>
+          by_cases hp : CompCert4Lean.X86_64.Archi.ptr64
+          · simp [decode_val, h, hp, Val.has_rettype, xtype_of_chunk]
+          · simpa [decode_val, h, hp] using
+              load_result_xtype_local CompCert4Lean.Common.AST.Mint32
+                (proj_value Q32 cl)
+      | Mint64 =>
+          by_cases hp : CompCert4Lean.X86_64.Archi.ptr64
+          · simpa [decode_val, h, hp] using
+              load_result_xtype_local CompCert4Lean.Common.AST.Mint64
+                (proj_value Q64 cl)
+          · simp [decode_val, h, hp, Val.has_rettype, xtype_of_chunk]
+      | Mfloat32 => simp [decode_val, h, Val.has_rettype, xtype_of_chunk]
+      | Mfloat64 => simp [decode_val, h, Val.has_rettype, xtype_of_chunk]
+      | Many32 =>
+          simpa [decode_val, h] using
+            load_result_xtype_local CompCert4Lean.Common.AST.Many32
+              (proj_value Q32 cl)
+      | Many64 =>
+          simpa [decode_val, h] using
+            load_result_xtype_local CompCert4Lean.Common.AST.Many64
+              (proj_value Q64 cl)
+  | some bl =>
+      cases chunk with
+      | Mbool =>
+          rcases Val.norm_bool_cases
+              (Vint (CompCert4Lean.Lib.Integers.Int.zero_ext
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8)
+                (CompCert4Lean.Lib.Integers.Int.repr (decode_int bl)))) with hbool | hbool | hbool
+          · simp [decode_val, h, Val.has_rettype, xtype_of_chunk, hbool, Vfalse, Vtrue]
+          · simp [decode_val, h, Val.has_rettype, xtype_of_chunk, hbool, Vfalse, Vtrue]
+          · simp [decode_val, h, Val.has_rettype, xtype_of_chunk, hbool, Vfalse, Vtrue]
+      | Mint8signed =>
+          simp only [decode_val, h, Val.has_rettype, xtype_of_chunk]
+          simpa using (CompCert4Lean.Lib.Integers.Int.sign_ext_idem_proof
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8)
+            (CompCert4Lean.Lib.Integers.Int.repr (decode_int bl))
+            (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt
+                .Z0 (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8) by
+              change 0 < (8 : Int); omega)).symm
+      | Mint8unsigned =>
+          simp only [decode_val, h, Val.has_rettype, xtype_of_chunk]
+          simpa using (CompCert4Lean.Lib.Integers.Int.zero_ext_idem_proof_api
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8)
+            (CompCert4Lean.Lib.Integers.Int.repr (decode_int bl))
+            (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+                .Z0 (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8) by
+              change 0 ≤ (8 : Int); omega)).symm
+      | Mint16signed =>
+          simp only [decode_val, h, Val.has_rettype, xtype_of_chunk]
+          simpa using (CompCert4Lean.Lib.Integers.Int.sign_ext_idem_proof
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 16)
+            (CompCert4Lean.Lib.Integers.Int.repr (decode_int bl))
+            (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt
+                .Z0 (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 16) by
+              change 0 < (16 : Int); omega)).symm
+      | Mint16unsigned =>
+          simp only [decode_val, h, Val.has_rettype, xtype_of_chunk]
+          simpa using (CompCert4Lean.Lib.Integers.Int.zero_ext_idem_proof_api
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 16)
+            (CompCert4Lean.Lib.Integers.Int.repr (decode_int bl))
+            (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+                .Z0 (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 16) by
+              change 0 ≤ (16 : Int); omega)).symm
+      | Mint32 => simp [decode_val, h, Val.has_rettype, xtype_of_chunk]
+      | Mint64 => simp [decode_val, h, Val.has_rettype, xtype_of_chunk]
+      | Mfloat32 => simp [decode_val, h, Val.has_rettype, xtype_of_chunk]
+      | Mfloat64 => simp [decode_val, h, Val.has_rettype, xtype_of_chunk]
+      | Many32 => simp [decode_val, h, Val.has_rettype, xtype_of_chunk]
+      | Many64 => simp [decode_val, h, Val.has_rettype, xtype_of_chunk]
+
+theorem load_xtype : load_xtypeStatement := by
+  intro m chunk b ofs v hload
+  rw [load_result chunk m b ofs v hload]
+  exact decode_val_xtype_local chunk _
+
+end Mem
+end CompCert4Lean.Common.Memory

@@ -1798,3 +1798,11 @@ theorem findMax_max (E : OrderedType) : findMax_maxStatement E := by
   simpa [R.le] using (R.findMax_max E x h.1 hfind h.2 y hy)
 
 end CompCert4Lean.Lib.Heaps.SplayHeapSet
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet
+
+theorem In_deleteMax (E : OrderedType) : In_deleteMaxStatement E := by
+  intro h x y hfind
+  exact R.In_deleteMax E y x h.1 hfind
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet
