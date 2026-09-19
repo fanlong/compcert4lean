@@ -4855,3 +4855,98 @@ theorem save_callee_save_rec_correct
             exact hstore) sp ofs k' p hp)
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.Backend.Conventions
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Separation
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Conventions1
+open CompCert4Lean.X86.Machregs
+open CompCert4Lean.X86.Stacklayout
+
+theorem save_callee_save_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    save_callee_save_correctStatement := by
+  intro cfg xi return_address_offset tprog f
+    bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop
+    j ls ls0 rs sp cs fb k m P hsep wt_ls hcallee hagree
+  let ls1 := LTL.undef_regs destroyed_at_function_entry (LTL.call_regs ls)
+  let rs1 := Mach.undef_regs destroyed_at_function_entry rs
+  have htemp : ∀ ty r, r ∈ destroyed_by_setstack ty → ls1 (R r) = Vundef := by
+    intro ty r hr
+    exact LTL_undef_regs_same return_address_offset tprog r
+      destroyed_at_function_entry (LTL.call_regs ls)
+      (destroyed_by_setstack_function_entry return_address_offset tprog ty r hr)
+  have htype : ∀ r, Val.has_type (ls1 (R r)) (mreg_type r) := by
+    intro r
+    apply undef_regs_type (mreg_type r) (R r)
+      destroyed_at_function_entry (LTL.call_regs ls)
+    change Val.has_type (LTL.call_regs ls (R r)) (mreg_type r)
+    simpa [LTL.call_regs] using wt_ls r
+  have hused : ∀ r, r ∈ (function_bounds cfg f).used_callee_save →
+      is_callee_save cfg r = true := by
+    intro r hr
+    exact used_callee_save_prop r hr
+  have hrec := save_callee_save_rec_correct
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    cfg xi return_address_offset tprog j cs fb sp ls1
+    htemp htype
+    k (function_bounds cfg f).used_callee_save
+    (make_env cfg (function_bounds cfg f)).fe_ofs_callee_save
+    rs1 m P hused hsep (agree_regs_undef_regs j destroyed_at_function_entry
+      (LTL.call_regs ls) rs
+      (agree_regs_call_regs j ls rs hagree))
+  rcases hrec with ⟨rs', m', hstar, hpred, hperm, hagree'⟩
+  have hls_eq : ∀ r, r ∈ (function_bounds cfg f).used_callee_save →
+      ls1 (R r) = ls0 (R r) := by
+    intro r hr
+    have hsave : is_callee_save cfg r = true := hused r hr
+    have hcallee' : ls (R r) = ls0 (R r) :=
+      hcallee (R r) (by simp [callee_save_loc, hsave])
+    have hnot : r ∉ destroyed_at_function_entry := by
+      intro hmem
+      have hnone := (destroyed_at_function_entry_caller_save cfg)
+      have hn : ¬ is_callee_save cfg r = true :=
+        (List.any_eq_false.mp hnone) r hmem
+      exact hn hsave
+    have hls1 : ls1 (R r) = ls (R r) := by
+      dsimp [ls1]
+      rw [LTL_undef_regs_others return_address_offset tprog r
+        destroyed_at_function_entry (LTL.call_regs ls) hnot]
+      simp [LTL.call_regs]
+    exact hls1.trans hcallee'
+  have hpred' :
+      (sepconj (contains_callee_saves j sp
+        (make_env cfg (function_bounds cfg f)).fe_ofs_callee_save
+        (function_bounds cfg f).used_callee_save ls0) P).m_pred m' := by
+    have heq := contains_callee_saves_exten j sp ls1 ls0
+      (function_bounds cfg f).used_callee_save
+      (make_env cfg (function_bounds cfg f)).fe_ofs_callee_save
+      (fun r hr => (hls_eq r hr).symm)
+    refine ⟨heq.1.1 m' hpred.1, hpred.2.1, ?_⟩
+    intro b ofs hfoot hPfoot
+    exact hpred.2.2 b ofs (heq.1.2 b ofs hfoot) hPfoot
+  refine ⟨rs', m', ?_, hpred', hperm, ?_⟩
+  · simpa [save_callee_save, make_env, rs1] using hstar
+  · simpa [ls1, rs1] using hagree'
+
+end CompCert4Lean.Backend.Stackingproof

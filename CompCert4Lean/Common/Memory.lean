@@ -7876,3 +7876,151 @@ theorem range_perm_inject : range_perm_injectStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem valid_access_inject : valid_access_injectStatement := by
+  intro f m1 m2 chunk b1 ofs b2 delta p hmap hinj hvalid
+  exact valid_access_inj f m1 m2 b1 b2 delta chunk ofs p hinj.mi_inj hmap hvalid
+
+theorem valid_pointer_inject : valid_pointer_injectStatement := by
+  intro f m1 m2 b1 ofs b2 delta hmap hinj hvalid
+  rw [valid_pointer_valid_access] at hvalid ⊢
+  exact valid_access_inject f m1 m2 Mint8unsigned b1 ofs b2 delta
+    Nonempty hmap hinj hvalid
+
+theorem weak_valid_pointer_inject : weak_valid_pointer_injectStatement := by
+  intro f m1 m2 b1 ofs b2 delta hmap hinj hvalid
+  unfold weak_valid_pointer at hvalid ⊢
+  rcases Bool.or_eq_true_iff.mp hvalid with hvalid | hvalid
+  · apply Bool.or_eq_true_iff.mpr
+    left
+    exact valid_pointer_inject f m1 m2 b1 ofs b2 delta hmap hinj hvalid
+  · apply Bool.or_eq_true_iff.mpr
+    right
+    have h := valid_pointer_inject f m1 m2 b1 (zSub ofs z1) b2 delta
+      hmap hinj hvalid
+    have haddr : zSub (zAdd ofs delta) z1 = zAdd (zSub ofs z1) delta := by
+      apply intOfZ_injective
+      change intOfZ (zOfInt (intOfZ (zAdd ofs delta) - intOfZ z1)) =
+        intOfZ (zAdd (zSub ofs z1) delta)
+      simp only [intOfZ_zOfInt, zAdd, zSub, ZArith.BinInt.Z.add,
+        ZArith.BinInt.Z.sub]
+      omega
+    rw [← haddr] at h
+    exact h
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open Lean Elab Tactic Meta
+
+namespace Mem
+
+private theorem memory_ptrofs_unsigned_repr (z : Z)
+    (hz : zLe z0 z ∧ zLe z Ptrofs.max_unsigned) :
+    Ptrofs.unsigned (Ptrofs.repr z) = z := by
+  have hzi : z = zOfInt (intOfZ z) := (zOfInt_intOfZ z).symm
+  rw [hzi]
+  change (CompCert4Lean.Lib.Integers.WordCore.repr Ptrofs.wordsize
+      (zOfInt (intOfZ z))).intval = zOfInt (intOfZ z)
+  let w := CompCert4Lean.Lib.Integers.WordCore.repr Ptrofs.wordsize
+      (zOfInt (intOfZ z))
+  have hi : w.val = Int.toNat
+      (intOfZ z % ((2 ^ Ptrofs.wordsize : Nat) : Int)) := by
+    dsimp [w]
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "WordCore.val_repr")
+        | throwError "WordCore.val_repr helper not found"
+      let stx := Lean.mkIdent n
+      let arg := Lean.mkIdent `z
+      evalTactic
+        (← `(tactic| exact $stx Ptrofs.wordsize
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ $arg)))
+  have hwi : w.intval = zOfNat w.val := by
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith
+            "WordCore.intval_eq_zOfNat_val")
+        | throwError "WordCore.intval_eq_zOfNat_val helper not found"
+      let stx := Lean.mkIdent n
+      let arg := Lean.mkIdent `w
+      evalTactic (← `(tactic| exact $stx $arg))
+  change w.intval = _
+  rw [hwi, hi]
+  have hznonneg : 0 ≤ intOfZ z := hz.1
+  have hzmax := hz.2
+  have hm : intOfZ Ptrofs.max_unsigned =
+      (2 ^ Ptrofs.wordsize : Int) - 1 := by rfl
+  have hzlt : intOfZ z < ((2 ^ Ptrofs.wordsize : Nat) : Int) := by
+    change intOfZ z ≤ intOfZ Ptrofs.max_unsigned at hzmax
+    rw [hm] at hzmax
+    have hpcast : ((2 ^ Ptrofs.wordsize : Nat) : Int) =
+        (2 : Int) ^ Ptrofs.wordsize := by
+      exact (Int.natCast_pow 2 Ptrofs.wordsize).symm
+    rw [hpcast]
+    omega
+  rw [Int.emod_eq_of_lt hznonneg hzlt]
+  change zOfInt (↑(Int.toNat (intOfZ z)) : Int) = _
+  rw [Int.toNat_of_nonneg hznonneg]
+
+theorem address_inject_gen : address_inject_genStatement := by
+  intro f m1 m2 b1 ofs1 b2 delta p hinj hperm hmap
+  have hpmax :
+      perm m1 b1 (Ptrofs.unsigned ofs1) Max Nonempty ∨
+        perm m1 b1 (zSub (Ptrofs.unsigned ofs1) z1) Max Nonempty := by
+    rcases hperm with hp | hp
+    · left
+      exact perm_implies m1 b1 (Ptrofs.unsigned ofs1) Max p Nonempty
+        (perm_cur_max m1 b1 (Ptrofs.unsigned ofs1) p hp) (perm_any_N p)
+    · right
+      exact perm_implies m1 b1 (zSub (Ptrofs.unsigned ofs1) z1) Max p Nonempty
+        (perm_cur_max m1 b1 (zSub (Ptrofs.unsigned ofs1) z1) p hp) (perm_any_N p)
+  obtain ⟨hdelta, hsum⟩ := hinj.mi_representable b1 b2 delta ofs1 hmap hpmax
+  have hofs0 : 0 ≤ intOfZ (Ptrofs.unsigned ofs1) := by
+    have h := ofs1.intrange.1
+    change (-1 : Int) < intOfZ (Ptrofs.unsigned ofs1) at h
+    omega
+  have hdeltaMax : zLe delta Ptrofs.max_unsigned := by
+    change intOfZ delta ≤ intOfZ Ptrofs.max_unsigned
+    have h := hsum.2
+    change intOfZ (zAdd (Ptrofs.unsigned ofs1) delta) ≤
+      intOfZ Ptrofs.max_unsigned at h
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at h
+    omega
+  have hdelta_repr : Ptrofs.unsigned (Ptrofs.repr delta) = delta :=
+    memory_ptrofs_unsigned_repr delta ⟨hdelta, hdeltaMax⟩
+  change Ptrofs.unsigned (Ptrofs.repr
+    (zAdd (Ptrofs.unsigned ofs1)
+      (Ptrofs.unsigned (Ptrofs.repr delta)))) = _
+  rw [hdelta_repr]
+  exact memory_ptrofs_unsigned_repr _ hsum
+
+end Mem
+
+end CompCert4Lean.Common.Memory

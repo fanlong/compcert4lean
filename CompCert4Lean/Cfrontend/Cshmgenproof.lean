@@ -6293,3 +6293,13 @@ theorem transl_binop_correct
       exact make_cmp_correct ge .Cge a tya b tyb c va vb v e le m hsem hmake h1 h2
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+theorem make_store_bitfield_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_store_bitfield_correctStatement :=
+  suffix_make_store_bitfield_correct
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

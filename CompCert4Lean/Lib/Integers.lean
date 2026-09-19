@@ -8852,3 +8852,15 @@ theorem shr_shr_proof : shr_shr := by
   exact shr_shr_worker
 
 end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+theorem or_assoc_proof : or_assoc := by
+  intro x y z
+  apply WordCore.ext_of_val_eq
+  change (WordCore.or (WordCore.or x y) z).val =
+    (WordCore.or x (WordCore.or y z)).val
+  rw [suffix_or_val, suffix_or_val, suffix_or_val, suffix_or_val]
+  exact Nat.or_assoc _ _ _
+
+end CompCert4Lean.Lib.Integers.Int

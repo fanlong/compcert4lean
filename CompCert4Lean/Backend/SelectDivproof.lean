@@ -3456,3 +3456,100 @@ theorem eval_divs_mul
       exact hv
 
 end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SelectDiv
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_divsimm
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] :
+    eval_divsimmStatement := by
+  intro cfg xi prog sp e m le e1 x n2 z ha hz
+  unfold divsimm
+  cases hpow : CompCert4Lean.Lib.Integers.Int.is_power2 n2 with
+  | some l =>
+      simp only [hpow]
+      split
+      · have hdiv := CompCert4Lean.Common.Values.Val.divs_pow2 x n2 l z hpow ‹_› hz
+        exact CompCert4Lean.X86.SelectOpproof.eval_shrximm
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          xi (Genv.globalenv prog) sp e m le e1 l x z ha hdiv
+      · exact CompCert4Lean.X86.SelectOpproof.eval_divs_base
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          xi (Genv.globalenv prog) sp e m le e1
+          (Eop (Ointconst n2) Enil) x (.Vint n2) z ha
+          (eval_intconst_local xi (Genv.globalenv prog) sp e m le n2) hz
+  | none =>
+      simp only [hpow]
+      split
+      · exact CompCert4Lean.X86.SelectOpproof.eval_divs_base
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          xi (Genv.globalenv prog) sp e m le e1
+          (Eop (Ointconst n2) Enil) x (.Vint n2) z ha
+          (eval_intconst_local xi (Genv.globalenv prog) sp e m le n2) hz
+      · cases hparams : divs_mul_params (intSigned n2) with
+        | none =>
+            exact CompCert4Lean.X86.SelectOpproof.eval_divs_base
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              xi (Genv.globalenv prog) sp e m le e1
+              (Eop (Ointconst n2) Enil) x (.Vint n2) z ha
+              (eval_intconst_local xi (Genv.globalenv prog) sp e m le n2) hz
+        | some pm =>
+            rcases pm with ⟨p, M⟩
+            cases x with
+            | Vint x1 =>
+                cases hzero : CompCert4Lean.Lib.Integers.Int.eq n2
+                    CompCert4Lean.Lib.Integers.Int.zero with
+                | true => simp [Val.divs, hzero] at hz
+                | false =>
+                    cases hmin : CompCert4Lean.Lib.Integers.Int.eq x1
+                        (CompCert4Lean.Lib.Integers.Int.repr
+                          CompCert4Lean.Lib.Integers.Int.min_signed) with
+                    | false =>
+                        simp [Val.divs, hzero, hmin] at hz
+                        cases hz
+                        have hbody := eval_divs_mul
+                          (binary64_certificate := binary64_certificate)
+                          (binary32_certificate := binary32_certificate)
+                          xi prog sp e m (le := (.Vint x1 :: le))
+                          (x := x1) (y := n2) (p := p) (M := M) hparams rfl
+                        refine ⟨.Vint (CompCert4Lean.Lib.Integers.Int.divs x1 n2), ?_,
+                          Val.lessdef_refl _⟩
+                        exact eval_expr.eval_Elet le e1 (divs_mul p M) (.Vint x1)
+                          (.Vint (CompCert4Lean.Lib.Integers.Int.divs x1 n2)) ha hbody
+                    | true =>
+                        cases hmone : CompCert4Lean.Lib.Integers.Int.eq n2
+                            CompCert4Lean.Lib.Integers.Int.mone with
+                        | true => simp [Val.divs, hzero, hmin, hmone] at hz
+                        | false =>
+                            simp [Val.divs, hzero, hmin, hmone] at hz
+                            cases hz
+                            have hbody := eval_divs_mul
+                              (binary64_certificate := binary64_certificate)
+                              (binary32_certificate := binary32_certificate)
+                              xi prog sp e m (le := (.Vint x1 :: le))
+                              (x := x1) (y := n2) (p := p) (M := M) hparams rfl
+                            refine ⟨.Vint (CompCert4Lean.Lib.Integers.Int.divs x1 n2), ?_,
+                              Val.lessdef_refl _⟩
+                            exact eval_expr.eval_Elet le e1 (divs_mul p M) (.Vint x1)
+                              (.Vint (CompCert4Lean.Lib.Integers.Int.divs x1 n2)) ha hbody
+            | Vundef => simp [Val.divs] at hz
+            | Vlong i => simp [Val.divs] at hz
+            | Vfloat f => simp [Val.divs] at hz
+            | Vsingle f => simp [Val.divs] at hz
+            | Vptr b ofs => simp [Val.divs] at hz
+
+end CompCert4Lean.Backend.SelectDivproof
