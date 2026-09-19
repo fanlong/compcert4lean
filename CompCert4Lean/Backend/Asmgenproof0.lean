@@ -1985,3 +1985,12 @@ theorem extcall_args_match : extcall_args_matchStatement := by
         CompCert4Lean.Common.Values.Val.lessdef_list_cons _ _ _ _ hld hldtail⟩
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem extcall_arguments_match : extcall_arguments_matchStatement := by
+  intro cfg ms m m' sp rs sg args hagree hext hargs
+  exact extcall_args_match cfg ms sp rs m m' hagree hext
+    (CompCert4Lean.X86.Conventions1.loc_arguments cfg sg) args hargs
+
+end CompCert4Lean.Backend.Asmgenproof0

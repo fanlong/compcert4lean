@@ -2079,3 +2079,316 @@ theorem nodeset_of_list_correct : nodeset_of_list_correctStatement :=
   linearize_nodeset_of_list_correct_aux
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Linearize
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.X86.Machregs
+open CompCert4Lean.X86.Op
+
+private theorem linearize_step_senv_eq (se1 se2 : Senv.t)
+    (he : Senv.equiv se1 se2) (hn : se2.nextblock = se1.nextblock) :
+    se2 = se1 := by
+  have hi : se2.invert_symbol = se1.invert_symbol := by
+    funext b
+    cases h1 : se1.invert_symbol b with
+    | none =>
+        cases h2 : se2.invert_symbol b with
+        | none => rfl
+        | some id =>
+            have hf := se2.invert_find_symbol b h2
+            rw [he.1 id] at hf
+            have hb := se1.find_invert_symbol id hf
+            rw [h1] at hb
+            cases hb
+    | some id =>
+        apply se2.find_invert_symbol id
+        rw [he.1 id]
+        exact se1.invert_find_symbol b h1
+  have hf := funext he.1
+  have hp := funext he.2.1
+  have hv := funext he.2.2
+  cases se1
+  cases se2
+  cases hf
+  cases hp
+  cases hi
+  cases hv
+  cases hn
+  rfl
+
+private theorem linearize_step_global_senv
+    (service : EnumerationService) (prog : LTL.program) (tprog : Linear.program)
+    (hm : match_prog service prog tprog) :
+    Genv.to_senv (Genv.globalenv tprog) = Genv.to_senv (Genv.globalenv prog) := by
+  apply linearize_step_senv_eq
+  · exact senv_preserved service prog tprog hm
+  · exact (linearize_globalenvs_match service prog tprog hm).mge_next
+
+private theorem linearize_step_entry_code
+    (service : EnumerationService) (f : LTL.function) (tf : Linear.function)
+    (ht : transf_function service f = .OK tf) :
+    ∃ c, tf.fn_code = add_branch f.fn_entrypoint c ∧ is_tail c tf.fn_code := by
+  unfold transf_function at ht
+  cases he : enumerate service f with
+  | Error msg => simp [he] at ht
+  | OK enum =>
+      simp [he] at ht
+      cases ht
+      refine ⟨linearize_body f enum, rfl, ?_⟩
+      exact is_tail_add_branch f.fn_entrypoint _ _ (.refl _)
+
+private theorem linearize_step_neg_destroyed (cond : condition) :
+    destroyed_by_cond (negate_condition cond) = destroyed_by_cond cond := by
+  cases cond <;> rfl
+
+section
+
+variable
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+
+theorem transf_step_correct : transf_step_correctStatement := by
+  intro cfg xi service prog tprog hm s1 t s2 hstep s1' hmatch
+  have hsym := symbols_preserved service prog tprog hm
+  have hse := linearize_step_global_senv service prog tprog hm
+  cases hstep with
+  | exec_start_block s f sp pc rs m bb hcode =>
+      cases hmatch with
+      | match_states_add_branch _ _ _ _ _ _ tf ts c hstack htrans hreach htail =>
+          obtain ⟨k, hk⟩ := find_label_lin service f tf pc bb htrans hcode hreach
+          refine Or.inl ⟨Linear.State ts tf sp (linearize_block bb k) rs m, ?_, ?_⟩
+          · exact add_branch_correct cfg xi service tprog pc _ c ts f tf sp rs m
+              htrans htail hk
+          · exact .match_states_block s f sp bb rs m tf ts k hstack htrans
+              (fun pc' hin => reachable_successors f pc pc' bb hcode hin hreach)
+              (is_tail_lin_block bb k tf.fn_code (is_tail_find_label pc _ _ hk))
+      | match_states_cond_taken _ _ _ _ rs _ tf ts cond args c hstack htrans hreach heval =>
+          obtain ⟨k, hk⟩ := find_label_lin service f tf pc bb htrans hcode hreach
+          refine Or.inl ⟨Linear.State ts tf sp (linearize_block bb k) (undef_regs (destroyed_by_cond cond) rs) m, ?_, ?_⟩
+          · apply plus_one
+            exact Linear.step.exec_Lcond_true ts tf sp cond args pc c rs m _ _
+              heval rfl hk
+          · exact .match_states_block s f sp bb _ m tf ts k hstack htrans
+              (fun pc' hin => reachable_successors f pc pc' bb hcode hin hreach)
+              (is_tail_lin_block bb k tf.fn_code (is_tail_find_label pc _ _ hk))
+      | match_states_jumptable _ _ _ _ rs _ tf ts arg tbl c n hstack htrans hreach harg hnth =>
+          obtain ⟨k, hk⟩ := find_label_lin service f tf pc bb htrans hcode hreach
+          refine Or.inl ⟨Linear.State ts tf sp (linearize_block bb k) (undef_regs destroyed_by_jumptable rs) m, ?_, ?_⟩
+          · apply plus_one
+            exact Linear.step.exec_Ljumptable ts tf sp arg tbl c rs m n pc _ _
+              harg hnth hk rfl
+          · exact .match_states_block s f sp bb _ m tf ts k hstack htrans
+              (fun pc' hin => reachable_successors f pc pc' bb hcode hin hreach)
+              (is_tail_lin_block bb k tf.fn_code (is_tail_find_label pc _ _ hk))
+  | exec_Lgetstack s f sp sl ofs ty dst bb rs m rs' hrs =>
+      cases hmatch with
+      | match_states_block _ _ _ _ _ _ tf ts c hstack htrans hreach htail =>
+          refine Or.inl ⟨Linear.State ts tf sp (linearize_block bb c) rs' m, ?_, ?_⟩
+          · apply plus_one
+            exact Linear.step.exec_Lgetstack ts tf sp sl ofs ty dst
+              (linearize_block bb c) rs m rs' hrs
+          · exact .match_states_block s f sp bb rs' m tf ts c hstack htrans hreach htail
+  | exec_Lsetstack s f sp src sl ofs ty bb rs m rs' hrs =>
+      cases hmatch with
+      | match_states_block _ _ _ _ _ _ tf ts c hstack htrans hreach htail =>
+          refine Or.inl ⟨Linear.State ts tf sp (linearize_block bb c) rs' m, ?_, ?_⟩
+          · apply plus_one
+            exact Linear.step.exec_Lsetstack ts tf sp src sl ofs ty
+              (linearize_block bb c) rs m rs' hrs
+          · exact .match_states_block s f sp bb rs' m tf ts c hstack htrans hreach htail
+  | exec_Lop s f sp op args res bb rs m v rs' heval hrs =>
+      cases hmatch with
+      | match_states_block _ _ _ _ _ _ tf ts c hstack htrans hreach htail =>
+          refine Or.inl ⟨Linear.State ts tf sp (linearize_block bb c) rs' m, ?_, ?_⟩
+          · apply plus_one
+            apply Linear.step.exec_Lop ts tf sp op args res (linearize_block bb c)
+              rs m v rs' _ hrs
+            rw [eval_operation_preserved _ _ _ _ _ _ hsym]
+            exact heval
+          · exact .match_states_block s f sp bb rs' m tf ts c hstack htrans hreach htail
+  | exec_Lload s f sp chunk addr args dst bb rs m a v rs' haddr hload hrs =>
+      cases hmatch with
+      | match_states_block _ _ _ _ _ _ tf ts c hstack htrans hreach htail =>
+          refine Or.inl ⟨Linear.State ts tf sp (linearize_block bb c) rs' m, ?_, ?_⟩
+          · apply plus_one
+            apply Linear.step.exec_Lload ts tf sp chunk addr args dst (linearize_block bb c)
+              rs m a v rs' _ hload hrs
+            rw [eval_addressing_preserved _ _ _ _ _ _ hsym]
+            exact haddr
+          · exact .match_states_block s f sp bb rs' m tf ts c hstack htrans hreach htail
+  | exec_Lstore s f sp chunk addr args src bb rs m a rs' m' haddr hstore hrs =>
+      cases hmatch with
+      | match_states_block _ _ _ _ _ _ tf ts c hstack htrans hreach htail =>
+          refine Or.inl ⟨Linear.State ts tf sp (linearize_block bb c) rs' m', ?_, ?_⟩
+          · apply plus_one
+            apply Linear.step.exec_Lstore ts tf sp chunk addr args src (linearize_block bb c)
+              rs m m' a rs' _ hstore hrs
+            rw [eval_addressing_preserved _ _ _ _ _ _ hsym]
+            exact haddr
+          · exact .match_states_block s f sp bb rs' m' tf ts c hstack htrans hreach htail
+  | exec_Lcall s f sp sig ros bb rs m fd hfind hsig =>
+      cases hmatch with
+      | match_states_block _ _ _ _ _ _ tf ts c hstack htrans hreach htail =>
+          obtain ⟨tfd, hfind', htfd⟩ := find_function_translated service prog tprog hm
+            ros rs fd hfind
+          refine Or.inl ⟨Linear.Callstate (Linear.Stackframe tf sp rs (linearize_block bb c) :: ts) tfd rs m, ?_, ?_⟩
+          · apply plus_one
+            apply Linear.step.exec_Lcall ts tf sp sig ros (linearize_block bb c)
+              rs m tfd hfind'
+            rw [sig_preserved service fd tfd htfd]
+            exact hsig.symm
+          · apply match_states.match_states_call _ fd rs m tfd _ _ htfd
+            exact .cons _ _ (.match_stackframe_intro f sp bb rs tf c htrans hreach htail)
+              hstack
+  | exec_Ltailcall s f stk sig ros bb rs m fd rs' m' hrs hfind hsig hfree =>
+      cases hmatch with
+      | match_states_block _ _ _ _ _ _ tf ts c hstack htrans hreach htail =>
+          obtain ⟨tfd, hfind', htfd⟩ := find_function_translated service prog tprog hm
+            ros rs' fd hfind
+          refine Or.inl ⟨Linear.Callstate ts tfd rs' m', ?_, ?_⟩
+          · apply plus_one
+            apply Linear.step.exec_Ltailcall ts tf stk sig ros c rs m rs' tfd m'
+            · rw [match_parent_locset service s ts hstack]
+              exact hrs
+            · exact hfind'
+            · rw [sig_preserved service fd tfd htfd]
+              exact hsig.symm
+            · rw [stacksize_preserved service f tf htrans]
+              exact hfree
+          · exact .match_states_call s fd rs' m' tfd ts hstack htfd
+  | exec_Lbuiltin s f sp ef args res bb rs m vargs t vres rs' m' hargs hcall hrs =>
+      cases hmatch with
+      | match_states_block _ _ _ _ _ _ tf ts c hstack htrans hreach htail =>
+          refine Or.inl ⟨Linear.State ts tf sp (linearize_block bb c) rs' m', ?_, ?_⟩
+          · apply plus_one
+            apply Linear.step.exec_Lbuiltin ts tf sp rs m ef args res (linearize_block bb c)
+              vargs t vres rs' m'
+            · rw [hse]; exact hargs
+            · rw [hse]; exact hcall
+            · exact hrs
+          · exact .match_states_block s f sp bb rs' m' tf ts c hstack htrans hreach htail
+  | exec_Lbranch s f sp pc bb rs m =>
+      cases hmatch with
+      | match_states_block _ _ _ _ _ _ tf ts c hstack htrans hreach htail =>
+          exact Or.inr ⟨by exact Nat.zero_lt_succ 0, by trivial,
+            .match_states_add_branch s f sp pc rs m tf ts c hstack htrans
+              (hreach pc (.head _)) htail⟩
+  | exec_Lcond s f sp cond args pc1 pc2 bb rs b pc rs' m heval hpc hrs =>
+      cases hmatch with
+      | match_states_block _ _ _ _ _ _ tf ts c hstack htrans hreach htail =>
+          have hr1 := hreach pc1 (.head _)
+          have hr2 := hreach pc2 (.tail _ (.head _))
+          subst pc
+          subst rs'
+          simp only [linearize_block]
+          cases hs : starts_with pc1 c
+          · simp only [Bool.false_eq_true, ↓reduceIte]
+            cases b
+            · simp only [Bool.false_eq_true, ↓reduceIte]
+              refine Or.inl ⟨Linear.State ts tf sp (add_branch pc2 c) (undef_regs (destroyed_by_cond cond) rs) m, ?_, ?_⟩
+              · apply plus_one
+                exact Linear.step.exec_Lcond_false ts tf sp cond args pc1
+                  (add_branch pc2 c) rs m _ heval rfl
+              · exact .match_states_add_branch s f sp pc2 _ m tf ts c hstack htrans hr2 htail
+            · simp only [↓reduceIte]
+              exact Or.inr ⟨by exact Nat.zero_lt_succ 0, by trivial,
+                .match_states_cond_taken s f sp pc1 rs m tf ts cond args
+                  (add_branch pc2 c) hstack htrans hr1 heval⟩
+          · simp only [↓reduceIte]
+            have hn := eval_negate_condition cond (reglist rs args) m
+            rw [heval] at hn
+            cases b
+            · simp only [Bool.false_eq_true, ↓reduceIte]
+              have hneg : eval_condition (negate_condition cond) (reglist rs args) m =
+                  some true := hn
+              refine Or.inr ⟨by exact Nat.zero_lt_succ 0, by trivial, ?_⟩
+              rw [← linearize_step_neg_destroyed cond]
+              exact .match_states_cond_taken s f sp pc2 rs m tf ts (negate_condition cond)
+                args (add_branch pc1 c) hstack htrans hr2 hneg
+            · simp only [↓reduceIte]
+              refine Or.inl ⟨Linear.State ts tf sp (add_branch pc1 c) (undef_regs (destroyed_by_cond cond) rs) m, ?_, ?_⟩
+              · apply plus_one
+                apply Linear.step.exec_Lcond_false ts tf sp (negate_condition cond)
+                  args pc2 (add_branch pc1 c) rs m _ hn
+                rw [linearize_step_neg_destroyed]
+              · exact .match_states_add_branch s f sp pc1 _ m tf ts c hstack htrans hr1 htail
+  | exec_Ljumptable s f sp arg tbl bb rs m n pc rs' harg hnth hrs =>
+      cases hmatch with
+      | match_states_block _ _ _ _ _ _ tf ts c hstack htrans hreach htail =>
+          subst rs'
+          refine Or.inr ⟨by exact Nat.zero_lt_succ 0, by trivial, ?_⟩
+          exact .match_states_jumptable s f sp pc rs m tf ts arg tbl c n
+            hstack htrans (hreach pc (list_nth_z_in _ tbl _ pc hnth)) harg hnth
+  | exec_Lreturn s f stk bb rs m m' hfree =>
+      cases hmatch with
+      | match_states_block _ _ _ _ _ _ tf ts c hstack htrans hreach htail =>
+          refine Or.inl ⟨Linear.Returnstate ts (return_regs cfg (Linear.parent_locset ts) rs) m', ?_, ?_⟩
+          · apply plus_one
+            apply Linear.step.exec_Lreturn ts tf stk c rs m m'
+            rw [stacksize_preserved service f tf htrans]
+            exact hfree
+          · rw [match_parent_locset service s ts hstack]
+            exact .match_states_return s _ m' ts hstack
+  | exec_function_internal s f rs m m' stk rs' halloc hrs =>
+      cases hmatch with
+      | match_states_call _ _ _ _ tf ts hstack htrans =>
+          unfold CompCert4Lean.Backend.Linearize.transf_fundef transf_partial_fundef at htrans
+          cases ht : transf_function service f with
+          | Error msg => simp [ht] at htrans
+          | OK tf' =>
+              simp only [ht] at htrans
+              cases htrans
+              obtain ⟨c, hc, htail⟩ := linearize_step_entry_code service f tf' ht
+              refine Or.inl ⟨Linear.State ts tf' (Vptr stk Ptrofs.zero) tf'.fn_code rs' m', ?_, ?_⟩
+              · apply plus_one
+                apply Linear.step.exec_function_internal ts tf' rs m rs' m' stk _ hrs
+                rw [stacksize_preserved service f tf' ht]
+                exact halloc
+              · rw [hc]
+                exact .match_states_add_branch s f _ f.fn_entrypoint rs' m' tf' ts c
+                  hstack ht (reachable_entrypoint f) htail
+  | exec_function_external s ef t args res rs m rs' m' hargs hcall hrs =>
+      cases hmatch with
+      | match_states_call _ _ _ _ tf ts hstack htrans =>
+          unfold CompCert4Lean.Backend.Linearize.transf_fundef transf_partial_fundef at htrans
+          cases htrans
+          refine Or.inl ⟨Linear.Returnstate ts rs' m', ?_, ?_⟩
+          · apply plus_one
+            apply Linear.step.exec_function_external ts ef args res rs rs' m t m' hargs _ hrs
+            rw [hse]
+            exact hcall
+          · exact .match_states_return s rs' m' ts hstack
+  | exec_return f sp rs1 bb s rs m =>
+      cases hmatch with
+      | match_states_return _ _ _ ts hstack =>
+          cases hstack with
+          | cons sf tsf hframe hstack =>
+              rename_i ts'
+              cases hframe with
+              | match_stackframe_intro _ _ _ _ tf c htrans hreach htail =>
+                  refine Or.inl ⟨Linear.State ts' tf sp (linearize_block bb c) rs m, ?_, ?_⟩
+                  · apply plus_one
+                    exact Linear.step.exec_return _ tf sp rs1 (linearize_block bb c) rs m
+                  · exact .match_states_block s f sp bb rs m tf _ c hstack htrans hreach htail
+
+end
+
+end CompCert4Lean.Backend.Linearizeproof

@@ -2383,3 +2383,23 @@ theorem volatile_store_inject : volatile_store_injectStatement := by
             omega
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Integers
+
+theorem volatile_load_extends : volatile_load_extendsStatement := by
+  intro ge chunk m b ofs t v m' hload hext
+  cases hload with
+  | volatile_load_vol id ev v hvol hfind hmatch =>
+      exact ⟨Val.load_result chunk v,
+        volatile_load_vol chunk m' b ofs id ev v hvol hfind hmatch,
+        Val.lessdef_refl _⟩
+  | volatile_load_nonvol v hvol hload =>
+      obtain ⟨v', hload', hless⟩ :=
+        Mem.load_extends chunk m m' b (Ptrofs.unsigned ofs) v hext hload
+      exact ⟨v', volatile_load_nonvol chunk m' b ofs v' hvol hload', hless⟩
+
+end CompCert4Lean.Common.Events

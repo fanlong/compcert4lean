@@ -331,3 +331,76 @@ theorem needs_of_addressing_32_sound : needs_of_addressing_32_soundStatement := 
     · exact vagree_same _ _
 
 end CompCert4Lean.X86.NeedOp
+namespace CompCert4Lean.X86.NeedOp
+
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+
+private theorem addressing64_agree_one {a : val} {args' : List val} {n : nval}
+    (h : vagree_list [a] args' [n]) :
+    ∃ a', args' = [a'] ∧ vagree a a' n := by
+  cases h with
+  | vagree_list_cons a tail a' tail' n ns ha ht =>
+      cases ht
+      exact ⟨a', rfl, ha⟩
+
+private theorem addressing64_agree_two {a b : val} {args' : List val} {n : nval}
+    (h : vagree_list [a, b] args' [n, n]) :
+    ∃ a' b', args' = [a', b'] ∧ vagree a a' n ∧ vagree b b' n := by
+  cases h with
+  | vagree_list_cons a tail a' tail' n ns ha ht =>
+      cases ht with
+      | vagree_list_cons b tail b' tail' n ns hb ht =>
+          cases ht
+          exact ⟨a', b', rfl, ha, hb⟩
+
+theorem needs_of_addressing_64_sound : needs_of_addressing_64_soundStatement := by
+  intro ge sp addr args v nv args' heval hagree
+  change eval_addressing64 (F := CompCert4Lean.Backend.RTL.fundef) (V := Unit)
+      ge (Vptr sp Ptrofs.zero) addr args = some v at heval
+  change ∃ v',
+      eval_addressing64 (F := CompCert4Lean.Backend.RTL.fundef) (V := Unit)
+          ge (Vptr sp Ptrofs.zero) addr args' = some v' ∧
+        vagree v v' nv
+  unfold eval_addressing64 at heval
+  split at heval <;> try { simp [CompCert4Lean.X86_64.Archi.ptr64] at heval }
+  all_goals
+    cases heval
+    simp only [needs_of_addressing, op1, op2] at hagree
+  · obtain ⟨a', rfl, ha⟩ := addressing64_agree_one hagree
+    refine ⟨_, rfl, ?_⟩
+    exact addl_sound _ _ _ _ _ ha (vagree_same _ _)
+  · obtain ⟨a', b', rfl, ha, hb⟩ := addressing64_agree_two hagree
+    refine ⟨_, rfl, ?_⟩
+    apply addl_sound
+    · apply addl_sound
+      · simpa only [modarith_idem nv, modarith_idem (modarith nv)] using ha
+      · simpa only [modarith_idem nv, modarith_idem (modarith nv)] using hb
+    · exact vagree_same _ _
+  · obtain ⟨a', rfl, ha⟩ := addressing64_agree_one hagree
+    refine ⟨_, rfl, ?_⟩
+    apply addl_sound
+    · exact mull_sound _ _ _ _ _ ha (vagree_same _ _)
+    · exact vagree_same _ _
+  · obtain ⟨a', b', rfl, ha, hb⟩ := addressing64_agree_two hagree
+    refine ⟨_, rfl, ?_⟩
+    apply addl_sound _ _ _ _ _ ha
+    apply addl_sound
+    · apply mull_sound
+      · simpa only [modarith_idem nv, modarith_idem (modarith nv)] using hb
+      · exact vagree_same _ _
+    · exact vagree_same _ _
+  · cases hagree
+    rename_i addr vl id ofs
+    refine ⟨CompCert4Lean.Common.Globalenvs.Genv.symbol_address ge id ofs, ?_, ?_⟩
+    · simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64]
+    · exact vagree_same _ _
+  · cases hagree
+    rename_i addr vl ofs
+    refine ⟨Val.offset_ptr (Vptr sp Ptrofs.zero) ofs, ?_, ?_⟩
+    · simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64]
+    · exact vagree_same _ _
+
+end CompCert4Lean.X86.NeedOp

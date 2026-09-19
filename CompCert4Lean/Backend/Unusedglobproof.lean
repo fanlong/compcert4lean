@@ -4677,3 +4677,10 @@ theorem used_globals_sound : used_globals_soundStatement := by
         · exact False.elim (hnot_todo htodo))
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+theorem filter_globdefs_domain : filter_globdefs_domainStatement :=
+  filter_globdefs_domain_local
+
+end CompCert4Lean.Backend.Unusedglobproof

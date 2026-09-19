@@ -3275,3 +3275,10 @@ theorem symbols_preserved : symbols_preservedStatement := by
   simpa [Genv.find_symbol] using hg.mge_symb id
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+theorem function_ptr_translated : function_ptr_translatedStatement :=
+  rtlgen_function_ptr_translated
+
+end CompCert4Lean.Backend.RTLgenproof

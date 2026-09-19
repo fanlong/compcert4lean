@@ -3458,3 +3458,26 @@ theorem tr_builtin_arg : tr_builtin_argStatement := by
         · simp [hp]
           exact Val.addl_inject F v1 v1' v2 v2' hinj1 hinj2
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+theorem tr_builtin_args : tr_builtin_argsStatement := by
+  intro cfg prog tprog hm F bound ctx rs rs' sp sp' m m' al vl
+    hglobals hregs hsp hmem heval
+  induction heval with
+  | nil =>
+      exact ⟨[], list_forall2.nil _, Val.inject_list_nil F⟩
+  | cons a v ha htail ih =>
+      obtain ⟨v', ha', hv⟩ :=
+        tr_builtin_arg cfg prog tprog hm F bound ctx rs rs' sp sp' m m' a v
+          hglobals hregs hsp hmem ha
+      obtain ⟨vl', htail', hvl⟩ := ih
+      exact ⟨v' :: vl', list_forall2.cons (sbuiltinarg ctx a) v' ha' htail',
+        Val.inject_list_cons F v v' _ vl' hv hvl⟩
+
+end CompCert4Lean.Backend.Inliningproof

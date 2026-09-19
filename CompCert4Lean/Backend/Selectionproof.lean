@@ -3839,3 +3839,96 @@ theorem function_ptr_translated : function_ptr_translatedStatement cfg oracle :=
   exact ⟨cu, tf, hfindtf, hmatchf, horder⟩
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_load
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_loadStatement := by
+  intro xi tprog sp e m le a v chunk v' heval hload
+  cases v with
+  | Vundef => simp [Mem.loadv] at hload
+  | Vint n => simp [Mem.loadv] at hload
+  | Vlong n => simp [Mem.loadv] at hload
+  | Vfloat f => simp [Mem.loadv] at hload
+  | Vsingle f => simp [Mem.loadv] at hload
+  | Vptr b ofs =>
+      have hzero :
+          eval_addressing (Genv.globalenv tprog) sp (.Aindexed (zOfNat 0))
+            [Vptr b ofs] = some (Vptr b ofs) := by
+        simp [eval_addressing, eval_addressing64,
+          CompCert4Lean.X86_64.Archi.ptr64, Val.addl,
+          CompCert4Lean.Lib.Integers.Ptrofs.of_int64,
+          CompCert4Lean.Lib.Integers.Int64.repr]
+        rw [show CompCert4Lean.Lib.Integers.Ptrofs.repr
+            (CompCert4Lean.Lib.Integers.Int64.unsigned
+              (CompCert4Lean.Lib.Integers.WordCore.repr
+                CompCert4Lean.Lib.Integers.Int64.wordsize (zOfNat 0))) =
+            CompCert4Lean.Lib.Integers.Ptrofs.repr
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0 by rfl]
+        exact selection_ptrofs_add_zero ofs
+      have hfallback (a0 : CminorSel.expr)
+          (ha0 : CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le a0 (Vptr b ofs))
+          (haddr : CompCert4Lean.X86.SelectOp.addressing chunk a0 =
+            (.Aindexed (zOfNat 0), Econs a0 Enil)) :
+          CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le (load chunk a0) v' := by
+        unfold CompCert4Lean.Backend.Selection.load
+        rw [haddr]
+        exact eval_expr.eval_Eload le chunk (.Aindexed (zOfNat 0))
+          (Econs a0 Enil) [Vptr b ofs] (Vptr b ofs) v'
+          (eval_exprlist.cons le a0 Enil (Vptr b ofs) [] ha0 (eval_exprlist.nil le))
+          hzero hload
+      cases hcase : addressing_match a with
+      | addressing_case1 addr args =>
+          apply hfallback _ heval
+          simp [CompCert4Lean.X86.SelectOp.addressing, addressing_match,
+            CompCert4Lean.X86_64.Archi.ptr64]
+          rfl
+      | addressing_case2 addr args =>
+          by_cases hvalid : addressing_valid addr
+          · cases heval with
+            | eval_Eop le' op al vl vv hargs hop =>
+                have hadd :
+                    CompCert4Lean.X86.SelectOp.addressing chunk (Eop (.Oleal addr) args) =
+                      (addr, args) := by
+                  simp [CompCert4Lean.X86.SelectOp.addressing, addressing_match,
+                    hvalid, CompCert4Lean.X86_64.Archi.ptr64]
+                have haddr :
+                    eval_addressing (Genv.globalenv tprog) sp addr vl =
+                      some (Vptr b ofs) := by
+                  change eval_addressing64 (Genv.globalenv tprog) sp addr vl =
+                    some (Vptr b ofs)
+                  change eval_addressing64 (Genv.globalenv tprog) sp addr vl =
+                    some (Vptr b ofs) at hop
+                  exact hop
+                unfold CompCert4Lean.Backend.Selection.load
+                rw [hadd]
+                exact eval_expr.eval_Eload le chunk addr args vl (Vptr b ofs) v'
+                  hargs haddr hload
+          · apply hfallback _ heval
+            simp [CompCert4Lean.X86.SelectOp.addressing, addressing_match, hvalid,
+              CompCert4Lean.X86_64.Archi.ptr64]
+            rfl
+      | addressing_default _ =>
+          apply hfallback _ heval
+          unfold CompCert4Lean.X86.SelectOp.addressing
+          cases a with
+          | Eop op args =>
+              cases op <;>
+                simp [addressing_match] at hcase ⊢ <;>
+                rfl
+          | _ =>
+              simp [addressing_match] at hcase ⊢ <;>
+                rfl
+
+end CompCert4Lean.Backend.Selectionproof

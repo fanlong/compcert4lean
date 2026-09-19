@@ -1813,3 +1813,99 @@ theorem middle_odd (ctx : ExactRealContext) :
   rw [hk]
 
 end CompCert4Lean.Flocq.Calc.Bracket
+
+namespace CompCert4Lean.Flocq.Calc.Bracket
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq in
+theorem inbetween_step_any_Mi_odd (ctx : ExactRealContext) :
+    inbetween_step_any_Mi_oddStatement ctx := by
+  intro start step nb_steps hstep hnb x k l hx hmid
+  have hnb_int : (1 : Int) < intOfZ nb_steps := hnb
+  have hmid_int := congrArg intOfZ hmid
+  simp only [Zadd, Zmul, ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+    intOfZ_zOfInt] at hmid_int
+  change 2 * intOfZ k + 1 = intOfZ nb_steps at hmid_int
+  apply inbetween_step_not_Eq ctx start step nb_steps hstep x k (loc_Inexact l) l hx
+  · change 0 < intOfZ k ∧ intOfZ k < intOfZ nb_steps
+    omega
+  · cases hx with
+    | inbetween_Inexact _ _ hcompare =>
+      rw [middle_odd ctx start step nb_steps k hmid] at hcompare
+      exact hcompare
+
+end CompCert4Lean.Flocq.Calc.Bracket
+
+namespace CompCert4Lean.Flocq.Calc.Bracket
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq in
+theorem new_location_even_correct (ctx : ExactRealContext) :
+    new_location_even_correctStatement ctx := by
+  intro start step nb_steps hstep hnb heven x k l hk hx
+  unfold new_location_even
+  by_cases hk0 : k = Z0
+  · have hbool : Zeq_bool k Z0 = true :=
+      CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true k Z0 hk0
+    rw [hbool]
+    simp only [↓reduceIte]
+    subst k
+    have hzero : Rplus ctx start (Rmult ctx (IZR ctx Z0) step) = start := by
+      change ctx.spec.add start (ctx.spec.mul (ctx.spec.ofZ Z0) step) = start
+      rw [ctx.certificate.sourceLaws.ofZ_zero,
+        ctx.certificate.orderedField.zero_mul, ctx.certificate.orderedField.add_zero]
+    have hone : Rplus ctx start (Rmult ctx (IZR ctx (Zadd Z0 Zone)) step) =
+        Rplus ctx start step := by
+      change ctx.spec.add start (ctx.spec.mul (ctx.spec.ofZ Zone) step) =
+        ctx.spec.add start step
+      rw [ctx.certificate.sourceLaws.ofZ_one, ctx.certificate.orderedField.one_mul]
+    rw [hzero, hone] at hx
+    cases l with
+    | loc_Exact =>
+      cases hx with
+      | inbetween_Exact hxeq => exact inbetween_Exact hxeq
+    | loc_Inexact c =>
+      exact inbetween_step_Lo_not_Eq ctx start step nb_steps hstep hnb x
+        (loc_Inexact c) hx (by intro h; cases h)
+  · have hbool : Zeq_bool k Z0 = false :=
+      CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false k Z0 hk0
+    rw [hbool]
+    simp only [Bool.false_eq_true, ↓reduceIte]
+    have hkpos : Zlt Z0 k := by
+      have hk_nonneg : (0 : Int) ≤ intOfZ k := hk.1
+      have hk_ne : intOfZ k ≠ 0 := by
+        intro h
+        exact hk0 (intOfZ_injective h)
+      change (0 : Int) < intOfZ k
+      omega
+    generalize hcompare : Zcompare (Zmul Ztwo k) nb_steps = c
+    have hspec : CompCert4Lean.Flocq.Core.Zaux.Zcompare_prop
+        (Zmul Ztwo k) nb_steps c := by
+      rw [← hcompare]
+      exact CompCert4Lean.Flocq.Core.Zaux.Zcompare_spec (Zmul Ztwo k) nb_steps
+    cases hspec with
+    | Zcompare_Lt_ hcmp =>
+      apply inbetween_step_Lo ctx start step nb_steps hstep hnb x k l hx hkpos
+      obtain ⟨p, hp⟩ := CompCert4Lean.Flocq.Core.Zaux.Zeven_ex nb_steps
+      change nb_steps = Zadd (Zmul Ztwo p) (if Zeven nb_steps then Z0 else Zone) at hp
+      rw [heven] at hp
+      simp only [↓reduceIte] at hp
+      have hp_int := congrArg intOfZ hp
+      have hcmp_int := hcmp
+      change intOfZ (Zmul Ztwo k) < intOfZ nb_steps at hcmp_int
+      change intOfZ (Zadd (Zmul Ztwo k) Zone) < intOfZ nb_steps
+      simp only [Zadd, Zmul, ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+        intOfZ_zOfInt] at hp_int hcmp_int ⊢
+      change intOfZ nb_steps = 2 * intOfZ p + 0 at hp_int
+      change 2 * intOfZ k < intOfZ nb_steps at hcmp_int
+      change 2 * intOfZ k + 1 < intOfZ nb_steps
+      omega
+    | Zcompare_Eq_ hcmp =>
+      cases l with
+      | loc_Exact =>
+        exact inbetween_step_Mi_Mi_even ctx start step nb_steps hstep hnb x k hx hcmp
+      | loc_Inexact c =>
+        exact inbetween_step_Hi_Mi_even ctx start step nb_steps hstep hnb x k
+          (loc_Inexact c) hx (by intro h; cases h) hcmp
+    | Zcompare_Gt_ hcmp =>
+      exact inbetween_step_Hi ctx start step nb_steps hstep hnb x k l hx hcmp hk.2
+
+end CompCert4Lean.Flocq.Calc.Bracket

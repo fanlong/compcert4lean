@@ -2561,3 +2561,119 @@ theorem transl_exit_charact : transl_exit_charactStatement :=
   rtlgenspec_transl_exit_charact
 
 end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTLgen
+
+theorem transl_exitexpr_charact : transl_exitexpr_charactStatement := by
+  intro nexits a
+  induction a with
+  | XEexit n =>
+      intro map s ns s' INCR TR WF
+      exact tr_exitexpr.tr_XEcond map n ns nexits
+        (transl_exit_charact nexits n s ns s' INCR TR).1
+  | XEjumptable a tbl =>
+      intro map s ns s' INCR TR WF
+      change RTLgen.bind (RTLgen.alloc_reg map a)
+        (fun r => RTLgen.bind (RTLgen.transl_jumptable nexits tbl)
+          (fun tbl' => RTLgen.bind (RTLgen.add_instr (RTL.instruction.Ijumptable r tbl'))
+            (fun n1 => RTLgen.transl_expr map a r n1))) s = .OK ns s' INCR at TR
+      cases halloc : RTLgen.alloc_reg map a s with
+      | Error msg => simp [RTLgen.bind, halloc] at TR
+      | OK r s0 ialloc =>
+          simp [RTLgen.bind, halloc] at TR
+          cases hjt : RTLgen.transl_jumptable nexits tbl s0 with
+          | Error msg => simp [RTLgen.bind, hjt] at TR
+          | OK tbl' s1 ijt =>
+              simp [RTLgen.bind, hjt] at TR
+              cases hadd : RTLgen.add_instr (RTL.instruction.Ijumptable r tbl') s1 with
+              | Error msg => simp [RTLgen.bind, hadd] at TR
+              | OK n1 s2 iadd =>
+                  simp [RTLgen.bind, hadd] at TR
+                  cases harg : RTLgen.transl_expr map a r n1 s2 with
+                  | Error msg => simp [RTLgen.bind, harg] at TR
+                  | OK ns2 sfin iarg =>
+                      simp [RTLgen.bind, harg] at TR
+                      rcases TR with ⟨hns, hs⟩
+                      cases hns
+                      cases hs
+                      have i02 := RTLgen.state_incr_trans s0 s1 s2 ijt iadd
+                      have is2 := RTLgen.state_incr_trans s s0 s2 ialloc i02
+                      apply tr_exitexpr.tr_XEjumptable
+                      · exact (transl_jumptable_charact nexits tbl s0 tbl' s1 ijt hjt).1
+                      · exact transl_expr_charact a map r n1 s2 ns s' [] iarg harg
+                          (test_map_valid_incr map s s2 is2 WF)
+                          (alloc_reg_target_ok map [] s a r s0 ialloc WF
+                            (by intro r hr; simp at hr) halloc)
+                          (by intro r hr; simp at hr)
+                          (reg_valid_incr r s0 s2 i02
+                            (test_alloc_reg_valid map a r s s0 ialloc WF halloc))
+                      · exact instr_at_incr s2 s' n1 _ iarg
+                          (test_add_instr_code s1 (RTL.instruction.Ijumptable r tbl')
+                            n1 s2 iadd hadd)
+  | XEcondition a b c ihb ihc =>
+      intro map s ns s' INCR TR WF
+      change RTLgen.bind (RTLgen.transl_exitexpr map c nexits)
+        (fun nc => RTLgen.bind (RTLgen.transl_exitexpr map b nexits)
+          (fun nb => RTLgen.transl_condexpr map a nb nc)) s = .OK ns s' INCR at TR
+      cases hc : RTLgen.transl_exitexpr map c nexits s with
+      | Error msg => simp [RTLgen.bind, hc] at TR
+      | OK nc s0 ic =>
+          simp [RTLgen.bind, hc] at TR
+          cases hb : RTLgen.transl_exitexpr map b nexits s0 with
+          | Error msg => simp [RTLgen.bind, hb] at TR
+          | OK nb s1 ib =>
+              simp [RTLgen.bind, hb] at TR
+              cases ha : RTLgen.transl_condexpr map a nb nc s1 with
+              | Error msg => simp [RTLgen.bind, ha] at TR
+              | OK ns2 sfin ia =>
+                  simp [RTLgen.bind, ha] at TR
+                  rcases TR with ⟨hns, hs⟩
+                  cases hns
+                  cases hs
+                  have hmap0 := test_map_valid_incr map s s0 ic WF
+                  have hmap1 := test_map_valid_incr map s0 s1 ib hmap0
+                  exact tr_exitexpr.tr_XEcondition map a b c ns nexits nb nc
+                    (transl_condexpr_charact a map nb nc s1 ns s' [] ia ha hmap1
+                      (by intro r hr; simp at hr))
+                    (tr_exitexpr_incr s1 s' ia map b nb nexits
+                      (ihb map s0 nb s1 ib hb hmap0))
+                    (tr_exitexpr_incr s0 s' (RTLgen.state_incr_trans s0 s1 s' ib ia)
+                      map c nc nexits (ihc map s nc s0 ic hc WF))
+  | XElet a b ih =>
+      intro map s ns s' INCR TR WF
+      change RTLgen.bind RTLgen.new_reg
+        (fun r => RTLgen.bind (RTLgen.transl_exitexpr (RTLgen.add_letvar map r) b nexits)
+          (fun n1 => RTLgen.transl_expr map a r n1)) s = .OK ns s' INCR at TR
+      cases hnew : RTLgen.new_reg s with
+      | Error msg => simp [RTLgen.bind, hnew] at TR
+      | OK r s0 inew =>
+          simp [RTLgen.bind, hnew] at TR
+          cases hbody : RTLgen.transl_exitexpr (RTLgen.add_letvar map r) b nexits s0 with
+          | Error msg => simp [RTLgen.bind, hbody] at TR
+          | OK n1 s1 ibody =>
+              simp [RTLgen.bind, hbody] at TR
+              cases hbound : RTLgen.transl_expr map a r n1 s1 with
+              | Error msg => simp [RTLgen.bind, hbound] at TR
+              | OK ns2 sfin ibound =>
+                  simp [RTLgen.bind, hbound] at TR
+                  rcases TR with ⟨hns, hs⟩
+                  cases hns
+                  cases hs
+                  have hr0 := test_new_reg_valid s r s0 inew hnew
+                  have hmap0 := test_map_valid_incr map s s0 inew WF
+                  have hmap1 := test_map_valid_incr map s0 s1 ibody hmap0
+                  have hfresh := new_reg_not_in_map s s0 map r inew hnew WF
+                  exact tr_exitexpr.tr_XElet map a b ns nexits r n1 hfresh
+                    (transl_expr_charact a map r n1 s1 ns s' [] ibound hbound hmap1
+                      (target_reg_ok.target_reg_other a r hfresh (by simp))
+                      (by intro r hr; simp at hr)
+                      (reg_valid_incr r s0 s1 ibody hr0))
+                    (tr_exitexpr_incr s1 s' ibound (RTLgen.add_letvar map r) b n1 nexits
+                      (ih (RTLgen.add_letvar map r) s0 n1 s1 ibody hbody
+                        (add_letvar_valid map s0 r hmap0 hr0)))
+
+end CompCert4Lean.Backend.RTLgenspec

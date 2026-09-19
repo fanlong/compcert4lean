@@ -7866,3 +7866,44 @@ open CompCert4Lean.Lib.Maps
       simpa [hblock] using hpair'
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+
+theorem subst_reg_kind_satisf_makelong :
+    subst_reg_kind_satisf_makelongStatement := by
+  intro src1 src2 dst rs ls e e1 e2 hunc hsat
+  unfold satisf at hsat ⊢
+  intro q hq
+  rcases in_subst_reg_kind dst .High src1 .Full q e hq with hhigh | hsame
+  · rcases hhigh with ⟨hpair, hmem⟩
+    rcases in_subst_reg_kind dst .Low src2 .Full
+        { ekind := .Full, ereg := src1, eloc := q.eloc } e1 hmem with
+      hlow | hmem'
+    · have hkind : (equation_kind.Full) = .Low := congrArg Prod.snd hlow.1
+      cases hkind
+    · have hreg : q.ereg = dst := congrArg Prod.fst hpair
+      have hkind : q.ekind = .High := congrArg Prod.snd hpair
+      rw [hreg, hkind, Regmap.gss_proof val dst
+        (Val.longofwords (Regmap.get src1 rs) (Regmap.get src2 rs)) rs]
+      exact ap_lessdef_trans
+        (val_hiword_longofwords (Regmap.get src1 rs) (Regmap.get src2 rs))
+        (hsat _ hmem')
+  · rcases in_subst_reg_kind dst .Low src2 .Full q e1 hsame with hlow | hmem
+    · rcases hlow with ⟨hpair, hmem'⟩
+      have hreg : q.ereg = dst := congrArg Prod.fst hpair
+      have hkind : q.ekind = .Low := congrArg Prod.snd hpair
+      rw [hreg, hkind, Regmap.gss_proof val dst
+        (Val.longofwords (Regmap.get src1 rs) (Regmap.get src2 rs)) rs]
+      exact ap_lessdef_trans
+        (val_loword_longofwords (Regmap.get src1 rs) (Regmap.get src2 rs))
+        (hsat _ hmem')
+    · have hne : q.ereg ≠ dst := reg_unconstrained_sound dst e2 q hunc hmem
+      rw [Regmap.gso_proof val q.ereg dst
+        (Val.longofwords (Regmap.get src1 rs) (Regmap.get src2 rs)) rs hne]
+      exact hsat q hmem
+
+end CompCert4Lean.Backend.Allocproof
