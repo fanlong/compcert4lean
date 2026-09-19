@@ -3785,3 +3785,84 @@ theorem match_stacks_extcall : match_stacks_extcallStatement := by
     · exact BELOW
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+theorem match_stacks_inside_inlined_tailcall : match_stacks_inside_inlined_tailcallStatement := by
+  intro prog fenv F m m' stk stk' f' ctx sp rs ctx' f
+  intro MS BELOW TAIL RET PRIV FB
+  cases MS with
+  | match_stacks_inside_base stk stk' f' c sp' rs' MS RET0 DSTK =>
+      apply match_stacks_inside_base
+      · exact MS
+      · exact RET.trans RET0
+      · rw [TAIL, DSTK]
+        exact align_unchanged _ _ (min_alignment_pos _) (ZArith.BinInt.Z.divide_0_r _)
+  | match_stacks_inside_inlined res f sp pc rs stk stk' f' fenv c sp' rs' c' MS COMPAT FB0 AG SP PAD RES RET0 BELOW0 SBELOW =>
+      cases FB with
+      | tr_funbody_intro c'' f'' code HPARAMS HINSTR HMSTK HDIV HNONNEG HSIZE =>
+        apply match_stacks_inside_inlined
+        · exact MS
+        · exact COMPAT
+        · exact FB0
+        · exact AG
+        · exact SP
+        · unfold range_private at *
+          intro ofs HOFS
+          by_cases hlt : zLt ofs ctx.dstk
+          · apply PAD ofs
+            exact ⟨HOFS.1, hlt⟩
+          · apply PRIV ofs
+            have hle : zLe ctx.dstk ofs := by
+              change intOfZ ctx.dstk ≤ intOfZ ofs
+              change ¬ intOfZ ofs < intOfZ ctx.dstk at hlt
+              omega
+            have hupper : zLt ofs f'.fn_stacksize := by
+              have hdstk : zLe ctx'.dstk f'.fn_stacksize := by
+                have hmstk : zLe zZero ctx'.mstk := by
+                  rw [HMSTK]
+                  exact ZArith.BinInt.Z.le_max_r _ _
+                exact ZArith.BinInt.Z.le_trans _ _ _
+                  (by
+                    change intOfZ ctx'.dstk ≤ intOfZ (zAdd ctx'.dstk ctx'.mstk)
+                    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+                    change intOfZ ctx'.dstk ≤ intOfZ ctx'.dstk + intOfZ ctx'.mstk
+                    have hm := hmstk
+                    change 0 ≤ intOfZ ctx'.mstk at hm
+                    omega)
+                  HSIZE
+              exact ZArith.BinInt.Z.lt_le_trans _ _ _ HOFS.2 hdstk
+            exact ⟨hle, hupper⟩
+        · exact RES
+        · exact RET.trans RET0
+        · unfold context_below at *
+          have hadd : Ple ctx.dreg (PArith.BinPos.Pos.add ctx.dreg ctx.mreg) := by
+            unfold Ple PArith.BinPos.Pos.le PArith.BinPos.Pos.add
+            rw [posToNat_posOfNat (by
+              have hd := posToNat_positive ctx.dreg
+              have hm := posToNat_positive ctx.mreg
+              omega)]
+            omega
+          exact Ple_trans _ _ _ (Ple_trans _ _ _ BELOW0 hadd) BELOW
+        · unfold context_stack_call at *
+          have htaille : zLe ctx.dstk ctx'.dstk := by
+            rw [TAIL]
+            exact align_le _ _ (min_alignment_pos _)
+          exact ⟨SBELOW.1, ZArith.BinInt.Z.le_trans _ _ _ SBELOW.2 htaille⟩
+
+end CompCert4Lean.Backend.Inliningproof

@@ -3460,3 +3460,74 @@ theorem simple_can_eval_lval
     xi ge f k e m C l b ofs bf hv hcontext hsafe⟩
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+open CompCert4Lean.Cfrontend.Csem
+open CompCert4Lean.Cfrontend.Csyntax
+
+theorem simple_list_can_eval
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    simple_list_can_evalStatement := by
+  unfold simple_list_can_evalStatement
+  intro xi ge f k e m rl
+  refine CompCert4Lean.Cfrontend.Csyntax.exprlist.rec
+    (motive_1 := fun _ => True)
+    (motive_2 := fun rl =>
+      ∀ C, simplelist rl = true → contextlist' C →
+        safe
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi ge
+          (.ExprState f (C rl) k e m) →
+        ∃ vl, eval_simple_list'
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) ge e m rl vl)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by
+      intros C hs hcontext hsafe
+      exact ⟨[], .esrl'_nil⟩)
+    (by
+      intros r rl hr ih C hs hcontext hsafe
+      have hs' : simple r = true ∧ simplelist rl = true := by
+        simpa [simplelist] using hs
+      have hctx1 : context .RV .RV (fun x => C (.Econs x rl)) :=
+        contextlist'_head rl C hcontext
+      rcases simple_can_eval
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ge f k e m r .RV (fun x => C (.Econs x rl)) hs'.1 hctx1 hsafe with
+        ⟨v, hv⟩
+      have hsafe' := eval_simple_rvalue_safe
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ge f k e m (fun x => C (.Econs x rl)) r v hv hctx1 hsafe
+      have hctx2 : contextlist' (fun x => C (.Econs (.Eval v (typeof r)) x)) :=
+        contextlist'_tail (.Eval v (typeof r)) C hcontext
+      rcases ih (fun x => C (.Econs (.Eval v (typeof r)) x)) hs'.2 hctx2 hsafe' with
+        ⟨vl, hvl⟩
+      exact ⟨v :: vl, .esrl'_cons hv hvl⟩)
+    rl
+
+end CompCert4Lean.Cfrontend.Cstrategy

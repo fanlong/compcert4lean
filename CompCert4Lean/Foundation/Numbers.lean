@@ -5523,3 +5523,53 @@ theorem ZArith.Zorder.Zmult_le_reg_r :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zorder.Zle_0_minus_le :
+    ZArith.Zorder.Zle_0_minus_leStatement := by
+  intro n m h
+  change (0 : Int) ≤ intOfZ (ZArith.BinInt.Z.sub n m) at h
+  change intOfZ m ≤ intOfZ n
+  simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt] at h
+  omega
+
+theorem ZArith.Zorder.Zle_minus_le_0 :
+    ZArith.Zorder.Zle_minus_le_0Statement := by
+  intro n m h
+  change intOfZ m ≤ intOfZ n at h
+  change (0 : Int) ≤ intOfZ (ZArith.BinInt.Z.sub n m)
+  simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+  omega
+
+theorem ZArith.Zorder.Zmult_le_0_reg_r :
+    ZArith.Zorder.Zmult_le_0_reg_rStatement := by
+  intro n m hn h
+  change (0 : Int) < intOfZ n at hn
+  change (0 : Int) ≤ intOfZ (ZArith.BinInt.Z.mul m n) at h
+  change (0 : Int) ≤ intOfZ m
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt] at h
+  exact (Int.mul_nonneg_iff_of_pos_right hn).mp h
+
+theorem ZArith.Zorder.Zmult_lt_compat2 :
+    ZArith.Zorder.Zmult_lt_compat2Statement := by
+  intro n m p q hnp hmq
+  rcases hnp with ⟨hnpos, hnp⟩
+  rcases hmq with ⟨hmpos, hmq⟩
+  change (0 : Int) < intOfZ n at hnpos
+  change intOfZ n ≤ intOfZ p at hnp
+  change (0 : Int) < intOfZ m at hmpos
+  change intOfZ m < intOfZ q at hmq
+  change intOfZ (ZArith.BinInt.Z.mul n m) <
+    intOfZ (ZArith.BinInt.Z.mul p q)
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  have hp_pos : (0 : Int) < intOfZ p := Int.lt_of_lt_of_le hnpos hnp
+  have h₁ : intOfZ n * intOfZ m ≤ intOfZ p * intOfZ m :=
+    Int.mul_le_mul_of_nonneg_right hnp (Int.le_of_lt hmpos)
+  have h₂ : intOfZ p * intOfZ m < intOfZ p * intOfZ q :=
+    Int.mul_lt_mul_of_pos_left hmq hp_pos
+  exact Int.lt_of_le_of_lt h₁ h₂
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
