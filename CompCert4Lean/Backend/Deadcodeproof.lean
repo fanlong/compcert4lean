@@ -2507,3 +2507,53 @@ theorem magree_store_left : magree_store_leftStatement := by
   exact hP i hi
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+
+theorem magree_free : magree_freeStatement := by
+  intro m1 m2 P Q b lo hi m1' hma hfree hPQ
+  obtain ⟨m2', hfree2⟩ := Mem.range_perm_free m2 b lo hi (by
+    intro ofs hbounds
+    exact hma.ma_perm b ofs Cur Freeable
+      (Mem.free_range_perm m1 b lo hi m1' hfree ofs hbounds))
+  refine ⟨m2', hfree2, ?_⟩
+  constructor
+  · intro b' ofs k p hp
+    have hp2 := hma.ma_perm b' ofs k p
+      (Mem.perm_free_3 m1 b lo hi m1' hfree b' ofs k p hp)
+    rcases Mem.perm_free_inv m2 b lo hi m2' hfree2 b' ofs k p hp2 with
+      ⟨heq, hbounds⟩ | hout
+    · subst b'
+      exact False.elim (Mem.perm_free_2 m1 b lo hi m1' hfree ofs k p hbounds hp)
+    · exact hout
+  · intro b' ofs k p hp
+    rcases hma.ma_perm_inv b' ofs k p
+        (Mem.perm_free_3 m2 b lo hi m2' hfree2 b' ofs k p hp) with hp1 | hn
+    · rcases Mem.perm_free_inv m1 b lo hi m1' hfree b' ofs k p hp1 with
+        ⟨heq, hbounds⟩ | hout
+      · subst b'
+        exact Or.inr (Mem.perm_free_2 m1 b lo hi m1' hfree ofs Max Nonempty hbounds)
+      · exact Or.inl hout
+    · exact Or.inr (fun hp1 => hn
+        (Mem.perm_free_3 m1 b lo hi m1' hfree b' ofs Max Nonempty hp1))
+  · intro b' ofs hp hQ
+    have hP : P b' ofs := by
+      apply hPQ b' ofs hQ
+      by_cases heq : b' = b
+      · subst b'
+        exact Or.inr (fun hbounds =>
+          Mem.perm_free_2 m1 b lo hi m1' hfree ofs Cur Readable hbounds hp)
+      · exact Or.inl heq
+    have hval := hma.ma_memval b' ofs
+      (Mem.perm_free_3 m1 b lo hi m1' hfree b' ofs Cur Readable hp) hP
+    rw [Mem.free_result m1 b lo hi m1' hfree,
+      Mem.free_result m2 b lo hi m2' hfree2]
+    exact hval
+  · rw [Mem.nextblock_free m1 b lo hi m1' hfree,
+      Mem.nextblock_free m2 b lo hi m2' hfree2]
+    exact hma.ma_nextblock
+
+end CompCert4Lean.Backend.Deadcodeproof

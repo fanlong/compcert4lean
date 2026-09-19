@@ -691,3 +691,21 @@ theorem combine_cond_sound
   next => cases h
 
 end CompCert4Lean.X86.CombineOpproof
+
+namespace CompCert4Lean.X86.CombineOpproof
+
+open CompCert4Lean.X86.CombineOp
+open CompCert4Lean.X86.Op
+
+theorem combine_addr_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    combine_addr_soundStatement := by
+  intro ge sp m get valu get_sound addr args addr' args' h
+  by_cases hp : CompCert4Lean.X86_64.Archi.ptr64
+  · simp [combine_addr, eval_addressing, hp] at h ⊢
+    exact combine_addr_64_sound ge sp m get valu get_sound addr args addr' args' h
+  · simp [combine_addr, eval_addressing, hp] at h ⊢
+    exact combine_addr_32_sound ge sp m get valu get_sound addr args addr' args' h
+
+end CompCert4Lean.X86.CombineOpproof

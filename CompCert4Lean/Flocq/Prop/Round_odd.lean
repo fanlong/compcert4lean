@@ -4097,3 +4097,15 @@ theorem Zrnd_odd_plus : ∀ (ctx : ExactRealContext),
     _ = Rplus ctx x (IZR ctx (Zrnd_odd ctx y)) := hxrhs.symm
 
 end CompCert4Lean.Flocq.Prop.Round_odd
+
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+
+open CompCert4Lean.Flocq.Core
+
+theorem round_odd_opp : ∀ (ctx : ExactRealContext)
+    (magnitude : ExactMagnitude ctx),
+    round_odd_oppStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x
+  exact round_odd_round_opp_aux ctx magnitude beta fexp x
+
+end CompCert4Lean.Flocq.Prop.Round_odd

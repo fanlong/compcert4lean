@@ -2629,3 +2629,367 @@ theorem wt_eval_exprlist
           exact ⟨hv, hvl⟩
 
 end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.X86.Builtins1
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Switch
+open CompCert4Lean.Backend.Cminor
+
+private theorem subject_lookup_builtin_sig (name : RocqString)
+    (sg : signature) (bf : builtin_function)
+    (h : lookup_builtin_function name sg = some bf) :
+    builtin_function_sig bf = sg := by
+  unfold lookup_builtin_function at h
+  cases hs : lookup_builtin standard_builtin_sig name sg standard_builtin_table with
+  | some b =>
+      simp only [hs] at h
+      cases h
+      exact lookup_builtin_sig standard_builtin standard_builtin_sig name sg b
+        standard_builtin_table hs
+  | none =>
+      simp only [hs] at h
+      cases hp : lookup_builtin platform_builtin_sig name sg platform_builtin_table with
+      | none => simp [hp] at h
+      | some b =>
+          simp only [hp] at h
+          cases h
+          exact lookup_builtin_sig platform_builtin platform_builtin_sig name sg b
+            platform_builtin_table hp
+
+private theorem subject_builtin_type
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (name : RocqString) (sg : signature)
+    (ge : Senv.t) (vargs : List val) (m : mem) (t : trace) (vres : val) (m' : mem)
+    (h : builtin_or_external_sem xi name sg ge vargs m t vres m') :
+    Val.has_type vres (proj_sig_res sg) := by
+  unfold builtin_or_external_sem at h
+  cases hb : lookup_builtin_function name sg with
+  | none =>
+      rw [hb] at h
+      exact Val.has_proj_xtype vres sg.sig_res
+        ((external_functions_properties xi name sg).ec_well_typed
+          ge vargs m t vres m' h)
+  | some bf =>
+      rw [hb] at h
+      cases h with
+      | known_builtin_sem_intro =>
+          rename_i heval
+          have ht := (builtin_function_sem bf).bs_well_typed vargs
+          change val_opt_has_rettype (builtin_function_sem bf vargs)
+            (builtin_function_sig bf).sig_res at ht
+          rw [heval] at ht
+          have hs := subject_lookup_builtin_sig name sg bf hb
+          rw [hs] at ht
+          exact Val.has_proj_xtype vres sg.sig_res ht
+
+private theorem subject_external_call_type
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    external_call_well_typedStatement := by
+  intro xi ef ge vargs m t vres m' h
+  cases ef with
+  | EF_external name sg =>
+      exact Val.has_proj_xtype vres sg.sig_res
+        ((external_functions_properties xi name sg).ec_well_typed
+          ge vargs m t vres m' h)
+  | EF_builtin name sg =>
+      exact subject_builtin_type xi name sg ge vargs m t vres m' h
+  | EF_runtime name sg =>
+      exact subject_builtin_type xi name sg ge vargs m t vres m' h
+  | EF_vload chunk =>
+      cases h with
+      | volatile_load_sem_intro =>
+          rename_i b ofs hload
+          change Val.has_type vres (proj_xtype (xtype_of_chunk chunk))
+          rw [proj_xtype_of_chunk chunk]
+          cases hload with
+          | volatile_load_vol id ev v hvol hsymbol hevent =>
+              exact Val.load_result_type chunk v
+          | volatile_load_nonvol =>
+              rename_i hload
+              exact Mem.load_type m chunk b
+                (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) vres hload
+  | EF_vstore chunk => cases h; exact True.intro
+  | EF_malloc => cases h; rfl
+  | EF_free => cases h <;> exact True.intro
+  | EF_memcpy sz al => cases h; exact True.intro
+  | EF_annot kind text targs => cases h; exact True.intro
+  | EF_annot_val kind text targ =>
+      cases h with
+      | extcall_annot_val_sem_intro =>
+          rename_i arg hmatch
+          have ht := eventval_match_type ge arg targ vres hmatch
+          cases targ <;> exact ht
+  | EF_inline_asm text sg clobbers =>
+      exact Val.has_proj_xtype vres sg.sig_res
+        ((inline_assembly_properties xi text sg).ec_well_typed
+          ge vargs m t vres m' h)
+  | EF_debug kind text targs => cases h; exact True.intro
+
+private theorem subject_call_cont_wt_cont :
+    ∀ (env : typenv) (tret : xtype) (k : cont),
+      wt_cont env tret k → wt_cont env tret (call_cont k) := by
+  intro env tret k h
+  induction k generalizing env tret with
+  | Kstop => exact h
+  | Kseq s k ih =>
+      cases h with
+      | wt_cont_Kseq env tret s k hs hk => exact ih env tret hk
+      | wt_cont_other env tret k hc => cases hc
+  | Kblock k ih =>
+      cases h with
+      | wt_cont_Kblock env tret k hk => exact ih env tret hk
+      | wt_cont_other env tret k hc => cases hc
+  | Kcall optid f sp e k =>
+      exact h
+
+theorem subject_reduction
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    subject_reductionStatement := by
+  intro xi p hp st1 t st2 hstep hwt
+  cases hstep with
+  | step_skip_seq f s k sp e m =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hstmt with
+          | wt_Sskip =>
+              cases hcont with
+              | wt_cont_Kseq env tret s k hs hk =>
+                  exact wt_normal_state f s k sp e m env hfn hs hk henv hdef
+              | wt_cont_other env tret k hcall => cases hcall
+  | step_skip_block f k sp e m =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hstmt with
+          | wt_Sskip =>
+              cases hcont with
+              | wt_cont_Kblock env tret k hk =>
+                  exact wt_normal_state f Sskip k sp e m env hfn (wt_Sskip env f.fn_sig.sig_res) hk henv hdef
+              | wt_cont_other env tret k hcall => cases hcall
+  | step_skip_call f k sp e m m' hcall hfree =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hstmt with
+          | wt_Sskip =>
+              have hc : wt_cont_call k f.fn_sig.sig_res :=
+                wt_is_call_cont env f.fn_sig.sig_res k hcont hcall
+              exact wt_return_state Vundef k m' f.fn_sig.sig_res (by trivial) hc
+  | step_assign f id a k sp e m v heval =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hstmt with
+          | wt_Sassign id a ha =>
+              have hv := wt_eval_expr p env sp e m a v heval _ ha henv
+              exact wt_normal_state f Sskip k sp (CompCert4Lean.Lib.Maps.PTree.set id v e) m env hfn
+                (wt_Sskip env f.fn_sig.sig_res) hcont
+                (wt_env_assign env id e v henv hv) (def_env_assign f e id v hdef)
+  | step_store f chunk address value k sp e m vaddr v m' haddr hvalue hstore =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hstmt with
+          | wt_Sstore =>
+              exact wt_normal_state f Sskip k sp e m' env hfn
+                (wt_Sskip env f.fn_sig.sig_res) hcont henv hdef
+  | step_call f optid sig a args k sp e m vf vargs fd hcallee hargs hfind hsig =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hstmt with
+          | wt_Scall optid sig a args hca hargsT hopt =>
+              rw [← hsig] at hargsT hopt
+              have hfd : wt_fundef fd := wt_find_funct p hp vf fd hfind
+              have hvl : Val.has_type_list vargs (proj_sig_args (funsig fd)) :=
+                wt_eval_exprlist p env sp e m args vargs hargs _ hargsT henv
+              exact wt_call_state fd vargs (Kcall optid f sp e k) m hfd hvl
+                (wt_cont_Kcall optid f sp e k (funsig fd).sig_res env hfn hcont henv hdef hopt)
+  | step_tailcall f sig a args k sp e m vf vargs fd m' hcallee hargs hfind hsig hfree =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hstmt with
+          | wt_Stailcall sig a args hca hargsT hres =>
+              rw [← hsig] at hargsT hres
+              have hfd : wt_fundef fd := wt_find_funct p hp vf fd hfind
+              have hvl : Val.has_type_list vargs (proj_sig_args (funsig fd)) :=
+                wt_eval_exprlist p env (.Vptr sp CompCert4Lean.Lib.Integers.Ptrofs.zero)
+                  e m args vargs hargs _ hargsT henv
+              have hc := call_cont_wt env f.fn_sig.sig_res k hcont
+              rw [← hres] at hc
+              exact wt_call_state fd vargs (call_cont k) m' hfd hvl
+                hc
+  | step_builtin f optid ef args k sp e m vargs t vres m' hargs hext =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hstmt with
+          | wt_Sbuiltin optid ef args hargsT hopt =>
+              have hv := subject_external_call_type xi ef (Genv.to_senv (Genv.globalenv p))
+                vargs m t vres m' hext
+              cases optid with
+              | none =>
+                  exact wt_normal_state f Sskip k sp e m' env hfn
+                    (wt_Sskip env f.fn_sig.sig_res) hcont henv hdef
+              | some id =>
+                  change proj_xtype (ef_sig ef).sig_res = env id at hopt
+                  change Val.has_type vres (proj_xtype (ef_sig ef).sig_res) at hv
+                  rw [hopt] at hv
+                  exact wt_normal_state f Sskip k sp (CompCert4Lean.Lib.Maps.PTree.set id vres e) m' env hfn
+                    (wt_Sskip env f.fn_sig.sig_res) hcont
+                    (wt_env_assign env id e vres henv hv)
+                    (def_env_assign f e id vres hdef)
+  | step_seq f s1 s2 k sp e m =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hstmt with
+          | wt_Sseq s1 s2 hs1 hs2 =>
+              exact wt_normal_state f s1 (Kseq s2 k) sp e m env hfn hs1
+                (wt_cont_Kseq env f.fn_sig.sig_res s2 k hs2 hcont) henv hdef
+  | step_ifthenelse f a s1 s2 k sp e m v b heval hbool =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hstmt with
+          | wt_Sifthenelse a s1 s2 ha hs1 hs2 =>
+              cases b with
+              | false => exact wt_normal_state f s2 k sp e m env hfn hs2 hcont henv hdef
+              | true => exact wt_normal_state f s1 k sp e m env hfn hs1 hcont henv hdef
+  | step_loop f s k sp e m =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hstmt with
+          | wt_Sloop s hs =>
+              exact wt_normal_state f s (Kseq (Sloop s) k) sp e m env hfn hs
+                (wt_cont_Kseq env f.fn_sig.sig_res (Sloop s) k (wt_Sloop env f.fn_sig.sig_res s hs) hcont)
+                henv hdef
+  | step_block f s k sp e m =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hstmt with
+          | wt_Sblock s hs =>
+              exact wt_normal_state f s (Kblock k) sp e m env hfn hs
+                (wt_cont_Kblock env f.fn_sig.sig_res k hcont) henv hdef
+  | step_exit_seq f n s k sp e m =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hcont with
+          | wt_cont_Kseq env tret s k hs hk =>
+              exact wt_normal_state f (Sexit n) k sp e m env hfn hstmt hk henv hdef
+          | wt_cont_other env tret k hcall => cases hcall
+  | step_exit_block_0 f k sp e m =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hcont with
+          | wt_cont_Kblock env tret k hk =>
+              exact wt_normal_state f Sskip k sp e m env hfn (wt_Sskip env f.fn_sig.sig_res) hk henv hdef
+          | wt_cont_other env tret k hcall => cases hcall
+  | step_exit_block_S f n k sp e m =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hcont with
+          | wt_cont_Kblock env tret k hk =>
+              exact wt_normal_state f (Sexit n) k sp e m env hfn (wt_Sexit env f.fn_sig.sig_res n) hk henv hdef
+          | wt_cont_other env tret k hcall => cases hcall
+  | step_switch f isLong a cases default k sp e m v n heval harg =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hstmt with
+          | wt_Sswitch isLong a cases default ha =>
+              exact wt_normal_state f (Sexit (switch_target n default cases)) k sp e m env hfn
+                (wt_Sexit env f.fn_sig.sig_res _) hcont henv hdef
+  | step_return_0 f k sp e m m' hfree =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hstmt with
+          | wt_Sreturn_none =>
+              exact wt_return_state Vundef (call_cont k) m' f.fn_sig.sig_res (by trivial)
+                (call_cont_wt env f.fn_sig.sig_res k hcont)
+  | step_return_1 f a k sp e m v m' heval hfree =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hstmt with
+          | wt_Sreturn_some a ha =>
+              exact wt_return_state v (call_cont k) m' f.fn_sig.sig_res
+                (wt_eval_expr p env (.Vptr sp CompCert4Lean.Lib.Integers.Ptrofs.zero)
+                  e m a v heval _ ha henv)
+                (call_cont_wt env f.fn_sig.sig_res k hcont)
+  | step_label f lbl s k sp e m =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hstmt with
+          | wt_Slabel lbl s hs =>
+              exact wt_normal_state f s k sp e m env hfn hs hcont henv hdef
+  | step_goto f lbl k sp e m s' k' hfind =>
+      cases hwt with
+      | wt_normal_state f s0 k0 sp0 e0 m0 env hfn hstmt hcont henv hdef =>
+          cases hstmt with
+          | wt_Sgoto lbl =>
+              cases hfn with
+              | wt_function_intro htype hparams hbody =>
+                  have hw := wt_find_label env f.fn_sig.sig_res lbl f.fn_body (call_cont k)
+                    hbody (subject_call_cont_wt_cont env f.fn_sig.sig_res k hcont)
+                  rw [hfind] at hw
+                  rcases hw with ⟨hs', hk'⟩
+                  exact wt_normal_state f s' k' sp e m env
+                    (wt_function_intro env f htype hparams hbody) hs' hk' henv hdef
+  | step_internal_function f vargs k m m' sp e htypes halloc henv_eq =>
+      cases hwt with
+      | wt_call_state fd args k0 m0 hfd hargs hcont =>
+          cases hfd with
+          | wt_fundef_internal env f hfn =>
+              cases hfn with
+              | wt_function_intro htype hparams hbody =>
+                  have hargs' : Val.has_type_list vargs (List.map env f.fn_params) := by
+                    rw [hparams]
+                    exact hargs
+                  have henv' : wt_env env (set_locals f.fn_vars (set_params vargs f.fn_params)) :=
+                    wt_env_set_locals env f.fn_vars (set_params vargs f.fn_params)
+                      (wt_env_set_params env f.fn_params vargs hargs')
+                  have hdef' : def_env f (set_locals f.fn_vars (set_params vargs f.fn_params)) := by
+                    intro id hid
+                    apply def_set_locals id f.fn_vars (set_params vargs f.fn_params)
+                    rcases hid with hid | hid
+                    · left
+                      exact def_set_params id f.fn_params vargs hid
+                    · right
+                      exact hid
+                  have hcont' : wt_cont env f.fn_sig.sig_res k :=
+                    wt_cont_other env f.fn_sig.sig_res k hcont
+                  simpa [henv_eq] using
+                    (wt_normal_state f f.fn_body k (.Vptr sp CompCert4Lean.Lib.Integers.Ptrofs.zero)
+                      (set_locals f.fn_vars (set_params vargs f.fn_params)) m' env
+                      (wt_function_intro env f htype hparams hbody) hbody hcont' henv' hdef')
+  | step_external_function ef vargs k m t vres m' hext =>
+      cases hwt with
+      | wt_call_state fd args k0 m0 hfd hargs hcont =>
+          cases hfd with
+          | wt_fundef_external ef0 =>
+              exact wt_return_state vres k m' (ef_sig ef).sig_res
+                (subject_external_call_type xi ef (Genv.to_senv (Genv.globalenv p))
+                  vargs m t vres m' hext) hcont
+  | step_return v optid f sp e k m =>
+      cases hwt with
+      | wt_return_state v0 k0 m0 tret hres hcont =>
+          cases hcont with
+          | wt_cont_Kcall optid f sp e k tret env hfn hcont henv hdef hdest =>
+              cases optid with
+              | none =>
+                  exact wt_normal_state f Sskip k sp e m env hfn
+                    (wt_Sskip env f.fn_sig.sig_res) hcont henv hdef
+              | some id =>
+                  change proj_xtype tret = env id at hdest
+                  change Val.has_type v (proj_xtype tret) at hres
+                  rw [hdest] at hres
+                  exact wt_normal_state f Sskip k sp (CompCert4Lean.Lib.Maps.PTree.set id v e) m env hfn
+                    (wt_Sskip env f.fn_sig.sig_res) hcont
+                    (wt_env_assign env id e v henv hres)
+                    (def_env_assign f e id v hdef)
+
+end CompCert4Lean.Backend.Cminortyping

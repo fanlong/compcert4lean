@@ -2813,3 +2813,116 @@ theorem integer_representable_opp :
       (fexp prec emax) (Exact.IZR ctx n) hn.2
 
 end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq (intOfZ intOfZ_injective intOfZ_zOfInt)
+
+theorem integer_representable_n2p_wide :
+    ∀ {prec emax : Z} [pgt : Prec_gt_0 prec]
+      [ple : Prec_lt_emax prec emax],
+      integer_representable_n2p_wideStatement (prec := prec) (emax := emax) := by
+  intro prec emax pgt ple ctx magnitude n p hn hp hpmax
+  have hprec : 0 < intOfZ prec := pgt
+  have hpe : intOfZ prec < intOfZ emax := ple.prec_lt_emax
+  have hsub (a b : Z) : intOfZ (Zsub a b) = intOfZ a - intOfZ b := by
+    simp [Zsub, Zaux.Zsub,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+  have hadd (a b : Z) : intOfZ (Zadd a b) = intOfZ a + intOfZ b := by
+    simp [Zadd, Zaux.Zadd,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  have hmul (a b : Z) : intOfZ (Zmul a b) = intOfZ a * intOfZ b := by
+    simp [Zmul, Zaux.Zmul,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  have hopp (a : Z) : intOfZ (Zopp a) = -intOfZ a := by
+    simp [Zopp, Zaux.Zopp,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp, intOfZ_zOfInt]
+  have habseq (a : Z) (ha : Zle Z0 a) : Zabs a = a :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs_eq a ha
+  have habsneg (a : Z) (ha : Zle a Z0) : Zabs a = Zopp a :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs_neq a ha
+  have habsmul (a b : Z) : Zabs (Zmul a b) = Zmul (Zabs a) (Zabs b) :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs_mul a b
+  have hoppmul (a b : Z) : Zopp (Zmul a b) = Zmul (Zopp a) b :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Zopp_mult_distr_l a b
+  have hp0 : 0 ≤ intOfZ p := hp
+  have hpmax' : intOfZ p < intOfZ emax - intOfZ prec := by
+    change intOfZ p < intOfZ (Zsub emax prec) at hpmax
+    simpa only [hsub] using hpmax
+  have hpbound : Zle Z0 (Zadd prec p) ∧ Zle (Zadd prec p) (Zsub emax Zone) := by
+    change (0 ≤ intOfZ (Zadd prec p)) ∧
+      (intOfZ (Zadd prec p) ≤ intOfZ (Zsub emax Zone))
+    rw [hadd, hsub]
+    have hone : intOfZ Zone = 1 := rfl
+    rw [hone]
+    omega
+  have hpow := Zaux.Zpower_plus Ztwo prec p
+    (show Zle Z0 prec from Int.le_of_lt hprec) hp
+  have hrepr := integer_representable_2p (prec := prec) (emax := emax)
+    ctx magnitude (Zadd prec p) hpbound
+  change Zpower Ztwo (Zadd prec p) = Zmul (Zpower Ztwo prec) (Zpower Ztwo p) at hpow
+  have hreprMul : integer_representable (prec := prec) (emax := emax) ctx magnitude
+      (Zmul (Zpower Ztwo prec) (Zpower Ztwo p)) := hpow ▸ hrepr
+  by_cases hnpos : n = Zpower Ztwo prec
+  · simpa only [hnpos] using hreprMul
+  by_cases hnneg : n = Zopp (Zpower Ztwo prec)
+  · rw [hnneg, ← hoppmul]
+    exact integer_representable_opp (prec := prec) (emax := emax)
+      ctx magnitude _ hreprMul
+  have hnlo : -intOfZ (Zpower Ztwo prec) < intOfZ n := by
+    have h := hn.1
+    change intOfZ (Zopp (Zpower Ztwo prec)) ≤ intOfZ n at h
+    rw [hopp] at h
+    have hne : intOfZ n ≠ -intOfZ (Zpower Ztwo prec) := by
+      intro heq
+      apply hnneg
+      apply intOfZ_injective
+      rw [hopp]
+      exact heq
+    omega
+  have hnhi : intOfZ n < intOfZ (Zpower Ztwo prec) := by
+    have h : intOfZ n ≤ intOfZ (Zpower Ztwo prec) := hn.2
+    have hne : intOfZ n ≠ intOfZ (Zpower Ztwo prec) := by
+      intro heq
+      exact hnpos (intOfZ_injective heq)
+    omega
+  have habslt : intOfZ (Zabs n) < intOfZ (Zpower Ztwo prec) := by
+    by_cases hsign : 0 ≤ intOfZ n
+    · rw [habseq n hsign]
+      exact hnhi
+    · rw [habsneg n
+        (show intOfZ n ≤ 0 by omega), hopp]
+      omega
+  have hppos : Zle Z0 (Zpower Ztwo p) := Zaux.Zpower_ge_0 Zaux.radix2 p
+  have hpcpos : Zle Z0 (Zpower Ztwo prec) := Zaux.Zpower_ge_0 Zaux.radix2 prec
+  constructor
+  · have hbound := hreprMul.1
+    rw [habsmul,
+      habseq _ hpcpos,
+      habseq _ hppos] at hbound
+    rw [habsmul,
+      habseq _ hppos]
+    change intOfZ (Zmul (Zabs n) (Zpower Ztwo p)) ≤ _
+    rw [hmul]
+    apply Int.le_trans (Int.mul_le_mul_of_nonneg_right (Int.le_of_lt habslt) hppos)
+    change intOfZ (Zmul (Zpower Ztwo prec) (Zpower Ztwo p)) ≤ _ at hbound
+    simpa only [hmul] using hbound
+  · change Generic_fmt.Exact.generic_format ctx magnitude Zaux.radix2
+      (FLT.FLT_exp (emin prec emax) prec) (Exact.IZR ctx (Zmul n (Zpower Ztwo p)))
+    apply FLT.generic_format_FLT ctx magnitude
+    apply FLT.FLT_spec _ _ _ _ (Defs.Float Zaux.radix2 n p)
+    · change Exact.IZR ctx (Zmul n (Zpower Ztwo p)) =
+        Exact.Rmult ctx (Exact.IZR ctx n) (Exact.bpow ctx Zaux.radix2 p)
+      have hizr : Exact.IZR ctx (Zpower Ztwo p) = Exact.bpow ctx Zaux.radix2 p :=
+        Raux.IZR_Zpower ctx Zaux.radix2 p hp
+      rw [← hizr]
+      exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.mult_IZR ctx n _
+    · exact habslt
+    · change intOfZ (Zsub (Zsub (Zpos (.xI .xH)) emax) prec) ≤ intOfZ p
+      rw [hsub, hsub]
+      have hthree : intOfZ (Zpos (.xI .xH)) = 3 := rfl
+      rw [hthree]
+      omega
+
+end CompCert4Lean.Lib.IEEE754_extra

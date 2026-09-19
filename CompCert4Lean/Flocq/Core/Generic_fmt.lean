@@ -4624,3 +4624,13 @@ theorem cexp_opp :
   exact pg_cexp_opp ctx magnitude beta fexp x
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem cexp_abs :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      cexp_absStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x
+  exact pg_cexp_abs ctx magnitude beta fexp x
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

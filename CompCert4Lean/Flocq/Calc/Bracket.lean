@@ -1984,3 +1984,74 @@ theorem new_location_odd_correct (ctx : ExactRealContext) :
       omega
 
 end CompCert4Lean.Flocq.Calc.Bracket
+
+namespace CompCert4Lean.Flocq.Calc.Bracket
+
+private theorem bracket_ex_midpoint_bounds (ctx : ExactRealContext)
+    (a b : R ctx) (hab : Rlt ctx a b) :
+    Rlt ctx a (Rdiv ctx (Rplus ctx a b) (Rtwo ctx)) ∧
+      Rlt ctx (Rdiv ctx (Rplus ctx a b) (Rtwo ctx)) b := by
+  have htwo : ctx.spec.lt ctx.spec.zero (Rtwo ctx) := by
+    have h := ctx.certificate.orderedField.add_lt_compat_l
+      ctx.spec.one ctx.spec.zero ctx.spec.one (middle_zero_lt_one ctx)
+    rw [ctx.certificate.orderedField.add_zero] at h
+    exact ctx.certificate.orderedField.lt_trans _ _ _ (middle_zero_lt_one ctx) h
+  have hinv : ctx.spec.lt ctx.spec.zero (ctx.spec.inv (Rtwo ctx)) := by
+    have htwo' : Rlt ctx (IZR ctx Z0) (Rtwo ctx) := by
+      change ctx.spec.lt (ctx.spec.ofZ Z0) (Rtwo ctx)
+      rw [ctx.certificate.sourceLaws.ofZ_zero]
+      exact htwo
+    have h := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rinv_0_lt_compat
+      ctx (Rtwo ctx) htwo'
+    change ctx.spec.lt (ctx.spec.ofZ Z0) (ctx.spec.inv (Rtwo ctx)) at h
+    rw [ctx.certificate.sourceLaws.ofZ_zero] at h
+    exact h
+  have hdouble (x : R ctx) :
+      ctx.spec.mul (ctx.spec.inv (Rtwo ctx)) (ctx.spec.add x x) = x := by
+    rw [ctx.certificate.orderedField.mul_comm, ← middle_two_mul ctx x]
+    exact pg_two_cancel_left ctx x
+  have hmid : Rdiv ctx (Rplus ctx a b) (Rtwo ctx) =
+      ctx.spec.mul (ctx.spec.inv (Rtwo ctx)) (ctx.spec.add a b) := by
+    change ctx.spec.div (ctx.spec.add a b) (Rtwo ctx) = _
+    rw [ctx.certificate.orderedField.div_eq_mul_inv,
+      ctx.certificate.orderedField.mul_comm]
+  rw [hmid]
+  constructor
+  · have h := ctx.certificate.orderedField.mul_lt_compat_l
+      (ctx.spec.inv (Rtwo ctx)) _ _ hinv
+      (ctx.certificate.orderedField.add_lt_compat_l a a b hab)
+    rw [hdouble] at h
+    exact h
+  · have h := ctx.certificate.orderedField.add_lt_compat_l b a b hab
+    rw [ctx.certificate.orderedField.add_comm b a] at h
+    have h' := ctx.certificate.orderedField.mul_lt_compat_l
+      (ctx.spec.inv (Rtwo ctx)) _ _ hinv h
+    rw [hdouble] at h'
+    exact h'
+
+theorem inbetween_ex (ctx : ExactRealContext) : inbetween_exStatement ctx := by
+  intro d u l hdu
+  cases l with
+  | loc_Exact => exact ⟨d, inbetween_Exact rfl⟩
+  | loc_Inexact c =>
+      let m := Rdiv ctx (Rplus ctx d u) (Rtwo ctx)
+      have hm : Rlt ctx d m ∧ Rlt ctx m u := bracket_ex_midpoint_bounds ctx d u hdu
+      cases c with
+      | Eq =>
+          exact ⟨m, inbetween_Inexact Eq hm (bracket_Rcompare_eq ctx rfl)⟩
+      | Lt =>
+          let x := Rdiv ctx (Rplus ctx d m) (Rtwo ctx)
+          have hx : Rlt ctx d x ∧ Rlt ctx x m :=
+            bracket_ex_midpoint_bounds ctx d m hm.1
+          exact ⟨x, inbetween_Inexact Lt
+            ⟨hx.1, ctx.certificate.orderedField.lt_trans _ _ _ hx.2 hm.2⟩
+            (bracket_Rcompare_lt ctx hx.2)⟩
+      | Gt =>
+          let x := Rdiv ctx (Rplus ctx m u) (Rtwo ctx)
+          have hx : Rlt ctx m x ∧ Rlt ctx x u :=
+            bracket_ex_midpoint_bounds ctx m u hm.2
+          exact ⟨x, inbetween_Inexact Gt
+            ⟨ctx.certificate.orderedField.lt_trans _ _ _ hm.1 hx.1, hx.2⟩
+            (bracket_Rcompare_gt ctx hx.1)⟩
+
+end CompCert4Lean.Flocq.Calc.Bracket

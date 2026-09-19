@@ -6771,3 +6771,41 @@ theorem load_xtype : load_xtypeStatement := by
 
 end Mem
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem load_cast : load_castStatement := by
+  intro m chunk b ofs v hload
+  have htype := load_xtype m chunk b ofs v hload
+  cases chunk with
+  | Mbool =>
+      rw [load_result Mbool m b ofs v hload]
+      cases hbytes : proj_bytes (getN (size_chunk_nat Mbool) ofs
+          (PMap.get b m.mem_contents)) with
+      | none => simp [decode_val, hbytes, Val.norm_bool]
+      | some bytes =>
+          simp only [decode_val, hbytes]
+          exact (Val.norm_bool_idem _).symm
+  | Mint8signed =>
+      cases v <;> simp only [xtype_of_chunk, Val.has_rettype] at htype <;>
+        first | contradiction | rfl | exact congrArg Vint htype
+  | Mint8unsigned =>
+      cases v <;> simp only [xtype_of_chunk, Val.has_rettype] at htype <;>
+        first | contradiction | rfl | exact congrArg Vint htype
+  | Mint16signed =>
+      cases v <;> simp only [xtype_of_chunk, Val.has_rettype] at htype <;>
+        first | contradiction | rfl | exact congrArg Vint htype
+  | Mint16unsigned =>
+      cases v <;> simp only [xtype_of_chunk, Val.has_rettype] at htype <;>
+        first | contradiction | rfl | exact congrArg Vint htype
+  | Mint32 | Mint64 | Mfloat32 | Mfloat64 | Many32 | Many64 => trivial
+
+end Mem
+end CompCert4Lean.Common.Memory

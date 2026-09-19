@@ -3289,3 +3289,1576 @@ theorem sig_transl_function : sig_transl_functionStatement :=
   rtlgen_sig_transl_fundef
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgenspec
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Lib.Integers
+
+private theorem eop_unary_total_aux (f : val → val)
+    (hundef : f .Vundef = .Vundef) {a b : val} (h : Val.lessdef a b) :
+    Val.lessdef (f a) (f b) := by
+  cases h with
+  | lessdef_refl => exact Val.lessdef_refl _
+  | lessdef_undef => rw [hundef]; exact Val.lessdef_undef _
+
+private theorem eop_binary_total_aux (f : val → val → val)
+    (hleft : ∀ v, f .Vundef v = .Vundef)
+    (hright : ∀ v, f v .Vundef = .Vundef)
+    {a a' b b' : val} (ha : Val.lessdef a a') (hb : Val.lessdef b b') :
+    Val.lessdef (f a b) (f a' b') := by
+  cases ha with
+  | lessdef_undef => rw [hleft]; exact Val.lessdef_undef _
+  | lessdef_refl =>
+      cases hb with
+      | lessdef_undef => rw [hright]; exact Val.lessdef_undef _
+      | lessdef_refl => exact Val.lessdef_refl _
+
+private theorem eop_unary_partial_aux {α : Type} (f : val → Option α)
+    (hundef : f .Vundef = none) {a b : val} {v : α}
+    (h : Val.lessdef a b) (heval : f a = some v) : f b = some v := by
+  cases h with
+  | lessdef_refl => exact heval
+  | lessdef_undef => rw [hundef] at heval; contradiction
+
+private theorem eop_binary_partial_aux {α : Type} (f : val → val → Option α)
+    (hleft : ∀ v, f .Vundef v = none)
+    (hright : ∀ v, f v .Vundef = none)
+    {a a' b b' : val} {v : α}
+    (ha : Val.lessdef a a') (hb : Val.lessdef b b')
+    (heval : f a b = some v) : f a' b' = some v := by
+  cases ha with
+  | lessdef_undef => rw [hleft] at heval; contradiction
+  | lessdef_refl =>
+      cases hb with
+      | lessdef_undef => rw [hright] at heval; contradiction
+      | lessdef_refl => exact heval
+
+private theorem eop_valid_pointer_aux {m1 m2 : mem} (hext : Mem.extends m1 m2) :
+    ∀ b ofs, Mem.valid_pointer m1 b ofs = true →
+      Mem.valid_pointer m2 b ofs = true := by
+  intro b ofs hp
+  apply (Mem.valid_pointer_nonempty_perm m2 b ofs).2
+  have h := hext.mext_inj.mi_perm b b (.Z0 : Z) ofs _ _ rfl
+    ((Mem.valid_pointer_nonempty_perm m1 b ofs).1 hp)
+  have hz : ZArith.BinInt.Z.add ofs .Z0 = ofs := by
+    apply intOfZ_injective
+    change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+    rw [intOfZ_zOfInt]
+    simp
+  simpa only [hz] using h
+
+private theorem eop_condition_aux (cond : condition) (vl1 vl2 : List val)
+    (b : Bool) (m1 m2 : mem) (hl : Val.lessdef_list vl1 vl2)
+    (hext : Mem.extends m1 m2) (heval : eval_condition cond vl1 m1 = some b) :
+    eval_condition cond vl2 m2 = some b := by
+  cases cond with
+  | Ccomp c =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_condition] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => simp [eval_condition] at heval
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => simp [eval_condition] at heval
+              | lessdef_list_nil =>
+                  exact eop_binary_partial_aux (fun v1 v2 => Val.cmp_bool c v1 v2)
+                    (by intro v; cases v <;> rfl) (by intro v; cases v <;> rfl)
+                    h1 h2 heval
+  | Ccompu c =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_condition] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => simp [eval_condition] at heval
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => simp [eval_condition] at heval
+              | lessdef_list_nil =>
+                  exact Val.cmpu_bool_lessdef _ _ c v1 v1' v2 v2' b
+                    (eop_valid_pointer_aux hext) h1 h2 heval
+  | Ccompimm c n =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_condition] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => simp [eval_condition] at heval
+          | lessdef_list_nil =>
+              exact eop_unary_partial_aux (fun v1 => Val.cmp_bool c v1 (.Vint n)) rfl h1 heval
+  | Ccompuimm c n =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_condition] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => simp [eval_condition] at heval
+          | lessdef_list_nil =>
+              exact Val.cmpu_bool_lessdef _ _ c v1 v1' (.Vint n) (.Vint n) b
+                (eop_valid_pointer_aux hext) h1 (Val.lessdef_refl _) heval
+  | Ccompl c =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_condition] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => simp [eval_condition] at heval
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => simp [eval_condition] at heval
+              | lessdef_list_nil =>
+                  exact eop_binary_partial_aux (fun v1 v2 => Val.cmpl_bool c v1 v2)
+                    (by intro v; cases v <;> rfl) (by intro v; cases v <;> rfl)
+                    h1 h2 heval
+  | Ccomplu c =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_condition] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => simp [eval_condition] at heval
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => simp [eval_condition] at heval
+              | lessdef_list_nil =>
+                  exact Val.cmplu_bool_lessdef _ _ c v1 v1' v2 v2' b
+                    (eop_valid_pointer_aux hext) h1 h2 heval
+  | Ccomplimm c n =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_condition] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => simp [eval_condition] at heval
+          | lessdef_list_nil =>
+              exact eop_unary_partial_aux (fun v1 => Val.cmpl_bool c v1 (.Vlong n)) rfl h1 heval
+  | Ccompluimm c n =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_condition] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => simp [eval_condition] at heval
+          | lessdef_list_nil =>
+              exact Val.cmplu_bool_lessdef _ _ c v1 v1' (.Vlong n) (.Vlong n) b
+                (eop_valid_pointer_aux hext) h1 (Val.lessdef_refl _) heval
+  | Ccompf c =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_condition] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => simp [eval_condition] at heval
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => simp [eval_condition] at heval
+              | lessdef_list_nil =>
+                  exact eop_binary_partial_aux (fun v1 v2 => Val.cmpf_bool c v1 v2)
+                    (by intro v; cases v <;> rfl) (by intro v; cases v <;> rfl)
+                    h1 h2 heval
+  | Cnotcompf c =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_condition] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => simp [eval_condition] at heval
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => simp [eval_condition] at heval
+              | lessdef_list_nil =>
+                  exact eop_binary_partial_aux (fun v1 v2 => (Val.cmpf_bool c v1 v2).map (!·))
+                    (by intro v; cases v <;> rfl) (by intro v; cases v <;> rfl)
+                    h1 h2 heval
+  | Ccompfs c =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_condition] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => simp [eval_condition] at heval
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => simp [eval_condition] at heval
+              | lessdef_list_nil =>
+                  exact eop_binary_partial_aux (fun v1 v2 => Val.cmpfs_bool c v1 v2)
+                    (by intro v; cases v <;> rfl) (by intro v; cases v <;> rfl)
+                    h1 h2 heval
+  | Cnotcompfs c =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_condition] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => simp [eval_condition] at heval
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => simp [eval_condition] at heval
+              | lessdef_list_nil =>
+                  exact eop_binary_partial_aux (fun v1 v2 => (Val.cmpfs_bool c v1 v2).map (!·))
+                    (by intro v; cases v <;> rfl) (by intro v; cases v <;> rfl)
+                    h1 h2 heval
+  | Cmaskzero n =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_condition] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => simp [eval_condition] at heval
+          | lessdef_list_nil =>
+              exact eop_unary_partial_aux (fun v1 => Val.maskzero_bool v1 n) rfl h1 heval
+  | Cmasknotzero n =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_condition] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => simp [eval_condition] at heval
+          | lessdef_list_nil =>
+              exact eop_unary_partial_aux (fun v1 => (Val.maskzero_bool v1 n).map (!·)) rfl h1 heval
+
+private theorem eop_addressing32_aux {F V : Type} (ge : Genv.t F V)
+    (sp : val) (addr : addressing) (vl1 vl2 : List val) (v : val)
+    (hl : Val.lessdef_list vl1 vl2) (heval : eval_addressing32 ge sp addr vl1 = some v) :
+    ∃ v', eval_addressing32 ge sp addr vl2 = some v' ∧ Val.lessdef v v' := by
+  cases addr with
+  | Aindexed n =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+          | lessdef_list_nil =>
+              simp only [eval_addressing32, Option.some.injEq] at heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => Val.add v1 (.Vint (CompCert4Lean.Lib.Integers.Int.repr n))) rfl h1
+  | Aindexed2 n =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+              | lessdef_list_nil =>
+                  simp only [eval_addressing32, Option.some.injEq] at heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => Val.add (Val.add v1 v2) (.Vint (CompCert4Lean.Lib.Integers.Int.repr n)))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Ascaled scale ofs =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+          | lessdef_list_nil =>
+              simp only [eval_addressing32, Option.some.injEq] at heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => Val.add         (Val.mul v1 (.Vint (CompCert4Lean.Lib.Integers.Int.repr scale)))         (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs))) rfl h1
+  | Aindexed2scaled scale ofs =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+              | lessdef_list_nil =>
+                  simp only [eval_addressing32, Option.some.injEq] at heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => Val.add v1         (Val.add           (Val.mul v2 (.Vint (CompCert4Lean.Lib.Integers.Int.repr scale)))           (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs))))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Aglobal id ofs =>
+      cases hl with
+      | lessdef_list_cons => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+      | lessdef_list_nil =>
+          simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+  | Abased id ofs =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+          | lessdef_list_nil =>
+              simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+  | Abasedscaled scale id ofs =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+          | lessdef_list_nil =>
+              simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+  | Ainstack ofs =>
+      cases hl with
+      | lessdef_list_cons => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+      | lessdef_list_nil =>
+          simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+
+private theorem eop_addressing64_aux {F V : Type} (ge : Genv.t F V)
+    (sp : val) (addr : addressing) (vl1 vl2 : List val) (v : val)
+    (hl : Val.lessdef_list vl1 vl2) (heval : eval_addressing64 ge sp addr vl1 = some v) :
+    ∃ v', eval_addressing64 ge sp addr vl2 = some v' ∧ Val.lessdef v v' := by
+  cases addr with
+  | Aindexed n =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+          | lessdef_list_nil =>
+              simp only [eval_addressing64, Option.some.injEq] at heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => Val.addl v1 (.Vlong (Int64.repr n))) rfl h1
+  | Aindexed2 n =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+              | lessdef_list_nil =>
+                  simp only [eval_addressing64, Option.some.injEq] at heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => Val.addl (Val.addl v1 v2) (.Vlong (Int64.repr n)))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Ascaled scale ofs =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+          | lessdef_list_nil =>
+              simp only [eval_addressing64, Option.some.injEq] at heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => Val.addl (Val.mull v1 (.Vlong (Int64.repr scale)))         (.Vlong (Int64.repr ofs))) rfl h1
+  | Aindexed2scaled scale ofs =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+              | lessdef_list_nil =>
+                  simp only [eval_addressing64, Option.some.injEq] at heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => Val.addl v1         (Val.addl (Val.mull v2 (.Vlong (Int64.repr scale)))           (.Vlong (Int64.repr ofs))))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Aglobal id ofs =>
+      cases hl with
+      | lessdef_list_cons => simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+      | lessdef_list_nil =>
+          simp only [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64, if_true, Option.some.injEq] at heval
+          subst v
+          exact ⟨_, rfl, Val.lessdef_refl _⟩
+  | Ainstack ofs =>
+      cases hl with
+      | lessdef_list_cons => simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+      | lessdef_list_nil =>
+          simp only [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64, if_true, Option.some.injEq] at heval
+          subst v
+          exact ⟨_, rfl, Val.lessdef_refl _⟩
+  | Abased id ofs =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 <;> simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+  | Abasedscaled scale id ofs =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 <;> simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+
+set_option maxHeartbeats 2000000 in
+private theorem eop_operation_aux
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    {F V : Type} (ge : Genv.t F V) (sp : val) (op : operation)
+    (vl1 vl2 : List val) (v : val) (m1 m2 : mem)
+    (hl : Val.lessdef_list vl1 vl2) (hext : Mem.extends m1 m2)
+    (heval : eval_operation ge sp op vl1 m1 = some v) :
+    ∃ v', eval_operation ge sp op vl2 m2 = some v' ∧ Val.lessdef v v' := by
+  cases op with
+  | Omove =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : v1 = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => v1) rfl h1
+  | Ointconst n =>
+      cases hl with
+      | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_nil =>
+          have hv : (.Vint n) = v := Option.some.inj heval
+          subst v
+          exact ⟨_, rfl, Val.lessdef_refl _⟩
+  | Olongconst n =>
+      cases hl with
+      | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_nil =>
+          have hv : (.Vlong n) = v := Option.some.inj heval
+          subst v
+          exact ⟨_, rfl, Val.lessdef_refl _⟩
+  | Ofloatconst n =>
+      cases hl with
+      | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_nil =>
+          have hv : (.Vfloat n) = v := Option.some.inj heval
+          subst v
+          exact ⟨_, rfl, Val.lessdef_refl _⟩
+  | Osingleconst n =>
+      cases hl with
+      | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_nil =>
+          have hv : (.Vsingle n) = v := Option.some.inj heval
+          subst v
+          exact ⟨_, rfl, Val.lessdef_refl _⟩
+  | Oindirectsymbol id =>
+      cases hl with
+      | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_nil =>
+          have hv : (Genv.symbol_address ge id Ptrofs.zero) = v := Option.some.inj heval
+          subst v
+          exact ⟨_, rfl, Val.lessdef_refl _⟩
+  | Ocast8signed =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.sign_ext (zOfNat 8) v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.sign_ext (zOfNat 8) v1)) rfl h1
+  | Ocast8unsigned =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.zero_ext (zOfNat 8) v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.zero_ext (zOfNat 8) v1)) rfl h1
+  | Ocast16signed =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.sign_ext (zOfNat 16) v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.sign_ext (zOfNat 16) v1)) rfl h1
+  | Ocast16unsigned =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.zero_ext (zOfNat 16) v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.zero_ext (zOfNat 16) v1)) rfl h1
+  | Oneg =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.neg v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.neg v1)) rfl h1
+  | Osub =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.sub v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.sub v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Omul =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.mul v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.mul v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Omulimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.mul v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.mul v1 (.Vint n))) rfl h1
+  | Omulhs =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.mulhs v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.mulhs v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Omulhu =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.mulhu v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.mulhu v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Odiv =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  refine ⟨v, ?_, Val.lessdef_refl _⟩
+                  exact eop_binary_partial_aux (fun v1 v2 => Val.divs v1 v2)
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2 heval
+  | Odivu =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  refine ⟨v, ?_, Val.lessdef_refl _⟩
+                  exact eop_binary_partial_aux (fun v1 v2 => Val.divu v1 v2)
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2 heval
+  | Omod =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  refine ⟨v, ?_, Val.lessdef_refl _⟩
+                  exact eop_binary_partial_aux (fun v1 v2 => Val.mods v1 v2)
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2 heval
+  | Omodu =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  refine ⟨v, ?_, Val.lessdef_refl _⟩
+                  exact eop_binary_partial_aux (fun v1 v2 => Val.modu v1 v2)
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2 heval
+  | Oand =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.and v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.and v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oandimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.and v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.and v1 (.Vint n))) rfl h1
+  | Oor =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.or v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.or v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oorimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.or v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.or v1 (.Vint n))) rfl h1
+  | Oxor =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.xor v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.xor v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oxorimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.xor v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.xor v1 (.Vint n))) rfl h1
+  | Onot =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.notint v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.notint v1)) rfl h1
+  | Oshl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.shl v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.shl v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oshlimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.shl v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.shl v1 (.Vint n))) rfl h1
+  | Oshr =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.shr v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.shr v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oshrimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.shr v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.shr v1 (.Vint n))) rfl h1
+  | Oshrximm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact eop_unary_partial_aux (fun v1 => Val.shrx v1 (.Vint n)) rfl h1 heval
+  | Oshru =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.shru v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.shru v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oshruimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.shru v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.shru v1 (.Vint n))) rfl h1
+  | Ororimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.ror v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.ror v1 (.Vint n))) rfl h1
+  | Oshldimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.or (Val.shl v1 (.Vint n)) (Val.shru v2 (.Vint (CompCert4Lean.Lib.Integers.Int.sub CompCert4Lean.Lib.Integers.Int.iwordsize n)))) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.or (Val.shl v1 (.Vint n)) (Val.shru v2 (.Vint (CompCert4Lean.Lib.Integers.Int.sub CompCert4Lean.Lib.Integers.Int.iwordsize n)))))
+                    (by intro x; cases x <;> rfl)
+                    (by intro x; cases x <;> simp [Val.shl, Val.shru, Val.or] <;> split <;> rfl) h1 h2
+  | Olea addr =>
+      exact eop_addressing32_aux ge sp addr vl1 vl2 v hl heval
+  | Omakelong =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.longofwords v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.longofwords v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Olowlong =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.loword v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.loword v1)) rfl h1
+  | Ohighlong =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.hiword v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.hiword v1)) rfl h1
+  | Ocast32signed =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.longofint v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.longofint v1)) rfl h1
+  | Ocast32unsigned =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.longofintu v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.longofintu v1)) rfl h1
+  | Onegl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.negl v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.negl v1)) rfl h1
+  | Oaddlimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.addl v1 (.Vlong n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.addl v1 (.Vlong n))) rfl h1
+  | Osubl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.subl v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.subl v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Omull =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.mull v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.mull v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Omullimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.mull v1 (.Vlong n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.mull v1 (.Vlong n))) rfl h1
+  | Omullhs =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.mullhs v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.mullhs v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Omullhu =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.mullhu v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.mullhu v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Odivl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  refine ⟨v, ?_, Val.lessdef_refl _⟩
+                  exact eop_binary_partial_aux (fun v1 v2 => Val.divls v1 v2)
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2 heval
+  | Odivlu =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  refine ⟨v, ?_, Val.lessdef_refl _⟩
+                  exact eop_binary_partial_aux (fun v1 v2 => Val.divlu v1 v2)
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2 heval
+  | Omodl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  refine ⟨v, ?_, Val.lessdef_refl _⟩
+                  exact eop_binary_partial_aux (fun v1 v2 => Val.modls v1 v2)
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2 heval
+  | Omodlu =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  refine ⟨v, ?_, Val.lessdef_refl _⟩
+                  exact eop_binary_partial_aux (fun v1 v2 => Val.modlu v1 v2)
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2 heval
+  | Oandl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.andl v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.andl v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oandlimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.andl v1 (.Vlong n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.andl v1 (.Vlong n))) rfl h1
+  | Oorl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.orl v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.orl v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oorlimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.orl v1 (.Vlong n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.orl v1 (.Vlong n))) rfl h1
+  | Oxorl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.xorl v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.xorl v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oxorlimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.xorl v1 (.Vlong n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.xorl v1 (.Vlong n))) rfl h1
+  | Onotl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.notl v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.notl v1)) rfl h1
+  | Oshll =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.shll v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.shll v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oshllimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.shll v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.shll v1 (.Vint n))) rfl h1
+  | Oshrl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.shrl v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.shrl v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oshrlimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.shrl v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.shrl v1 (.Vint n))) rfl h1
+  | Oshrxlimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact eop_unary_partial_aux (fun v1 => Val.shrxl v1 (.Vint n)) rfl h1 heval
+  | Oshrlu =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.shrlu v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.shrlu v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oshrluimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.shrlu v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.shrlu v1 (.Vint n))) rfl h1
+  | Ororlimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.rorl v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.rorl v1 (.Vint n))) rfl h1
+  | Oleal addr =>
+      exact eop_addressing64_aux ge sp addr vl1 vl2 v hl heval
+  | Onegf =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.negf v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.negf v1)) rfl h1
+  | Oabsf =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.absf v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.absf v1)) rfl h1
+  | Oaddf =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.addf v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.addf v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Osubf =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.subf v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.subf v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Omulf =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.mulf v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.mulf v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Odivf =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.divf v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.divf v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Omaxf =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (maxf v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (maxf v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Ominf =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (minf v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (minf v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Onegfs =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.negfs v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.negfs v1)) rfl h1
+  | Oabsfs =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.absfs v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.absfs v1)) rfl h1
+  | Oaddfs =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.addfs v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.addfs v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Osubfs =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.subfs v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.subfs v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Omulfs =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.mulfs v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.mulfs v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Odivfs =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.divfs v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact eop_binary_total_aux (fun v1 v2 => (Val.divfs v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Osingleoffloat =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.singleoffloat v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.singleoffloat v1)) rfl h1
+  | Ofloatofsingle =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.floatofsingle v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact eop_unary_total_aux (fun v1 => (Val.floatofsingle v1)) rfl h1
+  | Ointoffloat =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact eop_unary_partial_aux (fun v1 => Val.intoffloat v1) rfl h1 heval
+  | Ofloatofint =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact eop_unary_partial_aux (fun v1 => Val.floatofint (binary64_certificate := binary64_certificate) v1) rfl h1 heval
+  | Ointofsingle =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact eop_unary_partial_aux (fun v1 => Val.intofsingle v1) rfl h1 heval
+  | Osingleofint =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact eop_unary_partial_aux (fun v1 => Val.singleofint (binary32_certificate := binary32_certificate) v1) rfl h1 heval
+  | Olongoffloat =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact eop_unary_partial_aux (fun v1 => Val.longoffloat v1) rfl h1 heval
+  | Ofloatoflong =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact eop_unary_partial_aux (fun v1 => Val.floatoflong (binary64_certificate := binary64_certificate) v1) rfl h1 heval
+  | Olongofsingle =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact eop_unary_partial_aux (fun v1 => Val.longofsingle v1) rfl h1 heval
+  | Osingleoflong =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact eop_unary_partial_aux (fun v1 => Val.singleoflong (binary32_certificate := binary32_certificate) v1) rfl h1 heval
+  | Ocmp c =>
+      have hv : (Val.of_optbool (eval_condition c vl1 m1)) = v := Option.some.inj heval
+      subst v
+      refine ⟨_, rfl, ?_⟩
+      exact Val.of_optbool_lessdef _ _ (fun b hb =>
+        eop_condition_aux c vl1 vl2 b m1 m2 hl hext hb)
+  | Osel c ty =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              have hv : (Val.select (eval_condition c l2 m1) v1 v2 ty) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              cases hc : eval_condition c l2 m1 with
+              | none => simp only [Val.select, hc]; exact Val.lessdef_undef _
+              | some b =>
+                  have hc' := eop_condition_aux c l2 l2' b m1 m2 ht2 hext hc
+                  simp only [Val.select, hc, hc']
+                  apply Val.normalize_lessdef
+                  cases b
+                  · exact h2
+                  · exact h1
+
+theorem transl_expr_Eop_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_expr_Eop_correctStatement := by
+  intro xi prog tprog hprog sp e m le op args vargs v hevalargs htransargs heval
+  unfold transl_expr_prop
+  intro tge tm cs f map pr ns nd rd rs dst hwf htr hmatch hext
+  cases htr with
+  | tr_Eop map pr op args ns nd rd n1 rl dst hargs hcode hmap hpr =>
+      obtain ⟨rs1, tm1, hstar, hmatch1, hresults, hstable, hext1⟩ :=
+        htransargs tm cs f map pr ns n1 rl rs hwf hargs hmatch hext
+      obtain ⟨v', heval', hless⟩ := eop_operation_aux (Genv.globalenv prog) sp op
+        vargs (rl.map (fun r => Regmap.get r rs1)) v m tm1 hresults hext1 heval
+      have hevalt : eval_operation tge sp op
+          (rl.map (fun r => Regmap.get r rs1)) tm1 = some v' := by
+        rw [eval_operation_preserved _ _ _ _ (Genv.globalenv prog) tge
+          (symbols_preserved prog tprog hprog)]
+        exact heval'
+      refine ⟨Regmap.set rd v' rs1, tm1, ?_, ?_, ?_, ?_, hext1⟩
+      · exact star_right _ _ _ _ _ _ _ _ _ _ hstar
+          (RTL.step.exec_Iop cs f sp n1 rs1 tm1 op rl rd nd v' hcode hevalt) rfl
+      · exact match_env_update_dest map e le rs1 dst rd v v'
+          hless hwf hmap hmatch1
+      · rw [Regmap.gss_proof val rd v' rs1]
+        exact hless
+      · intro r hr
+        have hne : r ≠ rd := by
+          intro heq
+          subst r
+          exact hpr hr
+        rw [Regmap.gso_proof val r rd v' rs1 hne]
+        exact hstable r hr
+
+end CompCert4Lean.Backend.RTLgenproof

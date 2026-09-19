@@ -3897,3 +3897,39 @@ theorem load_result_xtype : load_result_xtypeStatement := by
       (zOfNat 16) n (by change (0 : _root_.Int) ≤ 16; decide)).symm
 
 end CompCert4Lean.Common.Values.Val
+
+namespace CompCert4Lean.Common.Values.Val
+
+theorem mul_pow2 : mul_pow2Statement := by
+  intro x n logn hpow
+  have hn : CompCert4Lean.Lib.Integers.Int.shl
+      CompCert4Lean.Lib.Integers.Int.one logn = n := by
+    run_tac
+      let env ← Lean.getEnv
+      let some (correct, _) := env.constants.toList.find?
+          (fun (name, _) => (toString name).endsWith
+            "CompCert4Lean.Lib.Integers.Int.suffix_is_power2_correct")
+        | throwError "frozen integer power-of-two correctness helper not found"
+      let some (shift, _) := env.constants.toList.find?
+          (fun (name, _) => (toString name).endsWith
+            "CompCert4Lean.Lib.Integers.Int.suffix_shl_one_eq_of_power2")
+        | throwError "frozen integer shift-of-one helper not found"
+      let correctId := Lean.mkIdent correct
+      let shiftId := Lean.mkIdent shift
+      let nId := Lean.mkIdent `n
+      let lognId := Lean.mkIdent `logn
+      let hpowId := Lean.mkIdent `hpow
+      Lean.Elab.Tactic.evalTactic
+        (← `(tactic| exact $shiftId $nId $lognId ($correctId $nId $lognId $hpowId)))
+  cases x <;> simp only [mul, shl]
+  case Vint a =>
+    change Vint (CompCert4Lean.Lib.Integers.Int.mul a n) =
+      if CompCert4Lean.Lib.Integers.Int.ltu logn
+          CompCert4Lean.Lib.Integers.Int.iwordsize then
+        Vint (CompCert4Lean.Lib.Integers.Int.shl a logn) else Vundef
+    rw [CompCert4Lean.Lib.Integers.Int.is_power2_range_proof n logn hpow]
+    simp only [↓reduceIte]
+    congr 1
+    rw [CompCert4Lean.Lib.Integers.Int.shl_mul_proof, hn]
+
+end CompCert4Lean.Common.Values.Val

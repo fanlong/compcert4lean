@@ -1766,3 +1766,18 @@ theorem Ziter_base : Ziter_baseStatement := by
   rw [show intOfZ zZero = (0 : Int) by rfl] at hn
   rw [Int.toNat_of_nonpos hn]
   rfl
+
+
+theorem Ziter_succ : Ziter_succStatement := by
+  intro A n f x hn
+  unfold zIter ZArith.BinInt.Z.iter
+  have hs : Int.toNat (intOfZ (zSucc n)) = Int.toNat (intOfZ n) + 1 := by
+    change 0 ≤ intOfZ n at hn
+    simp only [zSucc, ZArith.BinInt.Z.succ, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    change (intOfZ n + 1).toNat = (intOfZ n).toNat + 1
+    omega
+  rw [hs]
+  generalize Int.toNat (intOfZ n) = k
+  induction k generalizing x with
+  | zero => rfl
+  | succ k ih => exact ih (f x)

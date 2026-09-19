@@ -7946,3 +7946,337 @@ theorem partial_fold_ind : partial_fold_indStatement := by
   exact hQ'.1
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+
+private theorem ap_builtin_add_zero (x : Z) : zOfInt (intOfZ x + 0) = x := by
+  simp [zOfInt_intOfZ]
+
+private theorem ap_builtin_id_no_overlap (m : mem) :
+    Mem.meminj_no_overlap inject_id m := by
+  intro b1 b1' d1 b2 b2' d2 ofs1 ofs2 hne h1 h2 _ _
+  have h1' : (b1, (.Z0 : Z)) = (b1', d1) := Option.some.inj h1
+  have h2' : (b2, (.Z0 : Z)) = (b2', d2) := Option.some.inj h2
+  cases h1'
+  cases h2'
+  exact Or.inl hne
+
+private theorem ap_builtin_store_extends : Mem.store_within_extendsStatement := by
+  intro chunk m1 m2 b ofs v1 n1 v2 hext hs hv
+  obtain ⟨n2, hs2, hi⟩ := Mem.store_mapped_inj inject_id chunk m1 b ofs v1 n1
+    m2 b .Z0 v2 hext.mext_inj hs (ap_builtin_id_no_overlap m1) rfl
+    ((val_inject_id v1 v2).mpr hv)
+  change Mem.store chunk m2 b (zOfInt (intOfZ ofs + 0)) v2 = some n2 at hs2
+  rw [ap_builtin_add_zero] at hs2
+  refine ⟨n2, hs2, ?_⟩
+  constructor
+  · rw [Mem.nextblock_store _ _ _ _ _ _ hs, Mem.nextblock_store _ _ _ _ _ _ hs2]
+    exact hext.mext_next
+  · exact hi
+  · intro b' ofs' k p hp
+    obtain hp | hn := hext.mext_perm_inv b' ofs' k p
+      (Mem.perm_store_2 _ _ _ _ _ _ hs2 _ _ _ _ hp)
+    · exact Or.inl (Mem.perm_store_1 _ _ _ _ _ _ hs _ _ _ _ hp)
+    · exact Or.inr (fun h => hn (Mem.perm_store_2 _ _ _ _ _ _ hs _ _ _ _ h))
+
+private theorem ap_builtin_storebytes_extends : Mem.storebytes_within_extendsStatement := by
+  intro m1 m2 b ofs bytes1 n1 bytes2 hext hs hv
+  obtain ⟨n2, hs2, hi⟩ := Mem.storebytes_mapped_inj inject_id m1 b ofs bytes1 n1
+    m2 b .Z0 bytes2 hext.mext_inj hs (ap_builtin_id_no_overlap m1) rfl hv
+  change Mem.storebytes m2 b (zOfInt (intOfZ ofs + 0)) bytes2 = some n2 at hs2
+  rw [ap_builtin_add_zero] at hs2
+  refine ⟨n2, hs2, ?_⟩
+  constructor
+  · rw [Mem.nextblock_storebytes _ _ _ _ _ hs, Mem.nextblock_storebytes _ _ _ _ _ hs2]
+    exact hext.mext_next
+  · exact hi
+  · intro b' ofs' k p hp
+    obtain hp | hn := hext.mext_perm_inv b' ofs' k p
+      (Mem.perm_storebytes_2 _ _ _ _ _ hs2 _ _ _ _ hp)
+    · exact Or.inl (Mem.perm_storebytes_1 _ _ _ _ _ hs _ _ _ _ hp)
+    · exact Or.inr (fun h => hn (Mem.perm_storebytes_2 _ _ _ _ _ hs _ _ _ _ h))
+
+private theorem ap_builtin_free_extends : Mem.free_parallel_extendsStatement := by
+  intro m1 m2 b lo hi n1 hext hf
+  have hr := Mem.range_perm_inj inject_id m1 m2 b lo hi Cur Freeable b .Z0
+    hext.mext_inj (Mem.free_range_perm _ _ _ _ _ hf) rfl
+  change Mem.range_perm m2 b (zOfInt (intOfZ lo + 0))
+    (zOfInt (intOfZ hi + 0)) Cur Freeable at hr
+  rw [ap_builtin_add_zero, ap_builtin_add_zero] at hr
+  obtain ⟨n2, hf2⟩ := Mem.range_perm_free m2 b lo hi hr
+  refine ⟨n2, hf2, ?_⟩
+  constructor
+  · rw [Mem.nextblock_free _ _ _ _ _ hf, Mem.nextblock_free _ _ _ _ _ hf2]
+    exact hext.mext_next
+  · apply Mem.free_right_inj inject_id n1 m2 b lo hi n2
+      (Mem.free_left_inj inject_id m1 m2 b lo hi n1 hext.mext_inj hf) hf2
+    intro b' delta ofs k p hmap hp hb
+    have heq : (b', (.Z0 : Z)) = (b, delta) := Option.some.inj hmap
+    cases heq
+    change intOfZ lo ≤ intOfZ (zOfInt (intOfZ ofs + 0)) ∧
+      intOfZ (zOfInt (intOfZ ofs + 0)) < intOfZ hi at hb
+    rw [ap_builtin_add_zero] at hb
+    exact Mem.perm_free_2 _ _ _ _ _ hf _ _ _ hb hp
+  · intro b' ofs k p hp
+    obtain hp1 | hn := hext.mext_perm_inv b' ofs k p
+      (Mem.perm_free_3 _ _ _ _ _ hf2 _ _ _ _ hp)
+    · obtain ⟨hb, hlo, hhi⟩ | hp1' := Mem.perm_free_inv _ _ _ _ _ hf _ _ _ _ hp1
+      · subst b'
+        exact False.elim (Mem.perm_free_2 _ _ _ _ _ hf2 _ _ _ ⟨hlo, hhi⟩ hp)
+      · exact Or.inl hp1'
+    · exact Or.inr (fun h => hn (Mem.perm_free_3 _ _ _ _ _ hf _ _ _ _ h))
+
+private theorem ap_builtin_alloc_extends
+    (m1 m2 : mem) (lo hi : Z) (n1 : mem) (b : block)
+    (hext : Mem.extends m1 m2) (ha : Mem.alloc m1 lo hi = (n1, b)) :
+    ∃ n2, Mem.alloc m2 lo hi = (n2, b) ∧ Mem.extends n1 n2 := by
+  cases ha2 : Mem.alloc m2 lo hi with
+  | mk n2 b2 =>
+    have hb : b2 = b := by
+      rw [Mem.alloc_result _ _ _ _ _ ha2, Mem.alloc_result _ _ _ _ _ ha]
+      exact hext.mext_next.symm
+    subst b2
+    have hperm : ∀ ofs k p, intOfZ lo ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ hi → Mem.perm n2 b ofs k p := by
+      intro ofs k p hr
+      exact Mem.perm_implies _ _ _ _ _ _
+        (Mem.perm_alloc_2 _ _ _ _ _ ha2 _ _ hr) (perm_F_any p)
+    refine ⟨n2, rfl, ?_⟩
+    constructor
+    · rw [Mem.nextblock_alloc _ _ _ _ _ ha, Mem.nextblock_alloc _ _ _ _ _ ha2,
+        hext.mext_next]
+    · apply Mem.alloc_left_mapped_inj inject_id m1 n2 lo hi n1 b b .Z0
+        (Mem.alloc_right_inj inject_id m1 m2 lo hi b n2 hext.mext_inj ha2) ha
+        (Mem.valid_new_block _ _ _ _ _ ha2)
+      · intro chunk _
+        refine ⟨.Z0, ?_⟩
+        apply intOfZ_injective
+        change 0 = intOfZ (zOfInt (intOfZ (align_chunk chunk) * 0))
+        rw [intOfZ_zOfInt]
+        simp
+      · intro ofs k p hr
+        change Mem.perm n2 b (zOfInt (intOfZ ofs + 0)) k p
+        rw [ap_builtin_add_zero]
+        exact hperm ofs k p hr
+      · rfl
+    · intro b' ofs k p hp
+      by_cases hb : b' = b
+      · subst b'
+        apply Or.inl
+        exact Mem.perm_implies _ _ _ _ _ _
+          (Mem.perm_alloc_2 _ _ _ _ _ ha _ _
+            (Mem.perm_alloc_3 _ _ _ _ _ ha2 _ _ _ hp)) (perm_F_any p)
+      · obtain hp1 | hn := hext.mext_perm_inv b' ofs k p
+          (Mem.perm_alloc_4 _ _ _ _ _ ha2 _ _ _ _ hp hb)
+        · exact Or.inl (Mem.perm_alloc_1 _ _ _ _ _ ha _ _ _ _ hp1)
+        · exact Or.inr (fun h => hn (Mem.perm_alloc_4 _ _ _ _ _ ha _ _ _ _ h hb))
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Lib.Integers
+
+private theorem ap_builtin_lessdef_one {v : val} {vs : List val}
+    (h : Val.lessdef_list [v] vs) :
+    ∃ v', vs = [v'] ∧ Val.lessdef v v' := by
+  cases h with
+  | lessdef_list_cons v1 v2 vl1 vl2 hv ht =>
+    cases ht
+    exact ⟨v2, rfl, hv⟩
+
+private theorem ap_builtin_lessdef_two {v w : val} {vs : List val}
+    (h : Val.lessdef_list [v, w] vs) :
+    ∃ v' w', vs = [v', w'] ∧ Val.lessdef v v' ∧ Val.lessdef w w' := by
+  cases h with
+  | lessdef_list_cons v1 v2 vl1 vl2 hv ht =>
+    obtain ⟨w', hw, hl⟩ := ap_builtin_lessdef_one ht
+    subst vl2
+    exact ⟨v2, w', rfl, hv, hl⟩
+
+private theorem ap_builtin_call_extends
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (ef : external_function) (ge : Senv.t)
+    (vargs : List val) (m1 : mem) (t : trace) (vres : val) (m2 m1' : mem)
+    (vargs' : List val)
+    (hc : external_call xi ef ge vargs m1 t vres m2)
+    (hext : Mem.extends m1 m1') (hargs : Val.lessdef_list vargs vargs') :
+    ∃ vres' m2', external_call xi ef ge vargs' m1' t vres' m2' ∧
+      Val.lessdef vres vres' ∧ Mem.extends m2 m2' := by
+  cases ef with
+  | EF_external name sg =>
+    obtain ⟨v', m', hcall, hval, hmem, _⟩ :=
+      (external_functions_properties xi name sg).ec_mem_extends
+        ge vargs m1 t vres m2 m1' vargs' hc hext hargs
+    exact ⟨v', m', hcall, hval, hmem⟩
+  | EF_inline_asm text sg clobbers =>
+    obtain ⟨v', m', hcall, hval, hmem, _⟩ :=
+      (inline_assembly_properties xi text sg).ec_mem_extends
+        ge vargs m1 t vres m2 m1' vargs' hc hext hargs
+    exact ⟨v', m', hcall, hval, hmem⟩
+  | EF_builtin name sg | EF_runtime name sg =>
+    change builtin_or_external_sem xi name sg ge vargs m1 t vres m2 at hc
+    change ∃ vres' m2', builtin_or_external_sem xi name sg ge vargs' m1' t vres' m2' ∧
+      Val.lessdef vres vres' ∧ Mem.extends m2 m2'
+    unfold builtin_or_external_sem at hc ⊢
+    cases hlookup : CompCert4Lean.Common.Builtins.lookup_builtin_function name sg with
+    | some bf =>
+      rw [hlookup] at hc
+      obtain ⟨v', hcall, hval⟩ := known_builtin_sem_lessdef bf ge vargs m1 t vres m2
+        ge vargs' m1' hc hargs
+      cases hc
+      exact ⟨v', m1', hcall, hval, hext⟩
+    | none =>
+      rw [hlookup] at hc
+      obtain ⟨v', m', hcall, hval, hmem, _⟩ :=
+        (external_functions_properties xi name sg).ec_mem_extends
+          ge vargs m1 t vres m2 m1' vargs' hc hext hargs
+      exact ⟨v', m', hcall, hval, hmem⟩
+  | EF_vload chunk =>
+    cases hc with
+    | volatile_load_sem_intro b ofs m t v hl =>
+      obtain ⟨vptr, rfl, hp⟩ := ap_builtin_lessdef_one hargs
+      cases hp
+      obtain ⟨v', hload, hval⟩ := volatile_load_extends ge chunk m1 b ofs t vres m1' hl hext
+      exact ⟨v', m1', volatile_load_sem_intro b ofs m1' t v' hload, hval, hext⟩
+  | EF_vstore chunk =>
+    cases hc with
+    | volatile_store_sem_intro b ofs m v t n hs =>
+      obtain ⟨vptr, v', rfl, hp, hv⟩ := ap_builtin_lessdef_two hargs
+      cases hp
+      cases hs with
+      | volatile_store_vol id ev v hvol hfind hmatch =>
+        refine ⟨Vundef, m1', volatile_store_sem_intro b ofs m1' v' _ m1' ?_,
+          Val.lessdef_refl _, hext⟩
+        exact volatile_store_vol chunk m1' b ofs id ev v' hvol hfind
+          (eventval_match_lessdef ge ev (type_of_chunk chunk) _ _ hmatch
+            (Val.load_result_lessdef chunk v v' hv))
+      | volatile_store_nonvol =>
+        rename_i hvol hstore
+        obtain ⟨n', hstore', hext'⟩ := ap_builtin_store_extends chunk m1 m1' b
+          (Ptrofs.unsigned ofs) v m2 v' hext hstore hv
+        exact ⟨Vundef, n', volatile_store_sem_intro b ofs m1' v' _ n'
+          (volatile_store_nonvol chunk m1' b ofs v' n' hvol hstore'),
+          Val.lessdef_refl _, hext'⟩
+  | EF_malloc =>
+    cases hc with
+    | extcall_malloc_sem_intro sz m n b n' ha hs =>
+      obtain ⟨v', rfl, hv⟩ := ap_builtin_lessdef_one hargs
+      change Val.lessdef (.Vlong _) v' at hv
+      cases hv
+      obtain ⟨n2, ha2, hext2⟩ := ap_builtin_alloc_extends m1 m1' _ _ n b hext ha
+      obtain ⟨n2', hs2, hext2'⟩ := ap_builtin_store_extends _ n n2 b _ _ m2 _
+        hext2 hs (Val.lessdef_refl _)
+      exact ⟨Vptr b Ptrofs.zero, n2', extcall_malloc_sem_intro sz m1' n2 b n2' ha2 hs2,
+        Val.lessdef_refl _, hext2'⟩
+  | EF_free =>
+    cases hc with
+    | extcall_free_sem_ptr b lo sz m n hl hf =>
+      obtain ⟨v', rfl, hv⟩ := ap_builtin_lessdef_one hargs
+      cases hv
+      obtain ⟨sz', hl', hsz⟩ := Mem.load_extends _ m1 m1' b _ _ hext hl
+      change Val.lessdef (.Vlong _) sz' at hsz
+      cases hsz
+      obtain ⟨n', hf', hext'⟩ := ap_builtin_free_extends m1 m1' b _ _ m2 hext hf
+      exact ⟨Vundef, n', extcall_free_sem_ptr b lo sz m1' n' hl' hf',
+        Val.lessdef_refl _, hext'⟩
+    | extcall_free_sem_null m =>
+      obtain ⟨v', rfl, hv⟩ := ap_builtin_lessdef_one hargs
+      change Val.lessdef (.Vlong _) v' at hv
+      cases hv
+      exact ⟨Vundef, m1', extcall_free_sem_null m1', Val.lessdef_refl _, hext⟩
+  | EF_memcpy sz al =>
+    cases hc with
+    | extcall_memcpy_sem_intro bd od bs os m bytes n hal hsz hsa hsrc hdst hno hl hs =>
+      obtain ⟨v1, v2, rfl, hv1, hv2⟩ := ap_builtin_lessdef_two hargs
+      cases hv1
+      cases hv2
+      obtain ⟨bytes', hl', hbytes⟩ := Mem.loadbytes_inj inject_id m1 m1' sz bs
+        (Ptrofs.unsigned os) bs .Z0 bytes hext.mext_inj hl rfl
+      change Mem.loadbytes m1' bs (zOfInt (intOfZ (Ptrofs.unsigned os) + 0)) sz =
+        some bytes' at hl'
+      rw [ap_builtin_add_zero] at hl'
+      obtain ⟨n', hs', hext'⟩ := ap_builtin_storebytes_extends m1 m1' bd
+        (Ptrofs.unsigned od) bytes m2 bytes' hext hs hbytes
+      exact ⟨Vundef, n', extcall_memcpy_sem_intro bd od bs os m1' bytes' n'
+        hal hsz hsa hsrc hdst hno hl' hs', Val.lessdef_refl _, hext'⟩
+  | EF_annot kind text targs =>
+    cases hc with
+    | extcall_annot_sem_intro evs hm =>
+      exact ⟨Vundef, m1', extcall_annot_sem_intro vargs' m1' evs
+        (eventval_list_match_lessdef ge evs targs vargs hm vargs' hargs),
+        Val.lessdef_refl _, hext⟩
+  | EF_annot_val kind text targ =>
+    cases hc with
+    | extcall_annot_val_sem_intro v m ev hm =>
+      obtain ⟨v', rfl, hv⟩ := ap_builtin_lessdef_one hargs
+      exact ⟨v', m1', extcall_annot_val_sem_intro v' m1' ev
+        (eventval_match_lessdef ge ev targ vres v' hm hv), hv, hext⟩
+  | EF_debug kind text targs =>
+    cases hc
+    exact ⟨Vundef, m1', extcall_debug_sem_intro vargs' m1', Val.lessdef_refl _, hext⟩
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+
+theorem add_equations_builtin_eval
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    add_equations_builtin_evalStatement := by
+  intro xi ef env args args' e1 e2 m1 m1' rs ls ge sp vargs t vres m2
+    hwt hrun hext hsat heval hcall
+  have hdefault : add_equations_builtin_args env args args' e1 = some e2 →
+      satisf rs ls e1 ∧
+      ∃ vargs' vres' m2',
+        eval_builtin_args (Genv.to_senv ge) ls sp m1' args' vargs' ∧
+        external_call xi ef (Genv.to_senv ge) vargs' m1' t vres' m2' ∧
+        Val.lessdef vres vres' ∧ Mem.extends m2 m2' := by
+    intro hargs
+    refine ⟨add_equations_builtin_args_satisf env rs ls args args' e1 e2 hargs hsat, ?_⟩
+    obtain ⟨vargs', heval', hless⟩ := add_equations_builtin_args_lessdef env ge sp rs ls
+      m1 m1' args vargs heval args' e1 e2 hargs hsat hwt hext
+    obtain ⟨vres', m2', hcall', hres, hmem⟩ := ap_builtin_call_extends xi ef
+      (Genv.to_senv ge) vargs m1 t vres m2 m1' vargs' hcall hext hless
+    exact ⟨vargs', vres', m2', heval', hcall', hres, hmem⟩
+  cases ef <;> try exact hdefault hrun
+  case EF_debug kind text targs =>
+    refine ⟨add_equations_debug_args_satisf env rs ls args args' e1 e2 hrun hsat, ?_⟩
+    obtain ⟨vargs', heval'⟩ := add_equations_debug_args_eval env ge sp rs ls m1 m1'
+      args vargs heval args' e1 e2 hrun hsat hwt hext
+    cases hcall
+    exact ⟨vargs', Vundef, m1', heval', extcall_debug_sem_intro vargs' m1',
+      Val.lessdef_refl _, hext⟩
+
+end CompCert4Lean.Backend.Allocproof

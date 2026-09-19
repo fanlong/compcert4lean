@@ -3467,3 +3467,14 @@ theorem addr_strength_reduction_32_generic_correct :
       exact ⟨res, heval, Val.lessdef_refl _⟩
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+/-- In the fixed x86-64 architecture, 32-bit address reduction uses the generic path. -/
+theorem addr_strength_reduction_32_correct :
+    addr_strength_reduction_32_correctStatement := by
+  intro bc ge _ sp _ ae e hem addr args vl res hvl heval
+  exact addr_strength_reduction_32_generic_correct
+    bc ge sp ae e hem addr args vl res hvl heval
+
+end CompCert4Lean.X86.ConstpropOpproof

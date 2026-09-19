@@ -3543,3 +3543,34 @@ theorem Float.binop_nan_result_obligation_proof : Float.binop_nan_result_obligat
       (Float.cons_pl x (Float.cons_pl y [])))
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+theorem Float.abs_nan_result_obligation_proof : Float.abs_nan_result_obligation := by
+  intro f hf
+  unfold Float.abs_nan
+  split
+  · rename_i hnan
+    have hparts : (exponent64 f == (2 ^ 11 - 1)) = true ∧
+        (fraction64 f != 0) = true := by
+      simpa only [isNaN64, Bool.and_eq_true] using hnan
+    have hq : 0 < fraction64 f := by
+      have hne : fraction64 f ≠ 0 := by simpa using hparts.2
+      omega
+    have hqlt : fraction64 f < 2 ^ 52 := by
+      unfold fraction64
+      exact Nat.mod_lt _ (Nat.two_pow_pos 52)
+    unfold payload64
+    rw [decode64_mkNaN false (fraction64 f) hq hqlt]
+    constructor
+    · rfl
+    · unfold CompCert4Lean.Flocq.IEEE754.Binary.BinaryFloatCertificate
+      unfold CompCert4Lean.Flocq.IEEE754.Binary.B2FF
+      unfold CompCert4Lean.Flocq.IEEE754.Binary.valid_binary
+      change CompCert4Lean.Flocq.IEEE754.Binary.nan_pl (prec := z53)
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.of_nat
+            (fraction64 f)) = true
+      exact nan_pl_posOfNat_lt_52 (fraction64 f) hq hqlt
+  · exact default_nan_64_result_obligation_proof
+
+end CompCert4Lean.Lib.Floats

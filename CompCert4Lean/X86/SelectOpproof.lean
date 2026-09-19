@@ -4517,3 +4517,101 @@ theorem eval_add
       exact Val.lessdef_refl _
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+private theorem eval_sub_repr_neg_local (n : Z) :
+    CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.opp n) =
+      CompCert4Lean.Lib.Integers.Int.neg
+        (CompCert4Lean.Lib.Integers.Int.repr n) := by
+  apply CompCert4Lean.Lib.Integers.Int.eqm_samerepr_proof
+  apply CompCert4Lean.Lib.Zbits.eqmod_neg
+  exact CompCert4Lean.Lib.Integers.Int.eqm_unsigned_repr_r_proof n n
+    (CompCert4Lean.Lib.Integers.Int.eqm_refl_proof n)
+
+private theorem eval_sub_repr_diff_local (n1 n2 : Z) :
+    CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.sub n1 n2) =
+      CompCert4Lean.Lib.Integers.Int.sub
+        (CompCert4Lean.Lib.Integers.Int.repr n1)
+        (CompCert4Lean.Lib.Integers.Int.repr n2) := by
+  have hsub : ZArith.BinInt.Z.sub n1 n2 =
+      ZArith.BinInt.Z.add n1 (ZArith.BinInt.Z.opp n2) := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add,
+      ZArith.BinInt.Z.opp, intOfZ_zOfInt, Int.sub_eq_add_neg]
+  rw [hsub, eval_add_repr_sum_local, eval_sub_repr_neg_local,
+    CompCert4Lean.Lib.Integers.Int.sub_add_opp_proof]
+
+private theorem eval_sub_pair_local
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val) (e : env) (m : mem)
+    (le : letenv) (a b : expr) (x y : val)
+    (ha : eval_expr xi ge sp e m le a x)
+    (hb : eval_expr xi ge sp e m le b y) :
+    eval_expr xi ge sp e m le (Eop Osub (Econs a (Econs b Enil)))
+      (Val.sub x y) := by
+  exact eval_expr.eval_Eop le Osub _ [x, y] _
+    (eval_exprlist.cons le a _ x [y] ha
+      (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))) rfl
+
+theorem eval_sub
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_subStatement := by
+  intro xi ge sp e m le a x b y ha hb
+  unfold CompCert4Lean.X86.SelectOp.sub
+  cases hcase : sub_match a b with
+  | sub_case1 t n =>
+      have hy := eval_intconst_value_local xi ge sp e m le n y hb
+      subst y
+      rw [Val.sub_add_opp]
+      exact eval_addimm xi ge sp e m _ le a x ha
+  | sub_case2 n1 t1 n2 t2 =>
+      obtain ⟨u, hu, rfl⟩ := eval_lea_indexed_inv_eval_shl_local
+        xi ge sp e m le t1 n1 x ha
+      obtain ⟨v, hv, rfl⟩ := eval_lea_indexed_inv_eval_shl_local
+        xi ge sp e m le t2 n2 y hb
+      rw [Val.sub_add_l, Val.sub_add_r, Val.add_assoc]
+      change ∃ w, eval_expr xi ge sp e m le _ w ∧
+        Val.lessdef (Val.add (Val.sub u v)
+          (.Vint (CompCert4Lean.Lib.Integers.Int.add
+            (CompCert4Lean.Lib.Integers.Int.neg (CompCert4Lean.Lib.Integers.Int.repr n2))
+            (CompCert4Lean.Lib.Integers.Int.repr n1)))) w
+      rw [CompCert4Lean.Lib.Integers.Int.add_commut_proof,
+        ← CompCert4Lean.Lib.Integers.Int.sub_add_opp_proof,
+        ← eval_sub_repr_diff_local]
+      exact eval_addimm xi ge sp e m _ le _ _
+        (eval_sub_pair_local xi ge sp e m le t1 t2 u v hu hv)
+  | sub_case3 n t1 t2 =>
+      obtain ⟨u, hu, rfl⟩ := eval_lea_indexed_inv_eval_shl_local
+        xi ge sp e m le t1 n x ha
+      rw [Val.sub_add_l]
+      exact eval_addimm xi ge sp e m _ le _ _
+        (eval_sub_pair_local xi ge sp e m le t1 b u y hu hb)
+  | sub_case4 t1 n t2 =>
+      obtain ⟨v, hv, rfl⟩ := eval_lea_indexed_inv_eval_shl_local
+        xi ge sp e m le t2 n y hb
+      rw [Val.sub_add_r]
+      change ∃ w, eval_expr xi ge sp e m le
+        (addimm (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.opp n))
+          (Eop Osub (Econs a (Econs t2 Enil)))) w ∧
+        Val.lessdef (Val.add (Val.sub x v)
+          (.Vint (CompCert4Lean.Lib.Integers.Int.neg
+            (CompCert4Lean.Lib.Integers.Int.repr n)))) w
+      rw [eval_sub_repr_neg_local n]
+      exact eval_addimm xi ge sp e m _ le _ _
+        (eval_sub_pair_local xi ge sp e m le a t2 x v ha hv)
+  | sub_default t1 t2 =>
+      exact ⟨Val.sub x y, eval_sub_pair_local xi ge sp e m le a b x y ha hb,
+        Val.lessdef_refl _⟩
+
+end CompCert4Lean.X86.SelectOpproof

@@ -2405,3 +2405,24 @@ theorem transf_final_states : transf_final_statesStatement := by
           exact Linear.final_state.final_state_intro rs m r hresult
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem transf_program_correct
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    transf_program_correctStatement := by
+  intro cfg xi service prog tprog hprog
+  exact CompCert4Lean.Common.Smallstep.forward_simulation_star _ _
+    (senv_preserved service prog tprog hprog).2.1 (match_states service)
+    (transf_initial_states service prog tprog hprog)
+    (transf_final_states service) measure
+    (transf_step_correct cfg xi service prog tprog hprog)
+
+end CompCert4Lean.Backend.Linearizeproof

@@ -1911,3 +1911,64 @@ theorem transl_op_label : transl_op_labelStatement := by
       | split
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+open CompCert4Lean.Backend.Asmgenproof0
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.X86.Asmgen
+
+theorem transl_instr_label : transl_instr_labelStatement := by
+  intro f i ep k c h
+  cases i with
+  | Mgetstack ofs ty dst =>
+      exact loadind_label _ _ _ _ _ _ h
+  | Msetstack src ofs ty =>
+      exact storeind_label _ _ _ _ _ _ h
+  | Mgetparam ofs ty dst =>
+      cases ep with
+      | false =>
+          change CompCert4Lean.Common.Errors.bind (loadind .RAX ofs ty dst k)
+            (fun k1 => loadind .RSP f.fn_link_ofs
+              CompCert4Lean.Common.AST.Tptr .AX k1) = .OK c at h
+          obtain ⟨k1, h1, h2⟩ := bind_inversion _ _ _ _ _ h
+          exact tail_nolabel_trans k k1 c
+            (loadind_label _ _ _ _ _ _ h2) (loadind_label _ _ _ _ _ _ h1)
+      | true => exact loadind_label _ _ _ _ _ _ h
+  | Mop op args dst =>
+      exact transl_op_label _ _ _ _ _ h
+  | Mload chunk addr args dst =>
+      exact transl_load_label _ _ _ _ _ _ h
+  | Mstore chunk addr args src =>
+      exact transl_store_label _ _ _ _ _ _ h
+  | Mlabel lbl =>
+      exact (res.OK.inj h).symm
+  | Mcond cond args lbl =>
+      exact tail_nolabel_trans k _ c
+        (transl_cond_label _ _ _ _ h) (mk_jcc_label _ _ _)
+  | Mcall sg callee =>
+      cases callee <;> dsimp only [transl_instr] at h
+      all_goals
+        repeat first
+          | exact asmgenproof_op_tail_refl _
+          | (apply asmgenproof_op_ok h; clear h)
+          | (apply asmgenproof_op_bind h; clear h; intro a h)
+          | (refine asmgenproof_op_tail_cons (by intro lbl; rfl) ?_)
+  | Mtailcall sg callee =>
+      cases callee <;> dsimp only [transl_instr] at h
+      all_goals
+        repeat first
+          | exact asmgenproof_op_tail_refl _
+          | (apply asmgenproof_op_ok h; clear h)
+          | (apply asmgenproof_op_bind h; clear h; intro a h)
+          | (refine asmgenproof_op_tail_cons (by intro lbl; rfl) ?_)
+  | Mgoto lbl | Mjumptable arg tbl | Mreturn | Mbuiltin ef args result =>
+      dsimp only [transl_instr] at h
+      all_goals
+        repeat first
+          | exact asmgenproof_op_tail_refl _
+          | (apply asmgenproof_op_ok h; clear h)
+          | (apply asmgenproof_op_bind h; clear h; intro a h)
+          | (refine asmgenproof_op_tail_cons (by intro lbl; rfl) ?_)
+
+end CompCert4Lean.X86.Asmgenproof

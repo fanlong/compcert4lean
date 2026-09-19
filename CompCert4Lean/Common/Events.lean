@@ -2403,3 +2403,64 @@ theorem volatile_load_extends : volatile_load_extendsStatement := by
       exact ⟨v', volatile_load_nonvol chunk m' b ofs v' hvol hload', hless⟩
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Integers
+
+theorem volatile_store_extends : volatile_store_extendsStatement := by
+  intro ge chunk m1 b ofs v t m2 m1' v' hstore hext hless
+  cases hstore with
+  | volatile_store_vol id ev v hvol hfind hmatch =>
+      refine ⟨m1', ?_, hext, extcall_debug_unchanged_on_refl _ _⟩
+      exact volatile_store_vol chunk m1' b ofs id ev v' hvol hfind
+        (eventval_match_lessdef ge ev (type_of_chunk chunk)
+          (Val.load_result chunk v) (Val.load_result chunk v') hmatch
+          (Val.load_result_lessdef chunk v v' hless))
+  | volatile_store_nonvol v m2 hvol hstore =>
+      have hno : Mem.meminj_no_overlap inject_id m1 := by
+        intro b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 hne hmap1 hmap2 _ _
+        have hpair1 : (b1, (.Z0 : Z)) = (b1', delta1) := Option.some.inj hmap1
+        have hpair2 : (b2, (.Z0 : Z)) = (b2', delta2) := Option.some.inj hmap2
+        cases hpair1
+        cases hpair2
+        exact Or.inl hne
+      obtain ⟨m2', hstore', hinj⟩ := Mem.store_mapped_inj inject_id chunk m1 b
+        (Ptrofs.unsigned ofs) v m2 m1' b (.Z0 : Z) v' hext.mext_inj hstore hno
+        rfl ((val_inject_id v v').mpr hless)
+      have hzadd : zAdd (Ptrofs.unsigned ofs) (.Z0 : Z) = Ptrofs.unsigned ofs := by
+        apply intOfZ_injective
+        change intOfZ (zOfInt (intOfZ (Ptrofs.unsigned ofs) + 0)) = _
+        rw [intOfZ_zOfInt]
+        simp
+      change Mem.store chunk m1' b (zAdd (Ptrofs.unsigned ofs) (.Z0 : Z)) v' =
+        some m2' at hstore'
+      rw [hzadd] at hstore'
+      refine ⟨m2', volatile_store_nonvol chunk m1' b ofs v' m2' hvol hstore', ?_, ?_⟩
+      · constructor
+        · rw [Mem.nextblock_store chunk m1 b (Ptrofs.unsigned ofs) v m2 hstore,
+            Mem.nextblock_store chunk m1' b (Ptrofs.unsigned ofs) v' m2' hstore']
+          exact hext.mext_next
+        · exact hinj
+        · intro b' ofs' k p hp
+          have hp' := Mem.perm_store_2 chunk m1' b (Ptrofs.unsigned ofs) v' m2'
+            hstore' b' ofs' k p hp
+          obtain hpold | hn := hext.mext_perm_inv b' ofs' k p hp'
+          · exact Or.inl (Mem.perm_store_1 chunk m1 b (Ptrofs.unsigned ofs) v m2
+              hstore b' ofs' k p hpold)
+          · exact Or.inr (fun hpnew => hn (Mem.perm_store_2 chunk m1 b
+              (Ptrofs.unsigned ofs) v m2 hstore b' ofs' Max Nonempty hpnew))
+      · apply events_store_unchanged _ chunk m1' b (Ptrofs.unsigned ofs) v' m2' hstore'
+        intro i hi hout
+        apply hout
+        apply Mem.perm_cur_max m1 b i Nonempty
+        apply Mem.perm_implies m1 b i Cur Writable Nonempty _ (perm_any_N Writable)
+        exact (Mem.store_valid_access_3 chunk m1 b (Ptrofs.unsigned ofs) v m2
+          hstore).1 i hi
+
+end CompCert4Lean.Common.Events

@@ -3708,3 +3708,30 @@ theorem eval_make_normalize :
     first | exact hzero | exact hsigned
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+theorem make_assign_value_sound :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      make_assign_value_soundStatement := by
+  intro binary64_certificate binary32_certificate p ty m b ofs bf v t m' v' hassign
+  cases hassign with
+  | value hmode hvol hstore =>
+      intro tge e le m'' r hty heval
+      exact heval
+  | volatile hmode hvol hstore =>
+      intro tge e le m'' r hty heval
+      exact heval
+  | copy hmode halignSource halignTarget hseparated hload hstore =>
+      intro tge e le m'' r hty heval
+      exact heval
+  | bitfield hstore =>
+      cases hstore with
+      | store_bitfield_intro sz sg1 attr sg pos width m addr c n m'
+          hpos hwidth hcarrier hsg hload hstore =>
+          intro tge e le m'' r hty heval
+          exact eval_make_normalize tge e le m'' r n _ _ sg1 attr _
+            hwidth.1 hwidth.2 hty heval
+
+end CompCert4Lean.Cfrontend.SimplExprproof

@@ -5599,3 +5599,28 @@ theorem is_sgn_sign_ext : is_sgn_sign_extStatement := by
     exact hleft.trans hright.symm
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem is_zero_ext_uns : is_zero_ext_unsStatement := by
+  intro i n m h k hk hmk
+  change CompCert4Lean.Lib.Integers.Int.testbit
+    (CompCert4Lean.Lib.Integers.Int.zero_ext n i) k = false
+  rw [CompCert4Lean.Lib.Integers.Int.bits_zero_ext_proof n i k hk.1]
+  run_tac isUnsZeroExtSimpPrivate ["CompCert4Lean.Lib.Integers.zltSelect"]
+  cases hkn : CompCert4Lean.Lib.Coqlib.zlt k n with
+  | left hlt =>
+      run_tac isUnsZeroExtSimpPrivate ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+      rcases h with hu | hnm
+      · exact hu k hk hmk
+      · change intOfZ k < intOfZ n at hlt
+        change intOfZ n ≤ intOfZ m at hnm
+        change intOfZ m ≤ intOfZ k at hmk
+        omega
+  | right _ =>
+      run_tac isUnsZeroExtSimpPrivate ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+      rfl
+
+end CompCert4Lean.Backend.ValueDomain

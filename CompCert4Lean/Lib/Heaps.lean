@@ -1806,3 +1806,10 @@ theorem In_deleteMax (E : OrderedType) : In_deleteMaxStatement E := by
   exact R.In_deleteMax E y x h.1 hfind
 
 end CompCert4Lean.Lib.Heaps.SplayHeapSet
+
+namespace CompCert4Lean.Lib.Heaps.PHeap
+
+theorem In_empty_proof : In_empty := by
+  exact CompCert4Lean.Lib.Heaps.SplayHeapSet.In_empty positiveOrder
+
+end CompCert4Lean.Lib.Heaps.PHeap

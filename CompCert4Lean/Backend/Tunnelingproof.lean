@@ -2190,3 +2190,411 @@ noncomputable def record_gotos_correct_1 : record_gotos_correct_1Statement := by
     exact GET
 
 end CompCert4Lean.Backend.Tunnelingproof
+
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+private theorem gotos_measure_branch_step
+    (c : code) (u : U.t) (f : node → Nat) (pc : node) (b : bblock)
+    (BMC : branch_map_correct_1 (PTree.remove pc c) u f)
+    (GET : PTree.get pc c = some b) :
+    branch_map_correct_1 c (record_branch_measure (u, f) pc b).1
+      (record_branch_measure (u, f) pc b).2 := by
+  have H := (record_branch_correct c u f pc b BMC GET).2
+  cases b with
+  | nil => exact H
+  | cons instr tail => cases instr <;> exact H
+
+private theorem gotos_measure_cond_step
+    (fn : function) (c : code) (u : U.t) (changed : Bool)
+    (f : node → Nat) (pc : node) (b : bblock)
+    (BMC : branch_map_correct_2 fn c u f)
+    (GET1 : PTree.get pc fn.fn_code = some b)
+    (GET2 : PTree.get pc c ≠ none) :
+    branch_map_correct_2 fn
+      (record_cond_measure (((c, u), changed), f) pc b).1.1.1
+      (record_cond_measure (((c, u), changed), f) pc b).1.1.2
+      (record_cond_measure (((c, u), changed), f) pc b).2 := by
+  cases b with
+  | nil => simpa [record_cond_measure, record_cond] using BMC
+  | cons instr tail =>
+      cases instr with
+      | Lcond cond args s1 s2 =>
+          unfold record_cond_measure record_cond
+          rw [show peqNode = peq from rfl]
+          cases hpeq : peq (U.repr u s1) (U.repr u s2) with
+          | right hneq => simpa [hpeq] using BMC
+          | left heq =>
+              simp [hpeq]
+              have PC : U.repr u pc = pc := by
+                have h := BMC pc
+                rw [GET1] at h
+                exact h.elim id (fun h => False.elim (GET2 h.1))
+              have hmeasure : ∀ (x y : node),
+                  U.repr u x = U.repr u y → f x < f y →
+                  measure_cond u pc s1 s2 f x < measure_cond u pc s1 s2 f y := by
+                intro x y hxy hlt
+                unfold measure_cond
+                cases htest : peqNode (U.repr u s1) pc with
+                | left _ => simpa [htest] using hlt
+                | right _ =>
+                    cases hx : peqNode (U.repr u x) pc with
+                    | left heqx =>
+                        cases hy : peqNode (U.repr u y) pc with
+                        | left heqy =>
+                            simp [htest, hx, hy]
+                            omega
+                        | right hney =>
+                            exact False.elim (hney (hxy.symm.trans heqx))
+                    | right hnex =>
+                        cases hy : peqNode (U.repr u y) pc with
+                        | left heqy =>
+                            exact False.elim (hnex (hxy.trans heqy))
+                        | right _ => simpa [htest, hx, hy] using hlt
+              intro p
+              by_cases hpc : p = pc
+              · subst p
+                simp only [GET1]
+                have hpc1 : U.repr (U.union u pc s1) pc = U.repr u s1 :=
+                  tunnel_u_repr_union_2 u pc s1 pc rfl
+                have hpc2 : U.repr (U.union u pc s1) s1 = U.repr u s1 :=
+                  tunnel_u_repr_union_3 u pc s1
+                have hpc3 : U.repr (U.union u pc s1) s2 = U.repr u s2 := by
+                  by_cases hs : U.repr u s2 = U.repr u pc
+                  · calc
+                      U.repr (U.union u pc s1) s2 = U.repr u s1 :=
+                        tunnel_u_repr_union_2 u pc s1 s2 hs
+                      _ = U.repr u s2 := heq
+                  · exact tunnel_u_repr_union_1 u pc s1 s2 hs
+                rw [hpc1, hpc2, hpc3]
+                cases htest : peqNode (U.repr u s1) pc with
+                | left hsame => exact Or.inl hsame
+                | right hdiff =>
+                    right
+                    have hs2pc : U.repr u s2 ≠ pc := by
+                      intro hs
+                      apply hdiff
+                      exact heq.trans hs
+                    refine ⟨PTree.grs_proof (A := bblock) pc c, rfl, heq, ?_, ?_⟩
+                    · unfold measure_cond
+                      cases hpc' : peqNode (U.repr u pc) pc with
+                      | left _ =>
+                          simp [htest, hpc']
+                          calc
+                            f s1 ≤ Nat.max (f s1) (f s2) := Nat.le_max_left _ _
+                            _ < f pc + Nat.max (f s1) (f s2) + 1 := by omega
+                      | right hnepc => exact False.elim (hnepc PC)
+                    · unfold measure_cond
+                      cases hpc' : peqNode (U.repr u pc) pc with
+                      | left _ =>
+                          cases hs2' : peqNode (U.repr u s2) pc with
+                          | left heq2 => exact False.elim (hs2pc heq2)
+                          | right _ =>
+                              simp [htest, hpc', hs2']
+                              calc
+                                f s2 ≤ Nat.max (f s1) (f s2) := Nat.le_max_right _ _
+                                _ < f pc + Nat.max (f s1) (f s2) + 1 := by omega
+                      | right hnepc => exact False.elim (hnepc PC)
+              · have hpreserve : U.repr u p = p → U.repr (U.union u pc s1) p = p := by
+                  intro hp
+                  exact (tunnel_u_repr_union_1 u pc s1 p (by
+                    intro h
+                    exact hpc (hp.symm.trans (h.trans PC)))).trans hp
+                have hpB := BMC p
+                cases hpget : PTree.get p fn.fn_code with
+                | none =>
+                    simp [hpget] at hpB ⊢
+                    exact hpreserve hpB
+                | some block =>
+                    cases block with
+                    | nil =>
+                        simp [hpget] at hpB ⊢
+                        exact hpreserve hpB
+                    | cons pinstr ptail =>
+                        cases pinstr with
+                        | Lbranch ps =>
+                            simp only [hpget] at hpB
+                            simp only [branch_map_correct_2] at hpB ⊢
+                            cases hpB with
+                            | inl hp => exact Or.inl (hpreserve hp)
+                            | inr hp =>
+                                right
+                                refine ⟨tunnel_u_sameclass_union_2 u pc s1 p ps hp.1, ?_⟩
+                                exact hmeasure ps p hp.1.symm hp.2
+                        | Lop op args' res => simp [hpget] at hpB ⊢; exact hpreserve hpB
+                        | Lload chunk addr args' dst => simp [hpget] at hpB ⊢; exact hpreserve hpB
+                        | Lgetstack sl ofs ty dst => simp [hpget] at hpB ⊢; exact hpreserve hpB
+                        | Lsetstack src sl ofs ty => simp [hpget] at hpB ⊢; exact hpreserve hpB
+                        | Lstore chunk addr args' src => simp [hpget] at hpB ⊢; exact hpreserve hpB
+                        | Lcall sig ros => simp [hpget] at hpB ⊢; exact hpreserve hpB
+                        | Ltailcall sig ros => simp [hpget] at hpB ⊢; exact hpreserve hpB
+                        | Lbuiltin ef args' res => simp [hpget] at hpB ⊢; exact hpreserve hpB
+                        | Lcond cond' args' s1' s2' =>
+                            simp only [hpget] at hpB
+                            simp only [branch_map_correct_2] at hpB ⊢
+                            cases hpB with
+                            | inl hp => exact Or.inl (hpreserve hp)
+                            | inr hp =>
+                                right
+                                refine ⟨?_, tunnel_u_sameclass_union_2 u pc s1 p s1' hp.2.1, ?_, ?_, ?_⟩
+                                · have hremove := PTree.gro_proof c hpc
+                                  rw [hremove]
+                                  exact hp.1
+                                · exact tunnel_u_sameclass_union_2 u pc s1 p s2' hp.2.2.1
+                                · exact hmeasure s1' p hp.2.1.symm hp.2.2.2.1
+                                · exact hmeasure s2' p hp.2.2.1.symm hp.2.2.2.2
+                        | Ljumptable arg tbl => simp [hpget] at hpB ⊢; exact hpreserve hpB
+                        | Lreturn => simp [hpget] at hpB ⊢; exact hpreserve hpB
+      | Lop op args res => simpa [record_cond_measure, record_cond] using BMC
+      | Lload chunk addr args dst => simpa [record_cond_measure, record_cond] using BMC
+      | Lgetstack sl ofs ty dst => simpa [record_cond_measure, record_cond] using BMC
+      | Lsetstack src sl ofs ty => simpa [record_cond_measure, record_cond] using BMC
+      | Lstore chunk addr args src => simpa [record_cond_measure, record_cond] using BMC
+      | Lcall sig ros => simpa [record_cond_measure, record_cond] using BMC
+      | Ltailcall sig ros => simpa [record_cond_measure, record_cond] using BMC
+      | Lbuiltin ef args' res => simpa [record_cond_measure, record_cond] using BMC
+      | Lbranch succ => simpa [record_cond_measure, record_cond] using BMC
+      | Ljumptable arg tbl => simpa [record_cond_measure, record_cond] using BMC
+      | Lreturn => simpa [record_cond_measure, record_cond] using BMC
+
+end CompCert4Lean.Backend.Tunnelingproof
+
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Maps
+
+private theorem gotos_fold_projection {A B C : Type}
+    (step : B → PTree.elt → A → B) (step' : C → PTree.elt → A → C)
+    (project : B → C)
+    (H : ∀ st pc b, project (step st pc b) = step' (project st) pc b)
+    (m : PTree.t A) (init : B) :
+    project (PTree.fold step m init) = PTree.fold step' m (project init) := by
+  erw [PTree.fold_spec_proof, PTree.fold_spec_proof]
+  have aux : ∀ (l : List (PTree.elt × A)) (st : B),
+      project (l.foldl (fun a p => step a p.1 p.2) st) =
+        l.foldl (fun a p => step' a p.1 p.2) (project st) := by
+    intro l
+    induction l with
+    | nil => intro st; rfl
+    | cons p l IH =>
+        intro st
+        simp only [List.foldl_cons]
+        rw [IH, H]
+  exact aux _ _
+
+private theorem gotos_branch_step_fst (st : U.t × (node → Nat))
+    (pc : node) (b : bblock) :
+    (record_branch_measure st pc b).1 = record_branch st.1 pc b := by
+  cases b with
+  | nil => rfl
+  | cons instr tail => cases instr <;> rfl
+
+private theorem gotos_branches_measure_fst (fn : function) :
+    (record_branches_measure fn).1 = record_branches fn := by
+  exact gotos_fold_projection record_branch_measure record_branch Prod.fst
+    gotos_branch_step_fst fn.fn_code (U.empty, fun _ => 0)
+
+private theorem gotos_branches_measure_correct (fn : function) :
+    branch_map_correct_1 fn.fn_code (record_branches_measure fn).1
+      (record_branches_measure fn).2 := by
+  let P : code → (U.t × (node → Nat)) → Prop := fun c st =>
+    branch_map_correct_1 c st.1 st.2
+  apply PTree_Properties.fold_rec_proof (P := P)
+  · intro c c' st EXT IH pc
+    rw [← EXT pc]
+    exact IH pc
+  · intro pc
+    change U.repr U.empty pc = pc
+    exact U.repr_empty_proof pc
+  · intro c st pc b NONE GET IH
+    rcases st with ⟨u, f⟩
+    apply gotos_measure_branch_step
+    · intro p
+      rw [PTree.getRemove_equation]
+      by_cases EQ : p = pc
+      · subst p
+        have H := IH pc
+        simp only [P, branch_map_correct_1, NONE] at H
+        simpa using H
+      · rw [PTree.getSet_equation]
+        simp only [EQ, ↓reduceDIte]
+        exact IH p
+    · simp [PTree.getSet_equation]
+
+private theorem gotos_cond_step_fst
+    (st : (((code × U.t) × Bool) × (node → Nat))) (pc : node) (b : bblock) :
+    (record_cond_measure st pc b).1 = record_cond st.1 pc b := by
+  cases b with
+  | nil => rfl
+  | cons instr tail =>
+      cases instr <;> try rfl
+      next cond args s1 s2 =>
+        cases H : peqNode (U.repr st.1.1.2 s1) (U.repr st.1.1.2 s2) <;>
+          simp [record_cond_measure, H]
+
+private theorem gotos_conds_fold_fst (cu : code × U.t) (f : node → Nat) :
+    (PTree.fold record_cond_measure cu.1 ((cu, false), f)).1 =
+      record_conds_1 cu := by
+  exact gotos_fold_projection record_cond_measure record_cond Prod.fst
+    gotos_cond_step_fst cu.1 ((cu, false), f)
+
+private theorem gotos_conds_measure_fold (cu : code × U.t) (f : node → Nat) :
+    record_conds_1_measure cu f =
+      PTree.fold record_cond_measure cu.1 ((cu, false), f) := by
+  apply Prod.ext
+  · exact (gotos_conds_fold_fst cu f).symm
+  · rfl
+
+private theorem gotos_conds_1_measure_correct
+    (fn : function) (c0 : code) (u0 : U.t) (f0 : node → Nat)
+    (BMC0 : branch_map_correct_2 fn c0 u0 f0) (COMPAT0 : code_compat fn c0) :
+    code_compat fn (record_conds_1_measure (c0, u0) f0).1.1.1 ∧
+      branch_map_correct_2 fn (record_conds_1_measure (c0, u0) f0).1.1.1
+        (record_conds_1_measure (c0, u0) f0).1.1.2
+        (record_conds_1_measure (c0, u0) f0).2 := by
+  let P : code → (((code × U.t) × Bool) × (node → Nat)) → Type := fun cd st =>
+    PLift (code_compat fn st.1.1.1 ∧ code_invariant cd st.1.1.1 c0 ∧
+      branch_map_correct_2 fn st.1.1.1 st.1.1.2 st.2)
+  have REC : P c0 (PTree.fold record_cond_measure c0 (((c0, u0), false), f0)) := by
+    apply PTree_Properties.fold_ind_proof (P := P)
+    · intro cd EMPTY
+      exact ⟨COMPAT0, (fun _ _ => rfl), BMC0⟩
+    · intro cd st pc b GET1 GET2 IH
+      rcases st with ⟨⟨⟨c, u⟩, changed⟩, f⟩
+      rcases IH with ⟨COMPAT, INV, BMC⟩
+      have GET3 : PTree.get pc c = some b :=
+        (INV pc (PTree.grs_proof pc cd)).trans GET2
+      have CODES := record_conds_fold_code_cases c u changed pc b
+      refine ⟨?_, ?_, ?_⟩
+      · change code_compat fn (record_cond_measure (((c, u), changed), f) pc b).1.1.1
+        erw [gotos_cond_step_fst]
+        rcases CODES with SAME | REMOVED
+        · rw [SAME]
+          exact COMPAT
+        · rw [REMOVED]
+          intro p block GET
+          by_cases EQ : p = pc
+          · subst p
+            rw [PTree.grs_proof (A := bblock) pc c] at GET
+            cases GET
+          · rw [PTree.gro_proof c EQ] at GET
+            exact COMPAT p block GET
+      · change code_invariant cd (record_cond_measure (((c, u), changed), f) pc b).1.1.1 c0
+        erw [gotos_cond_step_fst]
+        intro p GET
+        have NE : p ≠ pc := by
+          intro EQ
+          subst p
+          rw [GET1] at GET
+          cases GET
+        have OLD : PTree.get p c = PTree.get p c0 :=
+          INV p (by rw [PTree.gro_proof cd NE]; exact GET)
+        rcases CODES with SAME | REMOVED
+        · rw [SAME]
+          exact OLD
+        · rw [REMOVED, PTree.gro_proof c NE]
+          exact OLD
+      · exact gotos_measure_cond_step fn c u changed f pc b BMC
+          (COMPAT pc b GET3) (by rw [GET3]; simp)
+  rw [gotos_conds_measure_fold]
+  exact ⟨REC.down.1, REC.down.2.2⟩
+
+end CompCert4Lean.Backend.Tunnelingproof
+
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Maps
+
+private theorem gotos_measure_wf_equation (cu : code × U.t) (f : node → Nat) :
+    record_conds_measure_wf (cu, f) =
+      if (record_conds_1 cu).2 then
+        record_conds_measure_wf ((record_conds_1 cu).1, record_conds_1_witness cu f)
+      else (cu.2, f) := by
+  rw [record_conds_measure_wf, WellFounded.fix_eq]
+  simp only [record_conds_1_measure]
+  split <;> rename_i H <;> simp [H, record_conds_measure_wf] <;> rfl
+
+private theorem gotos_conds_measure_correct (fn : function) (cu : code × U.t)
+    (f : node → Nat) (BMC : branch_map_correct_2 fn cu.1 cu.2 f)
+    (COMPAT : code_compat fn cu.1) :
+    branch_map_correct fn (record_conds cu) (record_conds_measure_wf (cu, f)).2 := by
+  let P : code × U.t → U.t → Type := fun cu u => PLift
+    (∀ f : node → Nat, branch_map_correct_2 fn cu.1 cu.2 f →
+      code_compat fn cu.1 →
+      branch_map_correct fn u (record_conds_measure_wf (cu, f)).2)
+  have REC : ∀ cu, P cu (record_conds cu) := by
+    apply record_conds_rec (P := P)
+    · intro cu cu' changed RESULT CHANGED IH
+      refine ⟨?_⟩
+      intro f BMC COMPAT
+      have NEXT := gotos_conds_1_measure_correct fn cu.1 cu.2 f BMC COMPAT
+      have COMPAT' : code_compat fn cu'.1 := by
+        simpa [record_conds_1_measure, RESULT] using NEXT.1
+      have BMC' : branch_map_correct_2 fn cu'.1 cu'.2
+          (record_conds_1_witness cu f) := by
+        simpa [record_conds_1_measure, RESULT] using NEXT.2
+      have H := IH.down (record_conds_1_witness cu f) BMC' COMPAT'
+      rw [gotos_measure_wf_equation, RESULT, CHANGED]
+      exact H
+    · intro cu cu' changed RESULT UNCHANGED
+      refine ⟨?_⟩
+      intro f BMC COMPAT
+      rw [gotos_measure_wf_equation, RESULT, UNCHANGED]
+      intro pc
+      have H := BMC pc
+      cases GET : PTree.get pc fn.fn_code with
+      | none => simpa [branch_map_correct, GET] using H
+      | some b =>
+          cases b with
+          | nil => simpa [branch_map_correct, GET] using H
+          | cons instr tail =>
+              cases instr with
+              | Lcond cond args s1 s2 =>
+                  simp only [GET] at H
+                  rcases H with H | ⟨_, H⟩
+                  · exact Or.inl H
+                  · exact Or.inr H
+              | _ => simpa [branch_map_correct, GET] using H
+  exact (REC cu).down f BMC COMPAT
+
+theorem record_gotos_correct : record_gotos_correctStatement := by
+  intro fn
+  have BR := gotos_branches_measure_correct fn
+  have BMC : branch_map_correct_2 fn fn.fn_code (record_branches_measure fn).1
+      (record_branches_measure fn).2 := by
+    intro pc
+    have H := BR pc
+    cases GET : PTree.get pc fn.fn_code with
+    | none => simpa [branch_map_correct_2, GET] using H
+    | some b =>
+        cases b with
+        | nil => simpa [branch_map_correct_2, GET] using H
+        | cons instr tail =>
+            cases instr with
+            | Lcond cond args s1 s2 =>
+                left
+                simpa [GET] using H
+            | _ => simpa [branch_map_correct_2, GET] using H
+  have H := gotos_conds_measure_correct fn
+    (fn.fn_code, (record_branches_measure fn).1) (record_branches_measure fn).2
+    BMC (fun _ _ GET => GET)
+  change branch_map_correct fn (record_gotos fn)
+    (record_gotos_correct_1_projection fn)
+  change branch_map_correct fn (record_conds (fn.fn_code, record_branches fn))
+    (record_conds_measure_wf
+      ((fn.fn_code, (record_branches_measure fn).1), (record_branches_measure fn).2)).2
+  rw [gotos_branches_measure_fst] at H ⊢
+  exact H
+
+end CompCert4Lean.Backend.Tunnelingproof

@@ -4114,3 +4114,48 @@ theorem kill_loads_after_store_holds
           (Vptr sp Ptrofs.zero) m args' vargs hargs hfilter) hsem
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSE
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+
+theorem store_normalized_range_sound : store_normalized_range_soundStatement := by
+  intro bc chunk v h
+  cases chunk <;> cases v <;>
+    simp only [Val.load_result, CompCert4Lean.X86_64.Archi.ptr64, if_true] <;>
+    try first | exact Val.lessdef_refl _ | exact Val.lessdef_undef _
+  case Mbool.Vint i =>
+    cases h
+    rename_i hn hi
+    rcases is_uns_1 i hi with rfl | rfl <;> exact Val.lessdef_refl _
+  case Mint8signed.Vint i =>
+    cases h
+    rename_i hn hi
+    change Val.lessdef (Vint (Int.sign_ext (zOfNat 8) i)) (Vint i)
+    rw [(is_sgn_sign_ext _ i hn).mp hi]
+    exact Val.lessdef_refl _
+  case Mint8unsigned.Vint i =>
+    cases h
+    rename_i hn hi
+    have he : Int.zero_ext (zOfNat 8) i = i := (is_uns_zero_ext _ i).mp hi
+    change Val.lessdef (Vint (Int.zero_ext (zOfNat 8) i)) (Vint i)
+    rw [he]
+    exact Val.lessdef_refl _
+  case Mint16signed.Vint i =>
+    cases h
+    rename_i hn hi
+    change Val.lessdef (Vint (Int.sign_ext (zOfNat 16) i)) (Vint i)
+    rw [(is_sgn_sign_ext _ i hn).mp hi]
+    exact Val.lessdef_refl _
+  case Mint16unsigned.Vint i =>
+    cases h
+    rename_i hn hi
+    have he : Int.zero_ext (zOfNat 16) i = i := (is_uns_zero_ext _ i).mp hi
+    change Val.lessdef (Vint (Int.zero_ext (zOfNat 16) i)) (Vint i)
+    rw [he]
+    exact Val.lessdef_refl _
+
+end CompCert4Lean.Backend.CSEproof

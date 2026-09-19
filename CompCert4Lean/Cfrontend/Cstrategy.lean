@@ -3156,3 +3156,267 @@ theorem eval_simple_steps
     exact eval_simple_lvalue_steps xi ge f k e m a b ofs bf h C hC
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+open CompCert4Lean.Cfrontend.Csem
+open CompCert4Lean.Cfrontend.Csyntax
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Lib.Integers
+
+theorem simple_can_eval
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    simple_can_evalStatement := by
+  unfold simple_can_evalStatement
+  intro xi ge f k e m a
+  induction a using expr.rec (motive_2 := fun _ => True) with
+  | Eval v ty =>
+      intro fromKind C hs hcontext hsafe
+      have hkind := safe_expr_kind (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge fromKind C f (.Eval v ty) k e m
+        hcontext hsafe
+      rw [← hkind] at hcontext ⊢
+      simp [simple] at hs ⊢
+      exact ⟨v, .esr_val⟩
+  | Evar x ty =>
+      intro fromKind C hs hcontext hsafe
+      have hkind := safe_expr_kind (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge fromKind C f (.Evar x ty) k e m
+        hcontext hsafe
+      rw [← hkind] at hcontext ⊢
+      simp [simple] at hs ⊢
+      have hinv := safe_inv (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge e .LV C f (.Evar x ty) k m hsafe hcontext
+      rcases hinv with ⟨b, hlocal | ⟨hnone, hglobal⟩⟩
+      · exact ⟨b, Ptrofs.zero, .Full, .esl_var_local hlocal⟩
+      · exact ⟨b, Ptrofs.zero, .Full, .esl_var_global hnone hglobal⟩
+  | Eloc b ofs bf ty =>
+      intro fromKind C hs hcontext hsafe
+      have hkind := safe_expr_kind (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge fromKind C f (.Eloc b ofs bf ty) k e m
+        hcontext hsafe
+      rw [← hkind] at hcontext ⊢
+      simp [simple] at hs ⊢
+      exact ⟨b, ofs, bf, .esl_loc⟩
+  | Esizeof ty1 ty =>
+      intro fromKind C hs hcontext hsafe
+      have hkind := safe_expr_kind (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge fromKind C f (.Esizeof ty1 ty) k e m
+        hcontext hsafe
+      rw [← hkind] at hcontext ⊢
+      simp [simple] at hs ⊢
+      exact ⟨_, .esr_sizeof⟩
+  | Ealignof ty1 ty =>
+      intro fromKind C hs hcontext hsafe
+      have hkind := safe_expr_kind (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge fromKind C f (.Ealignof ty1 ty) k e m
+        hcontext hsafe
+      rw [← hkind] at hcontext ⊢
+      simp [simple] at hs ⊢
+      exact ⟨_, .esr_alignof⟩
+  | Ederef r ty ih =>
+      intro fromKind C hs hcontext hsafe
+      have hkind := safe_expr_kind (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge fromKind C f (.Ederef r ty) k e m
+        hcontext hsafe
+      rw [← hkind] at hcontext ⊢
+      have hctx : context .RV .RV (fun x => C (.Ederef x ty)) := by
+        exact context_compose .LV .RV C hcontext .RV _ (.deref (.ctx_top .RV))
+      rcases ih .RV (fun x => C (.Ederef x ty)) hs hctx hsafe with ⟨v, hv⟩
+      have hsafe' := eval_simple_rvalue_safe
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge f k e m
+        (fun x => C (.Ederef x ty)) r v hv hctx hsafe
+      have hinv := safe_inv (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge e .LV C f
+        (.Ederef (.Eval v (typeof r)) ty) k m hsafe' hcontext
+      rcases hinv with ⟨b, ofs, hptr⟩
+      subst v
+      exact ⟨b, ofs, .Full, .esl_deref hv⟩
+  | Efield r fld ty ih =>
+      intro fromKind C hs hcontext hsafe
+      have hkind := safe_expr_kind (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge fromKind C f (.Efield r fld ty) k e m
+        hcontext hsafe
+      rw [← hkind] at hcontext ⊢
+      have hctx : context .RV .RV (fun x => C (.Efield x fld ty)) := by
+        exact context_compose .LV .RV C hcontext .RV _ (.field (.ctx_top .RV))
+      rcases ih .RV (fun x => C (.Efield x fld ty)) hs hctx hsafe with ⟨v, hv⟩
+      have hsafe' := eval_simple_rvalue_safe
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge f k e m
+        (fun x => C (.Efield x fld ty)) r v hv hctx hsafe
+      have hinv := safe_inv (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge e .LV C f
+        (.Efield (.Eval v (typeof r)) fld ty) k m hsafe' hcontext
+      rcases hinv with ⟨b, ofs, hptr, hcase⟩
+      subst v
+      simp only [expr_kind] at ⊢
+      cases htype : typeof r with
+      | Tstruct id attr =>
+          rw [htype] at hcase
+          rcases hcase with ⟨co, delta, bf, hco, hoff⟩
+          exact ⟨b, Ptrofs.add ofs (Ptrofs.repr delta), bf,
+            .esl_field_struct hv htype hco hoff⟩
+      | Tunion id attr =>
+          rw [htype] at hcase
+          rcases hcase with ⟨co, delta, bf, hco, hoff⟩
+          exact ⟨b, Ptrofs.add ofs (Ptrofs.repr delta), bf,
+            .esl_field_union hv htype hoff hco⟩
+      | _ =>
+          rw [htype] at hcase
+          exact hcase.elim
+  | Evalof l ty ih =>
+      intro fromKind C hs hcontext hsafe
+      have hkind := safe_expr_kind (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge fromKind C f (.Evalof l ty) k e m
+        hcontext hsafe
+      rw [← hkind] at hcontext ⊢
+      have hctx : context .LV .RV (fun x => C (.Evalof x ty)) := by
+        exact context_compose .RV .RV C hcontext .LV _ (.rvalof (.ctx_top .LV))
+      have hs' := hs
+      simp [simple] at hs'
+      have hsimple : simple l = true := hs'.1
+      rcases ih .LV (fun x => C (.Evalof x ty)) hsimple hctx hsafe with ⟨b, ofs, bf, hl⟩
+      have hsafe' := eval_simple_lvalue_safe
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge f k e m
+        (fun x => C (.Evalof x ty)) l b ofs bf hl hctx hsafe
+      have hinv := safe_inv (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge e .RV C f
+        (.Evalof (.Eloc b ofs bf (typeof l)) ty) k m hsafe' hcontext
+      rcases hinv with ⟨htype, t, v, hderef⟩
+      have hvol : type_is_volatile ty = false := by
+        simpa [← htype] using hs'.2
+      have ht : t = E0 := by
+        cases hderef with
+        | value hmode hvol hload => rfl
+        | volatile hmode hvol hload => simp_all
+        | reference hmode => rfl
+        | copy hmode => rfl
+        | bitfield hload => rfl
+      subst t
+      exact ⟨v, .esr_rvalof hl htype.symm hvol hderef⟩
+  | Eaddrof l ty ih =>
+      intro fromKind C hs hcontext hsafe
+      have hkind := safe_expr_kind (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge fromKind C f (.Eaddrof l ty) k e m
+        hcontext hsafe
+      rw [← hkind] at hcontext ⊢
+      have hctx : context .LV .RV (fun x => C (.Eaddrof x ty)) := by
+        exact context_compose .RV .RV C hcontext .LV _ (.addrof (.ctx_top .LV))
+      rcases ih .LV (fun x => C (.Eaddrof x ty)) hs hctx hsafe with ⟨b, ofs, bf, hl⟩
+      have hsafe' := eval_simple_lvalue_safe
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge f k e m
+        (fun x => C (.Eaddrof x ty)) l b ofs bf hl hctx hsafe
+      have hinv := safe_inv (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge e .RV C f
+        (.Eaddrof (.Eloc b ofs bf (typeof l)) ty) k m hsafe' hcontext
+      have hfull : bf = .Full := hinv
+      subst bf
+      exact ⟨.Vptr b ofs, .esr_addrof hl⟩
+  | Eunop op r ty ih =>
+      intro fromKind C hs hcontext hsafe
+      have hkind := safe_expr_kind (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge fromKind C f (.Eunop op r ty) k e m
+        hcontext hsafe
+      rw [← hkind] at hcontext ⊢
+      have hctx : context .RV .RV (fun x => C (.Eunop op x ty)) := by
+        exact context_compose .RV .RV C hcontext .RV _ (.unop (.ctx_top .RV))
+      rcases ih .RV (fun x => C (.Eunop op x ty)) hs hctx hsafe with ⟨v, hv⟩
+      have hsafe' := eval_simple_rvalue_safe
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge f k e m
+        (fun x => C (.Eunop op x ty)) r v hv hctx hsafe
+      have hinv := safe_inv (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge e .RV C f
+        (.Eunop op (.Eval v (typeof r)) ty) k m hsafe' hcontext
+      rcases hinv with ⟨v', hop⟩
+      exact ⟨v', .esr_unop hv hop⟩
+  | Ebinop op r1 r2 ty ih1 ih2 =>
+      intro fromKind C hs hcontext hsafe
+      have hkind := safe_expr_kind (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge fromKind C f (.Ebinop op r1 r2 ty) k e m
+        hcontext hsafe
+      rw [← hkind] at hcontext ⊢
+      have hctx1 : context .RV .RV (fun x => C (.Ebinop op x r2 ty)) := by
+        exact context_compose .RV .RV C hcontext .RV _ (.binopLeft (.ctx_top .RV))
+      have hs' := hs
+      simp [simple] at hs'
+      have hs1 : simple r1 = true := hs'.1
+      have hs2 : simple r2 = true := hs'.2
+      rcases ih1 .RV (fun x => C (.Ebinop op x r2 ty)) hs1 hctx1 hsafe with ⟨v1, hv1⟩
+      have hsafe1 := eval_simple_rvalue_safe
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge f k e m
+        (fun x => C (.Ebinop op x r2 ty)) r1 v1 hv1 hctx1 hsafe
+      have hctx2 : context .RV .RV (fun x => C (.Ebinop op (.Eval v1 (typeof r1)) x ty)) := by
+        exact context_compose .RV .RV C hcontext .RV _
+          (.binopRight (.ctx_top .RV))
+      rcases ih2 .RV (fun x => C (.Ebinop op (.Eval v1 (typeof r1)) x ty)) hs2 hctx2 hsafe1 with ⟨v2, hv2⟩
+      have hsafe2 := eval_simple_rvalue_safe
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge f k e m
+        (fun x => C (.Ebinop op (.Eval v1 (typeof r1)) x ty)) r2 v2 hv2 hctx2 hsafe1
+      have hinv := safe_inv (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge e .RV C f
+        (.Ebinop op (.Eval v1 (typeof r1)) (.Eval v2 (typeof r2)) ty) k m hsafe2 hcontext
+      rcases hinv with ⟨v, hbin⟩
+      exact ⟨v, .esr_binop hv1 hv2 hbin⟩
+  | Ecast r ty ih =>
+      intro fromKind C hs hcontext hsafe
+      have hkind := safe_expr_kind (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge fromKind C f (.Ecast r ty) k e m
+        hcontext hsafe
+      rw [← hkind] at hcontext ⊢
+      have hctx : context .RV .RV (fun x => C (.Ecast x ty)) := by
+        exact context_compose .RV .RV C hcontext .RV _ (.cast (.ctx_top .RV))
+      rcases ih .RV (fun x => C (.Ecast x ty)) hs hctx hsafe with ⟨v, hv⟩
+      have hsafe' := eval_simple_rvalue_safe
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge f k e m
+        (fun x => C (.Ecast x ty)) r v hv hctx hsafe
+      have hinv := safe_inv (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge e .RV C f
+        (.Ecast (.Eval v (typeof r)) ty) k m hsafe' hcontext
+      rcases hinv with ⟨v', hcast⟩
+      exact ⟨v', .esr_cast hv hcast⟩
+  | Eseqand r1 r2 ty ih1 ih2 =>
+      intro fromKind C hs hcontext hsafe
+      simp [simple] at hs
+  | Eseqor r1 r2 ty ih1 ih2 =>
+      intro fromKind C hs hcontext hsafe
+      simp [simple] at hs
+  | Econdition r1 r2 r3 ty ih1 ih2 ih3 =>
+      intro fromKind C hs hcontext hsafe
+      simp [simple] at hs
+  | Eassign l r ty ihl ihr =>
+      intro fromKind C hs hcontext hsafe
+      simp [simple] at hs
+  | Eassignop op l r tyres ty ihl ihr =>
+      intro fromKind C hs hcontext hsafe
+      simp [simple] at hs
+  | Epostincr id l ty ih =>
+      intro fromKind C hs hcontext hsafe
+      simp [simple] at hs
+  | Ecomma r1 r2 ty ih1 ih2 =>
+      intro fromKind C hs hcontext hsafe
+      simp [simple] at hs
+  | Ecall r rargs ty ihr ihrargs =>
+      intro fromKind C hs hcontext hsafe
+      simp [simple] at hs
+  | Ebuiltin ef tyargs rargs ty ihrargs =>
+      intro fromKind C hs hcontext hsafe
+      simp [simple] at hs
+  | Eparen r tycast ty ih =>
+      intro fromKind C hs hcontext hsafe
+      simp [simple] at hs
+  | Enil =>
+      trivial
+  | Econs r rl ihr ihrl =>
+      trivial
+
+end CompCert4Lean.Cfrontend.Cstrategy

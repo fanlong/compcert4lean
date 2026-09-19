@@ -4740,3 +4740,363 @@ theorem match_callstack_alloc_left : match_callstack_alloc_leftStatement := by
       · exact htail'
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+
+local instance : OfNat Z 0 := ⟨.Z0⟩
+local instance : HAdd Z Z Z := ⟨ZArith.BinInt.Z.add⟩
+local instance : LE Z := ⟨ZArith.BinInt.Z.le⟩
+local instance : LT Z := ⟨ZArith.BinInt.Z.lt⟩
+
+private theorem alloc_vars_mem_inj_extend
+    (f f' : meminj) (m tm : mem) (h : Mem.mem_inj f m tm)
+    (hincr : inject_incr f f')
+    (hsame : ∀ b, Mem.valid_block m b → f' b = f b) :
+    Mem.mem_inj f' m tm := by
+  constructor
+  · intro b tb delta ofs k p hmap hp
+    rw [hsame b (Mem.perm_valid_block m b ofs k p hp)] at hmap
+    exact h.mi_perm b tb delta ofs k p hmap hp
+  · intro b tb delta chunk ofs p hmap hrange
+    have hsize := size_chunk_pos chunk
+    have hofs : ofs < ofs + size_chunk chunk := by
+      change intOfZ ofs < intOfZ (ofs + size_chunk chunk)
+      simp only [HAdd.hAdd, Add.add, intOfZ_add_external]
+      change intOfZ ofs < intOfZ ofs + intOfZ (size_chunk chunk)
+      change 0 < intOfZ (size_chunk chunk) at hsize
+      omega
+    have hp := hrange ofs ⟨ZArith.BinInt.Z.le_refl _, hofs⟩
+    rw [hsame b (Mem.perm_valid_block m b ofs .Max p hp)] at hmap
+    exact h.mi_align b tb delta chunk ofs p hmap hrange
+  · intro b ofs tb delta hmap hp
+    rw [hsame b (Mem.perm_valid_block m b ofs .Cur .Readable hp)] at hmap
+    exact memval_inject_incr f f' _ _ (h.mi_memval b ofs tb delta hmap hp) hincr
+
+private theorem alloc_vars_inject_step
+    (f : meminj) (m tm m' : mem) (b sp : block) (sz delta stacksize : Z)
+    (hinj : Mem.inject f m tm)
+    (ha : Mem.alloc m 0 sz = (m', b))
+    (hvalid : Mem.valid_block tm sp)
+    (hmax : stacksize ≤ Ptrofs.max_unsigned)
+    (hd : 0 ≤ delta)
+    (hbound : delta + ZArith.BinInt.Z.max 0 sz ≤ stacksize)
+    (halign : Mem.inj_offset_aligned delta sz)
+    (hperms : ∀ q k p, 0 ≤ q ∧ q < stacksize → Mem.perm tm sp q k p)
+    (hsep : ∀ b' d q k p, f b' = some (sp, d) → Mem.perm m b' q k p →
+      delta ≤ q + d ∧ q + d < sz + delta → False) :
+    ∃ f', Mem.inject f' m' tm ∧ inject_incr f f' ∧
+      f' b = some (sp, delta) ∧ ∀ b', b' ≠ b → f' b' = f b' := by
+  classical
+  let f' : meminj := fun b' => if b' = b then some (sp, delta) else f b'
+  have hfresh := Mem.fresh_block_alloc m 0 sz m' b ha
+  have hnone : f b = none := hinj.mi_freeblocks b hfresh
+  have hnew : f' b = some (sp, delta) := by simp [f']
+  have hother : ∀ b', b' ≠ b → f' b' = f b' := by
+    intro b' hb
+    simp [f', hb]
+  have hincr : inject_incr f f' := by
+    intro b' tb d hm
+    by_cases hb : b' = b
+    · subst b'
+      rw [hnone] at hm
+      cases hm
+    · rw [hother b' hb]
+      exact hm
+  have hold : Mem.mem_inj f' m tm :=
+    alloc_vars_mem_inj_extend f f' m tm hinj.mi_inj hincr (by
+      intro b' hv
+      exact hother b' (fun he => hfresh (he ▸ hv)))
+  have hsz : sz ≤ ZArith.BinInt.Z.max 0 sz := ZArith.BinInt.Z.le_max_r _ _
+  have hdI : 0 ≤ intOfZ delta := hd
+  have hbI : intOfZ delta + intOfZ (ZArith.BinInt.Z.max 0 sz) ≤
+      intOfZ stacksize := by
+    change intOfZ (delta + ZArith.BinInt.Z.max 0 sz) ≤ intOfZ stacksize at hbound
+    simpa only [HAdd.hAdd, Add.add, intOfZ_add_external] using hbound
+  have hsI : intOfZ sz ≤ intOfZ (ZArith.BinInt.Z.max 0 sz) := hsz
+  have hmI : intOfZ stacksize ≤ intOfZ Ptrofs.max_unsigned := hmax
+  have hpermNew : ∀ q k p, 0 ≤ q ∧ q < sz → Mem.perm m' b q k p := by
+    intro q k p hq
+    exact Mem.perm_implies m' b q k .Freeable p
+      (Mem.perm_alloc_2 m 0 sz m' b ha q k hq) (perm_F_any p)
+  refine ⟨f', ?_, hincr, hnew, hother⟩
+  refine {
+    mi_inj := ?_
+    mi_freeblocks := ?_
+    mi_mappedblocks := ?_
+    mi_no_overlap := ?_
+    mi_representable := ?_
+    mi_perm_inv := ?_ }
+  · apply Mem.alloc_left_mapped_inj f' m tm 0 sz m' b sp delta hold ha hvalid
+    · have heq : ZArith.BinInt.Z.sub sz 0 = sz := by
+        apply intOfZ_injective
+        rw [intOfZ_sub_external]
+        exact Int.sub_zero _
+      simpa only [heq] using halign
+    · intro q k p hq
+      apply hperms (q + delta) k p
+      change intOfZ 0 ≤ intOfZ q ∧ intOfZ q < intOfZ sz at hq
+      change 0 ≤ intOfZ (q + delta) ∧ intOfZ (q + delta) < intOfZ stacksize
+      simp only [HAdd.hAdd, Add.add, intOfZ_add_external]
+      change 0 ≤ intOfZ q ∧ intOfZ q < intOfZ sz at hq
+      change 0 ≤ intOfZ q + intOfZ delta ∧ intOfZ q + intOfZ delta < intOfZ stacksize
+      omega
+    · exact hnew
+  · intro b' hv
+    by_cases hb : b' = b
+    · subst b'
+      exact False.elim (hv (Mem.valid_new_block m 0 sz m' b ha))
+    · rw [hother b' hb]
+      apply hinj.mi_freeblocks
+      intro hvold
+      exact hv (Mem.valid_block_alloc m 0 sz m' b ha b' hvold)
+  · intro b' tb d hm
+    by_cases hb : b' = b
+    · subst b'
+      rw [hnew] at hm
+      cases Option.some.inj hm
+      exact hvalid
+    · rw [hother b' hb] at hm
+      exact hinj.mi_mappedblocks b' tb d hm
+  · intro b1 t1 d1 b2 t2 d2 q1 q2 hne h1 h2 hp1 hp2
+    by_cases hb1 : b1 = b
+    · subst b1
+      have hb2 : b2 ≠ b := Ne.symm hne
+      rw [hnew] at h1
+      cases Option.some.inj h1
+      rw [hother b2 hb2] at h2
+      have hp2old := Mem.perm_alloc_4 m 0 sz m' b ha b2 q2 .Max .Nonempty hp2 hb2
+      have hq1 := Mem.perm_alloc_3 m 0 sz m' b ha q1 .Max .Nonempty hp1
+      by_cases ht : sp = t2
+      · subst t2
+        right
+        intro he
+        apply hsep b2 d2 q2 .Max .Nonempty h2 hp2old
+        change 0 ≤ intOfZ q1 ∧ intOfZ q1 < intOfZ sz at hq1
+        have heI := congrArg intOfZ he
+        simp only [HAdd.hAdd, Add.add, intOfZ_add_external] at heI
+        change intOfZ delta ≤ intOfZ (q2 + d2) ∧
+          intOfZ (q2 + d2) < intOfZ (sz + delta)
+        simp only [HAdd.hAdd, Add.add, intOfZ_add_external]
+        change intOfZ delta ≤ intOfZ q2 + intOfZ d2 ∧ intOfZ q2 + intOfZ d2 < intOfZ sz + intOfZ delta
+        change intOfZ q1 + intOfZ delta = intOfZ q2 + intOfZ d2 at heI
+        omega
+      · exact Or.inl ht
+    · by_cases hb2 : b2 = b
+      · subst b2
+        rw [hnew] at h2
+        cases Option.some.inj h2
+        rw [hother b1 hb1] at h1
+        have hp1old := Mem.perm_alloc_4 m 0 sz m' b ha b1 q1 .Max .Nonempty hp1 hb1
+        have hq2 := Mem.perm_alloc_3 m 0 sz m' b ha q2 .Max .Nonempty hp2
+        by_cases ht : t1 = sp
+        · subst t1
+          right
+          intro he
+          apply hsep b1 d1 q1 .Max .Nonempty h1 hp1old
+          change 0 ≤ intOfZ q2 ∧ intOfZ q2 < intOfZ sz at hq2
+          have heI := congrArg intOfZ he
+          simp only [HAdd.hAdd, Add.add, intOfZ_add_external] at heI
+          change intOfZ delta ≤ intOfZ (q1 + d1) ∧
+            intOfZ (q1 + d1) < intOfZ (sz + delta)
+          simp only [HAdd.hAdd, Add.add, intOfZ_add_external]
+          change intOfZ delta ≤ intOfZ q1 + intOfZ d1 ∧ intOfZ q1 + intOfZ d1 < intOfZ sz + intOfZ delta
+          change intOfZ q1 + intOfZ d1 = intOfZ q2 + intOfZ delta at heI
+          omega
+        · exact Or.inl ht
+      · rw [hother b1 hb1] at h1
+        rw [hother b2 hb2] at h2
+        exact hinj.mi_no_overlap b1 t1 d1 b2 t2 d2 q1 q2 hne h1 h2
+          (Mem.perm_alloc_4 m 0 sz m' b ha b1 q1 .Max .Nonempty hp1 hb1)
+          (Mem.perm_alloc_4 m 0 sz m' b ha b2 q2 .Max .Nonempty hp2 hb2)
+  · intro b' tb d ofs hm hp
+    by_cases hb : b' = b
+    · subst b'
+      rw [hnew] at hm
+      cases Option.some.inj hm
+      have hu : 0 ≤ intOfZ (Ptrofs.unsigned ofs) := by
+        have h := ofs.intrange.1
+        change (-1 : Int) < intOfZ (Ptrofs.unsigned ofs) at h
+        omega
+      have hq : intOfZ (Ptrofs.unsigned ofs) ≤ intOfZ sz := by
+        rcases hp with hp | hp
+        · have h := Mem.perm_alloc_3 m 0 sz m' b ha _ .Max .Nonempty hp
+          change 0 ≤ intOfZ (Ptrofs.unsigned ofs) ∧
+            intOfZ (Ptrofs.unsigned ofs) < intOfZ sz at h
+          omega
+        · have h := Mem.perm_alloc_3 m 0 sz m' b ha _ .Max .Nonempty hp
+          change 0 ≤ intOfZ (ZArith.BinInt.Z.sub (Ptrofs.unsigned ofs) (.Zpos .xH)) ∧
+            intOfZ (ZArith.BinInt.Z.sub (Ptrofs.unsigned ofs) (.Zpos .xH)) < intOfZ sz at h
+          rw [intOfZ_sub_external] at h
+          change 0 ≤ intOfZ (Ptrofs.unsigned ofs) - 1 ∧
+            intOfZ (Ptrofs.unsigned ofs) - 1 < intOfZ sz at h
+          omega
+      refine ⟨hd, ?_, ?_⟩
+      · change 0 ≤ intOfZ (Ptrofs.unsigned ofs + delta)
+        simp only [HAdd.hAdd, Add.add, intOfZ_add_external]
+        change 0 ≤ intOfZ (Ptrofs.unsigned ofs) + intOfZ delta
+        omega
+      · change intOfZ (Ptrofs.unsigned ofs + delta) ≤ intOfZ Ptrofs.max_unsigned
+        simp only [HAdd.hAdd, Add.add, intOfZ_add_external]
+        change intOfZ (Ptrofs.unsigned ofs) + intOfZ delta ≤ intOfZ Ptrofs.max_unsigned
+        omega
+    · rw [hother b' hb] at hm
+      apply hinj.mi_representable b' tb d ofs hm
+      exact hp.elim
+        (fun h => Or.inl (Mem.perm_alloc_4 m 0 sz m' b ha b' _ .Max .Nonempty h hb))
+        (fun h => Or.inr (Mem.perm_alloc_4 m 0 sz m' b ha b' _ .Max .Nonempty h hb))
+  · intro b' q tb d k p hm hp
+    by_cases hb : b' = b
+    · subst b'
+      by_cases hq : 0 ≤ q ∧ q < sz
+      · exact Or.inl (hpermNew q k p hq)
+      · exact Or.inr (fun h => hq (Mem.perm_alloc_3 m 0 sz m' b ha q .Max .Nonempty h))
+    · rw [hother b' hb] at hm
+      rcases hinj.mi_perm_inv b' q tb d k p hm hp with h | h
+      · exact Or.inl (Mem.perm_alloc_1 m 0 sz m' b ha b' q k p h)
+      · exact Or.inr (fun h' => h (Mem.perm_alloc_4 m 0 sz m' b ha b' q .Max .Nonempty h' hb))
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+
+local instance : OfNat Z 0 := ⟨.Z0⟩
+local instance : HAdd Z Z Z := ⟨ZArith.BinInt.Z.add⟩
+local instance : LE Z := ⟨ZArith.BinInt.Z.le⟩
+local instance : LT Z := ⟨ZArith.BinInt.Z.lt⟩
+
+private theorem alloc_vars_intervals (delta sz ofs sz' q : Z)
+    (hsep : delta + sz ≤ ofs ∨ ofs + sz' ≤ delta)
+    (hq : 0 ≤ q ∧ q < sz)
+    (hr : ofs ≤ q + delta ∧ q + delta < sz' + ofs) : False := by
+  change intOfZ (delta + sz) ≤ intOfZ ofs ∨
+    intOfZ (ofs + sz') ≤ intOfZ delta at hsep
+  change 0 ≤ intOfZ q ∧ intOfZ q < intOfZ sz at hq
+  change intOfZ ofs ≤ intOfZ (q + delta) ∧
+    intOfZ (q + delta) < intOfZ (sz' + ofs) at hr
+  simp only [HAdd.hAdd, Add.add, intOfZ_add_external] at hsep hr
+  change intOfZ delta + intOfZ sz ≤ intOfZ ofs ∨
+    intOfZ ofs + intOfZ sz' ≤ intOfZ delta at hsep
+  change intOfZ ofs ≤ intOfZ q + intOfZ delta ∧
+    intOfZ q + intOfZ delta < intOfZ sz' + intOfZ ofs at hr
+  omega
+
+private theorem alloc_vars_rec_aux : match_callstack_alloc_variables_recStatement := by
+  intro prog tm sp tf cenv le te lo cs hvalid hmax hsize hperms
+    e1 m1 vars e2 m2 hav
+  induction hav with
+  | alloc_variables_nil e m =>
+      intro f hn hc hs hm hu hstack hinj
+      exact ⟨f, hstack, hinj⟩
+  | alloc_variables_cons e m id sz vars ma b mb eb ha hav ih =>
+      intro f hn hc hs hm hu hstack hinj
+      change list_norepet (id :: List.map Prod.fst vars) at hn
+      cases hn with
+      | cons _ hnot hn =>
+          have hhead : In (id, sz) ((id, sz) :: vars) := List.mem_cons_self
+          rcases hc id sz hhead with ⟨ofs, hget, halign, hofs, hbound⟩
+          rcases alloc_vars_inject_step f m tm ma b sp sz ofs tf.fn_stackspace
+              hinj ha hvalid hmax hofs hbound halign hperms
+              (fun b' d q k p hf hp hr => hm id sz ofs b' d q k p hhead hget hf hp hr)
+            with ⟨f', hinj', hincr, hnew, hother⟩
+          have hid : ∀ id' sz', In (id', sz') vars → id' ≠ id := by
+            intro id' sz' hv he
+            apply hnot
+            subst id'
+            exact List.mem_map.mpr ⟨(id, sz'), hv, rfl⟩
+          have hm' : cenv_mem_separated cenv vars f' sp ma := by
+            intro id' sz' ofs' b' d q k p hv hg hf hp hr
+            by_cases hb : b' = b
+            · subst b'
+              rw [hnew] at hf
+              have hd : ofs = d := congrArg Prod.snd (Option.some.inj hf)
+              subst d
+              have hq := Mem.perm_alloc_3 m 0 sz ma b ha q k p hp
+              have hdis := hs id sz ofs id' sz' ofs' hhead
+                (List.mem_cons_of_mem _ hv) hget hg (Ne.symm (hid id' sz' hv))
+              exact alloc_vars_intervals ofs sz ofs' sz' q hdis hq hr
+            · rw [hother b' hb] at hf
+              exact hm id' sz' ofs' b' d q k p (List.mem_cons_of_mem _ hv) hg hf
+                (Mem.perm_alloc_4 m 0 sz ma b ha b' q k p hp hb) hr
+          have hu' : ∀ id' sz', In (id', sz') vars →
+              PTree.get id' (PTree.set id (b, sz) e) = none := by
+            intro id' sz' hv
+            rw [PTree.gso (A := block × Z) (x := (b, sz)) (m := e) (hid id' sz' hv)]
+            exact hu id' sz' (List.mem_cons_of_mem _ hv)
+          have hstack' : match_callstack prog f' ma tm
+              (Frame (cenv_remove cenv vars) tf (PTree.set id (b, sz) e)
+                le te sp lo ma.nextblock :: cs) ma.nextblock tm.nextblock := by
+            apply match_callstack_alloc_left prog f m tm id (cenv_remove cenv vars)
+              tf e le te sp lo cs sz ma b f' ofs hstack ha
+            · rw [cenv_remove_gso id vars cenv hnot]
+              exact hget
+            · exact hincr
+            · exact hnew
+            · exact hother
+            · exact hu id sz hhead
+          exact ih f' hn
+            (fun id' sz' hv => hc id' sz' (List.mem_cons_of_mem _ hv))
+            (fun id1 sz1 ofs1 id2 sz2 ofs2 hv1 hv2 hg1 hg2 hne =>
+              hs id1 sz1 ofs1 id2 sz2 ofs2 (List.mem_cons_of_mem _ hv1)
+                (List.mem_cons_of_mem _ hv2) hg1 hg2 hne)
+            hm' hu' hstack' hinj'
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem match_callstack_alloc_variables : match_callstack_alloc_variablesStatement := by
+  intro prog tm1 sp tm2 m1 vars e m2 cenv f1 cs fn le te
+    ha hmax hav hn hc hs hdom hinj hstack htemps
+  apply alloc_vars_rec_aux prog tm2 sp fn cenv le te m1.nextblock cs
+    (Mem.valid_new_block tm1 z0 fn.fn_stackspace tm2 sp ha) hmax
+  · intro ofs k p hp
+    exact Mem.perm_alloc_3 tm1 z0 fn.fn_stackspace tm2 sp ha ofs k p hp
+  · intro ofs k p hr
+    exact Mem.perm_implies tm2 sp ofs k .Freeable p
+      (Mem.perm_alloc_2 tm1 z0 fn.fn_stackspace tm2 sp ha ofs k hr) (perm_F_any p)
+  · exact hav
+  · exact hn
+  · exact hc
+  · exact hs
+  · intro id sz ofs b delta ofs' k p hv hg hf hp hr
+    exact Mem.fresh_block_alloc tm1 z0 fn.fn_stackspace tm2 sp ha
+      (hinj.mi_mappedblocks b sp delta hf)
+  · intro id sz hv
+    exact PTree.gempty _ id
+  · apply match_callstack_alloc_right prog f1 m1 tm1 cs fn tm2 sp le te
+      (cenv_remove cenv vars) hstack ha hinj htemps
+    intro id
+    classical
+    by_cases hi : In id (List.map Prod.fst vars)
+    · exact cenv_remove_gss id vars cenv hi
+    · rw [cenv_remove_gso id vars cenv hi]
+      cases hg : PTree.get id cenv with
+      | none => rfl
+      | some ofs => exact False.elim (hi (hdom id ofs hg))
+  · exact alloc_right_inject_local f1 m1 tm1 fn.fn_stackspace tm2 sp ha hinj
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

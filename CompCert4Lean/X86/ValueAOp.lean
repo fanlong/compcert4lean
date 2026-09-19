@@ -1096,3 +1096,10 @@ theorem eval_static_addressing_64_sound : eval_static_addressing_64_soundStateme
               cases addr <;> simp [eval_addressing64] at he
 
 end CompCert4Lean.X86.ValueAOp
+
+namespace CompCert4Lean.X86.ValueAOp
+
+theorem eval_static_addressing_sound : eval_static_addressing_soundStatement := by
+  exact eval_static_addressing_64_sound
+
+end CompCert4Lean.X86.ValueAOp

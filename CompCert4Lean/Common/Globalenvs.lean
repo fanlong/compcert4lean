@@ -4929,3 +4929,25 @@ theorem store_init_data_list_loadbytes : store_init_data_list_loadbytesStatement
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memory
+
+namespace Genv
+
+theorem store_zeros_read_as_zero : store_zeros_read_as_zeroStatement := by
+  intro m b p n m' hstore chunk q hlo hhi halign
+  have hbytes := store_zeros_loadbytes m b p n m' hstore q
+    (size_chunk_nat chunk) hlo (by simpa only [← size_chunk_conv chunk] using hhi)
+  have hload := Mem.loadbytes_load chunk m' b q _
+    (by simpa only [← size_chunk_conv chunk] using hbytes) halign
+  rw [hload]
+  cases chunk <;> rfl
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

@@ -5362,3 +5362,59 @@ theorem ZArith.Zorder.Zplus_le_compat_r :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zorder.Zplus_lt_compat_l :
+    ZArith.Zorder.Zplus_lt_compat_lStatement := by
+  intro n m p h
+  change intOfZ n < intOfZ m at h
+  change intOfZ (ZArith.BinInt.Z.add p n) < intOfZ (ZArith.BinInt.Z.add p m)
+  simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  omega
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zorder.Zplus_lt_compat_r :
+    ZArith.Zorder.Zplus_lt_compat_rStatement := by
+  intro n m p h
+  change intOfZ n < intOfZ m at h
+  change intOfZ (ZArith.BinInt.Z.add n p) < intOfZ (ZArith.BinInt.Z.add m p)
+  simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  omega
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zorder.Zplus_lt_reg_l :
+    ZArith.Zorder.Zplus_lt_reg_lStatement := by
+  intro n m p h
+  change intOfZ (ZArith.BinInt.Z.add p n) < intOfZ (ZArith.BinInt.Z.add p m) at h
+  change intOfZ n < intOfZ m
+  simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt] at h
+  omega
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zorder.Zplus_lt_reg_r :
+    ZArith.Zorder.Zplus_lt_reg_rStatement := by
+  intro n m p h
+  change intOfZ (ZArith.BinInt.Z.add n p) < intOfZ (ZArith.BinInt.Z.add m p) at h
+  change intOfZ n < intOfZ m
+  simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt] at h
+  omega
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

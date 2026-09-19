@@ -4777,3 +4777,16 @@ theorem globals_symbols_inject : globals_symbols_injectStatement := by
             contradiction
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Common.Values
+
+theorem regs_inject : regs_injectStatement := by
+  intro f rs rs' h l
+  induction l with
+  | nil => exact Val.inject_list.inject_list_nil
+  | cons r l ih =>
+      exact Val.inject_list.inject_list_cons _ _ _ _ (h r) ih
+
+end CompCert4Lean.Backend.Unusedglobproof

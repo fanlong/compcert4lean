@@ -3488,3 +3488,84 @@ theorem match_stacks_invariant : match_stacks_invariantStatement :=
   match_stacks_invariant_local
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem match_stacks_inside_invariant : match_stacks_inside_invariantStatement := by
+  intro prog F m m' F1 m1 m1' hIncr
+  intro stk stk' f' ctx sp rs1 hinside
+  intro rs2 RS INJ PERM1 PERM2 PERM3
+  refine match_stacks_inside.rec (prog := prog) (F := F) (m := m) (m' := m')
+    (motive_1 := fun _ _ _ _ => True)
+    (motive_2 := fun l l0 f c b r _ =>
+      ∀ rs2,
+        (∀ r0, Plt r0 c.dreg → Regmap.get r0 rs2 = Regmap.get r0 r) →
+        (∀ b1 b2 delta, F1 b1 = some (b2, delta) → Ple b2 b →
+          F b1 = some (b2, delta)) →
+        (∀ b1 b2 delta ofs, F1 b1 = some (b2, delta) → Ple b2 b →
+          Mem.perm m1 b1 ofs .Max .Nonempty → Mem.perm m b1 ofs .Max .Nonempty) →
+        (∀ b0 ofs, Ple b0 b → Mem.perm m' b0 ofs .Cur .Freeable →
+          Mem.perm m1' b0 ofs .Cur .Freeable) →
+        (∀ b0 ofs k p, Ple b0 b → Mem.perm m1' b0 ofs k p →
+          Mem.perm m' b0 ofs k p) →
+        match_stacks_inside prog F1 m1 m1' l l0 f c b rs2)
+    ?_ ?_ ?_ ?_ ?_ hinside rs2 RS INJ PERM1 PERM2 PERM3
+  · intro bound1 bound MG BELOW
+    exact True.intro
+  · intro res f sp pc rs l f' sp' rs' l' bound fenv c MS COMPAT FB AG SP PAD SSZ1 SSZ2 RES BELOW ih
+    exact True.intro
+  · intro l res f' sp' rpc rs' l' bound c MS PRIV SSZ1 SSZ2 RET BELOW ih
+    exact True.intro
+  · intro l l' f' c sp' rs' MS RET DSTK ih
+    intro rs2 RS INJ PERM1 PERM2 PERM3
+    apply match_stacks_inside_base l l' f' c sp' rs2
+    · apply match_stacks_invariant_local prog F m m' F1 m1 m1' hIncr l l' sp' MS
+      · intro b1 b2 delta hmap hlt
+        exact INJ b1 b2 delta hmap (Plt_Ple _ _ hlt)
+      · intro b1 b2 delta ofs hmap hlt hperm
+        exact PERM1 b1 b2 delta ofs hmap (Plt_Ple _ _ hlt) hperm
+      · intro b0 ofs hlt hperm
+        exact PERM2 b0 ofs (Plt_Ple _ _ hlt) hperm
+      · intro b0 ofs k p hlt hperm
+        exact PERM3 b0 ofs k p (Plt_Ple _ _ hlt) hperm
+    · exact RET
+    · exact DSTK
+  · intro res f sp pc rs l l' f' fenv c sp' rs' c' MS COMPAT FB AG SP PAD RES RET BELOW SBELOW ih
+    intro rs2 RS INJ PERM1 PERM2 PERM3
+    have MS' := ih rs2
+      (by
+        intro r0 hlt
+        apply RS r0
+        exact Plt_Ple_trans r0 (PArith.BinPos.Pos.add c'.dreg c'.mreg) c.dreg
+          (Plt_trans r0 c'.dreg (PArith.BinPos.Pos.add c'.dreg c'.mreg) hlt
+            (plt_add_right_local c'.dreg c'.mreg)) BELOW)
+      INJ PERM1 PERM2 PERM3
+    have AG0 := agree_regs_invariant F c' rs rs' rs2 AG (by
+      intro r0 hle hlt
+      apply RS r0
+      exact Plt_Ple_trans r0 (PArith.BinPos.Pos.add c'.dreg c'.mreg) c.dreg hlt BELOW)
+    have AG' := agree_regs_incr F c' rs rs2 F1 AG0 hIncr
+    have PAD' := range_private_invariant_local F m m' sp'
+      (zAdd c'.dstk c'.mstk) c.dstk F1 m1 m1' PAD
+      (by
+        intro b1 delta ofs hmap hperm hrange
+        exact ⟨INJ b1 sp' delta hmap (Ple_refl sp'),
+          PERM1 b1 sp' delta ofs hmap (Ple_refl sp') hperm⟩)
+      (by
+        intro ofs hperm
+        exact PERM2 sp' ofs (Ple_refl sp') hperm)
+    exact match_stacks_inside_inlined res f sp pc rs l l' f' fenv c sp' rs2 c'
+      MS' COMPAT FB AG' (hIncr sp sp' c'.dstk SP) PAD' RES RET BELOW SBELOW
+
+end CompCert4Lean.Backend.Inliningproof

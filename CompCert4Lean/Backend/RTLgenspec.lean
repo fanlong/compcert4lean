@@ -2722,3 +2722,316 @@ theorem convert_builtin_res_charact : convert_builtin_res_charactStatement := by
       simp [RTLgen.convert_builtin_res, RTLgen.error] at hconvert
 
 end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Logic.Support
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTLgen
+
+private theorem stmt_bind_inv {A B : Type} {f : RTLgen.mon A}
+    {g : A → RTLgen.mon B} {s s' : RTLgen.state} {v : B}
+    {i : state_incr s s'} (h : RTLgen.bind f g s = .OK v s' i) :
+    ∃ (a : A) (s1 : RTLgen.state) (i1 : state_incr s s1) (i2 : state_incr s1 s'),
+      f s = .OK a s1 i1 ∧ g a s1 = .OK v s' i2 := by
+  cases hf : f s with
+  | Error msg => simp [RTLgen.bind, hf] at h
+  | OK a s1 i1 =>
+      cases hg : g a s1 with
+      | Error msg => simp [RTLgen.bind, hf, hg] at h
+      | OK b s2 i2 =>
+          simp [RTLgen.bind, hf, hg] at h
+          rcases h with ⟨rfl, rfl⟩
+          exact ⟨a, s1, i1, i2, rfl, hg⟩
+
+private theorem stmt_return_incr {s s' : RTLgen.state} {map : RTLgen.mapping}
+    {r : Option reg} (i : state_incr s s') (h : return_reg_ok s map r) :
+    return_reg_ok s' map r := by
+  cases h with
+  | return_reg_ok_none => exact .return_reg_ok_none _ _
+  | return_reg_ok_some r hm hv =>
+      exact .return_reg_ok_some _ _ r hm (reg_valid_incr r s s' i hv)
+
+private theorem stmt_nil_valid (s : RTLgen.state) : regs_valid [] s := by
+  intro r hr
+  simp at hr
+
+private theorem stmt_update_code {s s' : RTLgen.state} {n : RTL.node}
+    {ins : RTL.instruction} {u : Unit} {i : state_incr s s'}
+    (h : RTLgen.update_instr n ins s = .OK u s' i) :
+    PTree.get n s'.st_code = some ins := by
+  unfold RTLgen.update_instr at h
+  split at h
+  · injection h with hu hs
+    cases hs
+    change PTree.get n (PTree.set n ins s.st_code) = some ins
+    exact (PTree.getSet_equation (A := RTL.instruction) n n ins s.st_code).trans
+      (if_pos rfl)
+  · cases h
+
+end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTLgen
+
+set_option maxHeartbeats 1600000 in
+theorem transl_stmt_charact : transl_stmt_charactStatement := by
+  intro map st
+  induction st with
+  | Sskip =>
+      intro nd nexits ngoto nret rret s ns s' INCR TR WF OK
+      simp only [RTLgen.transl_stmt] at TR
+      simp [RTLgen.ret] at TR
+      rcases TR with ⟨rfl, rfl⟩
+      exact .tr_Sskip _ _ _ _ _
+  | Sassign id a =>
+      intro nd nexits ngoto nret rret s ns s' INCR TR WF OK
+      simp only [RTLgen.transl_stmt] at TR
+      rcases stmt_bind_inv TR with ⟨r, s1, i1, j1, h1, ht1⟩
+      have wf1 := test_map_valid_incr map s s1 i1 WF
+      cases hfind : PTree.get id map.map_vars with
+      | none => simp [RTLgen.find_var, hfind, RTLgen.error] at h1
+      | some r0 =>
+          simp [RTLgen.find_var, hfind, RTLgen.ret] at h1
+          rcases h1 with ⟨rfl, rfl⟩
+          exact .tr_Sassign id a ns nd nexits ngoto nret rret r0 hfind
+            (transl_expr_assign_charact id a map r0 nd s ns s' j1 ht1 WF
+              (.reg_map_ok_somevar map r0 id hfind))
+  | Sstore chunk addr al b =>
+      intro nd nexits ngoto nret rret s ns s' INCR TR WF OK
+      simp only [RTLgen.transl_stmt] at TR
+      rcases stmt_bind_inv TR with ⟨rl, s1, i1, j1, h1, ht1⟩
+      have wf1 := test_map_valid_incr map s s1 i1 WF
+      rcases stmt_bind_inv ht1 with ⟨r, s2, i2, j2, h2, ht2⟩
+      have wf2 := test_map_valid_incr map s1 s2 i2 wf1
+      rcases stmt_bind_inv ht2 with ⟨no, s3, i3, j3, h3, ht3⟩
+      have wf3 := test_map_valid_incr map s2 s3 i3 wf2
+      rcases stmt_bind_inv ht3 with ⟨nv, s4, i4, j4, h4, ht4⟩
+      have wf4 := test_map_valid_incr map s3 s4 i4 wf3
+      have vrl := test_alloc_regs_valid map al rl s s1 i1 WF h1
+      have vr := test_alloc_reg_valid map b r s1 s2 i2 wf1 h2
+      refine .tr_Sstore chunk addr al b ns nd nexits ngoto nret rret r nv rl no ?_ ?_ ?_
+      · exact transl_exprlist_charact al map rl nv s4 ns s' [] j4 ht4 wf4
+          (alloc_regs_target_ok map al [] s rl s1 i1 WF (stmt_nil_valid s) h1)
+          (stmt_nil_valid s4) (regs_valid_incr s1 s4 rl (state_incr_trans s1 s3 s4 (state_incr_trans s1 s2 s3 i2 i3) i4) vrl)
+      · exact tr_expr_incr s4 s' j4 map rl b nv no r none
+          (transl_expr_charact b map r no s3 nv s4 rl i4 h4 wf3
+            (alloc_reg_target_ok map rl s1 b r s2 i2 wf1 vrl h2)
+            (regs_valid_incr s1 s3 rl (state_incr_trans s1 s2 s3 i2 i3) vrl) (reg_valid_incr r s2 s3 i3 vr))
+      · exact instr_at_incr s3 s' no _ j3 (test_add_instr_code s2 _ no s3 i3 h3)
+  | Scall optid sig callee cl =>
+      intro nd nexits ngoto nret rret s ns s' INCR TR WF OK
+      cases callee with
+      | inl b =>
+          simp only [RTLgen.transl_stmt] at TR
+          rcases stmt_bind_inv TR with ⟨rf, s1, i1, j1, h1, ht1⟩
+          have wf1 := test_map_valid_incr map s s1 i1 WF
+          rcases stmt_bind_inv ht1 with ⟨rargs, s2, i2, j2, h2, ht2⟩
+          have wf2 := test_map_valid_incr map s1 s2 i2 wf1
+          rcases stmt_bind_inv ht2 with ⟨r, s3, i3, j3, h3, ht3⟩
+          have wf3 := test_map_valid_incr map s2 s3 i3 wf2
+          rcases stmt_bind_inv ht3 with ⟨nc, s4, i4, j4, h4, ht4⟩
+          have wf4 := test_map_valid_incr map s3 s4 i4 wf3
+          rcases stmt_bind_inv ht4 with ⟨na, s5, i5, j5, h5, ht5⟩
+          have wf5 := test_map_valid_incr map s4 s5 i5 wf4
+          have vf := test_alloc_reg_valid map b rf s s1 i1 WF h1
+          have va := test_alloc_regs_valid map cl rargs s1 s2 i2 wf1 h2
+          have vp := regs_valid_cons rf [] s1 vf (stmt_nil_valid s1)
+          refine .tr_Scall optid sig b cl ns nd nexits ngoto nret rret r na rf nc rargs ?_ ?_ ?_ ?_
+          · exact transl_expr_charact b map rf na s5 ns s' [] j5 ht5 wf5
+              (alloc_reg_target_ok map [] s b rf s1 i1 WF (stmt_nil_valid s) h1)
+              (stmt_nil_valid s5) (reg_valid_incr rf s1 s5 (state_incr_trans s1 s4 s5 (state_incr_trans s1 s3 s4 (state_incr_trans s1 s2 s3 i2 i3) i4) i5) vf)
+          · exact tr_exprlist_incr s5 s' j5 map [rf] cl na nc rargs
+              (transl_exprlist_charact cl map rargs nc s4 na s5 [rf] i5 h5 wf4
+                (alloc_regs_target_ok map cl [rf] s1 rargs s2 i2 wf1 vp h2)
+                (regs_valid_incr s1 s4 [rf] (state_incr_trans s1 s3 s4 (state_incr_trans s1 s2 s3 i2 i3) i4) vp) (regs_valid_incr s2 s4 rargs (state_incr_trans s2 s3 s4 i3 i4) va))
+          · exact instr_at_incr s4 s' nc _ j4 (test_add_instr_code s3 _ nc s4 i4 h4)
+          · exact alloc_optreg_map_ok map optid s2 r s3 i3 wf2 h3
+      | inr id =>
+          simp only [RTLgen.transl_stmt] at TR
+          rcases stmt_bind_inv TR with ⟨rargs, s1, i1, j1, h1, ht1⟩
+          have wf1 := test_map_valid_incr map s s1 i1 WF
+          rcases stmt_bind_inv ht1 with ⟨r, s2, i2, j2, h2, ht2⟩
+          have wf2 := test_map_valid_incr map s1 s2 i2 wf1
+          rcases stmt_bind_inv ht2 with ⟨nc, s3, i3, j3, h3, ht3⟩
+          have wf3 := test_map_valid_incr map s2 s3 i3 wf2
+          have va := test_alloc_regs_valid map cl rargs s s1 i1 WF h1
+          refine .tr_Scall_imm optid sig id cl ns nd nexits ngoto nret rret r nc rargs ?_ ?_ ?_
+          · exact transl_exprlist_charact cl map rargs nc s3 ns s' [] j3 ht3 wf3
+              (alloc_regs_target_ok map cl [] s rargs s1 i1 WF (stmt_nil_valid s) h1)
+              (stmt_nil_valid s3) (regs_valid_incr s1 s3 rargs (state_incr_trans s1 s2 s3 i2 i3) va)
+          · exact instr_at_incr s3 s' nc _ j3 (test_add_instr_code s2 _ nc s3 i3 h3)
+          · exact alloc_optreg_map_ok map optid s1 r s2 i2 wf1 h2
+  | Stailcall sig callee cl =>
+      intro nd nexits ngoto nret rret s ns s' INCR TR WF OK
+      cases callee with
+      | inl b =>
+          simp only [RTLgen.transl_stmt] at TR
+          rcases stmt_bind_inv TR with ⟨rf, s1, i1, j1, h1, ht1⟩
+          have wf1 := test_map_valid_incr map s s1 i1 WF
+          rcases stmt_bind_inv ht1 with ⟨rargs, s2, i2, j2, h2, ht2⟩
+          have wf2 := test_map_valid_incr map s1 s2 i2 wf1
+          rcases stmt_bind_inv ht2 with ⟨nc, s3, i3, j3, h3, ht3⟩
+          have wf3 := test_map_valid_incr map s2 s3 i3 wf2
+          rcases stmt_bind_inv ht3 with ⟨na, s4, i4, j4, h4, ht4⟩
+          have wf4 := test_map_valid_incr map s3 s4 i4 wf3
+          have vf := test_alloc_reg_valid map b rf s s1 i1 WF h1
+          have va := test_alloc_regs_valid map cl rargs s1 s2 i2 wf1 h2
+          have vp := regs_valid_cons rf [] s1 vf (stmt_nil_valid s1)
+          refine .tr_Stailcall sig b cl ns nd nexits ngoto nret rret na rf nc rargs ?_ ?_ ?_
+          · exact transl_expr_charact b map rf na s4 ns s' [] j4 ht4 wf4
+              (alloc_reg_target_ok map [] s b rf s1 i1 WF (stmt_nil_valid s) h1)
+              (stmt_nil_valid s4) (reg_valid_incr rf s1 s4 (state_incr_trans s1 s3 s4 (state_incr_trans s1 s2 s3 i2 i3) i4) vf)
+          · exact tr_exprlist_incr s4 s' j4 map [rf] cl na nc rargs
+              (transl_exprlist_charact cl map rargs nc s3 na s4 [rf] i4 h4 wf3
+                (alloc_regs_target_ok map cl [rf] s1 rargs s2 i2 wf1 vp h2)
+                (regs_valid_incr s1 s3 [rf] (state_incr_trans s1 s2 s3 i2 i3) vp) (regs_valid_incr s2 s3 rargs i3 va))
+          · exact instr_at_incr s3 s' nc _ j3 (test_add_instr_code s2 _ nc s3 i3 h3)
+      | inr id =>
+          simp only [RTLgen.transl_stmt] at TR
+          rcases stmt_bind_inv TR with ⟨rargs, s1, i1, j1, h1, ht1⟩
+          have wf1 := test_map_valid_incr map s s1 i1 WF
+          rcases stmt_bind_inv ht1 with ⟨nc, s2, i2, j2, h2, ht2⟩
+          have wf2 := test_map_valid_incr map s1 s2 i2 wf1
+          have va := test_alloc_regs_valid map cl rargs s s1 i1 WF h1
+          refine .tr_Stailcall_imm sig id cl ns nd nexits ngoto nret rret nc rargs ?_ ?_
+          · exact transl_exprlist_charact cl map rargs nc s2 ns s' [] j2 ht2 wf2
+              (alloc_regs_target_ok map cl [] s rargs s1 i1 WF (stmt_nil_valid s) h1)
+              (stmt_nil_valid s2) (regs_valid_incr s1 s2 rargs i2 va)
+          · exact instr_at_incr s2 s' nc _ j2 (test_add_instr_code s1 _ nc s2 i2 h2)
+  | Sbuiltin res ef args =>
+      intro nd nexits ngoto nret rret s ns s' INCR TR WF OK
+      simp only [RTLgen.transl_stmt] at TR
+      rcases stmt_bind_inv TR with ⟨rargs, s1, i1, j1, h1, ht1⟩
+      have wf1 := test_map_valid_incr map s s1 i1 WF
+      rcases stmt_bind_inv ht1 with ⟨res2, s2, i2, j2, h2, ht2⟩
+      have wf2 := test_map_valid_incr map s1 s2 i2 wf1
+      rcases stmt_bind_inv ht2 with ⟨nc, s3, i3, j3, h3, ht3⟩
+      have wf3 := test_map_valid_incr map s2 s3 i3 wf2
+      let al := RTLgen.exprlist_of_expr_list (params_of_builtin_args args)
+      have va := test_alloc_regs_valid map al rargs s s1 i1 WF h1
+      refine .tr_Sbuiltin res ef args ns nd nexits ngoto nret rret res2 nc rargs ?_ ?_ ?_
+      · exact transl_exprlist_charact al map rargs nc s3 ns s' [] j3 ht3 wf3
+          (alloc_regs_target_ok map al [] s rargs s1 i1 WF (stmt_nil_valid s) h1)
+          (stmt_nil_valid s3) (regs_valid_incr s1 s3 rargs (state_incr_trans s1 s2 s3 i2 i3) va)
+      · exact instr_at_incr s3 s' nc _ j3 (test_add_instr_code s2 _ nc s3 i3 h3)
+      · exact convert_builtin_res_charact map _ res s1 res2 s2 i2 h2 wf1
+  | Sseq a b iha ihb =>
+      intro nd nexits ngoto nret rret s ns s' INCR TR WF OK
+      simp only [RTLgen.transl_stmt] at TR
+      rcases stmt_bind_inv TR with ⟨nb, s1, i1, j1, h1, ht1⟩
+      have wf1 := test_map_valid_incr map s s1 i1 WF
+      exact .tr_Sseq a b ns nd nexits ngoto nret rret nb
+        (tr_stmt_incr s1 s' j1 map b nb nd nexits ngoto nret rret
+          (ihb nd nexits ngoto nret rret s nb s1 i1 h1 WF OK))
+        (iha nb nexits ngoto nret rret s1 ns s' j1 ht1 wf1 (stmt_return_incr i1 OK))
+  | Sifthenelse a b c ihb ihc =>
+      intro nd nexits ngoto nret rret s ns s' INCR TR WF OK
+      simp only [RTLgen.transl_stmt] at TR
+      split at TR
+      ·
+        rcases stmt_bind_inv TR with ⟨nc, s1, i1, j1, h1, ht1⟩
+        have wf1 := test_map_valid_incr map s s1 i1 WF
+        rcases stmt_bind_inv ht1 with ⟨nb, s2, i2, j2, h2, ht2⟩
+        have wf2 := test_map_valid_incr map s1 s2 i2 wf1
+        exact .tr_Sifthenelse a b c ns nd nexits ngoto nret rret nb nc
+          (tr_stmt_incr s2 s' j2 map b nb nd nexits ngoto nret rret (ihb nd nexits ngoto nret rret s1 nb s2 i2 h2 wf1 (stmt_return_incr i1 OK)))
+          (tr_stmt_incr s1 s' j1 map c nc nd nexits ngoto nret rret (ihc nd nexits ngoto nret rret s nc s1 i1 h1 WF OK))
+          (transl_condexpr_charact a map nb nc s2 ns s' [] j2 ht2 wf2 (stmt_nil_valid s2))
+      ·
+        rcases stmt_bind_inv TR with ⟨nb, s1, i1, j1, h1, ht1⟩
+        have wf1 := test_map_valid_incr map s s1 i1 WF
+        rcases stmt_bind_inv ht1 with ⟨nc, s2, i2, j2, h2, ht2⟩
+        have wf2 := test_map_valid_incr map s1 s2 i2 wf1
+        exact .tr_Sifthenelse a b c ns nd nexits ngoto nret rret nb nc
+          (tr_stmt_incr s1 s' j1 map b nb nd nexits ngoto nret rret (ihb nd nexits ngoto nret rret s nb s1 i1 h1 WF OK))
+          (tr_stmt_incr s2 s' j2 map c nc nd nexits ngoto nret rret (ihc nd nexits ngoto nret rret s1 nc s2 i2 h2 wf1 (stmt_return_incr i1 OK)))
+          (transl_condexpr_charact a map nb nc s2 ns s' [] j2 ht2 wf2 (stmt_nil_valid s2))
+  | Sloop body ih =>
+      intro nd nexits ngoto nret rret s ns s' INCR TR WF OK
+      simp only [RTLgen.transl_stmt] at TR
+      rcases stmt_bind_inv TR with ⟨ne, s1, i1, j1, h1, ht1⟩
+      have wf1 := test_map_valid_incr map s s1 i1 WF
+      rcases stmt_bind_inv ht1 with ⟨nb, s2, i2, j2, h2, ht2⟩
+      have wf2 := test_map_valid_incr map s1 s2 i2 wf1
+      rcases stmt_bind_inv ht2 with ⟨u, s3, i3, j3, h3, ht3⟩
+      have wf3 := test_map_valid_incr map s2 s3 i3 wf2
+      exact .tr_Sloop body ns nd nexits ngoto nret rret nb ne
+        (tr_stmt_incr s2 s' j2 map body nb ne nexits ngoto nret rret
+          (ih ne nexits ngoto nret rret s1 nb s2 i2 h2 wf1 (stmt_return_incr i1 OK)))
+        (test_add_instr_code s3 _ ns s' j3 ht3)
+        (instr_at_incr s3 s' ne _ j3 (stmt_update_code h3))
+  | Sblock body ih =>
+      intro nd nexits ngoto nret rret s ns s' INCR TR WF OK
+      simp only [RTLgen.transl_stmt] at TR
+      exact .tr_Sblock body ns nd nexits ngoto nret rret
+        (ih nd (nd :: nexits) ngoto nret rret s ns s' INCR TR WF OK)
+  | Sexit n =>
+      intro nd nexits ngoto nret rret s ns s' INCR TR WF OK
+      simp only [RTLgen.transl_stmt] at TR
+      exact .tr_Sexit n ns nd nexits ngoto nret rret
+        (transl_exit_charact nexits n s ns s' INCR TR).1
+  | Sswitch a =>
+      intro nd nexits ngoto nret rret s ns s' INCR TR WF OK
+      simp only [RTLgen.transl_stmt] at TR
+      exact .tr_Sswitch a ns nd nexits ngoto nret rret
+        (transl_exitexpr_charact nexits a map s ns s' INCR TR WF)
+  | Sreturn a =>
+      intro nd nexits ngoto nret rret s ns s' INCR TR WF OK
+      cases a with
+      | none =>
+          simp [RTLgen.transl_stmt, RTLgen.ret] at TR
+          rcases TR with ⟨rfl, rfl⟩
+          exact .tr_Sreturn_none _ _ _ _ _
+      | some a =>
+          cases rret with
+          | none => simp [RTLgen.transl_stmt, RTLgen.error] at TR
+          | some r =>
+              cases OK with
+              | return_reg_ok_some r hm hv =>
+                  simp only [RTLgen.transl_stmt] at TR
+                  exact .tr_Sreturn_some a ns nd nexits ngoto nret r
+                    (transl_expr_charact a map r nret s ns s' [] INCR TR WF
+                      (.target_reg_other a r hm (by simp)) (stmt_nil_valid s) hv)
+  | Slabel lbl body ih =>
+      intro nd nexits ngoto nret rret s ns s' INCR TR WF OK
+      simp only [RTLgen.transl_stmt] at TR
+      rcases stmt_bind_inv TR with ⟨nb, s1, i1, j1, h1, ht1⟩
+      have wf1 := test_map_valid_incr map s s1 i1 WF
+      cases hg : PTree.get lbl ngoto with
+      | none => simp [hg, RTLgen.error] at ht1
+      | some n =>
+          simp only [hg] at ht1
+          rcases stmt_bind_inv ht1 with ⟨u, s2, i2, j2, h2, ht2⟩
+          simp [RTLgen.ret] at ht2
+          rcases ht2 with ⟨rfl, rfl⟩
+          have hu : RTLgen.update_instr n (.Inop nb) s1 = .OK u s2 i2 := by
+            cases hx : RTLgen.update_instr n (.Inop nb) s1 with
+            | Error msg => simp [RTLgen.handle_error, hx, RTLgen.error] at h2
+            | OK v s3 i3 => simpa [RTLgen.handle_error, hx] using h2
+          exact .tr_Slabel lbl body nb nd nexits ngoto nret rret n hg
+            (stmt_update_code hu)
+            (tr_stmt_incr s1 s2 i2 map body nb nd nexits ngoto nret rret
+              (ih nd nexits ngoto nret rret s nb s1 i1 h1 WF OK))
+  | Sgoto lbl =>
+      intro nd nexits ngoto nret rret s ns s' INCR TR WF OK
+      simp only [RTLgen.transl_stmt] at TR
+      cases hg : PTree.get lbl ngoto with
+      | none => simp [hg, RTLgen.error] at TR
+      | some n =>
+          simp [hg, RTLgen.ret] at TR
+          rcases TR with ⟨rfl, rfl⟩
+          exact .tr_Sgoto lbl n nd nexits ngoto nret rret hg
+
+end CompCert4Lean.Backend.RTLgenspec

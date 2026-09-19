@@ -2061,3 +2061,10 @@ theorem builtin_args_match : builtin_args_matchStatement := by
         Val.lessdef_list_cons _ _ _ _ hld hldtail⟩
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem code_tail_next_int : code_tail_next_intStatement :=
+  code_tail_next_int_asmgenproof
+
+end CompCert4Lean.Backend.Asmgenproof0

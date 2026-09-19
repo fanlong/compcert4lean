@@ -3144,3 +3144,53 @@ theorem canonical_bounded :
   exact (Bool.and_eq_true_iff.mp h).1
 
 end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+open CompCert4Lean.Flocq.Core
+
+theorem generic_format_B2R :
+    ∀ {prec emax : Z} (ctx : ExactRealContext)
+      (magnitude : Exact.Magnitude ctx),
+      generic_format_B2RStatement (prec := prec) (emax := emax)
+        ctx magnitude := by
+  intro prec emax ctx magnitude x Hx
+  cases x with
+  | B754_nan =>
+      unfold Exact.generic_format
+      change CompCert4Lean.Flocq.Core.Generic_fmt.Exact.generic_format
+        ctx magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.R0 ctx)
+      exact CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_0
+        ctx magnitude radix2 (fexp (prec := prec) (emax := emax))
+  | B754_infinity s =>
+      unfold Exact.generic_format
+      change CompCert4Lean.Flocq.Core.Generic_fmt.Exact.generic_format
+        ctx magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.R0 ctx)
+      exact CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_0
+        ctx magnitude radix2 (fexp (prec := prec) (emax := emax))
+  | B754_zero s =>
+      unfold Exact.generic_format
+      change CompCert4Lean.Flocq.Core.Generic_fmt.Exact.generic_format
+        ctx magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.R0 ctx)
+      exact CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_0
+        ctx magnitude radix2 (fexp (prec := prec) (emax := emax))
+  | B754_finite s m e =>
+      have hb : bounded (prec := prec) (emax := emax) m e = true := by
+        change valid_binary0 prec emax (S754_finite s m e) = true at Hx
+        change bounded0 prec emax m e = true at Hx
+        exact Hx
+      have hcanon := canonical_bounded (prec := prec) (emax := emax)
+        ctx magnitude s m e hb
+      unfold Exact.generic_format
+      change CompCert4Lean.Flocq.Core.Generic_fmt.Exact.generic_format
+        ctx magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.F2R ctx
+            (Float radix2 (cond_Zopp s (Zpos m)) e))
+      exact CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_canonical
+        ctx magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Float radix2 (cond_Zopp s (Zpos m)) e) hcanon
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN

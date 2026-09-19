@@ -4494,3 +4494,46 @@ theorem Ztrunc_opp (ctx : ExactRealContext) :
           rw [Ztrunc_floor ctx x hx]
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Ztrunc_abs (ctx : ExactRealContext) : Ztrunc_absStatement ctx := by
+  intro x
+  rw [Ztrunc_floor ctx (Exact.Rabs ctx x) (pg_worker_abs_nonneg ctx x)]
+  cases h : Exact.Rlt_bool ctx x (Exact.R0 ctx) with
+  | true =>
+      have hspec := Rlt_bool_spec ctx x (Exact.R0 ctx)
+      rw [h] at hspec
+      cases hspec with
+      | Rlt_bool_true_ hx =>
+          have hxle : ctx.spec.le x ctx.spec.zero :=
+            (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hx |>.1
+          have hz : Zle (Exact.Zceil ctx x) Z0 := by
+            apply Zceil_glb ctx Z0 x
+            change ctx.spec.le x (ctx.spec.ofZ Z0)
+            rw [ctx.certificate.sourceLaws.ofZ_zero]
+            exact hxle
+          rw [show Exact.Rabs ctx x = Exact.Ropp ctx x from
+            ctx.certificate.sourceLaws.abs_negative x hx]
+          rw [Ztrunc_ceil ctx x hxle]
+          have habs : Zabs (Exact.Zceil ctx x) = Zopp (Exact.Zceil ctx x) :=
+            _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs_neq _ hz
+          rw [habs]
+          unfold Exact.Zceil
+          rw [pg_zopp_zopp]
+  | false =>
+      have hspec := Rlt_bool_spec ctx x (Exact.R0 ctx)
+      rw [h] at hspec
+      cases hspec with
+      | Rlt_bool_false_ hx =>
+          have hz : Zle Z0 (Exact.Zfloor ctx x) := by
+            apply Zfloor_lub ctx Z0 x
+            change ctx.spec.le (ctx.spec.ofZ Z0) x
+            rw [ctx.certificate.sourceLaws.ofZ_zero]
+            exact hx
+          rw [show Exact.Rabs ctx x = x from
+            ctx.certificate.sourceLaws.abs_nonnegative x hx]
+          rw [Ztrunc_floor ctx x hx]
+          exact (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs_eq _ hz).symm
+
+end CompCert4Lean.Flocq.Core.Raux
