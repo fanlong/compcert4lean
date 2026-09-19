@@ -4333,3 +4333,95 @@ theorem lt_bpow (ctx : ExactRealContext) : lt_bpowStatement ctx := by
   exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h).2 hp
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem mag_le_Zpower :
+    ∀ (ctx : ExactRealContext) (m : Exact.Magnitude ctx),
+      mag_le_ZpowerStatement ctx m := by
+  intro ctx m r z e hz hpow
+  have hne : Exact.IZR ctx z ≠ Exact.R0 ctx := by
+    intro hzero
+    have hi :=
+      CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_neq_proof
+        ctx z Z0 hz
+    apply hi
+    calc
+      Exact.IZR ctx z = Exact.R0 ctx := hzero
+      _ = Exact.IZR ctx Z0 := ctx.certificate.sourceLaws.ofZ_zero.symm
+  have hlt : Exact.Rlt ctx (Exact.Rabs ctx (Exact.IZR ctx z))
+      (Exact.bpow ctx r e) := by
+    have habs :=
+      CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rbasic_fun.abs_IZR
+        ctx z
+    have habs' : ctx.spec.ofZ (Zabs z) = ctx.spec.abs (ctx.spec.ofZ z) := habs
+    cases e with
+    | Z0 =>
+        have he : Zle Z0 (.Z0 : Z) := by
+          change (0 : Int) ≤ 0
+          omega
+        have hp := IZR_Zpower ctx r (.Z0 : Z) he
+        have hp' : ctx.spec.ofZ (Zpower r.radix_val (.Z0 : Z)) = Exact.bpow ctx r (.Z0 : Z) := hp
+        have hi :=
+          CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_lt
+            ctx (Zabs z) (Zpower r.radix_val (.Z0 : Z)) hpow
+        change ctx.spec.lt (ctx.spec.abs (ctx.spec.ofZ z))
+          (Exact.bpow ctx r (.Z0 : Z))
+        rw [← habs', ← hp']
+        exact hi
+    | Zpos p =>
+        have he : Zle Z0 (.Zpos p : Z) := by
+          change (0 : Int) ≤ _
+          simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+        have hp := IZR_Zpower ctx r (.Zpos p) he
+        have hp' : ctx.spec.ofZ (Zpower r.radix_val (.Zpos p)) = Exact.bpow ctx r (.Zpos p) := hp
+        have hi :=
+          CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_lt
+            ctx (Zabs z) (Zpower r.radix_val (.Zpos p)) hpow
+        change ctx.spec.lt (ctx.spec.abs (ctx.spec.ofZ z))
+          (Exact.bpow ctx r (.Zpos p))
+        rw [← habs', ← hp']
+        exact hi
+    | Zneg p =>
+        exfalso
+        have hp : 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p :=
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+        cases z with
+        | Z0 =>
+            change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zabs (.Z0 : Z)) <
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (Zpower r.radix_val (.Zneg p)) at hpow
+            simp only [Zabs,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs,
+              Zpower,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpow_def.Zpower,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hpow
+            simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ, hp] at hpow
+        | Zpos q =>
+            change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zabs (.Zpos q)) <
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (Zpower r.radix_val (.Zneg p)) at hpow
+            simp only [Zabs,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs,
+              Zpower,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpow_def.Zpower,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hpow
+            simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ, hp] at hpow
+            omega
+        | Zneg q =>
+            change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zabs (.Zneg q)) <
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (Zpower r.radix_val (.Zneg p)) at hpow
+            simp only [Zabs,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs,
+              Zpower,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpow_def.Zpower,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hpow
+            simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ, hp] at hpow
+            omega
+  exact mag_le_bpow ctx m r (Exact.IZR ctx z) e hne hlt
+
+end CompCert4Lean.Flocq.Core.Raux

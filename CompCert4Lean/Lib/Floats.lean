@@ -3516,3 +3516,13 @@ theorem float64_sqrt_correct_proof : float64_sqrt_correctStatement := by
         simp only [hc, hr, Bool.false_eq_true, ↓reduceIte]
 
 end CompCert4Lean.Lib.Floats.Sqrt
+
+namespace CompCert4Lean.Lib.Floats
+
+theorem Float32.unop_nan_result_obligation_proof : Float32.unop_nan_result_obligation := by
+  intro x hx
+  unfold Float32.unop_nan
+  exact quiet_nan_32_result_obligation_proof_local
+    (CompCert4Lean.X86_64.Archi.choose_nan_32 (Float32.cons_pl x []))
+
+end CompCert4Lean.Lib.Floats

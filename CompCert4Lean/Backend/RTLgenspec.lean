@@ -2475,3 +2475,82 @@ theorem transl_expr_assign_charact : transl_expr_assign_charactStatement := by
   exact assign_expr id a map rd nd s ns s' INCR TR WF OK
 
 end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+theorem tr_stmt_incr : tr_stmt_incrStatement := by
+  intro s1 s2 EXT map stmt ns nd nexits ngoto nret rret htr
+  induction htr with
+  | tr_Sskip ns nexits ngoto nret rret =>
+      exact tr_stmt.tr_Sskip ns nexits ngoto nret rret
+  | tr_Sassign id a ns nd nexits ngoto nret rret r hmap harg =>
+      apply tr_stmt.tr_Sassign
+      · exact hmap
+      · exact tr_expr_incr s1 s2 EXT map [] a ns nd r (some id) harg
+  | tr_Sstore chunk addr al b ns nd nexits ngoto nret rret rd n1 rl n2 hargs hvalue hcode =>
+      apply tr_stmt.tr_Sstore
+      · exact tr_exprlist_incr s1 s2 EXT map [] al ns n1 rl hargs
+      · exact tr_expr_incr s1 s2 EXT map rl b n1 n2 rd none hvalue
+      · exact instr_at_incr s1 s2 n2 _ EXT hcode
+  | tr_Scall optid sig b cl ns nd nexits ngoto nret rret rd n1 rf n2 rargs
+      hcallee hargs hcode hmap =>
+      apply tr_stmt.tr_Scall
+      · exact tr_expr_incr s1 s2 EXT map [] b ns n1 rf none hcallee
+      · exact tr_exprlist_incr s1 s2 EXT map [rf] cl n1 n2 rargs hargs
+      · exact instr_at_incr s1 s2 n2 _ EXT hcode
+      · exact hmap
+  | tr_Scall_imm optid sig id cl ns nd nexits ngoto nret rret rd n2 rargs hargs hcode hmap =>
+      apply tr_stmt.tr_Scall_imm
+      · exact tr_exprlist_incr s1 s2 EXT map [] cl ns n2 rargs hargs
+      · exact instr_at_incr s1 s2 n2 _ EXT hcode
+      · exact hmap
+  | tr_Stailcall sig b cl ns nd nexits ngoto nret rret n1 rf n2 rargs hcallee hargs hcode =>
+      apply tr_stmt.tr_Stailcall
+      · exact tr_expr_incr s1 s2 EXT map [] b ns n1 rf none hcallee
+      · exact tr_exprlist_incr s1 s2 EXT map [rf] cl n1 n2 rargs hargs
+      · exact instr_at_incr s1 s2 n2 _ EXT hcode
+  | tr_Stailcall_imm sig id cl ns nd nexits ngoto nret rret n2 rargs hargs hcode =>
+      apply tr_stmt.tr_Stailcall_imm
+      · exact tr_exprlist_incr s1 s2 EXT map [] cl ns n2 rargs hargs
+      · exact instr_at_incr s1 s2 n2 _ EXT hcode
+  | tr_Sbuiltin res ef args ns nd nexits ngoto nret rret res' n1 rargs hargs hcode hres =>
+      apply tr_stmt.tr_Sbuiltin
+      · exact tr_exprlist_incr s1 s2 EXT map []
+          (RTLgen.exprlist_of_expr_list
+            (CompCert4Lean.Common.AST.params_of_builtin_args args)) ns n1 rargs hargs
+      · exact instr_at_incr s1 s2 n1 _ EXT hcode
+      · exact hres
+  | tr_Sseq s1' s2' ns nd nexits ngoto nret rret n h2 h1 ih2 ih1 =>
+      exact tr_stmt.tr_Sseq s1' s2' ns nd nexits ngoto nret rret n ih2 ih1
+  | tr_Sifthenelse a strue sfalse ns nd nexits ngoto nret rret ntrue nfalse
+      htrue hfalse hcond ihtrue ihfalse =>
+      apply tr_stmt.tr_Sifthenelse
+      · exact ihtrue
+      · exact ihfalse
+      · exact tr_condition_incr s1 s2 EXT map [] a ns ntrue nfalse hcond
+  | tr_Sloop sbody ns nd nexits ngoto nret rret nloop nend hbody hstart hend ihbody =>
+      apply tr_stmt.tr_Sloop
+      · exact ihbody
+      · exact instr_at_incr s1 s2 ns _ EXT hstart
+      · exact instr_at_incr s1 s2 nend _ EXT hend
+  | tr_Sblock sbody ns nd nexits ngoto nret rret hbody ihbody =>
+      exact tr_stmt.tr_Sblock sbody ns nd nexits ngoto nret rret ihbody
+  | tr_Sexit n ns nd nexits ngoto nret rret h =>
+      exact tr_stmt.tr_Sexit n ns nd nexits ngoto nret rret h
+  | tr_Sswitch a ns nd nexits ngoto nret rret h =>
+      exact tr_stmt.tr_Sswitch a ns nd nexits ngoto nret rret
+        (tr_exitexpr_incr s1 s2 EXT map a ns nexits h)
+  | tr_Sreturn_none nret nd nexits ngoto rret =>
+      exact tr_stmt.tr_Sreturn_none nret nd nexits ngoto rret
+  | tr_Sreturn_some a ns nd nexits ngoto nret rret h =>
+      exact tr_stmt.tr_Sreturn_some a ns nd nexits ngoto nret rret
+        (tr_expr_incr s1 s2 EXT map [] a ns nret rret none h)
+  | tr_Slabel lbl s ns nd nexits ngoto nret rret n hgoto hcode hbody ihbody =>
+      apply tr_stmt.tr_Slabel
+      · exact hgoto
+      · exact instr_at_incr s1 s2 n _ EXT hcode
+      · exact ihbody
+  | tr_Sgoto lbl ns nd nexits ngoto nret rret h =>
+      exact tr_stmt.tr_Sgoto lbl ns nd nexits ngoto nret rret h
+
+end CompCert4Lean.Backend.RTLgenspec

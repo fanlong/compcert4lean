@@ -1915,3 +1915,52 @@ theorem cexp_inbetween_float : ∀ (ctx : ExactRealContext)
       exact hres
 end CompCert4Lean.Flocq.Calc.Round
 
+namespace CompCert4Lean.Flocq.Calc.Round
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem cexp_inbetween_float_loc_Exact : ∀ (ctx : ExactRealContext)
+    (magnitude : ExactMagnitude ctx),
+    cexp_inbetween_float_loc_ExactStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x m e l hx hbetween
+  classical
+  by_cases hx0 : x = ctx.spec.zero
+  · subst x
+    cases hbetween with
+    | inbetween_Exact h =>
+        exact ⟨fun _ => Or.inr rfl, fun _ => Or.inr rfl⟩
+    | inbetween_Inexact c hbounds hmiddle =>
+        have hmneg := CompCert4Lean.Flocq.Core.Float_prop.lt_0_F2R
+          ctx beta m e hbounds.1
+        have hmpos := CompCert4Lean.Flocq.Core.Float_prop.gt_0_F2R
+          ctx beta (Zadd m Zone) e hbounds.2
+        change intOfZ m < (0 : Int) at hmneg
+        change (0 : Int) < intOfZ (Zadd m Zone) at hmpos
+        simp only [Zadd,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+          intOfZ_zOfInt] at hmpos
+        have hone : intOfZ Zone = (1 : Int) := rfl
+        rw [hone] at hmpos
+        omega
+  · have hxpos : ctx.spec.lt ctx.spec.zero x := by
+      apply (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+      exact ⟨hx, fun h => hx0 (ctx.certificate.orderedField.le_antisymm _ _ h hx)⟩
+    constructor
+    · intro h
+      rcases h with he | hl
+      · left
+        have heq := cexp_inbetween_float ctx magnitude beta fexp hvalid
+          x m e l hxpos hbetween (Or.inl he)
+        rw [← heq]
+        exact he
+      · exact Or.inr hl
+    · intro h
+      rcases h with he | hl
+      · left
+        have heq := cexp_inbetween_float ctx magnitude beta fexp hvalid
+          x m e l hxpos hbetween (Or.inr he)
+        rw [heq]
+        exact he
+      · exact Or.inr hl
+
+end CompCert4Lean.Flocq.Calc.Round

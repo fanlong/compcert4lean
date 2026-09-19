@@ -1205,3 +1205,341 @@ theorem transf_final_states : transf_final_statesStatement := by
     exact final_state.final_state_intro rs m r hresult
 
 end CompCert4Lean.Backend.Debugvarproof
+
+namespace CompCert4Lean.Backend.Debugvarproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Debugvar
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.X86.Op
+
+private theorem debugvar_correct_senv_eq
+    (cfg : CompilerConfig) (prog tprog : program)
+    (hm : match_prog cfg prog tprog) :
+    Genv.to_senv (Genv.globalenv tprog) = Genv.to_senv (Genv.globalenv prog) := by
+  have heq := senv_preserved cfg prog tprog hm
+  have hn := (debugvar_globalenvs_match cfg prog tprog hm).mge_next
+  have extensionality : ∀ (se1 se2 : Senv.t),
+      Senv.equiv se1 se2 → se2.nextblock = se1.nextblock → se2 = se1 := by
+    intro se1 se2 ⟨hs, hp, hv⟩ hn
+    have hi : se2.invert_symbol = se1.invert_symbol := by
+      funext b
+      cases h1 : se1.invert_symbol b with
+      | none =>
+          cases h2 : se2.invert_symbol b with
+          | none => rfl
+          | some id =>
+              have hf := se2.invert_find_symbol b h2
+              rw [hs] at hf
+              have hc := se1.find_invert_symbol id hf
+              rw [h1] at hc
+              cases hc
+      | some id =>
+          apply se2.find_invert_symbol id
+          rw [hs]
+          exact se1.invert_find_symbol b h1
+    have hs' := funext hs
+    have hp' := funext hp
+    have hv' := funext hv
+    cases se1
+    cases se2
+    cases hs'
+    cases hp'
+    cases hi
+    cases hv'
+    cases hn
+    rfl
+  exact extensionality _ _ heq hn
+
+end CompCert4Lean.Backend.Debugvarproof
+
+namespace CompCert4Lean.Backend.Debugvarproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Debugvar
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.X86.Op
+
+section
+
+variable
+  [binary64_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+  [binary32_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+
+private theorem debugvar_correct_step : transf_step_correctStatement := by
+  intro cfg xi prog tprog hp s1 t s2 hs ts1 hm
+  have hsym := symbols_preserved cfg prog tprog hp
+  have hse := debugvar_correct_senv_eq cfg prog tprog hp
+  have advance : ∀ (st : Linear.state) (t : trace) (s : List stackframe)
+      (f : function) (sp : val) (c : code) (rs : locset) (m : mem)
+      (before after : Option avail),
+      Linear.step cfg xi (Genv.globalenv tprog) st t
+        (State s f sp (add_delta_ranges before after c) rs m) →
+      plus (Linear.step cfg xi) (Genv.globalenv tprog) st t
+        (State s f sp c rs m) := by
+    intro st t s f sp c rs m before after h
+    exact plus_left st t h
+      (eval_add_delta_ranges cfg xi tprog s f sp c rs m before after)
+      (List.append_nil t).symm
+  cases hs with
+  | exec_Lgetstack s f sp sl ofs ty dst b rs m rs' hrs =>
+      cases hm with
+      | instr _ _ _ _ _ _ tf ts _ hst hf hc =>
+          cases hc with
+          | cons _ before after _ tc hcode =>
+              refine ⟨State ts tf sp tc rs' m, ?_,
+                match_states.instr _ _ _ _ _ _ _ _ _ hst hf hcode⟩
+              apply advance
+              exact Linear.step.exec_Lgetstack _ _ _ _ _ _ _ _ _ _ _ hrs
+  | exec_Lsetstack s f sp src sl ofs ty b rs m rs' hrs =>
+      cases hm with
+      | instr _ _ _ _ _ _ tf ts _ hst hf hc =>
+          cases hc with
+          | cons _ before after _ tc hcode =>
+              refine ⟨State ts tf sp tc rs' m, ?_,
+                match_states.instr _ _ _ _ _ _ _ _ _ hst hf hcode⟩
+              apply advance
+              exact Linear.step.exec_Lsetstack _ _ _ _ _ _ _ _ _ _ _ hrs
+  | exec_Lop s f sp op args res b rs m v rs' heval hrs =>
+      cases hm with
+      | instr _ _ _ _ _ _ tf ts _ hst hf hc =>
+          cases hc with
+          | cons _ before after _ tc hcode =>
+              refine ⟨State ts tf sp tc rs' m, ?_,
+                match_states.instr _ _ _ _ _ _ _ _ _ hst hf hcode⟩
+              apply advance
+              apply Linear.step.exec_Lop (v := v)
+              · rw [eval_operation_preserved _ _ _ _ _ _ hsym]
+                exact heval
+              · exact hrs
+  | exec_Lload s f sp chunk addr args dst b rs m a v rs' haddr hload hrs =>
+      cases hm with
+      | instr _ _ _ _ _ _ tf ts _ hst hf hc =>
+          cases hc with
+          | cons _ before after _ tc hcode =>
+              refine ⟨State ts tf sp tc rs' m, ?_,
+                match_states.instr _ _ _ _ _ _ _ _ _ hst hf hcode⟩
+              apply advance
+              apply Linear.step.exec_Lload (a := a) (v := v)
+              · rw [eval_addressing_preserved _ _ _ _ _ _ hsym]
+                exact haddr
+              · exact hload
+              · exact hrs
+  | exec_Lstore s f sp chunk addr args src b rs m m' a rs' haddr hstore hrs =>
+      cases hm with
+      | instr _ _ _ _ _ _ tf ts _ hst hf hc =>
+          cases hc with
+          | cons _ before after _ tc hcode =>
+              refine ⟨State ts tf sp tc rs' m', ?_,
+                match_states.instr _ _ _ _ _ _ _ _ _ hst hf hcode⟩
+              apply advance
+              apply Linear.step.exec_Lstore (a := a)
+              · rw [eval_addressing_preserved _ _ _ _ _ _ hsym]
+                exact haddr
+              · exact hstore
+              · exact hrs
+  | exec_Lcall s f sp sig ros b rs m f' hfind hsig =>
+      cases hm with
+      | instr _ _ _ _ _ _ tf ts _ hst hf hc =>
+          cases hc with
+          | cons _ before after _ tc hcode =>
+              obtain ⟨tf', htfind, htrans⟩ :=
+                find_function_translated cfg prog tprog hp ros rs f' hfind
+              refine ⟨Callstate (Stackframe tf sp rs
+                (add_delta_ranges before after tc) :: ts) tf' rs m, ?_, ?_⟩
+              · apply plus_one
+                apply Linear.step.exec_Lcall
+                · exact htfind
+                · exact hsig.trans (sig_preserved cfg f' tf' htrans).symm
+              · apply match_states.call
+                · exact list_forall2.cons _ _
+                    (match_stackframes.intro _ _ _ _ _ _ _ _ hf hcode) hst
+                · exact htrans
+  | exec_Ltailcall s f stk sig ros b rs m rs' f' m' hrs hfind hsig hfree =>
+      cases hm with
+      | instr _ _ _ _ _ _ tf ts _ hst hf hc =>
+          cases hc with
+          | cons _ before after _ tc hcode =>
+              obtain ⟨tf', htfind, htrans⟩ :=
+                find_function_translated cfg prog tprog hp ros rs' f' hfind
+              refine ⟨Callstate ts tf' rs' m', ?_,
+                match_states.call _ _ _ _ _ _ hst htrans⟩
+              apply plus_one
+              apply Linear.step.exec_Ltailcall
+              · rw [parent_locset_match s ts hst]
+                exact hrs
+              · exact htfind
+              · exact hsig.trans (sig_preserved cfg f' tf' htrans).symm
+              · cases hf
+                exact hfree
+  | exec_Lbuiltin s f sp rs m ef args res b vargs t vres rs' m' hargs hcall hrs =>
+      cases hm with
+      | instr _ _ _ _ _ _ tf ts _ hst hf hc =>
+          cases hc with
+          | cons _ before after _ tc hcode =>
+              refine ⟨State ts tf sp tc rs' m', ?_,
+                match_states.instr _ _ _ _ _ _ _ _ _ hst hf hcode⟩
+              apply advance
+              apply Linear.step.exec_Lbuiltin (vargs := vargs) (vres := vres)
+              · simpa only [hse] using hargs
+              · simpa only [hse] using hcall
+              · exact hrs
+  | exec_Llabel s f sp lbl b rs m =>
+      cases hm with
+      | instr _ _ _ _ _ _ tf ts _ hst hf hc =>
+          cases hc with
+          | cons _ before after _ tc hcode =>
+              refine ⟨State ts tf sp tc rs m, ?_,
+                match_states.instr _ _ _ _ _ _ _ _ _ hst hf hcode⟩
+              apply advance
+              exact Linear.step.exec_Llabel _ _ _ _ _ _ _
+  | exec_Lgoto s f sp lbl b rs m b' hfind =>
+      cases hm with
+      | instr _ _ _ _ _ _ tf ts _ hst hf hc =>
+          cases hc with
+          | cons _ before after _ tc hcode =>
+              obtain ⟨before', after', tc', htfind, hcode'⟩ :=
+                find_label_match f tf lbl b' hf hfind
+              refine ⟨State ts tf sp tc' rs m, ?_,
+                match_states.instr _ _ _ _ _ _ _ _ _ hst hf hcode'⟩
+              apply advance
+              exact Linear.step.exec_Lgoto _ _ _ _ _ _ _ _ htfind
+  | exec_Lcond_true s f sp cond args lbl b rs m rs' b' heval hrs hfind =>
+      cases hm with
+      | instr _ _ _ _ _ _ tf ts _ hst hf hc =>
+          cases hc with
+          | cons _ before after _ tc hcode =>
+              obtain ⟨before', after', tc', htfind, hcode'⟩ :=
+                find_label_match f tf lbl b' hf hfind
+              refine ⟨State ts tf sp tc' rs' m, ?_,
+                match_states.instr _ _ _ _ _ _ _ _ _ hst hf hcode'⟩
+              apply advance
+              exact Linear.step.exec_Lcond_true _ _ _ _ _ _ _ _ _ _ _
+                heval hrs htfind
+  | exec_Lcond_false s f sp cond args lbl b rs m rs' heval hrs =>
+      cases hm with
+      | instr _ _ _ _ _ _ tf ts _ hst hf hc =>
+          cases hc with
+          | cons _ before after _ tc hcode =>
+              refine ⟨State ts tf sp tc rs' m, ?_,
+                match_states.instr _ _ _ _ _ _ _ _ _ hst hf hcode⟩
+              apply advance
+              exact Linear.step.exec_Lcond_false _ _ _ _ _ _ _ _ _ _ heval hrs
+  | exec_Ljumptable s f sp arg tbl b rs m n lbl b' rs' harg hnth hfind hrs =>
+      cases hm with
+      | instr _ _ _ _ _ _ tf ts _ hst hf hc =>
+          cases hc with
+          | cons _ before after _ tc hcode =>
+              obtain ⟨before', after', tc', htfind, hcode'⟩ :=
+                find_label_match f tf lbl b' hf hfind
+              refine ⟨State ts tf sp tc' rs' m, ?_,
+                match_states.instr _ _ _ _ _ _ _ _ _ hst hf hcode'⟩
+              apply advance
+              exact Linear.step.exec_Ljumptable _ _ _ _ _ _ _ _ _ _ _ _
+                harg hnth htfind hrs
+  | exec_Lreturn s f stk b rs m m' hfree =>
+      cases hm with
+      | instr _ _ _ _ _ _ tf ts _ hst hf hc =>
+          cases hc with
+          | cons _ before after _ tc hcode =>
+              refine ⟨Returnstate ts
+                (CompCert4Lean.Backend.LTL.return_regs cfg (parent_locset ts) rs) m', ?_, ?_⟩
+              · apply plus_one
+                apply Linear.step.exec_Lreturn
+                cases hf
+                exact hfree
+              · rw [parent_locset_match s ts hst]
+                exact match_states.return _ _ _ _ hst
+  | exec_function_internal s f rs m rs' m' stk halloc hrs =>
+      cases hm with
+      | call _ _ _ _ tf ts hst htrans =>
+          cases htf : CompCert4Lean.Backend.Debugvar.transf_function cfg f with
+          | Error msg =>
+              simp [CompCert4Lean.Backend.Debugvar.transf_fundef,
+                CompCert4Lean.Common.AST.transf_partial_fundef, htf] at htrans
+          | OK tf' =>
+              simp [CompCert4Lean.Backend.Debugvar.transf_fundef,
+                CompCert4Lean.Common.AST.transf_partial_fundef, htf] at htrans
+              cases htrans
+              have hf := transf_function_match cfg f tf' htf
+              cases hf with
+              | intro tc hcode =>
+                  refine ⟨State ts { fn_sig := f.fn_sig, fn_stacksize := f.fn_stacksize, fn_code := tc }
+                    (Vptr stk CompCert4Lean.Lib.Integers.Ptrofs.zero)
+                    tc rs' m', ?_, ?_⟩
+                  · apply plus_one
+                    exact Linear.step.exec_function_internal _ _ _ _ _ _ _ halloc hrs
+                  · exact match_states.instr _ _ _ _ _ _ _ _ _ hst
+                      (match_function.intro _ _ hcode) hcode
+  | exec_function_external s ef args res rs1 rs2 m t m' hargs hcall hrs =>
+      cases hm with
+      | call _ _ _ _ tf ts hst htrans =>
+          simp [CompCert4Lean.Backend.Debugvar.transf_fundef,
+            CompCert4Lean.Common.AST.transf_partial_fundef] at htrans
+          cases htrans
+          refine ⟨Returnstate ts rs2 m', ?_, match_states.return _ _ _ _ hst⟩
+          apply plus_one
+          apply Linear.step.exec_function_external (args := args) (res := res)
+          · exact hargs
+          · simpa only [hse] using hcall
+          · exact hrs
+  | exec_return s f sp rs0 c rs m =>
+      cases hm with
+      | «return» _ _ _ ts hst =>
+          cases hst with
+          | cons _ _ hframe hst =>
+              cases hframe with
+              | intro _ _ _ _ tf tc before after hf hcode =>
+                  refine ⟨State _ tf sp tc rs m, ?_,
+                    match_states.instr _ _ _ _ _ _ _ _ _ hst hf hcode⟩
+                  apply advance
+                  exact Linear.step.exec_return _ _ _ _ _ _ _
+
+end
+end CompCert4Lean.Backend.Debugvarproof
+
+namespace CompCert4Lean.Backend.Debugvarproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Smallstep
+
+theorem transf_program_correct
+  [binary64_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+  [binary32_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    transf_program_correctStatement := by
+  intro cfg xi prog tprog hm
+  apply forward_simulation_plus
+    (CompCert4Lean.Backend.Linear.semantics cfg xi prog)
+    (CompCert4Lean.Backend.Linear.semantics cfg xi tprog)
+    (senv_preserved cfg prog tprog hm).2.1 (match_states cfg)
+  · exact transf_initial_states cfg prog tprog hm
+  · exact transf_final_states cfg
+  · exact debugvar_correct_step cfg xi prog tprog hm
+
+end CompCert4Lean.Backend.Debugvarproof

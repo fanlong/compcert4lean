@@ -512,3 +512,52 @@ open CompCert4Lean.Common.Values
               simp [combine_compimm_ne_0, hget] at hcombine
 
 end CompCert4Lean.X86.CombineOpproof
+
+namespace CompCert4Lean.X86.CombineOpproof
+
+open CompCert4Lean.X86.CombineOp
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+
+private theorem combine_compimm_eq_0_map_negate_aux
+    (get : valnum → Option rhs) (x : valnum) :
+    combine_compimm_eq_0 get x =
+      (combine_compimm_ne_0 get x).map (fun p => (negate_condition p.1, p.2)) := by
+  unfold combine_compimm_eq_0 combine_compimm_ne_0
+  cases get x with
+  | none => rfl
+  | some r =>
+      cases r with
+      | Op op ys => cases op <;> rfl
+      | Load _ _ _ _ => rfl
+      | Builtin _ _ => rfl
+
+theorem combine_compimm_eq_0_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    combine_compimm_eq_0_soundStatement := by
+  intro ge sp m get valu get_sound x cond args hcombine
+  have hmap (b : Option Bool) :
+      CompCert4Lean.Lib.Coqlib.option_map Bool.not b = b.map Bool.not := by
+    cases b <;> rfl
+  rw [combine_compimm_eq_0_map_negate_aux] at hcombine
+  cases hne : combine_compimm_ne_0 get x with
+  | none => simp [hne] at hcombine
+  | some p =>
+      rcases p with ⟨c, ys⟩
+      simp only [hne, Option.map_some, Option.some.injEq, Prod.mk.injEq] at hcombine
+      rcases hcombine with ⟨rfl, rfl⟩
+      have h := combine_compimm_ne_0_sound ge sp m get valu get_sound x c ys hne
+      rw [eval_negate_condition]
+      constructor
+      · rw [h.1]
+        simpa only [hmap, negate_comparison] using
+          (Val.negate_cmp_bool .Cne (valu x) (.Vint Int.zero)).symm
+      · rw [h.2]
+        simpa only [hmap, negate_comparison] using
+          (Val.negate_cmpu_bool (Mem.valid_pointer m) .Cne
+            (valu x) (.Vint Int.zero)).symm
+
+end CompCert4Lean.X86.CombineOpproof

@@ -2670,3 +2670,108 @@ theorem Zdiv_mul_pos : Zdiv_mul_posStatement := by
   exact zdiv_mul_pos_local
 
 end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open Lean Elab Tactic Meta
+
+private theorem divs_gen_product_quotient_range (x : CCInt) (m : CCZ)
+    (hm : zLe z0 m ∧ zLt m CompCert4Lean.Lib.Integers.Int.modulus) :
+    zLe CompCert4Lean.Lib.Integers.Int.min_signed
+      (zDiv (zMul (intSigned x) m) CompCert4Lean.Lib.Integers.Int.modulus) ∧
+    zLe (zDiv (zMul (intSigned x) m) CompCert4Lean.Lib.Integers.Int.modulus)
+      CompCert4Lean.Lib.Integers.Int.max_signed := by
+  have hx := CompCert4Lean.Lib.Integers.Int.signed_range_proof x
+  change (-2147483648 : Int) ≤ intOfZ (intSigned x) ∧
+    intOfZ (intSigned x) ≤ 2147483647 at hx
+  change (0 : Int) ≤ intOfZ m ∧ intOfZ m < 4294967296 at hm
+  have hlo := Int.mul_le_mul_of_nonneg_right hx.1 hm.1
+  have hhi := Int.mul_le_mul_of_nonneg_right hx.2 hm.1
+  have hlower : (-2147483648 : Int) * 4294967296 ≤
+      intOfZ (intSigned x) * intOfZ m := by omega
+  have hupper : intOfZ (intSigned x) * intOfZ m <
+      (2147483648 : Int) * 4294967296 := by omega
+  rw [zdiv_pos_int_local _ _ (by decide)]
+  change (-2147483648 : Int) ≤ intOfZ (zOfInt _) ∧
+    intOfZ (zOfInt _) ≤ 2147483647
+  simp only [intOfZ_zOfInt, zMul, ZArith.BinInt.Z.mul]
+  change (-2147483648 : Int) ≤
+      (intOfZ (intSigned x) * intOfZ m) / 4294967296 ∧
+    (intOfZ (intSigned x) * intOfZ m) / 4294967296 ≤ 2147483647
+  constructor
+  · exact Int.le_ediv_of_mul_le (by decide) hlower
+  · have h := Int.ediv_lt_of_lt_mul (by decide : (0 : Int) < 4294967296) hupper
+    omega
+
+/-- Signed division by a validated divisor is a high-product shift plus its sign correction. -/
+theorem divs_mul_shift_gen : divs_mul_shift_genStatement := by
+  intro x y m p hparams
+  obtain ⟨hm, hp, hdiv⟩ := divs_mul_params_sound (intSigned y) m p hparams
+  refine ⟨hm, hp, ?_⟩
+  have hx := CompCert4Lean.Lib.Integers.Int.signed_range_proof x
+  have hprepr : intUnsigned (intRepr p) = p := by
+    apply CompCert4Lean.Lib.Integers.Int.unsigned_repr_proof_api
+    refine ⟨hp.1, ?_⟩
+    have h := hp.2
+    change intOfZ p < 32 at h
+    change intOfZ p ≤ 4294967295
+    omega
+  have hqrepr : intSigned (intRepr
+      (zDiv (zMul (intSigned x) m) CompCert4Lean.Lib.Integers.Int.modulus)) =
+      zDiv (zMul (intSigned x) m) CompCert4Lean.Lib.Integers.Int.modulus :=
+    CompCert4Lean.Lib.Integers.Int.signed_repr_proof _
+      (divs_gen_product_quotient_range x m hm)
+  have hshift : intShr
+      (intRepr (zDiv (zMul (intSigned x) m) CompCert4Lean.Lib.Integers.Int.modulus))
+      (intRepr p) =
+      intRepr (zDiv (zMul m (intSigned x)) (two_p (zAdd z32 p))) := by
+    unfold intShr
+    rw [CompCert4Lean.Lib.Integers.Int.shr_div_two_p_proof]
+    change intRepr (zDiv (intSigned (intRepr _)) (two_p (intUnsigned (intRepr p)))) = _
+    rw [hprepr, hqrepr]
+    rw [zdiv_zdiv_pos_local _ _ _ (by decide) (two_p_pos_local p hp.1)]
+    have hden : zMul CompCert4Lean.Lib.Integers.Int.modulus (two_p p) =
+        two_p (zAdd z32 p) := by
+      exact (two_p_add_local z32 p (by decide) hp.1).symm
+    have hcomm : zMul (intSigned x) m = zMul m (intSigned x) := by
+      apply intOfZ_injective
+      simp only [zMul, ZArith.BinInt.Z.mul, intOfZ_zOfInt, Int.mul_comm]
+    rw [hden, hcomm]
+  have hlt : CompCert4Lean.Lib.Integers.Int.lt x
+      CompCert4Lean.Lib.Integers.Int.zero = zltBool (intSigned x) z0 := by
+    unfold CompCert4Lean.Lib.Integers.Int.lt CompCert4Lean.Lib.Integers.WordCore.lt
+    run_tac
+      let env ← getEnv
+      for suffix in ["Integers.zltSelect", "Integers.sumboolSelect"] do
+        let some (n, _) := env.constants.toList.find?
+            (fun (n, _) => (toString n).endsWith suffix)
+          | throwError "frozen integer comparison helper not found"
+        evalTactic (← `(tactic| unfold $(Lean.mkIdent n)))
+    have hz := CompCert4Lean.Lib.Integers.Int.signed_zero_proof
+    unfold CompCert4Lean.Lib.Integers.Int.signed_zero
+      CompCert4Lean.Lib.Integers.Int.signed at hz
+    rw [hz]
+    unfold zltBool boolOfSumbool intSigned CompCert4Lean.Lib.Integers.Int.signed
+    cases CompCert4Lean.Lib.Coqlib.zlt (CompCert4Lean.Lib.Integers.WordCore.signed x) z0 <;> rfl
+  have hsign : intUnsigned
+      (intShru x (intRepr (zSub CompCert4Lean.Lib.Integers.Int.zwordsize z1))) =
+      (if zltBool (intSigned x) z0 then z1 else z0) := by
+    unfold intShru intRepr
+    rw [CompCert4Lean.Lib.Integers.Int.shru_lt_zero_proof, hlt]
+    cases zltBool (intSigned x) z0 <;> rfl
+  rw [hshift]
+  change intRepr (zQuot (intSigned x) (intSigned y)) =
+    intRepr (zAdd
+      (intUnsigned (intRepr (zDiv (zMul m (intSigned x)) (two_p (zAdd z32 p)))))
+      (intUnsigned (intShru x
+        (intRepr (zSub CompCert4Lean.Lib.Integers.Int.zwordsize z1)))))
+  rw [hdiv (intSigned x) hx, hsign]
+  apply CompCert4Lean.Lib.Integers.Int.eqm_samerepr_proof
+  apply CompCert4Lean.Lib.Integers.Int.eqm_add_proof
+  · exact CompCert4Lean.Lib.Integers.Int.eqm_unsigned_repr_r_proof _ _
+      (CompCert4Lean.Lib.Integers.Int.eqm_refl_proof _)
+  · exact CompCert4Lean.Lib.Integers.Int.eqm_refl_proof _
+
+end CompCert4Lean.Backend.SelectDivproof

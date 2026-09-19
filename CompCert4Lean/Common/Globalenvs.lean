@@ -4443,3 +4443,199 @@ theorem find_symbol_exists : find_symbol_existsStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+namespace CompCert4Lean.Common.Globalenvs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+
+namespace Genv
+
+private theorem pg_store_zeros_loadbytes_unchanged
+    (P : block → Z → Prop) (m m' : mem) (b : block) (ofs n : Z)
+    (bytes : List memval) (hunch : Mem.unchanged_on P m m')
+    (hn : zLe z0 n)
+    (hP : ∀ i, zLe ofs i ∧ zLt i (zAdd ofs n) → P b i)
+    (hload : Mem.loadbytes m b ofs n = some bytes) :
+    Mem.loadbytes m' b ofs n = some bytes := by
+  unfold Mem.loadbytes at hload ⊢
+  cases hdec : Mem.range_perm_dec m b ofs (zAdd ofs n) Cur Readable with
+  | right hnot =>
+      rw [hdec] at hload
+      change none = some bytes at hload
+      cases hload
+  | left hrange =>
+      have hrange' : Mem.range_perm m' b ofs (zAdd ofs n) Cur Readable := by
+        intro i hi
+        have hperm := hrange i hi
+        exact (hunch.unchanged_on_perm b i Cur Readable (hP i hi)
+          (Mem.perm_valid_block m b i Cur Readable hperm)).mp hperm
+      cases hdec' : Mem.range_perm_dec m' b ofs (zAdd ofs n) Cur Readable with
+      | right hnot => exact False.elim (hnot hrange')
+      | left _ =>
+          rw [hdec] at hload
+          change some (Mem.getN (ZArith.BinInt.Z.to_nat n) ofs
+            (PMap.get b m.mem_contents)) = some bytes at hload
+          change some (Mem.getN (ZArith.BinInt.Z.to_nat n) ofs
+            (PMap.get b m'.mem_contents)) = some bytes
+          simp only [Option.some.injEq] at hload ⊢
+          rw [← hload]
+          apply Mem.getN_exten
+          intro i hi
+          have hnid : zOfNat (ZArith.BinInt.Z.to_nat n) = n :=
+            ZArith.Znat.Z2Nat.id n hn
+          have hi' : zLe ofs i ∧ zLt i (zAdd ofs n) := by
+            simpa [hnid] using hi
+          exact hunch.unchanged_on_contents b i (hP i hi') (hrange i hi')
+
+private abbrev pg_z1 : Z := .Zpos .xH
+
+private theorem pg_z1_int : intOfZ pg_z1 = 1 := rfl
+
+private theorem pg_zOfNat_nonneg (n : Nat) :
+    ZArith.BinInt.Z.le Z0 (ZArith.BinInt.Z.of_nat n) := by
+  change (0 : Int) ≤ intOfZ (ZArith.BinInt.Z.of_nat n)
+  simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  change (0 : Int) ≤ Int.ofNat n
+  exact Int.ofNat_zero_le n
+
+theorem store_zeros_loadbytes : store_zeros_loadbytesStatement := by
+  intro m b p n m' hzeros
+  let P : mem → block → Z → Z → Option mem → Prop :=
+    fun m0 b0 p0 n0 result =>
+      ∀ m1, result = some m1 → readbytes_as_zero m1 b0 p0 n0
+  have hP : ∀ m0 b0 p0 n0, P m0 b0 p0 n0 (store_zeros m0 b0 p0 n0) := by
+    apply store_zeros_ind (P := P)
+    · intro m0 b0 p0 n0 hn hbranch m1 hm1 q len hlo hhi
+      cases Option.some.inj hm1
+      have hlen : len = 0 := by
+        change intOfZ n0 ≤ 0 at hn
+        change intOfZ p0 ≤ intOfZ q at hlo
+        change intOfZ (zAdd q (zOfNat len)) ≤ intOfZ (zAdd p0 n0) at hhi
+        simp [ZArith.BinInt.Z.add, ZArith.BinInt.Z.of_nat,
+          intOfZ_zOfInt] at hhi
+        omega
+      subst len
+      simpa using (Mem.loadbytes_empty m0 b0 q (zOfNat 0) (by
+        change intOfZ (zOfNat 0) ≤ 0
+        simp [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]))
+    · intro m0 b0 p0 n0 hn hbranch m1 hstore hrec
+      cases hresult : store_zeros m1 b0 (zAdd p0 pg_z1)
+          (ZArith.BinInt.Z.sub n0 pg_z1) with
+      | none =>
+          intro m2 hm2
+          cases hm2
+      | some m2 =>
+          rw [hresult] at hrec
+          intro m2' hm2'
+          cases Option.some.inj hm2'
+          intro q len hlo hhi
+          by_cases hqp : q = p0
+          · subst q
+            cases len with
+            | zero =>
+                simpa using (Mem.loadbytes_empty m2 b0 p0 (zOfNat 0) (by
+                  change intOfZ (zOfNat 0) ≤ 0
+                  simp [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]))
+            | succ len =>
+                let Q : block → Z → Prop := fun b' i => b' = b0 ∧ i = p0
+                have hunch : Mem.unchanged_on Q m1 m2 := by
+                  apply Genv.store_zeros_unchanged Q m1 b0 (zAdd p0 pg_z1)
+                    (ZArith.BinInt.Z.sub n0 pg_z1) m2 hresult
+                  intro i hi hQi
+                  rcases hQi with ⟨_, hiEq⟩
+                  subst i
+                  have hlo' := hi.1
+                  change intOfZ (zAdd p0 pg_z1) ≤ intOfZ p0 at hlo'
+                  simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt] at hlo'
+                  rw [pg_z1_int] at hlo'
+                  omega
+                have hbyte :
+                    Mem.loadbytes m1 b0 p0 pg_z1 =
+                      some [Byte (CompCert4Lean.Lib.Integers.Byte.repr z0)] := by
+                  have hs := Mem.loadbytes_store_same Mint8unsigned m0 b0 p0 Vzero m1 hstore
+                  have henc : encode_val Mint8unsigned Vzero =
+                      [Byte (CompCert4Lean.Lib.Integers.Byte.repr z0)] := by
+                    rfl
+                  have hsize : size_chunk Mint8unsigned = pg_z1 := rfl
+                  rw [← hsize]
+                  exact hs.trans (congrArg some henc)
+                have hbyte' :
+                    Mem.loadbytes m2 b0 p0 pg_z1 =
+                      some [Byte (CompCert4Lean.Lib.Integers.Byte.repr z0)] := by
+                  apply pg_store_zeros_loadbytes_unchanged Q m1 m2 b0 p0 pg_z1 _ hunch
+                  · change (0 : Int) ≤ 1
+                    omega
+                  · intro i hi
+                    constructor
+                    · rfl
+                    · change intOfZ p0 ≤ intOfZ i ∧
+                        intOfZ i < intOfZ (zAdd p0 pg_z1) at hi
+                      change i = p0
+                      apply intOfZ_injective
+                      simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt] at hi
+                      rw [pg_z1_int] at hi
+                      omega
+                  · exact hbyte
+                have htail : Mem.loadbytes m2 (b0) (zAdd p0 pg_z1) (zOfNat len) =
+                    some (List.replicate len
+                      (Byte (CompCert4Lean.Lib.Integers.Byte.repr z0))) := by
+                  apply hrec m2 rfl (zAdd p0 pg_z1) len
+                  · change intOfZ (zAdd p0 pg_z1) ≤ intOfZ (zAdd p0 pg_z1)
+                    omega
+                  · change intOfZ
+                        (zAdd (zAdd p0 pg_z1) (zOfNat len)) ≤
+                      intOfZ (zAdd (zAdd p0 pg_z1)
+                        (ZArith.BinInt.Z.sub n0 pg_z1))
+                    change intOfZ (zAdd p0 (zOfNat (Nat.succ len))) ≤
+                      intOfZ (zAdd p0 n0) at hhi
+                    simp [ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+                      ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hhi ⊢
+                    rw [pg_z1_int]
+                    omega
+                have hcat := Mem.loadbytes_concat m2 b0 p0 pg_z1 (zOfNat len)
+                  [Byte (CompCert4Lean.Lib.Integers.Byte.repr z0)]
+                  (List.replicate len
+                    (Byte (CompCert4Lean.Lib.Integers.Byte.repr z0)))
+                  hbyte' htail
+                  (by change (0 : Int) ≤ 1; omega)
+                  (pg_zOfNat_nonneg len)
+                have hsizes : zAdd pg_z1 (zOfNat len) = zOfNat (Nat.succ len) := by
+                  apply intOfZ_injective
+                  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.of_nat,
+                    intOfZ_zOfInt]
+                  rw [pg_z1_int]
+                  calc
+                    1 + Int.ofNat len = Int.ofNat len + 1 := Int.add_comm _ _
+                    _ = Int.ofNat len.succ := (Int.natCast_succ len).symm
+                simpa [hsizes, List.replicate_succ] using hcat
+          · apply hrec m2 rfl q len
+            · change intOfZ (zAdd p0 pg_z1) ≤ intOfZ q
+              change intOfZ p0 ≤ intOfZ q at hlo
+              have hne : intOfZ q ≠ intOfZ p0 := by
+                intro heq
+                exact hqp (intOfZ_injective heq)
+              simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+              rw [pg_z1_int]
+              omega
+            · change intOfZ (zAdd q (zOfNat len)) ≤
+                intOfZ (zAdd (zAdd p0 pg_z1)
+                  (ZArith.BinInt.Z.sub n0 pg_z1))
+              change intOfZ (zAdd q (zOfNat len)) ≤ intOfZ (zAdd p0 n0) at hhi
+              simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+                intOfZ_zOfInt] at hhi ⊢
+              rw [pg_z1_int] at ⊢
+              omega
+    · intro m0 b0 p0 n0 hn hbranch hnone m1 hm1
+      cases hm1
+  exact hP m b p n m' hzeros
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

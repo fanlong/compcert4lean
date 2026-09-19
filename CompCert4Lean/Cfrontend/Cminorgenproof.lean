@@ -4514,3 +4514,125 @@ theorem match_env_invariant : match_env_invariantStatement := by
     · exact hlt
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+open Lean Elab Tactic Meta
+
+private theorem ptrofs_add_zero_local
+    (ofs : CompCert4Lean.Lib.Integers.Ptrofs.int) :
+    CompCert4Lean.Lib.Integers.Ptrofs.add ofs
+      CompCert4Lean.Lib.Integers.Ptrofs.zero = ofs := by
+  run_tac
+    let env ← getEnv
+    let some (n, _) := env.constants.toList.find?
+        (fun (n, _) => (toString n).endsWith "memdata_ptrofs_add_zero")
+      | throwError "frozen helper not found"
+    let stx := Lean.mkIdent n
+    let arg := Lean.mkIdent `ofs
+    evalTactic (← `(tactic| exact $stx $arg))
+
+private theorem match_env_alloc_local : match_env_allocStatement := by
+  intro f1 id cenv e sp lo m1 sz m2 b ofs f2 hme halloc hcenv hincr hmap hother henone
+  change CompCert4Lean.Common.Values.block at b
+  have hnext : m2.nextblock = PArith.BinPos.Pos.succ m1.nextblock :=
+    alloc_nextblock_local m1 z0 sz m2 b halloc
+  have hb : b = m1.nextblock := alloc_result_local m1 z0 sz m2 b halloc
+  rcases hme with ⟨hvars, hlo, hbounded, hinv, hincrlo⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · intro id0
+    cases hp : CompCert4Lean.Lib.Coqlib.peq id0 id with
+    | left heq =>
+        subst id0
+        rw [PTree.gsspec_proof (A := _) id id (b, sz) e]
+        simp only [hp]
+        rw [hcenv]
+        exact .local (by
+          apply Val.inject.inject_ptr
+          · exact hmap
+          · rw [CompCert4Lean.Lib.Integers.Ptrofs.add_commut_proof_api]
+            exact (ptrofs_add_zero_local _).symm)
+    | right hne =>
+        have hmv := hvars id0
+        have hmv' : match_var f1 sp (PTree.get id0 e) (PTree.get id0 cenv) := by
+          rw [← PTree.gro_proof _ hne]
+          exact hmv
+        have hnew : match_var f2 sp (PTree.get id0 e) (PTree.get id0 cenv) := by
+          cases he : PTree.get id0 e with
+          | none =>
+              cases hc : PTree.get id0 cenv with
+              | none =>
+                  rw [he, hc] at hmv'
+                  exact .global
+              | some ofs =>
+                  rw [he, hc] at hmv'
+                  cases hmv'
+          | some bs =>
+              cases bs with
+              | mk b' sz' =>
+                  cases hc : PTree.get id0 cenv with
+                  | none =>
+                      rw [he, hc] at hmv'
+                      cases hmv'
+                  | some ofs =>
+                      rw [he, hc] at hmv'
+                      cases hmv' with
+                      | «local» hptr =>
+                          exact .local (cminorgenproof_val_inject_incr hincr hptr)
+        rw [PTree.gsspec_proof (A := _) id0 id (b, sz) e]
+        simp only [hp]
+        exact hnew
+  · rw [hnext]
+    exact CompCert4Lean.Lib.Coqlib.Ple_trans _ _ _ hlo
+      (CompCert4Lean.Lib.Coqlib.Ple_succ _)
+  · intro id0 b0 sz0 hget
+    cases hp : CompCert4Lean.Lib.Coqlib.peq id0 id with
+    | left heq =>
+        subst id0
+        rw [PTree.gsspec_proof (A := _) id id (b, sz) e] at hget
+        rw [hp] at hget
+        have hpairs := Option.some.inj hget
+        have hb0eq : b0 = b := (congrArg Prod.fst hpairs).symm
+        rw [hb0eq]
+        exact ⟨by rw [hb]; exact hlo, by
+          rw [hb, hnext]
+          exact CompCert4Lean.Lib.Coqlib.Plt_succ _⟩
+    | right hne =>
+        rw [PTree.gsspec_proof (A := _) id0 id (b, sz) e] at hget
+        rw [hp] at hget
+        have hbnd := hbounded id0 b0 sz0 hget
+        refine ⟨hbnd.1, ?_⟩
+        exact CompCert4Lean.Lib.Coqlib.Plt_Ple_trans _ _ _ hbnd.2
+          (by rw [hnext]; exact CompCert4Lean.Lib.Coqlib.Ple_succ _)
+  · intro b0 delta h0
+    by_cases hb0 : b0 = b
+    · subst b0
+      rw [hmap] at h0
+      cases h0
+      refine ⟨id, sz, ?_⟩
+      exact PTree.gss _ _ _
+    · have h0' : f1 b0 = some (sp, delta) := by
+        rw [hother b0 hb0] at h0
+        exact h0
+      rcases hinv b0 delta h0' with ⟨id0, sz0, he⟩
+      refine ⟨id0, sz0, ?_⟩
+      by_cases hi : id0 = id
+      · subst id0
+        exact False.elim (by simpa [henone] using he)
+      · rw [PTree.gso (A := _) (x := (b, sz)) (m := e) hi]
+        exact he
+  · intro b0 tb delta h0 hlt
+    by_cases hb0 : b0 = b
+    · subst b0
+      have hlt' : CompCert4Lean.Lib.Coqlib.Plt b m1.nextblock :=
+        CompCert4Lean.Lib.Coqlib.Plt_Ple_trans _ _ _ hlt hlo
+      exact False.elim (CompCert4Lean.Lib.Coqlib.Plt_strict _ (hb ▸ hlt'))
+    · rw [hother b0 hb0] at h0
+      exact hincrlo b0 tb delta h0 hlt
+
+theorem match_env_alloc : match_env_allocStatement := by
+  exact match_env_alloc_local
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

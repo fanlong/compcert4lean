@@ -646,3 +646,61 @@ open CompCert4Lean.Foundation.Numbers.Rocq.Coq
           exact hi
 
 end CompCert4Lean.Common.Switch
+
+namespace CompCert4Lean.Common.Switch
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem validate_jumptable_correct : validate_jumptable_correctStatement := by
+  intro modulus hmodpos cases tbl ofs v sz hvalid hindex hsz hofs hsum hv hlen
+  have hrange := ZArith.BinInt.Z.modulo_range (zSub v ofs) modulus hmodpos
+  have hbound : zLe z0 (zMod (zSub v ofs) modulus) ∧
+      zLt (zMod (zSub v ofs) modulus) (list_length_z tbl) := by
+    refine ⟨hrange.1, ?_⟩
+    change intOfZ (zMod (zSub v ofs) modulus) < intOfZ (list_length_z tbl)
+    change intOfZ (zMod (zSub v ofs) modulus) < intOfZ sz at hindex
+    change intOfZ sz ≤ intOfZ (list_length_z tbl) at hlen
+    omega
+  have hsmall : zMod (zSub v ofs) modulus = zSub v ofs := by
+    change 0 ≤ intOfZ sz at hsz
+    change 0 ≤ intOfZ ofs at hofs
+    change intOfZ (zAdd ofs sz) ≤ intOfZ modulus at hsum
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hsum
+    change 0 ≤ intOfZ v ∧ intOfZ v < intOfZ modulus at hv
+    by_cases hle : intOfZ ofs ≤ intOfZ v
+    · apply ZArith.BinInt.Z.mod_small
+      change 0 ≤ intOfZ (zSub v ofs) ∧ intOfZ (zSub v ofs) < intOfZ modulus
+      simp only [zSub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+      omega
+    · have hone : ZArith.BinInt.Z.mul z1 modulus = modulus := by
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+        change 1 * intOfZ modulus = intOfZ modulus
+        exact Int.one_mul _
+      have hshift : zMod (zAdd (zSub v ofs) modulus) modulus =
+          zMod (zSub v ofs) modulus := by
+        simpa only [hone] using ZArith.BinInt.Z.modulo_add_mul (zSub v ofs) z1 modulus
+      have hshiftSmall : zMod (zAdd (zSub v ofs) modulus) modulus =
+          zAdd (zSub v ofs) modulus := by
+        apply ZArith.BinInt.Z.mod_small
+        change 0 ≤ intOfZ (zAdd (zSub v ofs) modulus) ∧
+          intOfZ (zAdd (zSub v ofs) modulus) < intOfZ modulus
+        simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+          intOfZ_zOfInt]
+        omega
+      rw [← hshift, hshiftSmall] at hindex
+      change intOfZ (zAdd (zSub v ofs) modulus) < intOfZ sz at hindex
+      simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+        intOfZ_zOfInt] at hindex
+      omega
+  have hbase : zAdd ofs (zMod (zSub v ofs) modulus) = v := by
+    rw [hsmall]
+    apply intOfZ_injective
+    simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    omega
+  have hresult := validate_jumptable_correct_rec cases tbl ofs
+    (zMod (zSub v ofs) modulus) hvalid hbound
+  rw [hbase] at hresult
+  exact hresult
+
+end CompCert4Lean.Common.Switch

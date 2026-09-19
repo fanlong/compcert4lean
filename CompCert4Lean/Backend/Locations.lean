@@ -800,3 +800,77 @@ theorem OrderedLoc.outside_interval_diff :
                 exact outside_not_tlong_lt ty' hty
 
 end CompCert4Lean.Backend.Locations
+
+namespace CompCert4Lean.Backend.Locations
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem diff_interval_typesize_cases (ty : typ) :
+    (intOfZ (typesize ty) = 1 ∧ OrderedTyp.lt ty .Tany64) ∨
+      intOfZ (typesize ty) = 2 := by
+  cases ty <;>
+    unfold OrderedTyp.lt pLt CompCert4Lean.Lib.Coqlib.Plt PArith.BinPos.Pos.lt <;>
+    decide
+
+private theorem diff_interval_high (ofs : Z) (ty : typ) (ofs' : Z)
+    (h : zLe (zAdd ofs (typesize ty)) ofs') :
+    zLt (zSub (zAdd ofs (typesize ty)) (zOfNat 1)) ofs' := by
+  change intOfZ (zAdd ofs (typesize ty)) ≤ intOfZ ofs' at h
+  change intOfZ (zSub (zAdd ofs (typesize ty)) (zOfNat 1)) < intOfZ ofs'
+  simp only [zSub, ZArith.BinInt.Z.sub, zAdd, ZArith.BinInt.Z.add,
+    zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at h ⊢
+  have hone : (Int.ofNat 1 : Int) = 1 := Int.ofNat_one
+  omega
+
+private theorem diff_interval_low (ofs ofs' : Z) (ty' : typ)
+    (h : zLe (zAdd ofs' (typesize ty')) ofs) :
+    zLt ofs' (zSub ofs (zOfNat 1)) ∨
+      (ofs' = zSub ofs (zOfNat 1) ∧ OrderedTyp.lt ty' .Tany64) := by
+  have hlow : intOfZ (zSub ofs (zOfNat 1)) = intOfZ ofs - 1 := by
+    simp only [zSub, ZArith.BinInt.Z.sub, zOfNat,
+      ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    rfl
+  change intOfZ (zAdd ofs' (typesize ty')) ≤ intOfZ ofs at h
+  simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at h
+  by_cases hlt : intOfZ ofs' < intOfZ (zSub ofs (zOfNat 1))
+  · exact Or.inl hlt
+  · rcases diff_interval_typesize_cases ty' with ⟨hsize, hty⟩ | hsize
+    · right
+      constructor
+      · apply intOfZ_injective
+        omega
+      · exact hty
+    · omega
+
+theorem OrderedLoc.diff_outside_interval :
+    OrderedLoc.diff_outside_intervalStatement := by
+  intro l l' h
+  cases l with
+  | R mr =>
+      cases l' with
+      | R mr' =>
+          cases OrderedLoc.compare (R mr) (R mr') with
+          | LT hlt => exact Or.inr hlt
+          | EQ heq =>
+              change R mr = R mr' at heq
+              cases heq
+              exact (h rfl).elim
+          | GT hlt => exact Or.inl hlt
+      | S sl' ofs' ty' => exact Or.inr trivial
+  | S sl ofs ty =>
+      cases l' with
+      | R mr' => exact Or.inl trivial
+      | S sl' ofs' ty' =>
+          cases OrderedSlot.compare sl sl' with
+          | LT hlt => exact Or.inr (Or.inl hlt)
+          | GT hlt => exact Or.inl (Or.inl hlt)
+          | EQ heq =>
+              change sl = sl' at heq
+              subst sl'
+              rcases h with hne | hhigh | hlow
+              · exact (hne rfl).elim
+              · exact Or.inr (Or.inr ⟨rfl, Or.inl (diff_interval_high ofs ty ofs' hhigh)⟩)
+              · exact Or.inl (Or.inr ⟨rfl, diff_interval_low ofs ofs' ty' hlow⟩)
+
+end CompCert4Lean.Backend.Locations

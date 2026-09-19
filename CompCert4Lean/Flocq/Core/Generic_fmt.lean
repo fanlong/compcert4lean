@@ -4590,3 +4590,18 @@ theorem generic_format_bpow :
   exact pg_2878_generic_format_bpow ctx magnitude beta fexp e h
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem generic_format_F2R :
+    ∀ ctx magnitude, generic_format_F2RStatement ctx magnitude := by
+  intro ctx magnitude beta fexp m e hle
+  apply pg_suffix_generic_format_F2R ctx magnitude beta fexp
+    (Exact.F2R ctx (Float beta m e)) (Float beta m e) rfl
+  by_cases hm : m = Z0
+  · left
+    rw [hm]
+    exact CompCert4Lean.Flocq.Core.Float_prop.F2R_0 ctx beta e
+  · exact Or.inr (hle hm)
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

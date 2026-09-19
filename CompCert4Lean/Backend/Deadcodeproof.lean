@@ -2293,3 +2293,102 @@ open CompCert4Lean.Lib.Maps
     exact decode_val_inject inject_id bytes bytes' chunk hrel
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem magree_parallel_setN_aux (access : Z → Prop)
+    (bytes1 bytes2 : List memval) (hbytes : list_forall2 memval_lessdef bytes1 bytes2) :
+    ∀ (p : Z) (c1 c2 : ZMap.t memval),
+      (∀ i, access i →
+        zLt i p ∨ zLe (zAdd p (zOfNat bytes1.length)) i →
+        memval_lessdef (ZMap.get i c1) (ZMap.get i c2)) →
+      ∀ q, access q →
+        memval_lessdef (ZMap.get q (Mem.setN bytes1 p c1))
+          (ZMap.get q (Mem.setN bytes2 p c2)) := by
+  induction hbytes with
+  | nil =>
+      intro p c1 c2 h q hq
+      apply h q hq
+      change intOfZ q < intOfZ p ∨
+        intOfZ (zAdd p (zOfNat 0)) ≤ intOfZ q
+      simp [zAdd, zOfNat, ZArith.BinInt.Z.add, ZArith.BinInt.Z.of_nat,
+        intOfZ_zOfInt]
+      omega
+  | @cons v1 tail1 v2 tail2 hv htail ih =>
+      intro p c1 c2 h q hq
+      change memval_lessdef
+        (ZMap.get q (Mem.setN tail1 (zAdd p (.Zpos .xH)) (ZMap.set p v1 c1)))
+        (ZMap.get q (Mem.setN tail2 (zAdd p (.Zpos .xH)) (ZMap.set p v2 c2)))
+      apply ih (zAdd p (.Zpos .xH)) (ZMap.set p v1 c1) (ZMap.set p v2 c2) _ q hq
+      intro i hi hout
+      by_cases heq : i = p
+      · subst i
+        rw [zmap_get_set_same_local, zmap_get_set_same_local]
+        exact hv
+      · rw [zmap_get_set_other_local _ _ _ _ heq,
+          zmap_get_set_other_local _ _ _ _ heq]
+        apply h i hi
+        have hne : intOfZ i ≠ intOfZ p := fun e => heq (intOfZ_injective e)
+        change intOfZ i < intOfZ (zAdd p (.Zpos .xH)) ∨
+          intOfZ (zAdd (zAdd p (.Zpos .xH)) (zOfNat tail1.length)) ≤ intOfZ i at hout
+        change intOfZ i < intOfZ p ∨
+          intOfZ (zAdd p (zOfNat (v1 :: tail1).length)) ≤ intOfZ i
+        simp [zAdd, zOfNat, ZArith.BinInt.Z.add, ZArith.BinInt.Z.of_nat,
+          intOfZ_zOfInt] at hout ⊢
+        have hone : intOfZ (.Zpos .xH) = 1 := rfl
+        rw [hone] at hout
+        omega
+
+theorem magree_storebytes_parallel : magree_storebytes_parallelStatement := by
+  intro m1 m2 P Q b ofs bytes1 m1' bytes2 hma hstore hPQ hbytes
+  have hlen : bytes1.length = bytes2.length :=
+    list_forall2_length _ _ _ _ _ hbytes
+  have hrange : Mem.range_perm m2 b ofs (zAdd ofs (zOfNat bytes2.length)) Cur Writable := by
+    rw [← hlen]
+    intro i hi
+    exact hma.ma_perm b i Cur Writable
+      (Mem.storebytes_range_perm m1 b ofs bytes1 m1' hstore i hi)
+  obtain ⟨m2', hstore2⟩ := Mem.range_perm_storebytes m2 b ofs bytes2 hrange
+  refine ⟨m2', hstore2, ?_⟩
+  constructor
+  · intro b' i k p hp
+    apply Mem.perm_storebytes_1 m2 b ofs bytes2 m2' hstore2 b' i k p
+    apply hma.ma_perm b' i k p
+    exact Mem.perm_storebytes_2 m1 b ofs bytes1 m1' hstore b' i k p hp
+  · intro b' i k p hp
+    have hp2 := Mem.perm_storebytes_2 m2 b ofs bytes2 m2' hstore2 b' i k p hp
+    rcases hma.ma_perm_inv b' i k p hp2 with hp1 | hn
+    · exact Or.inl (Mem.perm_storebytes_1 m1 b ofs bytes1 m1' hstore b' i k p hp1)
+    · right
+      intro hp1
+      exact hn (Mem.perm_storebytes_2 m1 b ofs bytes1 m1' hstore b' i Max Nonempty hp1)
+  · intro b' i hp hQ
+    rw [Mem.storebytes_mem_contents m1 b ofs bytes1 m1' hstore,
+      Mem.storebytes_mem_contents m2 b ofs bytes2 m2' hstore2]
+    by_cases hbb : b' = b
+    · subst b'
+      rw [pmap_get_set_same_local, pmap_get_set_same_local]
+      apply magree_parallel_setN_aux
+        (fun j => Mem.perm m1' b j Cur Readable ∧ Q b j) bytes1 bytes2 hbytes
+        ofs (PMap.get b m1.mem_contents) (PMap.get b m2.mem_contents) _ i ⟨hp, hQ⟩
+      intro j hj hout
+      apply hma.ma_memval b j
+      · exact Mem.perm_storebytes_2 m1 b ofs bytes1 m1' hstore b j Cur Readable hj.1
+      · exact hPQ b j hj.2 (Or.inr hout)
+    · rw [pmap_get_set_other_local _ _ _ _ hbb,
+        pmap_get_set_other_local _ _ _ _ hbb]
+      apply hma.ma_memval b' i
+      · exact Mem.perm_storebytes_2 m1 b ofs bytes1 m1' hstore b' i Cur Readable hp
+      · exact hPQ b' i hQ (Or.inl hbb)
+  · rw [Mem.nextblock_storebytes m1 b ofs bytes1 m1' hstore,
+      Mem.nextblock_storebytes m2 b ofs bytes2 m2' hstore2]
+    exact hma.ma_nextblock
+
+end CompCert4Lean.Backend.Deadcodeproof

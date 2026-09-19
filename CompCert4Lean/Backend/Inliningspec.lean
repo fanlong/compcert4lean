@@ -2542,3 +2542,10 @@ theorem expand_instr_unchanged : expand_instr_unchangedStatement := by
   exact expand_instr_unchanged_aux
 
 end CompCert4Lean.Backend.Inliningspec
+
+namespace CompCert4Lean.Backend.Inliningspec
+
+theorem expand_instr_spec : expand_instr_specStatement := by
+  exact inliningspec_expand_instr_spec_aux
+
+end CompCert4Lean.Backend.Inliningspec

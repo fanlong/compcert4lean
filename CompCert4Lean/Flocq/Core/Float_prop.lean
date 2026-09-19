@@ -2122,3 +2122,14 @@ theorem mag_F2R : ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
     (pg_IZR_ne_zero ctx hm)]
 
 end CompCert4Lean.Flocq.Core.Float_prop
+
+namespace CompCert4Lean.Flocq.Core.Float_prop
+
+theorem mag_F2R_Zdigits : ∀ (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx),
+    mag_F2R_ZdigitsStatement ctx magnitude := by
+  intro ctx magnitude beta m e hm
+  exact (mag_F2R ctx magnitude beta m e hm).trans
+    (congrArg (fun d => Zadd d e) (Zdigits_mag ctx magnitude beta m hm).symm)
+
+end CompCert4Lean.Flocq.Core.Float_prop

@@ -1241,3 +1241,21 @@ theorem transf_instr_lookup : transf_instr_lookupStatement := by
     exact .unchanged
 
 end CompCert4Lean.Backend.Tailcallproof
+
+namespace CompCert4Lean.Backend.Tailcallproof
+
+open CompCert4Lean.Backend.Tailcall
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+
+theorem symbols_preserved : symbols_preservedStatement := by
+  intro cfg prog tprog hmatch s
+  unfold match_prog at hmatch
+  exact @CompCert4Lean.Common.Globalenvs.Genv.find_symbol_transf
+    fundef fundef Unit
+    (CompCert4Lean.Common.Linking.Linker_fundef function)
+    CompCert4Lean.Common.Linking.Linker_unit
+    (transf_fundef cfg) prog tprog hmatch s
+
+end CompCert4Lean.Backend.Tailcallproof

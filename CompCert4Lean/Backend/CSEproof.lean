@@ -3943,3 +3943,32 @@ theorem find_valnum_rhs_charact : find_valnum_rhs_charactStatement := by
   exact cse_find_valnum_rhs_charact rh v eqs h
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Common.Values
+
+theorem find_rhs_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    find_rhs_soundStatement := by
+  intro n rh r valu ge sp rs m hfind hnum
+  unfold CSE.find_rhs at hfind
+  cases hlookup : CSE.find_valnum_rhs' rh n.num_eqs with
+  | none => simp [hlookup] at hfind
+  | some vres =>
+      rw [hlookup] at hfind
+      obtain ⟨strict, rh', hmem, hcompat⟩ :=
+        find_valnum_rhs'_charact rh vres n.num_eqs hlookup
+      rw [reg_valnum_sound n vres r valu ge sp rs m hfind hnum]
+      have heq := hnum.num_holds_eq _ hmem
+      have hcompat' := rhs_compat_sym rh rh' hcompat
+      cases heq with
+      | eq_holds_strict _ _ hev _ =>
+          exact ⟨valu vres, rhs_eval_to_compat valu ge sp m rh' (valu vres) rh
+            hev hcompat', Val.lessdef_refl _⟩
+      | eq_holds_lessdef _ _ v hev hld _ =>
+          exact ⟨v, rhs_eval_to_compat valu ge sp m rh' v rh hev hcompat', hld⟩
+
+end CompCert4Lean.Backend.CSEproof

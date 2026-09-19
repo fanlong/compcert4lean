@@ -2187,3 +2187,14 @@ theorem bytes_of_int_mod : bytes_of_int_modStatement := by
         omega
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem encode_int_8_mod : encode_int_8_modStatement := by
+  intro x y h
+  unfold encode_int
+  congr 1
+  apply bytes_of_int_mod
+  exact h
+
+end CompCert4Lean.Common.Memdata

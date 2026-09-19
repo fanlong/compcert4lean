@@ -6591,3 +6591,25 @@ theorem valid_access_compat : valid_access_compatStatement := by
 
 end Mem
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+namespace Mem
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem setN_outside : setN_outsideStatement := by
+  intro vl c p q h
+  apply setN_other vl c p q
+  intro r hr hreq
+  subst q
+  rcases hr with ⟨hrlo, hrhi⟩
+  rcases h with hlt | hge
+  · change intOfZ r < intOfZ p at hlt
+    change intOfZ p ≤ intOfZ r at hrlo
+    omega
+  · change intOfZ (zAdd p (zOfNat vl.length)) ≤ intOfZ r at hge
+    change intOfZ r < intOfZ (zAdd p (zOfNat vl.length)) at hrhi
+    omega
+
+end Mem
+end CompCert4Lean.Common.Memory

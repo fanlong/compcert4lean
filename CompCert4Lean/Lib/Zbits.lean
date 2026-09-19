@@ -1689,3 +1689,6 @@ theorem eqmod_mod : eqmod_modStatement := by
     intOfZ (ZArith.BinInt.Z.modulo x modul)
   rw [Int.mul_comm]
   exact hh
+
+theorem equal_same_bits : equal_same_bitsStatement :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.bits_inj'

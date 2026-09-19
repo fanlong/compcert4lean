@@ -2506,3 +2506,60 @@ theorem wt_find_label : wt_find_labelStatement := by
       simp [find_label]
 
 end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Cminor
+
+private theorem binop_optbool_has_type (ob : Option Bool) :
+    Val.has_type (Val.of_optbool ob) Tint := by
+  cases ob with
+  | none => trivial
+  | some b => cases b <;> trivial
+
+private theorem binop_map_bool_has_type (ob : Option Bool) (v : val)
+    (h : ob.map Val.of_bool = some v) : Val.has_type v Tint := by
+  cases ob with
+  | none => cases h
+  | some b =>
+      cases b <;> cases h <;> trivial
+
+set_option maxHeartbeats 2000000 in
+theorem type_binop_sound : type_binop_soundStatement := by
+  intro op v1 v2 m v h
+  cases op with
+  | Ocmp c =>
+      cases h
+      exact binop_optbool_has_type _
+  | Ocmpu c =>
+      cases h
+      exact binop_optbool_has_type _
+  | Ocmpf c =>
+      cases h
+      exact binop_optbool_has_type _
+  | Ocmpfs c =>
+      cases h
+      exact binop_optbool_has_type _
+  | Ocmpl c =>
+      exact binop_map_bool_has_type _ v h
+  | Ocmplu c =>
+      exact binop_map_bool_has_type _ v h
+  | _ =>
+      cases v1 <;> cases v2 <;>
+        simp only [eval_binop, Val.add, Val.sub, Val.mul, Val.divs,
+          Val.divu, Val.mods, Val.modu, Val.and, Val.or, Val.xor,
+          Val.shl, Val.shr, Val.shru, Val.addf, Val.subf, Val.mulf,
+          Val.divf, Val.addfs, Val.subfs, Val.mulfs, Val.divfs,
+          Val.addl, Val.subl, Val.mull, Val.divls, Val.divlu,
+          Val.modls, Val.modlu, Val.andl, Val.orl, Val.xorl,
+          Val.shll, Val.shrl, Val.shrlu,
+          CompCert4Lean.X86_64.Archi.ptr64, Bool.not_true,
+          Bool.false_eq_true, ite_true, ite_false] at h
+      all_goals
+        first
+        | cases h <;> trivial
+        | split at h <;> (cases h <;> trivial)
+
+end CompCert4Lean.Backend.Cminortyping

@@ -2368,3 +2368,126 @@ theorem wt_initial_state : wt_initial_stateStatement := by
         exact True.intro
 
 end CompCert4Lean.Backend.RTLtyping
+
+namespace CompCert4Lean.Backend.RTLtyping
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Builtins1
+
+private theorem wt_Ibuiltin_lookup_sig_aux (name : RocqString)
+    (sg : signature) (bf : builtin_function)
+    (h : lookup_builtin_function name sg = some bf) :
+    builtin_function_sig bf = sg := by
+  unfold lookup_builtin_function at h
+  cases hs : lookup_builtin standard_builtin_sig name sg standard_builtin_table with
+  | some b =>
+      simp only [hs] at h
+      cases h
+      exact lookup_builtin_sig standard_builtin standard_builtin_sig name sg b
+        standard_builtin_table hs
+  | none =>
+      simp only [hs] at h
+      cases hp : lookup_builtin platform_builtin_sig name sg platform_builtin_table with
+      | none => simp [hp] at h
+      | some b =>
+          simp only [hp] at h
+          cases h
+          exact lookup_builtin_sig platform_builtin platform_builtin_sig name sg b
+            platform_builtin_table hp
+
+section
+
+variable
+    [binary64_certificate :
+      BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+
+private theorem wt_Ibuiltin_builtin_type_aux
+    (xi : ExternalCalls) (name : RocqString) (sg : signature)
+    (ge : Senv.t) (vargs : List val) (m : mem) (t : trace) (vres : val) (m' : mem)
+    (h : builtin_or_external_sem xi name sg ge vargs m t vres m') :
+    Val.has_type vres (proj_sig_res sg) := by
+  unfold builtin_or_external_sem at h
+  cases hb : lookup_builtin_function name sg with
+  | none =>
+      rw [hb] at h
+      exact Val.has_proj_xtype vres sg.sig_res
+        ((external_functions_properties xi name sg).ec_well_typed
+          ge vargs m t vres m' h)
+  | some bf =>
+      rw [hb] at h
+      cases h with
+      | known_builtin_sem_intro =>
+          rename_i heval
+          have ht := (builtin_function_sem bf).bs_well_typed vargs
+          change val_opt_has_rettype (builtin_function_sem bf vargs)
+            (builtin_function_sig bf).sig_res at ht
+          rw [heval] at ht
+          have hs := wt_Ibuiltin_lookup_sig_aux name sg bf hb
+          rw [hs] at ht
+          exact Val.has_proj_xtype vres sg.sig_res ht
+
+private theorem wt_Ibuiltin_external_type_aux :
+    external_call_well_typedStatement := by
+  intro xi ef ge vargs m t vres m' h
+  cases ef with
+  | EF_external name sg =>
+      exact Val.has_proj_xtype vres sg.sig_res
+        ((external_functions_properties xi name sg).ec_well_typed
+          ge vargs m t vres m' h)
+  | EF_builtin name sg =>
+      exact wt_Ibuiltin_builtin_type_aux xi name sg ge vargs m t vres m' h
+  | EF_runtime name sg =>
+      exact wt_Ibuiltin_builtin_type_aux xi name sg ge vargs m t vres m' h
+  | EF_vload chunk =>
+      cases h with
+      | volatile_load_sem_intro =>
+          rename_i b ofs hload
+          change Val.has_type vres (proj_xtype (xtype_of_chunk chunk))
+          rw [proj_xtype_of_chunk chunk]
+          cases hload with
+          | volatile_load_vol id ev v hvol hsymbol hevent =>
+              exact Val.load_result_type chunk v
+          | volatile_load_nonvol =>
+              rename_i hload
+              exact Mem.load_type m chunk b
+                (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) vres hload
+  | EF_vstore chunk => cases h; exact True.intro
+  | EF_malloc => cases h; rfl
+  | EF_free => cases h <;> exact True.intro
+  | EF_memcpy sz al => cases h; exact True.intro
+  | EF_annot kind text targs => cases h; exact True.intro
+  | EF_annot_val kind text targ =>
+      cases h with
+      | extcall_annot_val_sem_intro =>
+          rename_i arg hmatch
+          have ht := eventval_match_type ge arg targ vres hmatch
+          cases targ <;> exact ht
+  | EF_inline_asm text sg clobbers =>
+      exact Val.has_proj_xtype vres sg.sig_res
+        ((inline_assembly_properties xi text sg).ec_well_typed
+          ge vargs m t vres m' h)
+  | EF_debug kind text targs => cases h; exact True.intro
+
+theorem wt_exec_Ibuiltin : wt_exec_IbuiltinStatement := by
+  intro cfg xi env f ef ge args res s vargs m t vres m' rs hwt hcall hrs
+  cases hwt with
+  | wt_Ibuiltin ef args res s hargs hres hsucc =>
+      apply wt_regset_setres env rs vres res hrs
+      rw [hres]
+      exact wt_Ibuiltin_external_type_aux xi ef (Genv.to_senv ge)
+        vargs m t vres m' hcall
+
+end
+end CompCert4Lean.Backend.RTLtyping

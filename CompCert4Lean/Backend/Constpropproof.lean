@@ -1902,3 +1902,19 @@ theorem transf_final_states : ∀ cfg, transf_final_statesStatement cfg := by
           exact final_state.intro r m'
 
 end CompCert4Lean.Backend.Constpropproof
+
+namespace CompCert4Lean.Backend.Constpropproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+
+theorem senv_preserved
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    ∀ (cfg : CompilerConfig), senv_preservedStatement cfg := by
+  intro cfg prog tprog hm
+  exact @Genv.senv_match program fundef Unit fundef Unit
+    (@Linker_prog fundef Unit (Linker_fundef function) Linker_unit)
+    _ _ prog prog tprog hm
+
+end CompCert4Lean.Backend.Constpropproof

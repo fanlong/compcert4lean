@@ -2041,3 +2041,71 @@ def record_cond_correct : record_cond_correctStatement := by
   exact record_cond_correct_aux fn c u changed f pc b BMC GET1 GET2
 
 end CompCert4Lean.Backend.Tunnelingproof
+
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Specif
+open CompCert4Lean.Lib.Maps
+
+private theorem record_conds_fold_code_cases
+    (c : code) (u : U.t) (changed : Bool) (pc : node) (b : bblock) :
+    (record_cond ((c, u), changed) pc b).1.1 = c ∨
+      (record_cond ((c, u), changed) pc b).1.1 = PTree.remove pc c := by
+  cases b with
+  | nil => exact Or.inl rfl
+  | cons instr tail =>
+      cases instr <;> try exact Or.inl rfl
+      simp only [record_cond]
+      split
+      · exact Or.inr rfl
+      · exact Or.inl rfl
+
+noncomputable def record_conds_1_correct : record_conds_1_correctStatement := by
+  intro fn c0 u0 f0 BMC0 COMPAT0
+  let P : code → ((code × U.t) × Bool) → Type := fun cd st =>
+    PLift (code_compat fn st.1.1) ×
+      PLift (code_invariant cd st.1.1 c0) ×
+      sig (fun f => branch_map_correct_2 fn st.1.1 st.1.2 f)
+  have REC : P c0 (PTree.fold record_cond c0 ((c0, u0), false)) := by
+    apply PTree_Properties.fold_ind_proof (P := P)
+    · intro cd EMPTY
+      exact ⟨⟨COMPAT0⟩, ⟨fun _ _ => rfl⟩, ⟨f0, BMC0⟩⟩
+    · intro cd st pc b GET1 GET2 IH
+      rcases st with ⟨⟨c, u⟩, changed⟩
+      rcases IH with ⟨⟨COMPAT⟩, ⟨INV⟩, ⟨f, BMC⟩⟩
+      have GET3 : PTree.get pc c = some b :=
+        (INV pc (PTree.grs_proof pc cd)).trans GET2
+      have CODES := record_conds_fold_code_cases c u changed pc b
+      refine ⟨⟨?_⟩, ⟨?_⟩, ?_⟩
+      · rcases CODES with SAME | REMOVED
+        · rw [SAME]
+          exact COMPAT
+        · rw [REMOVED]
+          intro p block GET
+          by_cases EQ : p = pc
+          · subst p
+            rw [PTree.grs_proof (A := bblock) pc c] at GET
+            cases GET
+          · rw [PTree.gro_proof c EQ] at GET
+            exact COMPAT p block GET
+      · intro p GET
+        have NE : p ≠ pc := by
+          intro EQ
+          subst p
+          rw [GET1] at GET
+          cases GET
+        have OLD : PTree.get p c = PTree.get p c0 :=
+          INV p (by rw [PTree.gro_proof cd NE]; exact GET)
+        rcases CODES with SAME | REMOVED
+        · rw [SAME]
+          exact OLD
+        · rw [REMOVED, PTree.gro_proof c NE]
+          exact OLD
+      · exact record_cond_correct fn c u changed f pc b BMC
+          (COMPAT pc b GET3) (by rw [GET3]; simp)
+  exact ⟨REC.1, REC.2.2⟩
+
+end CompCert4Lean.Backend.Tunnelingproof

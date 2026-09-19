@@ -576,3 +576,45 @@ theorem generic_format_plus :
     exact sterbenz_generic_format_bpow ctx magnitude beta fexp emin hpow
 
 end CompCert4Lean.Flocq.Prop.Sterbenz
+
+namespace CompCert4Lean.Flocq.Prop.Sterbenz
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem generic_format_plus_weak :
+    ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
+      generic_format_plus_weakStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid hmono x y hfx hfy hxy
+  by_cases hx0 : x = Exact.R0 ctx
+  · subst x
+    change Exact.generic_format ctx magnitude beta fexp
+      (ctx.spec.add ctx.spec.zero y)
+    rw [ctx.certificate.orderedField.zero_add]
+    exact hfy
+  by_cases hy0 : y = Exact.R0 ctx
+  · subst y
+    change Exact.generic_format ctx magnitude beta fexp
+      (ctx.spec.add x ctx.spec.zero)
+    rw [ctx.certificate.orderedField.add_zero]
+    exact hfx
+  apply generic_format_plus ctx magnitude beta fexp hvalid hmono x y hfx hfy
+  apply ctx.certificate.orderedField.le_trans _ _ _ hxy
+  rcases CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zmin.Zmin_spec
+      (Exact.mag magnitude beta x) (Exact.mag magnitude beta y) with h | h
+  · have hmin : Zmin (Exact.mag magnitude beta x)
+        (Exact.mag magnitude beta y) = Exact.mag magnitude beta x := h.2
+    rw [hmin]
+    apply ctx.certificate.orderedField.le_trans _ _ _
+      (ctx.certificate.sourceLaws.min_left _ _)
+    exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp
+      ((magnitude.value beta x).mag_bound hx0).2).1
+  · have hmin : Zmin (Exact.mag magnitude beta x)
+        (Exact.mag magnitude beta y) = Exact.mag magnitude beta y := h.2
+    rw [hmin]
+    apply ctx.certificate.orderedField.le_trans _ _ _
+      (ctx.certificate.sourceLaws.min_right _ _)
+    exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp
+      ((magnitude.value beta y).mag_bound hy0).2).1
+
+end CompCert4Lean.Flocq.Prop.Sterbenz

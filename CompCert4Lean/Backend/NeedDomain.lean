@@ -8112,3 +8112,40 @@ theorem nge_lub_l : nge_lub_lStatement := by
       | All => exact nge.nge_nothing (L m1)
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem nge_lub_r : nge_lub_rStatement := by
+  intro x y
+  cases y with
+  | Nothing => exact nge.nge_all (nlub x Nothing)
+  | All =>
+      cases x <;> exact nge.nge_nothing All
+  | I m2 =>
+      cases x with
+      | Nothing =>
+          apply nge.nge_int m2 m2
+          intro i hi hm
+          exact hm
+      | I m1 =>
+          apply nge.nge_int (Int.or m1 m2) m2
+          intro i hi hm
+          rw [iagreeOrTestbit]
+          exact Bool.or_eq_true_iff.mpr (Or.inr hm)
+      | L m => exact nge.nge_nothing (I m2)
+      | All => exact nge.nge_nothing (I m2)
+  | L m2 =>
+      cases x with
+      | Nothing =>
+          apply nge.nge_long m2 m2
+          intro i hi hm
+          exact hm
+      | I m => exact nge.nge_nothing (L m2)
+      | L m1 =>
+          apply nge.nge_long (Int64.or m1 m2) m2
+          intro i hi hm
+          rw [lagreeOrTestbitForOr]
+          exact Bool.or_eq_true_iff.mpr (Or.inr hm)
+      | All => exact nge.nge_nothing (L m2)
+
+end CompCert4Lean.Backend.NeedDomain

@@ -3240,3 +3240,361 @@ theorem transl_final_states :
           exact Clight.final_state.intro r m
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem pg3898_globvar_eq {V : Type} {v tv : globvar V}
+    (h : match_globvar Eq v tv) : v = tv := by
+  cases h with
+  | match_globvar_intro i j init ro vo hij => cases hij; rfl
+
+private theorem pg3898_glob_mono {C F G V : Type} [LC : Linker C]
+    (R : C → F → G → Prop) {c d : C} {g : globdef F V} {tg : globdef G V}
+    (h : match_globdef R Eq c g tg) (hcd : LC.linkorder c d) :
+    match_globdef R Eq d g tg := by
+  cases h with
+  | match_globdef_fun c' f tf hc hr =>
+      exact match_globdef_fun R Eq d c' f tf
+        (LC.linkorder_trans _ _ _ hc hcd) hr
+  | match_globdef_var v tv hv => exact match_globdef_var R Eq d v tv hv
+
+private theorem pg3898_link_glob {C F G V : Type}
+    [LC : Linker C] [LF : Linker F] [LG : Linker G] [LV : Linker V]
+    (R : C → F → G → Prop)
+    (hf : ∀ c1 c2 f1 tf1 f2 tf2 f,
+      LF.link f1 f2 = some f → R c1 f1 tf1 → R c2 f2 tf2 →
+      ∃ tf, LG.link tf1 tf2 = some tf ∧ (R c1 f tf ∨ R c2 f tf))
+    {c1 c2 c : C} {g1 g2 g : globdef F V} {tg1 tg2 : globdef G V}
+    (hc1 : LC.linkorder c1 c) (hc2 : LC.linkorder c2 c)
+    (hl : link_def g1 g2 = some g)
+    (h1 : match_globdef R Eq c1 g1 tg1)
+    (h2 : match_globdef R Eq c2 g2 tg2) :
+    ∃ tg, link_def tg1 tg2 = some tg ∧ match_globdef R Eq c g tg := by
+  cases h1 with
+  | match_globdef_fun u1 f1 tf1 hu1 hr1 =>
+    cases h2 with
+    | match_globdef_var v tv hv => simp [link_def] at hl
+    | match_globdef_fun u2 f2 tf2 hu2 hr2 =>
+      cases heq : LF.link f1 f2 with
+      | none => simp [link_def, heq] at hl
+      | some f =>
+        simp only [link_def, heq, Option.some.injEq] at hl
+        subst g
+        obtain ⟨tf, ht, hr⟩ := hf u1 u2 f1 tf1 f2 tf2 f heq hr1 hr2
+        refine ⟨.Gfun tf, by simp [link_def, ht], ?_⟩
+        cases hr with
+        | inl hr =>
+            exact match_globdef_fun R Eq c u1 f tf
+              (LC.linkorder_trans _ _ _ hu1 hc1) hr
+        | inr hr =>
+            exact match_globdef_fun R Eq c u2 f tf
+              (LC.linkorder_trans _ _ _ hu2 hc2) hr
+  | match_globdef_var v1 tv1 hv1 =>
+    cases h2 with
+    | match_globdef_fun u2 f2 tf2 hu2 hr2 => simp [link_def] at hl
+    | match_globdef_var v2 tv2 hv2 =>
+      have e1 := pg3898_globvar_eq hv1
+      have e2 := pg3898_globvar_eq hv2
+      subst tv1; subst tv2
+      cases heq : link_vardef v1 v2 with
+      | none => simp [link_def, heq] at hl
+      | some v =>
+        simp only [link_def, heq, Option.some.injEq] at hl
+        subst g
+        refine ⟨.Gvar v, by simp [link_def, heq], ?_⟩
+        apply match_globdef_var
+        cases v
+        exact match_globvar_intro Eq _ _ _ _ _ rfl
+
+private theorem pg3898_link_succeeds {F V : Type} [LF : Linker F] [LV : Linker V]
+    (p1 p2 : CompCert4Lean.Common.AST.program F V)
+    (hm : p1.prog_main = p2.prog_main)
+    (hc : ∀ id g1 g2, PTree.get id (prog_defmap p1) = some g1 →
+      PTree.get id (prog_defmap p2) = some g2 →
+      id ∈ p1.prog_public ∧ id ∈ p2.prog_public ∧ ∃ g, link_def g1 g2 = some g) :
+    link_prog p1 p2 = some {
+      prog_defs := PTree.elements (PTree.combine link_prog_merge (prog_defmap p1) (prog_defmap p2))
+      prog_public := p1.prog_public ++ p2.prog_public
+      prog_main := p1.prog_main } := by
+  have hall : PTree_Properties.for_all (prog_defmap p1) (link_prog_check p1 p2) = true := by
+    apply (PTree_Properties.for_all_correct_proof _ _ _).mpr
+    intro id g1 hget1
+    unfold link_prog_check
+    cases hget2 : PTree.get id (prog_defmap p2) with
+    | none => rfl
+    | some g2 =>
+      obtain ⟨hp1, hp2, g, hg⟩ := hc id g1 g2 hget1 hget2
+      cases hd1 : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec peq id p1.prog_public with
+      | right hn => exact (hn hp1).elim
+      | left _ =>
+        cases hd2 : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec peq id p2.prog_public with
+        | right hn => exact (hn hp2).elim
+        | left _ => simp [hg]
+  unfold link_prog
+  cases hd : ident_eq p1.prog_main p2.prog_main with
+  | right hn => exact (hn hm).elim
+  | left _ => simp only [hall, ite_true]
+
+end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem pg3898_option_right {A B : Type} {R : A → B → Prop}
+    {o : Option A} {b : B} (h : option_rel R o (some b)) :
+    ∃ a, o = some a ∧ R a b := by
+  cases h with
+  | some a b hr => exact ⟨a, rfl, hr⟩
+
+private theorem pg3898_merge_related {A B : Type}
+    (r1 r2 r : A → B → Prop)
+    (f : Option A → Option A → Option A)
+    (tf : Option B → Option B → Option B)
+    (hnn : f none none = none) (htnn : tf none none = none)
+    (hnl : ∀ a, f (some a) none = some a)
+    (htnl : ∀ b, tf (some b) none = some b)
+    (hnr : ∀ a, f none (some a) = some a)
+    (htnr : ∀ b, tf none (some b) = some b)
+    (hm1 : ∀ a b, r1 a b → r a b) (hm2 : ∀ a b, r2 a b → r a b)
+    {o1 o2 : Option A} {t1 t2 : Option B}
+    (h1 : option_rel r1 o1 t1) (h2 : option_rel r2 o2 t2)
+    (hl : ∀ a b x y, o1 = some a → o2 = some b → r1 a x → r2 b y →
+      option_rel r (f (some a) (some b)) (tf (some x) (some y))) :
+    option_rel r (f o1 o2) (tf t1 t2) := by
+  cases h1 with
+  | none =>
+    cases h2 with
+    | none => rw [hnn, htnn]; exact option_rel.none r
+    | some b y hr => rw [hnr, htnr]; exact option_rel.some b y (hm2 b y hr)
+  | some a x hr =>
+    cases h2 with
+    | none => rw [hnl, htnl]; exact option_rel.some a x (hm1 a x hr)
+    | some b y hr' => exact hl a b x y rfl rfl hr hr'
+
+private theorem pg3898_link_ast {C F G V : Type}
+    [LC : Linker C] [LF : Linker F] [LG : Linker G] [LV : Linker V]
+    (R : C → F → G → Prop)
+    (hf : ∀ c1 c2 f1 tf1 f2 tf2 f,
+      LF.link f1 f2 = some f → R c1 f1 tf1 → R c2 f2 tf2 →
+      ∃ tf, LG.link tf1 tf2 = some tf ∧ (R c1 f tf ∨ R c2 f tf))
+    (c1 c2 c : C)
+    (p1 p2 : CompCert4Lean.Common.AST.program F V)
+    (tp1 tp2 : CompCert4Lean.Common.AST.program G V)
+    (p : CompCert4Lean.Common.AST.program F V)
+    (hl : link_prog p1 p2 = some p)
+    (h1 : match_program_gen R Eq c1 p1 tp1)
+    (h2 : match_program_gen R Eq c2 p2 tp2)
+    (hc1 : LC.linkorder c1 c) (hc2 : LC.linkorder c2 c) :
+    ∃ tp, link_prog tp1 tp2 = some tp ∧ match_program_gen R Eq c p tp := by
+  obtain ⟨hmain, hcompat, hp⟩ := link_prog_inv_proof p1 p2 p hl
+  have hd1 := match_program_defmap R Eq c1 p1 tp1 h1
+  have hd2 := match_program_defmap R Eq c2 p2 tp2 h2
+  let tp : CompCert4Lean.Common.AST.program G V := {
+    prog_defs := PTree.elements
+      (PTree.combine link_prog_merge (prog_defmap tp1) (prog_defmap tp2))
+    prog_public := tp1.prog_public ++ tp2.prog_public
+    prog_main := tp1.prog_main }
+  refine ⟨tp, ?_, ?_⟩
+  · apply pg3898_link_succeeds
+    · exact h1.2.1.trans (hmain.trans h2.2.1.symm)
+    · intro id tg1 tg2 ht1 ht2
+      have hm1 := hd1 id
+      have hm2 := hd2 id
+      rw [ht1] at hm1
+      rw [ht2] at hm2
+      obtain ⟨g1, hg1, hr1⟩ := pg3898_option_right hm1
+      obtain ⟨g2, hg2, hr2⟩ := pg3898_option_right hm2
+      obtain ⟨hpub1, hpub2, g, hg⟩ := hcompat id g1 g2 hg1 hg2
+      obtain ⟨tg, htg, _⟩ := pg3898_link_glob R hf hc1 hc2 hg hr1 hr2
+      exact ⟨h1.2.2.symm ▸ hpub1, h2.2.2.symm ▸ hpub2, tg, htg⟩
+  · constructor
+    · rw [hp]
+      apply PTree.elements_canonical_order'
+      intro id
+      rw [PTree.gcombine_proof (f := link_prog_merge) (by rfl),
+        PTree.gcombine_proof (f := link_prog_merge) (by rfl)]
+      apply pg3898_merge_related
+        (match_globdef R Eq c1) (match_globdef R Eq c2) (match_globdef R Eq c)
+        link_prog_merge link_prog_merge rfl rfl
+        (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
+        (fun _ _ hr => pg3898_glob_mono R hr hc1)
+        (fun _ _ hr => pg3898_glob_mono R hr hc2) (hd1 id) (hd2 id)
+      intro g1 g2 tg1 tg2 hg1 hg2 hr1 hr2
+      obtain ⟨_, _, g, hg⟩ := hcompat id g1 g2 hg1 hg2
+      obtain ⟨tg, htg, hr⟩ := pg3898_link_glob R hf hc1 hc2 hg hr1 hr2
+      simp only [link_prog_merge, hg, htg]
+      exact option_rel.some g tg hr
+    · rw [hp]
+      exact ⟨h1.2.1, by simp only [tp, h1.2.2, h2.2.2]⟩
+
+end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Cfrontend.SimplExprspec
+open CompCert4Lean.Lib.Coqlib
+
+private theorem pg3898_link_fundef
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (c1 c2 : cprogram) (f1 : cfundef) (tf1 : tfundef) (f2 : cfundef) (tf2 : tfundef)
+    (f : cfundef) (hl : Ctypes.link_fundef f1 f2 = some f)
+    (h1 : tr_fundef c1 f1 tf1) (h2 : tr_fundef c2 f2 tf2) :
+    ∃ tf, Ctypes.link_fundef tf1 tf2 = some tf ∧
+      (tr_fundef c1 f tf ∨ tr_fundef c2 f tf) := by
+  cases h1 with
+  | tr_internal f1 tf1 hfn1 =>
+    cases h2 with
+    | tr_internal f2 tf2 hfn2 => simp [Ctypes.link_fundef] at hl
+    | tr_external ef args res cc =>
+      cases ef <;> simp [Ctypes.link_fundef] at hl
+      case EF_external id sg =>
+        cases Option.some.inj hl
+        exact ⟨.Internal tf1, rfl, Or.inl (tr_fundef.tr_internal _ _ hfn1)⟩
+  | tr_external ef1 args1 res1 cc1 =>
+    cases h2 with
+    | tr_internal f2 tf2 hfn2 =>
+      cases ef1 <;> simp [Ctypes.link_fundef] at hl
+      case EF_external id sg =>
+        cases Option.some.inj hl
+        exact ⟨.Internal tf2, rfl, Or.inr (tr_fundef.tr_internal _ _ hfn2)⟩
+    | tr_external ef2 args2 res2 cc2 =>
+      cases he : external_function_eq ef1 ef2 with
+      | right _ => simp [Ctypes.link_fundef, he] at hl
+      | left _ =>
+        cases ha : Ctypes.typelist_eq args1 args2 with
+        | right _ => simp [Ctypes.link_fundef, he, ha] at hl
+        | left _ =>
+          cases hr : Ctypes.type_eq res1 res2 with
+          | right _ => simp [Ctypes.link_fundef, he, ha, hr] at hl
+          | left _ =>
+            cases hc : calling_convention_eq cc1 cc2 with
+            | right _ => simp [Ctypes.link_fundef, he, ha, hr, hc] at hl
+            | left _ =>
+              simp only [Ctypes.link_fundef, he, ha, hr, hc] at hl
+              cases Option.some.inj hl
+              exact ⟨.External ef1 args1 res1 cc1,
+                by simp only [Ctypes.link_fundef, he, ha, hr, hc],
+                Or.inl (tr_fundef.tr_external _ _ _ _)⟩
+
+private theorem pg3898_list_map {A B : Type} (R S : A → B → Prop)
+    (h : ∀ a b, R a b → S a b) {xs : List A} {ys : List B}
+    (hl : list_forall2 R xs ys) : list_forall2 S xs ys := by
+  induction hl with
+  | nil => exact .nil S
+  | cons a b hab htail ih => exact .cons a b (h a b hab) ih
+
+private theorem pg3898_match_iff
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cert : Ctypes.Linker_program_obligations) (p : cprogram) (tp : tprogram) :
+    match_prog p tp ↔
+      (@match_program_gen cprogram cfundef ctype tfundef ctype
+        (Ctypes.Linker_program cfunction cert) tr_fundef Eq p
+        (Ctypes.program_of_program p) (Ctypes.program_of_program tp)) ∧
+      tp.prog_types = p.prog_types := by
+  letI : Linker cprogram := Ctypes.Linker_program cfunction cert
+  have hg : ∀ (g : globdef cfundef ctype) (tg : globdef tfundef ctype),
+      (match g, tg with
+      | .Gfun f, .Gfun tf => ∃ cu, Ctypes.linkorder_program cu p ∧ tr_fundef cu f tf
+      | .Gvar v, .Gvar tv => v.gvar_info = tv.gvar_info ∧ v.gvar_init = tv.gvar_init ∧
+          v.gvar_readonly = tv.gvar_readonly ∧ v.gvar_volatile = tv.gvar_volatile
+      | _, _ => False) ↔ match_globdef tr_fundef Eq p g tg := by
+    intro g tg
+    constructor
+    · intro h
+      cases g with
+      | Gfun f =>
+        cases tg with
+        | Gfun tf =>
+          obtain ⟨cu, hcu, hr⟩ := h
+          exact match_globdef_fun tr_fundef Eq p cu f tf hcu hr
+        | Gvar tv => exact h.elim
+      | Gvar v =>
+        cases tg with
+        | Gfun tf => exact h.elim
+        | Gvar tv =>
+          obtain ⟨hi, hn, hr, hv⟩ := h
+          cases v; cases tv
+          simp only at hi hn hr hv
+          subst_vars
+          exact match_globdef_var tr_fundef Eq p _ _
+            (match_globvar_intro Eq _ _ _ _ _ rfl)
+    · intro h
+      cases h with
+      | match_globdef_fun cu f tf hc hr => exact ⟨cu, hc, hr⟩
+      | match_globdef_var v tv hv =>
+        cases pg3898_globvar_eq hv
+        exact ⟨rfl, rfl, rfl, rfl⟩
+  constructor
+  · rintro ⟨⟨hl, hm, hp⟩, ht⟩
+    refine ⟨⟨?_, hm, hp⟩, ht⟩
+    exact pg3898_list_map _ _ (fun _ _ hab => ⟨hab.1, (hg _ _).mp hab.2⟩) hl
+  · rintro ⟨⟨hl, hm, hp⟩, ht⟩
+    refine ⟨⟨?_, hm, hp⟩, ht⟩
+    exact pg3898_list_map _ _ (fun _ _ hab => ⟨hab.1, (hg _ _).mpr hab.2⟩) hl
+
+end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Cfrontend.SimplExprspec
+
+theorem TransfSimplExprLink :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+      (csyntaxLinkerCertificate clightLinkerCertificate : Ctypes.Linker_program_obligations),
+      TransfSimplExprLinkStatement csyntaxLinkerCertificate clightLinkerCertificate := by
+  intro binary64_certificate binary32_certificate cs ct
+  letI : Linker cprogram := Ctypes.Linker_program cfunction cs
+  letI : Linker tprogram := Ctypes.Linker_program tfunction ct
+  unfold TransfSimplExprLinkStatement
+  refine { transf_link := ?_ }
+  intro p1 p2 tp1 tp2 p hl h1 h2
+  change Ctypes.link_program cs.composite_defs p1 p2 = some p at hl
+  have ho := cs.link_linkorder p1 p2 p hl
+  obtain ⟨hm1, ht1⟩ := (pg3898_match_iff cs p1 tp1).mp h1
+  obtain ⟨hm2, ht2⟩ := (pg3898_match_iff cs p2 tp2).mp h2
+  unfold Ctypes.link_program at hl
+  cases hb : link (Ctypes.program_of_program p1) (Ctypes.program_of_program p2) with
+  | none => simp only [hb] at hl; cases hl
+  | some pp =>
+    obtain ⟨tpp, htb, hmp⟩ := @pg3898_link_ast cprogram cfundef tfundef ctype
+      (Ctypes.Linker_program cfunction cs) (Ctypes.Linker_fundef cfunction)
+      (Ctypes.Linker_fundef tfunction) Ctypes.Linker_types tr_fundef pg3898_link_fundef
+      p1 p2 p (Ctypes.program_of_program p1) (Ctypes.program_of_program p2)
+      (Ctypes.program_of_program tp1) (Ctypes.program_of_program tp2) pp
+      hb hm1 hm2 ho.1 ho.2
+    change link (Ctypes.program_of_program tp1) (Ctypes.program_of_program tp2) = some tpp at htb
+    cases hty : Ctypes.lift_option (Ctypes.link_composite_defs p1.prog_types p2.prog_types) with
+    | inright hn => simp only [hb, hty] at hl; cases hl
+    | inleft types =>
+      simp only [hb, hty] at hl
+      cases Option.some.inj hl
+      change ∃ tp, Ctypes.link_program ct.composite_defs tp1 tp2 = some tp ∧ match_prog _ tp
+      unfold Ctypes.link_program
+      rw [htb]
+      have htyt : Ctypes.link_composite_defs tp1.prog_types tp2.prog_types = some types.val := by
+        rw [ht1, ht2]
+        exact types.property
+      cases hty' : Ctypes.lift_option (Ctypes.link_composite_defs tp1.prog_types tp2.prog_types) with
+      | inright hn => rw [htyt] at hn; cases hn
+      | inleft ttypes =>
+        have htypes : ttypes.val = types.val := Option.some.inj (ttypes.property.symm.trans htyt)
+        refine ⟨_, rfl, ?_⟩
+        apply (pg3898_match_iff cs _ _).mpr
+        exact ⟨hmp, htypes⟩
+
+end CompCert4Lean.Cfrontend.SimplExprproof

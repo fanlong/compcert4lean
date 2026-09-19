@@ -3394,3 +3394,10 @@ theorem bb_match_at : bb_match_atStatement := by
     hmatch1 (star_refl _ _ s2) hmatch2
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+theorem bb_simulation_base : bb_simulation_baseStatement :=
+  smallstep_bb_simulation_base
+
+end CompCert4Lean.Common.Smallstep

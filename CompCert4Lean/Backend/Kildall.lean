@@ -3073,3 +3073,11 @@ theorem optge_abstr_value : optge_abstr_valueStatement := by
           | optge_some h => exact h
 
 end CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+namespace CompCert4Lean.Backend.Kildall.BBlock_solver
+
+theorem no_self_loop : no_self_loopStatement := by
+  intro A entrypoint code successors n instr
+  exact proofgrind_no_self_loop_invariant entrypoint code successors n instr
+
+end CompCert4Lean.Backend.Kildall.BBlock_solver

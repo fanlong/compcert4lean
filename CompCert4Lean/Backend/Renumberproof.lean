@@ -935,3 +935,34 @@ theorem transf_initial_states : transf_initial_statesStatement := by
       · exact match_callstates [] f [] m0 [] (list_forall2.nil _)
 
 end CompCert4Lean.Backend.Renumberproof
+
+namespace CompCert4Lean.Backend.Renumberproof
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.Renumber
+open CompCert4Lean.Lib.Maps
+
+theorem transf_function_at : transf_function_atStatement := by
+  intro f pc i hcode hreach
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at pc
+  obtain ⟨hinj, hnumbered⟩ :=
+    CompCert4Lean.Lib.Postorder.postorder_correct (successors_map f) f.fn_entrypoint
+  have hsucc : PTree.get pc (successors_map f) = some (successors_instr i) := by
+    unfold successors_map
+    have hmap := renumberproof_map1_get successors_instr pc
+      (show PTree.tree instruction from f.fn_code)
+    simpa [hcode] using hmap
+  have hnonempty : PTree.get pc (pnum f) ≠ none :=
+    hnumbered pc hreach (by
+      intro hnone
+      cases hsucc.symm.trans hnone)
+  cases hnum : PTree.get pc (pnum f) with
+  | none => exact False.elim (hnonempty hnum)
+  | some pc' =>
+      change PTree.get (renum_pc (pnum f) pc) (renum_cfg (pnum f) f.fn_code) =
+        some (renum_instr (pnum f) i)
+      unfold renum_pc
+      rw [hnum]
+      exact renum_cfg_nodes (pnum f) hinj f.fn_code pc pc' i hcode hnum
+
+end CompCert4Lean.Backend.Renumberproof

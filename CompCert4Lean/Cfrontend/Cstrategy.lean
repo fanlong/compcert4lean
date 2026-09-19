@@ -3065,3 +3065,59 @@ theorem invert_expr_context
       hcontext
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+theorem imm_safe_inv
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    imm_safe_invStatement := by
+  unfold imm_safe_invStatement
+  intro xi ge e k a m h
+  cases h with
+  | value => trivial
+  | location => trivial
+  | @localRed to C a m a' m' hred hcontext =>
+      have hi :
+          invert_expr_prop
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) xi ge e (C a) m := by
+        exact (invert_expr_context
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi ge e).1
+          _ _ _ hcontext _ _
+          (lred_invert
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) xi ge e a m _ _ hred)
+      cases hca : C a <;> simp only [hca] at hi ⊢ <;>
+        try exact hi <;> trivial
+  | @rvalRed to C a m t a' m' hred hcontext =>
+      have hi :
+          invert_expr_prop
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) xi ge e (C a) m := by
+        exact (invert_expr_context
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi ge e).1
+          _ _ _ hcontext _ _
+          (rred_invert
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) xi ge e a m _ _ _ hred)
+      cases hca : C a <;> simp only [hca] at hi ⊢ <;>
+        try exact hi <;> trivial
+  | @callRed to C a m fd args ty hred hcontext =>
+      have hi :
+          invert_expr_prop
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) xi ge e (C a) m := by
+        exact (invert_expr_context
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi ge e).1
+          _ _ _ hcontext _ _
+          (callred_invert
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) xi ge e a _ _ _ m hred)
+      cases hca : C a <;> simp only [hca] at hi ⊢ <;>
+        try exact hi <;> trivial
+
+end CompCert4Lean.Cfrontend.Cstrategy

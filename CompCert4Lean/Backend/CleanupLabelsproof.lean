@@ -1153,3 +1153,283 @@ theorem transf_initial_states : transf_initial_statesStatement := by
           (list_forall2.nil _)
 
 end CompCert4Lean.Backend.CleanupLabelsproof
+
+namespace CompCert4Lean.Backend.CleanupLabelsproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.CleanupLabels
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.X86.Op
+
+private theorem cleanup_correct_senv_ext (se1 se2 : Senv.t)
+    (he : Senv.equiv se1 se2) (hn : se2.nextblock = se1.nextblock) :
+    se2 = se1 := by
+  have hf : se2.find_symbol = se1.find_symbol := funext he.1
+  have hp : se2.public_symbol = se1.public_symbol := funext he.2.1
+  have hv : se2.block_is_volatile = se1.block_is_volatile := funext he.2.2
+  have hi : se2.invert_symbol = se1.invert_symbol := by
+    funext b
+    cases h1 : se1.invert_symbol b with
+    | some id =>
+        exact se2.find_invert_symbol id ((he.1 id).trans
+          (se1.invert_find_symbol b h1))
+    | none =>
+        cases h2 : se2.invert_symbol b with
+        | none => rfl
+        | some id =>
+            have hs := se2.invert_find_symbol b h2
+            rw [he.1 id] at hs
+            have hc := se1.find_invert_symbol id hs
+            rw [h1] at hc
+            cases hc
+  cases se1
+  cases se2
+  cases hf
+  cases hp
+  cases hv
+  cases hi
+  cases hn
+  rfl
+
+private theorem cleanup_correct_symbolenv (prog tprog : program)
+    (hm : match_prog prog tprog) :
+    Genv.to_senv (Genv.globalenv tprog) =
+      Genv.to_senv (Genv.globalenv prog) := by
+  exact cleanup_correct_senv_ext _ _ (senv_preserved prog tprog hm)
+    (cleanup_globalenvs_match prog tprog hm).mge_next
+
+end CompCert4Lean.Backend.CleanupLabelsproof
+
+namespace CompCert4Lean.Backend.CleanupLabelsproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.CleanupLabels
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+
+private theorem cleanup_correct_tail {i : instruction} {c fc : code}
+    (h : incl (i :: c) fc) : incl c fc := by
+  intro a ha
+  exact h a (List.mem_cons_of_mem i ha)
+
+private theorem cleanup_correct_step
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    transf_step_correctStatement := by
+  intro cfg xi prog tprog hprog s1 t s2 hs st hm
+  have hsym := symbols_preserved prog tprog hprog
+  have hse := cleanup_correct_symbolenv prog tprog hprog
+  cases hs with
+  | exec_Lgetstack s f sp sl ofs ty dst b rs m rs' hrs =>
+      cases hm with
+      | regular _ _ _ _ _ _ ts hst hi =>
+          apply Or.inl
+          refine ⟨_, ?_, match_states.regular _ _ _ _ _ _ _ hst
+            (cleanup_correct_tail hi)⟩
+          rw [remove_unused_labels_cons]
+          exact step.exec_Lgetstack _ _ _ _ _ _ _ _ _ _ _ hrs
+  | exec_Lsetstack s f sp src sl ofs ty b rs m rs' hrs =>
+      cases hm with
+      | regular _ _ _ _ _ _ ts hst hi =>
+          apply Or.inl
+          refine ⟨_, ?_, match_states.regular _ _ _ _ _ _ _ hst
+            (cleanup_correct_tail hi)⟩
+          rw [remove_unused_labels_cons]
+          exact step.exec_Lsetstack _ _ _ _ _ _ _ _ _ _ _ hrs
+  | exec_Lop s f sp op args res b rs m v rs' heval hrs =>
+      cases hm with
+      | regular _ _ _ _ _ _ ts hst hi =>
+          apply Or.inl
+          refine ⟨_, ?_, match_states.regular _ _ _ _ _ _ _ hst
+            (cleanup_correct_tail hi)⟩
+          rw [remove_unused_labels_cons]
+          apply step.exec_Lop _ _ _ _ _ _ _ _ _ v _ _ hrs
+          rw [eval_operation_preserved _ _ _ _ _ _ hsym]
+          exact heval
+  | exec_Lload s f sp chunk addr args dst b rs m a v rs' haddr hload hrs =>
+      cases hm with
+      | regular _ _ _ _ _ _ ts hst hi =>
+          apply Or.inl
+          refine ⟨_, ?_, match_states.regular _ _ _ _ _ _ _ hst
+            (cleanup_correct_tail hi)⟩
+          rw [remove_unused_labels_cons]
+          apply step.exec_Lload _ _ _ _ _ _ _ _ _ _ a v _ _ hload hrs
+          rw [eval_addressing_preserved _ _ _ _ _ _ hsym]
+          exact haddr
+  | exec_Lstore s f sp chunk addr args src b rs m m' a rs' haddr hstore hrs =>
+      cases hm with
+      | regular _ _ _ _ _ _ ts hst hi =>
+          apply Or.inl
+          refine ⟨_, ?_, match_states.regular _ _ _ _ _ _ _ hst
+            (cleanup_correct_tail hi)⟩
+          rw [remove_unused_labels_cons]
+          apply step.exec_Lstore _ _ _ _ _ _ _ _ _ _ _ a _ _ hstore hrs
+          rw [eval_addressing_preserved _ _ _ _ _ _ hsym]
+          exact haddr
+  | exec_Lcall s f sp sig ros b rs m f' hfind hsig =>
+      cases hm with
+      | regular _ _ _ _ _ _ ts hst hi =>
+          apply Or.inl
+          refine ⟨_, ?_, match_states.call _ _ _ _ _
+            (list_forall2.cons _ _ (match_stackframes.intro _ _ _ _
+              (cleanup_correct_tail hi)) hst)⟩
+          rw [remove_unused_labels_cons]
+          apply step.exec_Lcall
+          · exact find_function_translated prog tprog hprog _ _ _ hfind
+          · rw [sig_function_translated]
+            exact hsig
+  | exec_Ltailcall s f stk sig ros b rs m rs' f' m' hrs hfind hsig hfree =>
+      cases hm with
+      | regular _ _ _ _ _ _ ts hst hi =>
+          apply Or.inl
+          refine ⟨_, ?_, match_states.call _ _ _ _ _ hst⟩
+          rw [remove_unused_labels_cons]
+          apply step.exec_Ltailcall
+          · rw [match_parent_locset _ _ hst]
+            exact hrs
+          · exact find_function_translated prog tprog hprog _ _ _ hfind
+          · rw [sig_function_translated]
+            exact hsig
+          · exact hfree
+  | exec_Lbuiltin s f sp rs m ef args res b vargs t vres rs' m' hargs hcall hrs =>
+      cases hm with
+      | regular _ _ _ _ _ _ ts hst hi =>
+          apply Or.inl
+          refine ⟨_, ?_, match_states.regular _ _ _ _ _ _ _ hst
+            (cleanup_correct_tail hi)⟩
+          rw [remove_unused_labels_cons]
+          apply step.exec_Lbuiltin _ _ _ _ _ _ _ _ _ vargs _ vres _ _ _ _ hrs
+          · rw [hse]
+            exact hargs
+          · rw [hse]
+            exact hcall
+  | exec_Llabel s f sp lbl b rs m =>
+      cases hm with
+      | regular _ _ _ _ _ _ ts hst hi =>
+          cases hmem : Labelset.mem lbl (labels_branched_to f.fn_code) with
+          | false =>
+              apply Or.inr
+              refine ⟨Nat.lt_succ_self _, rfl, ?_⟩
+              rw [remove_unused_labels_cons]
+              dsimp only
+              rw [hmem]
+              exact match_states.regular _ _ _ _ _ _ _ hst (cleanup_correct_tail hi)
+          | true =>
+              apply Or.inl
+              refine ⟨_, ?_, match_states.regular _ _ _ _ _ _ _ hst
+                (cleanup_correct_tail hi)⟩
+              rw [remove_unused_labels_cons]
+              dsimp only
+              rw [hmem]
+              exact step.exec_Llabel _ _ _ _ _ _ _
+  | exec_Lgoto s f sp lbl b rs m b' hfind =>
+      cases hm with
+      | regular _ _ _ _ _ _ ts hst hi =>
+          apply Or.inl
+          refine ⟨_, ?_, match_states.regular _ _ _ _ _ _ _ hst
+            (find_label_incl _ _ _ hfind)⟩
+          rw [remove_unused_labels_cons]
+          apply step.exec_Lgoto
+          exact find_label_translated _ _ _ _ _ hi hfind rfl
+  | exec_Lcond_true s f sp cond args lbl b rs m rs' b' heval hrs hfind =>
+      cases hm with
+      | regular _ _ _ _ _ _ ts hst hi =>
+          apply Or.inl
+          refine ⟨_, ?_, match_states.regular _ _ _ _ _ _ _ hst
+            (find_label_incl _ _ _ hfind)⟩
+          rw [remove_unused_labels_cons]
+          apply step.exec_Lcond_true _ _ _ _ _ _ _ _ _ _ _ heval hrs
+          exact find_label_translated _ _ _ _ _ hi hfind rfl
+  | exec_Lcond_false s f sp cond args lbl b rs m rs' heval hrs =>
+      cases hm with
+      | regular _ _ _ _ _ _ ts hst hi =>
+          apply Or.inl
+          refine ⟨_, ?_, match_states.regular _ _ _ _ _ _ _ hst
+            (cleanup_correct_tail hi)⟩
+          rw [remove_unused_labels_cons]
+          exact step.exec_Lcond_false _ _ _ _ _ _ _ _ _ _ heval hrs
+  | exec_Ljumptable s f sp arg tbl b rs m n lbl b' rs' harg hnth hfind hrs =>
+      cases hm with
+      | regular _ _ _ _ _ _ ts hst hi =>
+          apply Or.inl
+          refine ⟨_, ?_, match_states.regular _ _ _ _ _ _ _ hst
+            (find_label_incl _ _ _ hfind)⟩
+          rw [remove_unused_labels_cons]
+          apply step.exec_Ljumptable _ _ _ _ _ _ _ _ n lbl _ _ harg hnth _ hrs
+          exact find_label_translated _ _ _ _ _ hi hfind
+            (list_nth_z_in _ _ _ _ hnth)
+  | exec_Lreturn s f stk b rs m m' hfree =>
+      cases hm with
+      | regular _ _ _ _ _ _ ts hst hi =>
+          apply Or.inl
+          refine ⟨_, ?_, match_states.return _ _ _ _ hst⟩
+          rw [remove_unused_labels_cons]
+          rw [← match_parent_locset _ _ hst]
+          exact step.exec_Lreturn _ _ _ _ _ _ _ hfree
+  | exec_function_internal s f rs m rs' m' stk halloc hrs =>
+      cases hm with
+      | call _ _ _ _ ts hst =>
+          apply Or.inl
+          refine ⟨_, ?_, match_states.regular _ _ _ _ _ _ _ hst (incl_refl _)⟩
+          exact step.exec_function_internal _ _ _ _ _ _ _ halloc hrs
+  | exec_function_external s ef args res rs1 rs2 m t m' hargs hcall hrs =>
+      cases hm with
+      | call _ _ _ _ ts hst =>
+          apply Or.inl
+          refine ⟨_, ?_, match_states.return _ _ _ _ hst⟩
+          apply step.exec_function_external _ _ args res _ _ _ _ _ hargs _ hrs
+          rw [hse]
+          exact hcall
+  | exec_return s f sp rs0 c rs m =>
+      cases hm with
+      | «return» _ _ _ ts hst =>
+          cases hst with
+          | cons tf ts hframe hst =>
+              cases hframe with
+              | intro _ _ _ _ hi =>
+                  apply Or.inl
+                  refine ⟨_, ?_, match_states.regular _ _ _ _ _ _ _ hst hi⟩
+                  exact step.exec_return _ _ _ _ _ _ _
+
+end CompCert4Lean.Backend.CleanupLabelsproof
+
+namespace CompCert4Lean.Backend.CleanupLabelsproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem transf_program_correct
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    transf_program_correctStatement := by
+  intro cfg xi prog tprog hprog
+  exact CompCert4Lean.Common.Smallstep.forward_simulation_opt _ _
+    (senv_preserved prog tprog hprog).2.1 match_states
+    (transf_initial_states prog tprog hprog) transf_final_states measure
+    (cleanup_correct_step cfg xi prog tprog hprog)
+
+end CompCert4Lean.Backend.CleanupLabelsproof

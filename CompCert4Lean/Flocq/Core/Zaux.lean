@@ -1330,3 +1330,16 @@ theorem Zpower_plus : Zpower_plusStatement := by
   exact Int.pow_add (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n) _ _
 
 end CompCert4Lean.Flocq.Core.Zaux
+
+namespace CompCert4Lean.Flocq.Core.Zaux
+
+theorem Zcompare_Eq : Zcompare_EqStatement := by
+  intro x y h
+  subst y
+  change (if CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x then Lt else if
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x then Eq else Gt) = Eq
+  simp
+
+end CompCert4Lean.Flocq.Core.Zaux

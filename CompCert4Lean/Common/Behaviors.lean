@@ -2346,3 +2346,11 @@ theorem forward_simulation_state_behaves :
   exact behaviors_forward_simulation_state_behaves L1 L2 index order match_states props
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+theorem atomic_forever_reactive_forever_reactive :
+    atomic_forever_reactive_forever_reactiveStatement :=
+  atomic_reactive_to_source
+
+end CompCert4Lean.Common.Behaviors

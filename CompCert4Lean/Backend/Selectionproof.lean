@@ -3800,3 +3800,17 @@ theorem transf_program_match
         exact ⟨hf, get_helpers_correct p hf hget, htf⟩
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+theorem symbols_preserved
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (oracle : SelectionOracle) :
+    symbols_preservedStatement cfg oracle := by
+  intro prog tprog hm id
+  exact selection_symbols_preserved cfg oracle prog tprog hm id
+
+end CompCert4Lean.Backend.Selectionproof

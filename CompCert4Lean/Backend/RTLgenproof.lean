@@ -3195,3 +3195,69 @@ open CompCert4Lean.Lib.Maps
                                 exact htail.2 r hfresh_sm
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+
+private theorem match_init_locals_aux
+    (map1 : mapping) (s1 : RTLgen.state) (names : List ident)
+    (rl : List reg) (map2 : mapping) (s2 : RTLgen.state)
+    (e : CompCert4Lean.Backend.Cminor.env) (le : letenv) (rs : regset)
+    (i : RTLgen.state_incr s1 s2)
+    (hmatch : match_env map1 e le rs)
+    (hadd : add_vars map1 names s1 = .OK (rl, map2) s2 i) :
+    match_env map2 (CompCert4Lean.Backend.Cminor.set_locals names e) le rs := by
+  induction names generalizing rl map2 s2 i with
+  | nil =>
+      change RTLgen.ret ([], map1) s1 = .OK (rl, map2) s2 i at hadd
+      simp [RTLgen.ret] at hadd
+      rcases hadd with ⟨⟨hrl, hmap⟩, hs⟩
+      cases hmap
+      exact hmatch
+  | cons name names ih =>
+      change RTLgen.bind (add_vars map1 names)
+        (fun x => RTLgen.bind (add_var x.2 name)
+          (fun y => RTLgen.ret (y.1 :: x.1, y.2))) s1 =
+        .OK (rl, map2) s2 i at hadd
+      cases hrec : add_vars map1 names s1 with
+      | Error msg => simp [RTLgen.bind, hrec] at hadd
+      | OK x sm hincr =>
+          rcases x with ⟨rlmid, mapmid⟩
+          have htail := ih rlmid mapmid sm hincr hrec
+          simp [RTLgen.bind, hrec, add_var, RTLgen.ret] at hadd
+          rcases hadd with ⟨rfl, rfl⟩
+          constructor
+          · intro id v henv
+            change PTree.get id
+              (PTree.set name Vundef
+                (CompCert4Lean.Backend.Cminor.set_locals names e)) = some v at henv
+            by_cases hid : id = name
+            · subst id
+              rw [@PTree.gss val name Vundef
+                (CompCert4Lean.Backend.Cminor.set_locals names e)] at henv
+              cases henv
+              refine ⟨sm.st_nextreg, ?_, Val.lessdef_undef _⟩
+              exact @PTree.gss reg name sm.st_nextreg mapmid.map_vars
+            · rw [@PTree.gso val id name Vundef
+                (CompCert4Lean.Backend.Cminor.set_locals names e) hid] at henv
+              rcases htail.me_vars id v henv with ⟨r, hr, hv⟩
+              refine ⟨r, ?_, hv⟩
+              exact (@PTree.gso reg id name sm.st_nextreg mapmid.map_vars hid).trans hr
+          · exact htail.me_letvars
+
+theorem match_init_env_init_reg : match_init_env_init_regStatement := by
+  intro params s0 rparams map1 s1 i1 vars rvars map2 s2 i2 vparams tvparams
+    hparams hvars hless
+  have hparams_match := match_set_params_init_regs params rparams s0 map1 s1
+    vparams tvparams i1 hparams hless
+  exact match_init_locals_aux map1 s1 vars rvars map2 s2 _ []
+    (init_regs tvparams rparams) i2 hparams_match.1 hvars
+
+end CompCert4Lean.Backend.RTLgenproof

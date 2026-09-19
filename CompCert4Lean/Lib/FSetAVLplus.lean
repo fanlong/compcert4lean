@@ -1516,3 +1516,10 @@ theorem In_raw_elements_between_3 : In_raw_elements_between_3Statement := by
     above_monotone below_monotone
 
 end CompCert4Lean.Lib.FSetAVLplus.Make
+
+namespace CompCert4Lean.Lib.FSetAVLplus.Make
+
+theorem In_raw_partition_between_6 : In_raw_partition_between_6Statement :=
+  partition_between_iff_2_aux
+
+end CompCert4Lean.Lib.FSetAVLplus.Make

@@ -8242,3 +8242,13 @@ theorem divs_pow2_proof : divs_pow2 := by
   rw [hshl]
 
 end CompCert4Lean.Lib.Integers.Int
+
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+theorem not_lt_proof : not_lt := by
+  intro x y
+  rw [lt_not_proof x y]
+  cases hxy : lt x y <;> cases heq : eq x y <;> simp [hxy, heq]
+
+end CompCert4Lean.Lib.Integers.Int

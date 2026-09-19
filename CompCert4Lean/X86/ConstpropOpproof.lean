@@ -3276,3 +3276,83 @@ theorem const_for_result_correct
                       (.Vptr sp Ptrofs.zero) ofs)
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+
+private theorem cp_cond_int_value {bc : block_classification} {v : val} {n : int}
+    (h : vmatch bc v (.I n)) : v = .Vint n := by
+  cases h
+  rfl
+
+private theorem cp_cond_long_value {bc : block_classification} {v : val} {n : int64}
+    (h : vmatch bc v (.L n)) : v = .Vlong n := by
+  cases h
+  rfl
+
+theorem cond_strength_reduction_correct : cond_strength_reduction_correctStatement := by
+  intro bc ae e m hem cond args vl hvl
+  unfold cond_strength_reduction
+  cases hred : cond_strength_reduction_match cond args vl with
+  | cond_strength_reduction_case1 c r1 r2 n1 v2 =>
+      have hv : Regmap.get r1 e = .Vint n1 := by
+        apply cp_cond_int_value
+        rw [(List.cons.inj hvl).1]
+        exact hem r1
+      simp only [reg_values, List.map_cons, List.map_nil, eval_condition, hv]
+      exact Val.swap_cmp_bool c (Regmap.get r2 e) (.Vint n1)
+  | cond_strength_reduction_case2 c r1 r2 v1 n2 =>
+      have hv : Regmap.get r2 e = .Vint n2 := by
+        apply cp_cond_int_value
+        rw [(List.cons.inj (List.cons.inj hvl).2).1]
+        exact hem r2
+      simp only [reg_values, List.map_cons, List.map_nil, eval_condition, hv]
+  | cond_strength_reduction_case3 c r1 r2 n1 v2 =>
+      have hv : Regmap.get r1 e = .Vint n1 := by
+        apply cp_cond_int_value
+        rw [(List.cons.inj hvl).1]
+        exact hem r1
+      simp only [reg_values, List.map_cons, List.map_nil, eval_condition, hv]
+      exact Val.swap_cmpu_bool _ c (Regmap.get r2 e) (.Vint n1)
+  | cond_strength_reduction_case4 c r1 r2 v1 n2 =>
+      have hv : Regmap.get r2 e = .Vint n2 := by
+        apply cp_cond_int_value
+        rw [(List.cons.inj (List.cons.inj hvl).2).1]
+        exact hem r2
+      simp only [reg_values, List.map_cons, List.map_nil, eval_condition, hv]
+  | cond_strength_reduction_case5 c r1 r2 n1 v2 =>
+      have hv : Regmap.get r1 e = .Vlong n1 := by
+        apply cp_cond_long_value
+        rw [(List.cons.inj hvl).1]
+        exact hem r1
+      simp only [reg_values, List.map_cons, List.map_nil, eval_condition, hv]
+      exact Val.swap_cmpl_bool c (Regmap.get r2 e) (.Vlong n1)
+  | cond_strength_reduction_case6 c r1 r2 v1 n2 =>
+      have hv : Regmap.get r2 e = .Vlong n2 := by
+        apply cp_cond_long_value
+        rw [(List.cons.inj (List.cons.inj hvl).2).1]
+        exact hem r2
+      simp only [reg_values, List.map_cons, List.map_nil, eval_condition, hv]
+  | cond_strength_reduction_case7 c r1 r2 n1 v2 =>
+      have hv : Regmap.get r1 e = .Vlong n1 := by
+        apply cp_cond_long_value
+        rw [(List.cons.inj hvl).1]
+        exact hem r1
+      simp only [reg_values, List.map_cons, List.map_nil, eval_condition, hv]
+      exact Val.swap_cmplu_bool _ c (Regmap.get r2 e) (.Vlong n1)
+  | cond_strength_reduction_case8 c r1 r2 v1 n2 =>
+      have hv : Regmap.get r2 e = .Vlong n2 := by
+        apply cp_cond_long_value
+        rw [(List.cons.inj (List.cons.inj hvl).2).1]
+        exact hem r2
+      simp only [reg_values, List.map_cons, List.map_nil, eval_condition, hv]
+  | cond_strength_reduction_default cond args vl => rfl
+
+end CompCert4Lean.X86.ConstpropOpproof

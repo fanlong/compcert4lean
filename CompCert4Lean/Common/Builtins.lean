@@ -178,3 +178,29 @@ theorem builtin_function_sem_lessdef
   exact ⟨vres', hsem', (val_inject_id vres vres').mp hinj'⟩
 
 end CompCert4Lean.Common.Builtins
+
+namespace CompCert4Lean.Common.Builtins
+
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.X86.Builtins1
+
+theorem lookup_builtin_function_sig : lookup_builtin_function_sigStatement := by
+  intro name sg b h
+  unfold lookup_builtin_function at h
+  cases hs : lookup_builtin standard_builtin_sig name sg standard_builtin_table with
+  | some bs =>
+      simp only [hs] at h
+      cases Option.some.inj h
+      exact lookup_builtin_sig _ standard_builtin_sig name sg bs standard_builtin_table hs
+  | none =>
+      simp only [hs] at h
+      cases hp : lookup_builtin platform_builtin_sig name sg platform_builtin_table with
+      | some bp =>
+          simp only [hp] at h
+          cases Option.some.inj h
+          exact lookup_builtin_sig _ platform_builtin_sig name sg bp platform_builtin_table hp
+      | none =>
+          simp only [hp] at h
+          cases h
+
+end CompCert4Lean.Common.Builtins

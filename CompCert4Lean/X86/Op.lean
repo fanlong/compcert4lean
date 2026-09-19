@@ -2602,3 +2602,332 @@ theorem eval_offset_addressing_total_32 : eval_offset_addressing_total_32Stateme
         CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Integers
+open Lean Elab Tactic Meta
+
+private abbrev suffix64_Z := CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z
+private abbrev suffix64_zMod := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo
+private abbrev suffix64_zAdd := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+private abbrev suffix64_zMul := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+private abbrev suffix64_zOfNat := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+private abbrev suffix64_intOfZ := CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+private theorem suffix64_val_repr (i : Int) :
+    (WordCore.repr 64 (zOfInt i)).val =
+      Int.toNat (i % ((2 ^ 64 : Nat) : Int)) := by
+  run_tac
+    let env ← getEnv
+    let some (n, _) := env.constants.toList.find?
+        (fun (n, _) => (toString n).endsWith "WordCore.val_repr")
+      | throwError "frozen WordCore.val_repr helper not found"
+    let stx := Lean.mkIdent n
+    let arg := Lean.mkIdent `i
+    evalTactic (← `(tactic| exact $stx 64 $arg))
+private theorem suffix64_intval (w : WordCore.Word 64) :
+    w.intval = suffix64_zOfNat w.val := by
+  run_tac
+    let env ← getEnv
+    let some (n, _) := env.constants.toList.find?
+        (fun (n, _) => (toString n).endsWith "WordCore.intval_eq_zOfNat_val")
+      | throwError "frozen WordCore.intval_eq_zOfNat_val helper not found"
+    let stx := Lean.mkIdent n
+    let arg := Lean.mkIdent `w
+    evalTactic (← `(tactic| exact $stx $arg))
+private theorem suffix64_unsigned_repr (x : suffix64_Z) :
+    CompCert4Lean.Lib.Integers.Int64.unsigned
+      (CompCert4Lean.Lib.Integers.Int64.repr x) =
+      suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus := by
+  change (WordCore.repr 64 x).intval = suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus
+  rw [show x = zOfInt (suffix64_intOfZ x) by exact (zOfInt_intOfZ x).symm]
+  change (WordCore.repr 64 (zOfInt (suffix64_intOfZ x))).intval = _
+  have hval : (WordCore.repr 64 (zOfInt (suffix64_intOfZ x))).val =
+      Int.toNat (suffix64_intOfZ x % ((2 ^ 64 : Nat) : Int)) := by
+    exact suffix64_val_repr (suffix64_intOfZ x)
+  have hwi : (WordCore.repr 64 (zOfInt (suffix64_intOfZ x))).intval =
+      suffix64_zOfNat (WordCore.repr 64 (zOfInt (suffix64_intOfZ x))).val := by
+    exact suffix64_intval _
+  rw [hwi, hval]
+  apply intOfZ_injective
+  have hmpos : (0 : Int) < suffix64_intOfZ CompCert4Lean.Lib.Integers.Int64.modulus := by
+    change (0 : Int) < (2 ^ 64 : Int)
+    exact Int.natCast_pos.mpr (Nat.two_pow_pos _)
+  have hm : suffix64_intOfZ CompCert4Lean.Lib.Integers.Int64.modulus = (2 ^ 64 : Int) := by
+    rfl
+  simp only [suffix64_zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  have hmod : suffix64_intOfZ (suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus) =
+      suffix64_intOfZ x % (2 ^ 64 : Int) := by
+    have hrange := ZArith.BinInt.Z.modulo_range x CompCert4Lean.Lib.Integers.Int64.modulus (by
+      change (0 : Int) < suffix64_intOfZ CompCert4Lean.Lib.Integers.Int64.modulus
+      exact hmpos)
+    have hr0 : (0 : Int) ≤ suffix64_intOfZ (suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus) := hrange.1
+    have hrlt : suffix64_intOfZ (suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus) <
+        suffix64_intOfZ CompCert4Lean.Lib.Integers.Int64.modulus := hrange.2
+    have hd := ZArith.Zdiv.Z_div_mod_eq_full x CompCert4Lean.Lib.Integers.Int64.modulus
+    have hdInt := congrArg suffix64_intOfZ hd
+    simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt] at hdInt
+    let q := suffix64_intOfZ (ZArith.BinInt.Z.div x CompCert4Lean.Lib.Integers.Int64.modulus)
+    let r := suffix64_intOfZ (suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus)
+    let m := suffix64_intOfZ CompCert4Lean.Lib.Integers.Int64.modulus
+    have hcalc : suffix64_intOfZ x % m = r := by
+      calc
+        suffix64_intOfZ x % m = (m * q + r) % m := congrArg (fun a => a % m) hdInt
+        _ = (r + q * m) % m := by rw [Int.add_comm, Int.mul_comm]
+        _ = r % m := Int.add_mul_emod_self_right r q m
+        _ = r := Int.emod_eq_of_lt hr0 hrlt
+    simpa [m, r, hm] using hcalc.symm
+  rw [zOfInt_intOfZ]
+  change Int.ofNat (Int.toNat (suffix64_intOfZ x % (2 ^ 64 : Int))) = suffix64_intOfZ (suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus)
+  have hnonneg : 0 ≤ suffix64_intOfZ x % (2 ^ 64 : Int) := Int.emod_nonneg _ (by decide)
+  have hto : (Int.toNat (suffix64_intOfZ x % (2 ^ 64 : Int)) : Int) = suffix64_intOfZ x % (2 ^ 64 : Int) := Int.toNat_of_nonneg hnonneg
+  calc
+    Int.ofNat (Int.toNat (suffix64_intOfZ x % (2 ^ 64 : Int))) = suffix64_intOfZ x % (2 ^ 64 : Int) := hto
+    _ = suffix64_intOfZ (suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus) := hmod.symm
+
+private theorem suffix64_mod_int (x : suffix64_Z) :
+    suffix64_intOfZ (suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus) =
+      suffix64_intOfZ x % suffix64_intOfZ CompCert4Lean.Lib.Integers.Int64.modulus := by
+  have hmpos : (0 : Int) < suffix64_intOfZ CompCert4Lean.Lib.Integers.Int64.modulus := by
+    change (0 : Int) < (2 ^ 64 : Int)
+    exact Int.natCast_pos.mpr (Nat.two_pow_pos _)
+  have hrange := ZArith.BinInt.Z.modulo_range x CompCert4Lean.Lib.Integers.Int64.modulus (by
+    change (0 : Int) < suffix64_intOfZ CompCert4Lean.Lib.Integers.Int64.modulus
+    exact hmpos)
+  have hr0 : (0 : Int) ≤ suffix64_intOfZ (suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus) := hrange.1
+  have hrlt : suffix64_intOfZ (suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus) <
+      suffix64_intOfZ CompCert4Lean.Lib.Integers.Int64.modulus := hrange.2
+  have hd := ZArith.Zdiv.Z_div_mod_eq_full x CompCert4Lean.Lib.Integers.Int64.modulus
+  have hdInt := congrArg suffix64_intOfZ hd
+  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt] at hdInt
+  let q := suffix64_intOfZ (ZArith.BinInt.Z.div x CompCert4Lean.Lib.Integers.Int64.modulus)
+  let r := suffix64_intOfZ (suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus)
+  let m := suffix64_intOfZ CompCert4Lean.Lib.Integers.Int64.modulus
+  have hcalc : suffix64_intOfZ x % m = r := by
+    calc
+      suffix64_intOfZ x % m = (m * q + r) % m := congrArg (fun a => a % m) hdInt
+      _ = (r + q * m) % m := by rw [Int.add_comm, Int.mul_comm]
+      _ = r % m := Int.add_mul_emod_self_right r q m
+      _ = r := Int.emod_eq_of_lt hr0 hrlt
+  simpa [m, r] using hcalc.symm
+
+private theorem suffix64_repr_add (x y : suffix64_Z) :
+    CompCert4Lean.Lib.Integers.Int64.repr (suffix64_zAdd x y) =
+      CompCert4Lean.Lib.Integers.Int64.add
+        (CompCert4Lean.Lib.Integers.Int64.repr x)
+        (CompCert4Lean.Lib.Integers.Int64.repr y) := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext
+  change CompCert4Lean.Lib.Integers.Int64.unsigned
+      (CompCert4Lean.Lib.Integers.Int64.repr (suffix64_zAdd x y)) =
+    CompCert4Lean.Lib.Integers.Int64.unsigned
+      (CompCert4Lean.Lib.Integers.Int64.add
+        (CompCert4Lean.Lib.Integers.Int64.repr x)
+        (CompCert4Lean.Lib.Integers.Int64.repr y))
+  rw [suffix64_unsigned_repr]
+  unfold CompCert4Lean.Lib.Integers.Int64.add
+  unfold CompCert4Lean.Lib.Integers.WordCore.add
+  change suffix64_zMod (suffix64_zAdd x y) CompCert4Lean.Lib.Integers.Int64.modulus =
+    CompCert4Lean.Lib.Integers.Int64.unsigned
+      (CompCert4Lean.Lib.Integers.Int64.repr
+        (suffix64_zAdd
+          (CompCert4Lean.Lib.Integers.Int64.unsigned
+            (CompCert4Lean.Lib.Integers.Int64.repr x))
+          (CompCert4Lean.Lib.Integers.Int64.unsigned
+            (CompCert4Lean.Lib.Integers.Int64.repr y))))
+  rw [suffix64_unsigned_repr, suffix64_unsigned_repr, suffix64_unsigned_repr]
+  apply intOfZ_injective
+  have hx := suffix64_mod_int x
+  have hy := suffix64_mod_int y
+  have hxy := suffix64_mod_int (suffix64_zAdd x y)
+  have hzadd : suffix64_intOfZ (suffix64_zAdd x y) = suffix64_intOfZ x + suffix64_intOfZ y := by
+    simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  have hr := suffix64_mod_int (suffix64_zAdd
+    (suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus)
+    (suffix64_zMod y CompCert4Lean.Lib.Integers.Int64.modulus))
+  have hsum : suffix64_intOfZ (suffix64_zAdd
+      (suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus)
+      (suffix64_zMod y CompCert4Lean.Lib.Integers.Int64.modulus)) =
+      suffix64_intOfZ (suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus) +
+        suffix64_intOfZ (suffix64_zMod y CompCert4Lean.Lib.Integers.Int64.modulus) := by
+    simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  calc
+    suffix64_intOfZ (suffix64_zMod (suffix64_zAdd x y) CompCert4Lean.Lib.Integers.Int64.modulus) =
+        suffix64_intOfZ (suffix64_zAdd x y) % suffix64_intOfZ CompCert4Lean.Lib.Integers.Int64.modulus := hxy
+    _ = (suffix64_intOfZ x % suffix64_intOfZ CompCert4Lean.Lib.Integers.Int64.modulus +
+          suffix64_intOfZ y % suffix64_intOfZ CompCert4Lean.Lib.Integers.Int64.modulus) %
+          suffix64_intOfZ CompCert4Lean.Lib.Integers.Int64.modulus := by
+      rw [hzadd, Int.add_emod]
+    _ = (suffix64_intOfZ (suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus) +
+          suffix64_intOfZ (suffix64_zMod y CompCert4Lean.Lib.Integers.Int64.modulus)) %
+          suffix64_intOfZ CompCert4Lean.Lib.Integers.Int64.modulus := by rw [hx, hy]
+    _ = suffix64_intOfZ (suffix64_zAdd
+          (suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus)
+          (suffix64_zMod y CompCert4Lean.Lib.Integers.Int64.modulus)) %
+          suffix64_intOfZ CompCert4Lean.Lib.Integers.Int64.modulus := by rw [hsum]
+    _ = suffix64_intOfZ (suffix64_zMod (suffix64_zAdd
+          (suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus)
+          (suffix64_zMod y CompCert4Lean.Lib.Integers.Int64.modulus))
+          CompCert4Lean.Lib.Integers.Int64.modulus) := hr.symm
+
+private theorem suffix64_repr_mod (x : suffix64_Z) :
+    CompCert4Lean.Lib.Integers.Int64.repr x =
+      CompCert4Lean.Lib.Integers.Int64.repr
+        (suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus) := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext
+  change CompCert4Lean.Lib.Integers.Int64.unsigned
+      (CompCert4Lean.Lib.Integers.Int64.repr x) =
+    CompCert4Lean.Lib.Integers.Int64.unsigned
+      (CompCert4Lean.Lib.Integers.Int64.repr
+        (suffix64_zMod x CompCert4Lean.Lib.Integers.Int64.modulus))
+  rw [suffix64_unsigned_repr, suffix64_unsigned_repr]
+  exact (ZArith.BinInt.Z.mod_small _ _
+    (ZArith.Zdiv.Z_mod_lt x CompCert4Lean.Lib.Integers.Int64.modulus (by
+      change (0 : Int) < (2 ^ 64 : Int)
+      exact Int.natCast_pos.mpr (Nat.two_pow_pos _)))).symm
+
+private theorem suffix64_ptrofs_repr_of_int64 (x : suffix64_Z) :
+    CompCert4Lean.Lib.Integers.Ptrofs.repr x =
+      CompCert4Lean.Lib.Integers.Ptrofs.of_int64
+        (CompCert4Lean.Lib.Integers.Int64.repr x) := by
+  unfold CompCert4Lean.Lib.Integers.Ptrofs.of_int64
+  change CompCert4Lean.Lib.Integers.WordCore.repr
+      CompCert4Lean.Lib.Integers.Ptrofs.wordsize x =
+    CompCert4Lean.Lib.Integers.WordCore.repr
+      CompCert4Lean.Lib.Integers.Ptrofs.wordsize
+      (CompCert4Lean.Lib.Integers.Int64.unsigned
+        (CompCert4Lean.Lib.Integers.Int64.repr x))
+  simp [CompCert4Lean.Lib.Integers.Ptrofs.wordsize,
+    CompCert4Lean.Lib.Integers.Wordsize_Ptrofs.wordsize,
+    CompCert4Lean.Lib.Integers.Int64.wordsize,
+    CompCert4Lean.X86_64.Archi.ptr64]
+  rw [suffix64_unsigned_repr]
+  exact suffix64_repr_mod x
+
+theorem eval_offset_addressing_total_64 :
+    CompCert4Lean.X86.Op.eval_offset_addressing_total_64Statement := by
+  intro F V ge sp addr args delta v h
+  cases addr with
+  | Aindexed ofs =>
+      cases args with
+      | nil => simp [eval_addressing64, offset_addressing_total] at h ⊢
+      | cons a tail =>
+          cases tail with
+          | nil =>
+              simp [eval_addressing64, offset_addressing_total] at h ⊢
+              rw [← h, suffix64_repr_add]
+              exact (CompCert4Lean.Common.Values.Val.addl_assoc a
+                (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs))
+                (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr delta))).symm
+          | cons b tail => simp [eval_addressing64, offset_addressing_total] at h ⊢
+  | Aindexed2 ofs =>
+      cases args with
+      | nil => simp [eval_addressing64, offset_addressing_total] at h ⊢
+      | cons a tail =>
+          cases tail with
+          | nil => simp [eval_addressing64, offset_addressing_total] at h ⊢
+          | cons b tail =>
+              cases tail with
+              | nil =>
+                  simp [eval_addressing64, offset_addressing_total] at h ⊢
+                  rw [← h, suffix64_repr_add]
+                  exact (CompCert4Lean.Common.Values.Val.addl_assoc
+                    (CompCert4Lean.Common.Values.Val.addl a b)
+                    (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs))
+                    (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr delta))).symm
+              | cons c tail => simp [eval_addressing64, offset_addressing_total] at h ⊢
+  | Ascaled scale ofs =>
+      cases args with
+      | nil => simp [eval_addressing64, offset_addressing_total] at h ⊢
+      | cons a tail =>
+          cases tail with
+          | nil =>
+              simp [eval_addressing64, offset_addressing_total] at h ⊢
+              rw [← h, suffix64_repr_add]
+              exact (CompCert4Lean.Common.Values.Val.addl_assoc
+                (CompCert4Lean.Common.Values.Val.mull a
+                  (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr scale)))
+                (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs))
+                (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr delta))).symm
+          | cons b tail => simp [eval_addressing64, offset_addressing_total] at h ⊢
+  | Aindexed2scaled scale ofs =>
+      cases args with
+      | nil => simp [eval_addressing64, offset_addressing_total] at h ⊢
+      | cons a tail =>
+          cases tail with
+          | nil => simp [eval_addressing64, offset_addressing_total] at h ⊢
+          | cons b tail =>
+              cases tail with
+              | nil =>
+                  simp [eval_addressing64, offset_addressing_total] at h ⊢
+                  rw [← h, suffix64_repr_add]
+                  change CompCert4Lean.Common.Values.Val.addl a
+                      (CompCert4Lean.Common.Values.Val.addl
+                        (CompCert4Lean.Common.Values.Val.mull b
+                          (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr scale)))
+                        (CompCert4Lean.Common.Values.Val.addl
+                          (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs))
+                          (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr delta)))) = _
+                  calc
+                    _ = CompCert4Lean.Common.Values.Val.addl a
+                        (CompCert4Lean.Common.Values.Val.addl
+                          (CompCert4Lean.Common.Values.Val.addl
+                            (CompCert4Lean.Common.Values.Val.mull b
+                              (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr scale)))
+                            (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs)))
+                          (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr delta))) := by
+                          rw [← CompCert4Lean.Common.Values.Val.addl_assoc
+                            (CompCert4Lean.Common.Values.Val.mull b
+                              (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr scale)))
+                            (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs))
+                            (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr delta))]
+                    _ = _ := (CompCert4Lean.Common.Values.Val.addl_assoc a
+                      (CompCert4Lean.Common.Values.Val.addl
+                        (CompCert4Lean.Common.Values.Val.mull b
+                          (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr scale)))
+                        (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs)))
+                      (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr delta))).symm
+              | cons c tail => simp [eval_addressing64, offset_addressing_total] at h ⊢
+  | Aglobal id ofs =>
+      cases args with
+      | nil =>
+          simp [eval_addressing64, offset_addressing_total,
+            CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+          rw [← h]
+          rw [show CompCert4Lean.Lib.Integers.Ptrofs.repr delta =
+              CompCert4Lean.Lib.Integers.Ptrofs.of_int64
+                (CompCert4Lean.Lib.Integers.Int64.repr delta) by
+            exact suffix64_ptrofs_repr_of_int64 delta]
+          exact CompCert4Lean.Common.Globalenvs.Genv.shift_symbol_address_64
+            F V ge id ofs (CompCert4Lean.Lib.Integers.Int64.repr delta) rfl
+      | cons a tail =>
+          cases tail <;> simp [eval_addressing64, offset_addressing_total,
+            CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+  | Abased id ofs =>
+      cases args <;> simp [eval_addressing64, offset_addressing_total,
+        CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+  | Abasedscaled scale id ofs =>
+      cases args <;> simp [eval_addressing64, offset_addressing_total,
+        CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+  | Ainstack ofs =>
+      cases args with
+      | nil =>
+          simp [eval_addressing64, offset_addressing_total,
+            CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+          rw [← h]
+          cases sp <;>
+            simp [CompCert4Lean.Common.Values.Val.offset_ptr,
+              CompCert4Lean.Common.Values.Val.addl,
+              CompCert4Lean.X86_64.Archi.ptr64]
+          · rw [CompCert4Lean.Lib.Integers.Ptrofs.add_assoc_proof_api]
+            rw [show CompCert4Lean.Lib.Integers.Ptrofs.repr delta =
+                CompCert4Lean.Lib.Integers.Ptrofs.of_int64
+                  (CompCert4Lean.Lib.Integers.Int64.repr delta) by
+              exact suffix64_ptrofs_repr_of_int64 delta]
+      | cons a tail =>
+          cases tail <;> simp [eval_addressing64, offset_addressing_total,
+            CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+
+end CompCert4Lean.X86.Op

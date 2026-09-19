@@ -5463,3 +5463,11 @@ theorem ssize_pos : ssize_posStatement := by
   exact ssize_pos_select_aux
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem is_uns_usize : is_uns_usizeStatement := by
+  intro i
+  exact is_uns_usize_select_aux i
+
+end CompCert4Lean.Backend.ValueDomain

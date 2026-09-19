@@ -273,3 +273,61 @@ open CompCert4Lean.Common.Values
         m m' hperm (.Cnotcompfs c) args b args' heval hagree
 
 end CompCert4Lean.X86.NeedOp
+
+namespace CompCert4Lean.X86.NeedOp
+
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+
+private theorem addressing32_agree_one {a : val} {args' : List val} {n : nval}
+    (h : vagree_list [a] args' [n]) :
+    ∃ a', args' = [a'] ∧ vagree a a' n := by
+  cases h with
+  | vagree_list_cons a tail a' tail' n ns ha ht =>
+      cases ht
+      exact ⟨a', rfl, ha⟩
+
+private theorem addressing32_agree_two {a b : val} {args' : List val} {n : nval}
+    (h : vagree_list [a, b] args' [n, n]) :
+    ∃ a' b', args' = [a', b'] ∧ vagree a a' n ∧ vagree b b' n := by
+  cases h with
+  | vagree_list_cons a tail a' tail' n ns ha ht =>
+      cases ht with
+      | vagree_list_cons b tail b' tail' n ns hb ht =>
+          cases ht
+          exact ⟨a', b', rfl, ha, hb⟩
+
+theorem needs_of_addressing_32_sound : needs_of_addressing_32_soundStatement := by
+  intro ge sp addr args v nv args' heval hagree
+  unfold eval_addressing32 at heval
+  split at heval <;> try { simp [CompCert4Lean.X86_64.Archi.ptr64] at heval }
+  all_goals
+    simp only [Option.some.injEq] at heval
+    subst v
+    simp only [needs_of_addressing, op1, op2] at hagree
+  · obtain ⟨a', rfl, ha⟩ := addressing32_agree_one hagree
+    refine ⟨_, rfl, ?_⟩
+    exact add_sound _ _ _ _ _ ha (vagree_same _ _)
+  · obtain ⟨a', b', rfl, ha, hb⟩ := addressing32_agree_two hagree
+    refine ⟨_, rfl, ?_⟩
+    apply add_sound
+    · apply add_sound
+      · simpa only [modarith_idem nv, modarith_idem (modarith nv)] using ha
+      · simpa only [modarith_idem nv, modarith_idem (modarith nv)] using hb
+    · exact vagree_same _ _
+  · obtain ⟨a', rfl, ha⟩ := addressing32_agree_one hagree
+    refine ⟨_, rfl, ?_⟩
+    apply add_sound
+    · exact mul_sound _ _ _ _ _ ha (vagree_same _ _)
+    · exact vagree_same _ _
+  · obtain ⟨a', b', rfl, ha, hb⟩ := addressing32_agree_two hagree
+    refine ⟨_, rfl, ?_⟩
+    apply add_sound _ _ _ _ _ ha
+    apply add_sound
+    · apply mul_sound
+      · simpa only [modarith_idem nv, modarith_idem (modarith nv)] using hb
+      · exact vagree_same _ _
+    · exact vagree_same _ _
+
+end CompCert4Lean.X86.NeedOp

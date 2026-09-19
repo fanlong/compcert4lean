@@ -5695,3 +5695,45 @@ theorem round_UP_DN_ulp :
     ctx.certificate.orderedField.mul_one]
 
 end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+theorem generic_format_ulp_0 :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      generic_format_ulp_0Statement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid
+  have hreq : Exact.Req_bool ctx (Exact.R0 ctx) (Exact.R0 ctx) = true :=
+    CompCert4Lean.Flocq.Core.Raux.Req_bool_true ctx _ _ rfl
+  unfold Exact.ulp
+  simp only [hreq]
+  cases hs : negligible_exp fexp with
+  | none =>
+      simp only [hs]
+      change Exact.R0 ctx =
+        CompCert4Lean.Flocq.Core.Generic_fmt.Exact.F2R ctx
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Float beta
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Ztrunc ctx
+              (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa ctx magnitude beta fexp (Exact.R0 ctx)))
+            (Exact.cexp ctx magnitude beta fexp (Exact.R0 ctx)))
+      rw [CompCert4Lean.Flocq.Core.Generic_fmt.scaled_mantissa_0
+        ctx magnitude beta fexp]
+      have hz : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Ztrunc ctx (Exact.R0 ctx) =
+          CompCert4Lean.Flocq.Core.Zaux.Z0 := by
+        rw [show Exact.R0 ctx = CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx
+            CompCert4Lean.Flocq.Core.Zaux.Z0 by
+          exact ctx.certificate.sourceLaws.ofZ_zero.symm]
+        exact CompCert4Lean.Flocq.Core.Raux.Ztrunc_IZR ctx
+          CompCert4Lean.Flocq.Core.Zaux.Z0
+      rw [hz]
+      exact (CompCert4Lean.Flocq.Core.Float_prop.F2R_0 ctx beta _).symm
+  | some n =>
+      simp only [hs]
+      have hspec := negligible_exp_spec fexp
+      rw [hs] at hspec
+      cases hspec with
+      | negligible_Some n hn =>
+          exact CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_bpow
+            ctx magnitude beta fexp (fexp n)
+            ((hvalid.valid_exp n).2 hn).1
+
+end CompCert4Lean.Flocq.Core.Ulp

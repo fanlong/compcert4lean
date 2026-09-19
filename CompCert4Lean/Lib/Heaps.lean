@@ -1751,3 +1751,40 @@ theorem deleteMin_lt (E : OrderedType) : deleteMin_ltStatement E := by
   exact deleteMinLtProof E x h hlt
 
 end CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+theorem findMax_max (E : OrderedType) : findMax_maxStatement E := by
+  intro x h
+  induction h with
+  | Empty =>
+      intro hfind hbst y hin
+      simp [findMax] at hfind
+  | Node a z b iha ihb =>
+      cases b with
+      | Empty =>
+          intro hfind hbst y hin
+          have hx : z = x := by simpa [findMax] using hfind
+          subst x
+          have hin' : In E y a ∨ E.eq y z := by simpa [In] using hin
+          rcases hin' with hin | hin
+          · exact Or.inr (lt_heap_In E z y a hbst.2.2.1 hin)
+          · exact Or.inl hin
+      | Node a1 x1 b1 =>
+          intro hfind hbst y hin
+          have hfindb : findMax E (Node a1 x1 b1) = some x := by
+            simpa [findMax] using hfind
+          have hmax : ∀ w, In E w (Node a1 x1 b1) → le E w x :=
+            ihb hfindb hbst.2.1
+          have hx1x : le E x1 x :=
+            hmax x1 (Or.inr (Or.inl (E.eq_refl x1)))
+          have hzx : le E z x :=
+            Or.inr (lt_le_trans E z x1 x hbst.2.2.2.2.1 hx1x)
+          change In E y a ∨ E.eq y z ∨ In E y (Node a1 x1 b1) at hin
+          rcases hin with hin | hin | hin
+          · exact le_trans E y z x
+              (Or.inr (lt_heap_In E z y a hbst.2.2.1 hin)) hzx
+          · exact le_trans E y z x (Or.inl hin) hzx
+          · exact hmax y hin
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet.R

@@ -2531,3 +2531,272 @@ theorem eval_andlimm
   exact eval_andlimm_aux xi prog sp e m n
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+open CompCert4Lean.X86.SelectOp (same_expr_pure)
+
+private theorem orl_word_unsigned (bits : Nat) (x : WordCore.Word bits) :
+    x.intval = ZArith.BinInt.Z.of_nat x.val := by
+  apply (ZArith.Znat.Z2Nat.id x.intval _).symm
+  have h := x.intrange.1
+  change (-1 : Int) < intOfZ x.intval at h
+  change 0 ≤ intOfZ x.intval
+  omega
+
+private theorem orl_repr_nat_val (bits n : Nat) :
+    (WordCore.repr bits (ZArith.BinInt.Z.of_nat n)).val = n % 2 ^ bits := by
+  rw [show ZArith.BinInt.Z.of_nat n = zOfInt (Int.ofNat n) by rfl,
+    suffixWordValRepr64]
+  change ((n : Int) % ((2 ^ bits : Nat) : Int)).toNat = _
+  rw [← Int.natCast_emod]
+  rfl
+
+private theorem orl_shl_val (x : WordCore.Word 64) (n : WordCore.Word 32) :
+    (Int64.shl' x n).val = (x.val * 2 ^ n.val) % 2 ^ 64 := by
+  change (WordCore.repr 64 (ZArith.BinInt.Z.shiftl x.intval n.intval)).val = _
+  rw [orl_word_unsigned 64 x, orl_word_unsigned 32 n]
+  have hs : ZArith.BinInt.Z.shiftl (zOfNat x.val) (zOfNat n.val) =
+      zOfNat (x.val * 2 ^ n.val) := by
+    unfold ZArith.BinInt.Z.shiftl
+    simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+      Int.ofNat_eq_natCast, Int.natCast_nonneg, ↓reduceIte,
+      Int.toNat_natCast, Int.natCast_mul, Int.natCast_pow]
+    rfl
+  unfold zOfNat at hs
+  rw [hs, orl_repr_nat_val]
+
+private theorem orl_shru_val (x : WordCore.Word 64) (n : WordCore.Word 32) :
+    (Int64.shru' x n).val = x.val / 2 ^ n.val := by
+  change (WordCore.repr 64 (ZArith.BinInt.Z.shiftr x.intval n.intval)).val = _
+  rw [orl_word_unsigned 64 x, orl_word_unsigned 32 n]
+  have hs : ZArith.BinInt.Z.shiftr (zOfNat x.val) (zOfNat n.val) =
+      zOfNat (x.val / 2 ^ n.val) := by
+    unfold ZArith.BinInt.Z.shiftr
+    simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+      Int.ofNat_eq_natCast, Int.natCast_nonneg, ↓reduceIte,
+      Int.toNat_natCast, Int.natCast_pow]
+    exact congrArg zOfInt Int.ofNat_ediv_ofNat
+  unfold zOfNat at hs
+  rw [hs, orl_repr_nat_val]
+  exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (Nat.div_le_self _ _) x.toFin.isLt)
+
+private theorem orl_nat_or_mod (a b w : Nat) (hb : b < 2 ^ w) :
+    Nat.lor (a % 2 ^ w) b = Nat.lor b a % 2 ^ w := by
+  apply Nat.eq_of_testBit_eq
+  intro k
+  simp only [Nat.lor_eq]
+  rw [Nat.testBit_or, Nat.testBit_mod_two_pow,
+    Nat.testBit_mod_two_pow, Nat.testBit_or]
+  by_cases hk : k < w
+  · simp only [decide_eq_true hk, Bool.true_and]
+    exact Bool.or_comm _ _
+  · have hpow : 2 ^ w ≤ 2 ^ k :=
+      Nat.pow_le_pow_right (by decide) (Nat.le_of_not_gt hk)
+    have hfb : b.testBit k = false :=
+      Nat.testBit_lt_two_pow (Nat.lt_of_lt_of_le hb hpow)
+    simp [hk, hfb]
+
+private theorem orl_rotate_word (x : WordCore.Word 64) (n1 n2 : WordCore.Word 32)
+    (h1 : Int.ltu n1 Int64.iwordsize' = true)
+    (h2 : Int.ltu n2 Int64.iwordsize' = true)
+    (hsum : CompCert4Lean.Lib.Integers.Int.add n1 n2 = Int64.iwordsize') :
+    Int64.or (Int64.shl' x n1) (Int64.shru' x n2) =
+      Int64.ror x (Int64.repr (Int.unsigned n2)) := by
+  have hn1 := shrl_int_ltu_iwordsize_val n1 h1
+  have hn2 := shrl_int_ltu_iwordsize_val n2 h2
+  change n1.val < 64 at hn1
+  change n2.val < 64 at hn2
+  have hadd : (CompCert4Lean.Lib.Integers.Int.add n1 n2).val = (n1.val + n2.val) % 2 ^ 32 := by
+    change (WordCore.repr 32 (ZArith.BinInt.Z.add n1.intval n2.intval)).val = _
+    rw [orl_word_unsigned 32 n1, orl_word_unsigned 32 n2]
+    have ha : ZArith.BinInt.Z.add (ZArith.BinInt.Z.of_nat n1.val)
+        (ZArith.BinInt.Z.of_nat n2.val) =
+        ZArith.BinInt.Z.of_nat (n1.val + n2.val) := by
+      unfold ZArith.BinInt.Z.add
+      simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+        Int.ofNat_eq_natCast, Int.natCast_add]
+    rw [ha, orl_repr_nat_val]
+  have hn : n1.val + n2.val = 64 := by
+    have he := congrArg (fun q : CCInt => q.val) hsum
+    rw [hadd, Nat.mod_eq_of_lt (by omega)] at he
+    exact he
+  have hn2repr : (Int64.repr (Int.unsigned n2)).val = n2.val := by
+    rw [shrl_int_unsigned_z n2]
+    exact repr_val_of_lt64 n2.val (by omega)
+  apply WordCore.ext_of_val_eq
+  rw [int64_or_val, orl_shl_val x n1, orl_shru_val x n2]
+  change Nat.lor ((x.val * 2 ^ n1.val) % 2 ^ 64) (x.val / 2 ^ n2.val) =
+    (WordCore.repr 64 (zOfNat (Nat.lor
+      (Nat.shiftRight x.val ((Int64.repr (Int.unsigned n2)).val % 64))
+      (Nat.shiftLeft x.val (64 - (Int64.repr (Int.unsigned n2)).val % 64))))).val
+  rw [hn2repr, Nat.mod_eq_of_lt hn2, show 64 - n2.val = n1.val by omega,
+    orl_repr_nat_val]
+  rw [← Nat.shiftLeft_eq x.val n1.val, ← Nat.shiftRight_eq_div_pow x.val n2.val]
+  exact orl_nat_or_mod _ _ 64
+    (Nat.lt_of_le_of_lt (Nat.shiftRight_le _ _) x.toFin.isLt)
+
+private theorem orl_val_comm (x y : val) : Val.orl x y = Val.orl y x := by
+  cases x <;> cases y <;> try rfl
+  case Vlong.Vlong x y => exact congrArg val.Vlong (int64_or_commut x y)
+
+private theorem orl_rotate_value (v : val) (n1 n2 : CCInt)
+    (hsum : CompCert4Lean.Lib.Integers.Int.add n1 n2 = Int64.iwordsize') :
+    Val.lessdef (Val.orl (Val.shll v (.Vint n1)) (Val.shrlu v (.Vint n2)))
+      (Val.rorl v (.Vint n2)) := by
+  cases v with
+  | Vlong x =>
+      by_cases h1 : Int.ltu n1 Int64.iwordsize' = true
+      · by_cases h2 : Int.ltu n2 Int64.iwordsize' = true
+        · simp only [Val.shll, Val.shrlu, h1, h2, ↓reduceIte, Val.orl, Val.rorl]
+          change Val.lessdef
+            (.Vlong (Int64.or (Int64.shl' x n1) (Int64.shru' x n2)))
+            (.Vlong (Int64.ror x (Int64.repr (Int.unsigned n2))))
+          rw [orl_rotate_word x n1 n2 h1 h2 hsum]
+          exact Val.lessdef_refl _
+        · simp [Val.shll, Val.shrlu, h1, h2, Val.orl, Val.rorl]
+          exact Val.lessdef_undef _
+      · simp [Val.shll, h1, Val.orl, Val.rorl]
+        exact Val.lessdef_undef _
+  | _ => exact Val.lessdef_undef _
+
+
+private theorem orl_same_value
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val) (e : env) (m : mem)
+    (a b : expr) (le : letenv) (x y : val)
+    (hsame : same_expr_pure a b = true)
+    (ha : eval_expr xi ge sp e m le a x)
+    (hb : eval_expr xi ge sp e m le b y) : x = y := by
+  cases a <;> cases b <;> simp [same_expr_pure] at hsame
+  subst_vars
+  cases ha with
+  | var _ _ _ hget1 =>
+      cases hb with
+      | var _ _ _ hget2 =>
+          exact Option.some.inj (hget1.symm.trans hget2)
+
+private theorem orl_shll_inv
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val) (e : env) (m : mem)
+    (le : letenv) (t : expr) (n : CCInt) (x : val)
+    (h : eval_expr xi ge sp e m le (Eop (Oshllimm n) (Econs t Enil)) x) :
+    ∃ v, eval_expr xi ge sp e m le t v ∧ x = Val.shll v (.Vint n) := by
+  cases h with
+  | eval_Eop _ _ _ _ _ hargs hop =>
+      cases hargs with
+      | cons _ _ _ v _ hhead htail =>
+          cases htail with
+          | nil _ =>
+              change some (Val.shll v (.Vint n)) = some x at hop
+              cases hop
+              exact ⟨v, hhead, rfl⟩
+
+private theorem orl_shrlu_inv
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val) (e : env) (m : mem)
+    (le : letenv) (t : expr) (n : CCInt) (x : val)
+    (h : eval_expr xi ge sp e m le (Eop (Oshrluimm n) (Econs t Enil)) x) :
+    ∃ v, eval_expr xi ge sp e m le t v ∧ x = Val.shrlu v (.Vint n) := by
+  cases h with
+  | eval_Eop _ _ _ _ _ hargs hop =>
+      cases hargs with
+      | cons _ _ _ v _ hhead htail =>
+          cases htail with
+          | nil _ =>
+              change some (Val.shrlu v (.Vint n)) = some x at hop
+              cases hop
+              exact ⟨v, hhead, rfl⟩
+
+private theorem orl_int_eq (x y : CCInt)
+    (h : Int.eq x y = true) : x = y := by
+  apply WordCore.ext
+  change decide (x.intval = y.intval) = true at h
+  exact of_decide_eq_true h
+
+theorem eval_orl
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_orlStatement binary64_certificate binary32_certificate := by
+  unfold eval_orlStatement binary_constructor_sound
+  intro xi prog sp e m le a x b y ha hb
+  have hdefault : ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le
+      (Eop Oorl (Econs a (Econs b Enil))) v ∧ Val.lessdef (Val.orl x y) v := by
+    refine ⟨Val.orl x y, ?_, Val.lessdef_refl _⟩
+    exact eval_expr.eval_Eop le Oorl (Econs a (Econs b Enil)) [x, y] _
+      (eval_exprlist.cons le a (Econs b Enil) x [y] ha
+        (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))) rfl
+  cases hmatch : orl_match a b with
+  | orl_case1 n1 t2 =>
+      have hx : x = .Vlong n1 := eval_longconst_value xi
+        (Genv.globalenv prog) sp e m le n1 x (by simpa [hmatch] using ha)
+      subst x
+      obtain ⟨v, hv, hd⟩ := eval_orlimm xi prog sp e m n1 le b y hb
+      refine ⟨v, ?_, ?_⟩
+      · simpa [orl, hmatch] using hv
+      · rw [orl_val_comm]
+        exact hd
+  | orl_case2 t1 n2 =>
+      have hy : y = .Vlong n2 := eval_longconst_value xi
+        (Genv.globalenv prog) sp e m le n2 y (by simpa [hmatch] using hb)
+      subst y
+      obtain ⟨v, hv, hd⟩ := eval_orlimm xi prog sp e m n2 le a x ha
+      refine ⟨v, ?_, hd⟩
+      simpa [orl, hmatch] using hv
+  | orl_case3 n1 t1 n2 t2 =>
+      by_cases hrot : (Int.eq (CompCert4Lean.Lib.Integers.Int.add n1 n2)
+          Int64.iwordsize' && same_expr_pure t1 t2) = true
+      · obtain ⟨heq, hsame⟩ := Bool.and_eq_true_iff.mp hrot
+        have hsum := orl_int_eq _ _ heq
+        obtain ⟨vx, htx, hx⟩ := orl_shll_inv xi (Genv.globalenv prog)
+          sp e m le t1 n1 x ha
+        obtain ⟨vy, hty, hy⟩ := orl_shrlu_inv xi (Genv.globalenv prog)
+          sp e m le t2 n2 y hb
+        have hv := orl_same_value xi (Genv.globalenv prog) sp e m
+          t1 t2 le vx vy hsame htx hty
+        subst vy
+        subst x
+        subst y
+        refine ⟨Val.rorl vx (.Vint n2), ?_, orl_rotate_value vx n1 n2 hsum⟩
+        simp only [orl, hmatch, if_pos hrot]
+        exact eval_expr.eval_Eop le (Ororlimm n2) (Econs t1 Enil) [vx] _
+          (eval_exprlist.cons le t1 Enil vx [] htx (eval_exprlist.nil le)) rfl
+      · simpa only [orl, hmatch, if_neg hrot] using hdefault
+  | orl_case4 n2 t2 n1 t1 =>
+      by_cases hrot : (Int.eq (CompCert4Lean.Lib.Integers.Int.add n1 n2)
+          Int64.iwordsize' && same_expr_pure t1 t2) = true
+      · obtain ⟨heq, hsame⟩ := Bool.and_eq_true_iff.mp hrot
+        have hsum := orl_int_eq _ _ heq
+        obtain ⟨vx, htx, hx⟩ := orl_shrlu_inv xi (Genv.globalenv prog)
+          sp e m le t2 n2 x ha
+        obtain ⟨vy, hty, hy⟩ := orl_shll_inv xi (Genv.globalenv prog)
+          sp e m le t1 n1 y hb
+        have hv := orl_same_value xi (Genv.globalenv prog) sp e m
+          t1 t2 le vy vx hsame hty htx
+        subst vx
+        subst x
+        subst y
+        refine ⟨Val.rorl vy (.Vint n2), ?_, ?_⟩
+        · simp only [orl, hmatch, if_pos hrot]
+          exact eval_expr.eval_Eop le (Ororlimm n2) (Econs t1 Enil) [vy] _
+            (eval_exprlist.cons le t1 Enil vy [] hty (eval_exprlist.nil le)) rfl
+        · rw [orl_val_comm]
+          exact orl_rotate_value vy n1 n2 hsum
+      · simpa only [orl, hmatch, if_neg hrot] using hdefault
+  | orl_default e1 e2 =>
+      simpa only [orl, hmatch] using hdefault
+
+end CompCert4Lean.X86.SelectLongproof

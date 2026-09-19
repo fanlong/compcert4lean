@@ -4260,3 +4260,88 @@ theorem eval_builtin_arg_addr
           (binary32_certificate := binary32_certificate) ge sp addr vl m) ▸ haddr
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+ theorem eval_addimm
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_addimmStatement := by
+  unfold eval_addimmStatement unary_constructor_sound
+  intro xi ge sp e mem0 n le a x h
+  by_cases hz : CompCert4Lean.Lib.Integers.Int.eq n
+      CompCert4Lean.Lib.Integers.Int.zero = true
+  · have hn : n = CompCert4Lean.Lib.Integers.Int.zero :=
+      int_eq_true_zero_local n hz
+    subst n
+    refine ⟨x, ?_, ?_⟩
+    · simpa [CompCert4Lean.X86.SelectOp.addimm, hz] using h
+    · cases x with
+      | Vint q =>
+          change Val.lessdef (.Vint (CompCert4Lean.Lib.Integers.Int.add q
+            CompCert4Lean.Lib.Integers.Int.zero)) (.Vint q)
+          rw [CompCert4Lean.Lib.Integers.Int.add_zero_proof]
+          exact Val.lessdef_refl _
+      | Vundef => exact Val.lessdef_refl _
+      | Vlong q => exact Val.lessdef_undef _
+      | Vfloat q => exact Val.lessdef_undef _
+      | Vsingle q => exact Val.lessdef_undef _
+      | Vptr b ofs => exact Val.lessdef_undef _
+  · unfold CompCert4Lean.X86.SelectOp.addimm
+    rw [if_neg hz]
+    cases hcase : addimm_match a with
+    | addimm_case1 m =>
+        have hx : x = .Vint m := eval_intconst_value_local xi ge sp e mem0 le m x
+          (by simpa [hcase] using h)
+        subst x
+        refine ⟨.Vint (CompCert4Lean.Lib.Integers.Int.add n m), ?_, ?_⟩
+        · exact eval_expr.eval_Eop le
+            (Ointconst (CompCert4Lean.Lib.Integers.Int.add n m)) Enil [] _
+            (eval_exprlist.nil le) rfl
+        · change Val.lessdef
+            (.Vint (CompCert4Lean.Lib.Integers.Int.add m n))
+            (.Vint (CompCert4Lean.Lib.Integers.Int.add n m))
+          rw [CompCert4Lean.Lib.Integers.Int.add_commut_proof]
+          exact Val.lessdef_refl _
+    | addimm_case2 addr args =>
+        cases h with
+        | eval_Eop le' op al vl v hargs hop =>
+            change eval_addressing32 ge sp addr vl = some x at hop
+            have hnew := CompCert4Lean.X86.Op.eval_offset_addressing_total_32
+              (F := CompCert4Lean.Backend.CminorSel.fundef) (V := Unit) ge sp addr vl
+              (CompCert4Lean.Lib.Integers.Int.signed n) x hop
+            refine ⟨Val.add x (.Vint n), ?_, Val.lessdef_refl _⟩
+            simp only [hcase]
+            apply eval_expr.eval_Eop le
+              (Olea (offset_addressing_total addr
+                (CompCert4Lean.Lib.Integers.Int.signed n)))
+              args vl (Val.add x (.Vint n))
+            · exact hargs
+            · change CompCert4Lean.X86.Op.eval_addressing32
+                (F := CompCert4Lean.Backend.CminorSel.fundef) (V := Unit) ge sp
+                (offset_addressing_total addr
+                  (CompCert4Lean.Lib.Integers.Int.signed n)) vl =
+                some (Val.add x (.Vint n))
+              have hrepr := CompCert4Lean.Lib.Integers.Int.repr_signed_proof n
+              simpa only [hrepr] using hnew
+    | addimm_default e1 =>
+        refine ⟨Val.add x (.Vint n), ?_, Val.lessdef_refl _⟩
+        simp only [hcase]
+        apply eval_expr.eval_Eop le
+          (Olea (Aindexed (CompCert4Lean.Lib.Integers.Int.signed n)))
+          (Econs a Enil) [x] (Val.add x (.Vint n))
+        · exact eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+        · change eval_addressing32 ge sp
+            (Aindexed (CompCert4Lean.Lib.Integers.Int.signed n)) [x] =
+            some (Val.add x (.Vint n))
+          simp [eval_addressing32]
+          rw [CompCert4Lean.Lib.Integers.Int.repr_signed_proof n]
+
+end CompCert4Lean.X86.SelectOpproof

@@ -4064,3 +4064,12 @@ theorem contains_get_stack : contains_get_stackStatement := by
   exact hload
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+theorem hasvalue_get_stack : hasvalue_get_stackStatement := by
+  intro ty m sp ofs v h
+  obtain ⟨v', hload, heq⟩ := contains_get_stack (fun v' => v' = v) m ty sp ofs h
+  exact heq ▸ hload
+
+end CompCert4Lean.Backend.Stackingproof

@@ -5241,3 +5241,35 @@ theorem ZArith.Znumtheory.Zmod_divide :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zorder.Znot_ge_lt :
+    ZArith.Zorder.Znot_ge_ltStatement := by
+  intro n m h
+  change ¬ (intOfZ m ≤ intOfZ n) at h
+  exact Int.lt_of_not_ge h
+
+theorem ZArith.Zorder.Znot_gt_le :
+    ZArith.Zorder.Znot_gt_leStatement := by
+  intro n m h
+  change ¬ (intOfZ m < intOfZ n) at h
+  exact Int.le_of_not_gt h
+
+theorem ZArith.Zorder.Znot_le_gt :
+    ZArith.Zorder.Znot_le_gtStatement := by
+  intro n m h
+  change ¬ (intOfZ n ≤ intOfZ m) at h
+  exact Int.lt_of_not_ge h
+
+theorem ZArith.Zorder.Zle_lt_or_eq :
+    ZArith.Zorder.Zle_lt_or_eqStatement := by
+  intro n m h
+  change intOfZ n ≤ intOfZ m at h
+  rcases Int.lt_or_eq_of_le h with hlt | heq
+  · exact Or.inl hlt
+  · exact Or.inr (intOfZ_injective heq)
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

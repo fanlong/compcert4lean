@@ -1945,3 +1945,25 @@ theorem extcall_arg_match : extcall_arg_matchStatement := by
         rfl hload''
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem extcall_arg_pair_match : extcall_arg_pair_matchStatement := by
+  intro cfg ms sp rs m m' p v hagree hext harg
+  cases harg with
+  | extcall_arg_one l v harg =>
+      rcases extcall_arg_match cfg ms sp rs m m' l v hagree hext harg with
+        ⟨v', harg', hld⟩
+      exact ⟨v', CompCert4Lean.X86.Asm.extcall_arg_pair.extcall_arg_one l v' harg', hld⟩
+  | extcall_arg_twolong hi lo vhi vlo hhi hlo =>
+      rcases extcall_arg_match cfg ms sp rs m m' hi vhi hagree hext hhi with
+        ⟨vhi', hhi', hldhi⟩
+      rcases extcall_arg_match cfg ms sp rs m m' lo vlo hagree hext hlo with
+        ⟨vlo', hlo', hldlo⟩
+      exact ⟨CompCert4Lean.Common.Values.Val.longofwords vhi' vlo',
+        CompCert4Lean.X86.Asm.extcall_arg_pair.extcall_arg_twolong hi lo vhi' vlo'
+          hhi' hlo',
+        CompCert4Lean.Common.Values.Val.longofwords_lessdef vhi vlo vhi' vlo'
+          hldhi hldlo⟩
+
+end CompCert4Lean.Backend.Asmgenproof0

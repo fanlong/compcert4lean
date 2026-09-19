@@ -2934,3 +2934,37 @@ theorem eval_splitlong : eval_splitlongStatement := by
             exact CompCert4Lean.Common.Values.Val.lessdef_refl _
 
 end CompCert4Lean.Backend.SplitLongproof
+
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_splitlong_strict : eval_splitlong_strictStatement := by
+  intro xi prog sp e m le a f va v heval hexec
+  cases hm : splitlong_match a with
+  | splitlong_case1 h l =>
+      simp only [splitlong, hm]
+      obtain ⟨p, q, hp, hq, hva⟩ :=
+        splitlong_eval_makelong_inv xi (Genv.globalenv prog) sp e m le h l va heval
+      subst va
+      apply hexec le h l
+      · simpa only [splitlong_hi_ofwords] using hp
+      · simpa only [splitlong_lo_ofwords] using hq
+  | splitlong_default a' =>
+      simp only [splitlong, hm]
+      apply eval_expr.eval_Elet le a
+        (f (Eop Ohighlong (Econs (Eletvar 0) Enil))
+          (Eop Olowlong (Econs (Eletvar 0) Enil))) (.Vlong va) v heval
+      apply hexec
+      · exact splitlong_eval_high_local xi (Genv.globalenv prog) sp e m le (.Vlong va)
+      · exact splitlong_eval_low_local xi (Genv.globalenv prog) sp e m le (.Vlong va)
+
+end CompCert4Lean.Backend.SplitLongproof

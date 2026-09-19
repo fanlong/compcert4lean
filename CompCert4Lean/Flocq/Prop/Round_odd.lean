@@ -4039,3 +4039,37 @@ theorem valid_rnd_odd_certificate_proof :
       exact CompCert4Lean.Flocq.Core.Raux.Zfloor_IZR ctx n
 
 end CompCert4Lean.Flocq.Prop.Round_odd
+
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+
+open CompCert4Lean.Flocq.Core
+
+theorem Zrnd_odd_Zodd : ∀ (ctx : ExactRealContext),
+    Zrnd_odd_ZoddStatement ctx := by
+  intro ctx x hne
+  unfold Zrnd_odd
+  generalize hdec :
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Req_EM_T
+      ctx x (IZR ctx (Zfloor ctx x)) = dec
+  cases dec with
+  | left heq => exact (hne heq).elim
+  | right hne' =>
+      cases heven : Zeven (Zfloor ctx x) with
+      | false =>
+          simp only [↓reduceIte]
+          exact heven
+      | true =>
+          simp only [↓reduceIte]
+          have hceil : Zceil ctx x = Zadd (Zfloor ctx x) Zone :=
+            CompCert4Lean.Flocq.Core.Raux.Zceil_floor_neq ctx x (Ne.symm hne')
+          rw [hceil]
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+                (Zfloor ctx x) Zone) = false
+          rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even_add]
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even
+              (Zfloor ctx x) = true at heven
+          rw [heven]
+          rfl
+
+end CompCert4Lean.Flocq.Prop.Round_odd

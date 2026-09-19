@@ -2061,3 +2061,30 @@ theorem eventval_match_inject : eventval_match_injectStatement := by
           exact ev_match_ptr id b2 ofs hpub' hfind3
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+
+theorem eventval_match_inject_2 : eventval_match_inject_2Statement := by
+  intro f ge1 ge2 hsymbols ev ty v1 hmatch
+  cases hmatch with
+  | ev_match_int i =>
+      exact ⟨Vint i, ev_match_int i, Val.inject.inject_int i⟩
+  | ev_match_long i =>
+      exact ⟨Vlong i, ev_match_long i, Val.inject.inject_long i⟩
+  | ev_match_float x =>
+      exact ⟨Vfloat x, ev_match_float x, Val.inject.inject_float x⟩
+  | ev_match_single x =>
+      exact ⟨Vsingle x, ev_match_single x, Val.inject.inject_single x⟩
+  | ev_match_ptr id b ofs hpub hfind =>
+      obtain ⟨b2, hmap, hfind2⟩ := hsymbols.2.2.1 id b hpub hfind
+      have hpub2 : Senv.public_symbol ge2 id = true := by
+        rw [hsymbols.1 id]
+        exact hpub
+      refine ⟨Vptr b2 ofs, ev_match_ptr id b2 ofs hpub2 hfind2, ?_⟩
+      exact Val.inject.inject_ptr b ofs b2 ofs .Z0 hmap
+        (events_ptrofs_add_zero ofs).symm
+
+end CompCert4Lean.Common.Events

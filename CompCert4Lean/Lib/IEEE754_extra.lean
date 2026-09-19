@@ -2714,3 +2714,78 @@ theorem Bexact_inverse_correct :
         | right hnmin => simp [Bexact_inverse, hm, e', hmin] at hresult
       · simp [Bexact_inverse, hm] at hresult
 end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.IEEE754
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq (intOfZ intOfZ_injective intOfZ_zOfInt)
+
+theorem integer_representable_2p :
+    ∀ {prec emax : Z} [pgt : Prec_gt_0 prec]
+      [ple : Prec_lt_emax prec emax],
+      integer_representable_2pStatement (prec := prec) (emax := emax) := by
+  intro prec emax pgt ple ctx magnitude p hp
+  have hprec : 0 < intOfZ prec := pgt
+  have hpe : intOfZ prec < intOfZ emax := ple.prec_lt_emax
+  have hsub (x y : Z) : intOfZ (Zsub x y) = intOfZ x - intOfZ y := by
+    simp [Zsub, Zaux.Zsub,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+  have hadd (x y : Z) : intOfZ (Zadd x y) = intOfZ x + intOfZ y := by
+    simp [Zadd, Zaux.Zadd,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  have hone : intOfZ Zone = 1 := rfl
+  have hp0 : 0 ≤ intOfZ p := hp.1
+  constructor
+  · have hpowp := Zaux.Zpower_le Zaux.radix2 p (Zsub emax Zone) hp.2
+    have hdiff : Zle (Zsub emax prec) (Zsub emax Zone) := by
+      change intOfZ (Zsub emax prec) ≤ intOfZ (Zsub emax Zone)
+      rw [hsub, hsub, hone]
+      omega
+    have hpowdiff := Zaux.Zpower_le Zaux.radix2
+      (Zsub emax prec) (Zsub emax Zone) hdiff
+    have hnonneg : Zle Z0 (Zsub emax Zone) := by
+      change 0 ≤ intOfZ (Zsub emax Zone)
+      rw [hsub, hone]
+      omega
+    have hsum : Zadd (Zsub emax Zone) Zone = emax := by
+      apply intOfZ_injective
+      rw [hadd, hsub]
+      omega
+    have hdouble : Zpower Ztwo (Zadd (Zsub emax Zone) Zone) =
+        Zmul (Zpower Ztwo (Zsub emax Zone)) (Zpower Ztwo Zone) :=
+      Zaux.Zpower_plus Ztwo (Zsub emax Zone) Zone hnonneg
+        (show (0 : Int) ≤ 1 by decide)
+    rw [hsum] at hdouble
+    have htwo : Zpower Ztwo Zone = Ztwo := by decide
+    rw [htwo] at hdouble
+    have habs : Zabs (Zpower Ztwo p) = Zpower Ztwo p :=
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs_eq
+        (Zpower Ztwo p) (Zaux.Zpower_ge_0 Zaux.radix2 p)
+    rw [habs]
+    change intOfZ (Zpower Ztwo p) ≤
+      intOfZ (Zsub (Zpower Ztwo emax) (Zpower Ztwo (Zsub emax prec)))
+    rw [hsub, hdouble]
+    change intOfZ (Zpower Ztwo p) ≤
+      intOfZ (Zaux.Zmul (Zpower Ztwo (Zsub emax Zone)) Ztwo) - _
+    simp only [Zaux.Zmul,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+    have htwoInt : intOfZ Ztwo = 2 := rfl
+    rw [htwoInt]
+    change intOfZ (Zpower Ztwo p) ≤ intOfZ (Zpower Ztwo (Zsub emax Zone)) at hpowp
+    change intOfZ (Zpower Ztwo (Zsub emax prec)) ≤
+      intOfZ (Zpower Ztwo (Zsub emax Zone)) at hpowdiff
+    omega
+  · change Generic_fmt.Exact.generic_format ctx magnitude Zaux.radix2
+      (fexp prec emax) (Exact.IZR ctx (Zpower Ztwo p))
+    have hizr : Exact.IZR ctx (Zpower Ztwo p) = Exact.bpow ctx Zaux.radix2 p :=
+      Raux.IZR_Zpower ctx Zaux.radix2 p hp.1
+    rw [hizr]
+    apply Generic_fmt.generic_format_bpow ctx magnitude
+    change intOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max
+      (Zsub (Zadd p Zone) prec) (Zsub (Zsub (Zpos (.xI .xH)) emax) prec)) ≤ intOfZ p
+    have hthree : intOfZ (Zpos (.xI .xH)) = 3 := rfl
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max]
+    split <;> simp only [hsub, hadd, hone, hthree] <;> omega
+
+end CompCert4Lean.Lib.IEEE754_extra

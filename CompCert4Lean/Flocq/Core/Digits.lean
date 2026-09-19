@@ -1213,3 +1213,34 @@ open CompCert4Lean.Foundation.Numbers.Rocq.Coq
         exact hdu
 
 end CompCert4Lean.Flocq.Core.Digits
+
+namespace CompCert4Lean.Flocq.Core.Digits
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+ theorem Zdigits_unique : Zdigits_uniqueStatement := by
+  intro beta n d h
+  have hc := Zdigits_correct beta n
+  have hp₁ : Zlt (Zpower (beta : Z) (Zsub d Zone))
+      (Zpower (beta : Z) (Zdigits beta n)) := by
+    change intOfZ (Zpower (beta : Z) (Zsub d Zone)) <
+      intOfZ (Zpower (beta : Z) (Zdigits beta n))
+    exact Int.lt_of_le_of_lt h.1 hc.2
+  have hdle : Zle d (Zdigits beta n) :=
+    CompCert4Lean.Flocq.Core.Zaux.Zpower_lt_Zpower beta d
+      (Zdigits beta n) hp₁
+  have hp₂ : Zlt (Zpower (beta : Z) (Zsub (Zdigits beta n) Zone))
+      (Zpower (beta : Z) d) := by
+    change intOfZ (Zpower (beta : Z) (Zsub (Zdigits beta n) Zone)) <
+      intOfZ (Zpower (beta : Z) d)
+    exact Int.lt_of_le_of_lt hc.1 h.2
+  have hadle : Zle (Zdigits beta n) d :=
+    CompCert4Lean.Flocq.Core.Zaux.Zpower_lt_Zpower beta
+      (Zdigits beta n) d hp₂
+  apply intOfZ_injective
+  change intOfZ (Zdigits beta n) = intOfZ d
+  apply Int.le_antisymm
+  · exact hadle
+  · exact hdle
+
+end CompCert4Lean.Flocq.Core.Digits

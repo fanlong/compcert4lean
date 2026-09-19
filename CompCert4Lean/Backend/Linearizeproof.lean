@@ -2039,3 +2039,36 @@ theorem reachable_entrypoint : reachable_entrypointStatement := by
       rcases hge with hge | hge <;> exact hge
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Backend.Linearize
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Lib.Maps
+
+theorem reachable_successors : reachable_successorsStatement := by
+  intro f pc pc' b hcode hsucc hreach
+  unfold reachable at hreach ⊢
+  cases h : reachable_aux f with
+  | none =>
+      simp only [h] at hreach ⊢
+      exact PMap.gi pc' true
+  | some reach =>
+      simp only [h] at hreach ⊢
+      have hfix : CompCert4Lean.Backend.Linearize.DS.fixpoint
+          f.fn_code LTL.successors_block (fun _ reachable => reachable)
+          f.fn_entrypoint true = some reach := by
+        exact h
+      have hsol := CompCert4Lean.Backend.Linearize.DS.fixpoint_solution_proof
+        CompCert4Lean.Backend.Linearize.DS.law_obligation_proof
+      have hge := hsol LTL.bblock f.fn_code LTL.successors_block
+        (fun _ reachable => reachable) f.fn_entrypoint true reach pc b pc'
+        hfix hcode hsucc (by
+          intro n
+          rfl)
+      change PMap.get pc' reach = PMap.get pc reach ∨
+        PMap.get pc' reach = true at hge
+      rw [hreach] at hge
+      rcases hge with hge | hge <;> exact hge
+
+end CompCert4Lean.Backend.Linearizeproof

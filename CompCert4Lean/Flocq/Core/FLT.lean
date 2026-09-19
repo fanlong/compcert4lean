@@ -316,3 +316,116 @@ theorem ulp_FLT_0 : ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ct
           simp [hmax]
 
 end CompCert4Lean.Flocq.Core.FLT
+
+namespace CompCert4Lean.Flocq.Core.FLT
+
+theorem generic_format_FLT_bpow :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      generic_format_FLT_bpowStatement ctx magnitude := by
+  intro ctx magnitude beta emin prec h e he
+  apply CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_bpow
+    ctx magnitude beta (FLT_exp emin prec) e
+  have he' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ emin ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e := by
+    exact he
+  have hp : 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec := by
+    exact CompCert4Lean.Flocq.Core.FLX.prec_gt_0 prec
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (Zmax (Zsub (Zadd e Zone) prec) emin) ≤
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e
+  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max]
+  by_cases hm : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (Zsub (Zadd e Zone) prec) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ emin
+  · simp only [if_pos hm]
+    exact he'
+  · simp only [if_neg hm]
+    have hzone : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = 1 := by
+      change Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.xH) = 1
+      simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+    have hsub : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Zsub (Zadd e Zone) prec) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e + 1 -
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (Zadd e Zone) -
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec)) = _
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      have hadd : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Zadd e Zone) =
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e +
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e +
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone)) = _
+        simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      rw [hadd, hzone]
+    rw [hsub] at hm ⊢
+    omega
+
+end CompCert4Lean.Flocq.Core.FLT
+
+namespace CompCert4Lean.Flocq.Core.FLT
+
+theorem ulp_FLT_small :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      ulp_FLT_smallStatement ctx magnitude := by
+  intro ctx magnitude beta emin prec h x hx
+  by_cases hx0 : x = Exact.R0 ctx
+  · subst x
+    exact @ulp_FLT_0 ctx magnitude beta emin prec h
+  · have hneq := CompCert4Lean.Flocq.Core.Ulp.ulp_neq_0
+        ctx magnitude beta (FLT_exp emin prec) x hx0
+    rw [hneq]
+    apply congrArg (Exact.bpow ctx beta)
+    have hmag_le : Zle
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.mag magnitude beta x)
+        (Zadd emin prec) :=
+      CompCert4Lean.Flocq.Core.Raux.mag_le_bpow ctx magnitude beta x
+        (Zadd emin prec) hx0 hx
+    have hsub : Zle (Zsub
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.mag magnitude beta x) prec)
+        emin := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Zsub (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.mag
+            magnitude beta x) prec) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ emin
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.mag
+                  magnitude beta x) -
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec)) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ emin
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      have hsum : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Zadd emin prec) =
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ emin +
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ emin +
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec)) = _
+        simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.mag magnitude beta x) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zadd emin prec) at hmag_le
+      rw [hsum] at hmag_le
+      omega
+    have hmax : FLT_exp emin prec
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.mag magnitude beta x) = emin := by
+      simpa [FLT_exp] using
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max_r
+          (Zsub (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.mag
+            magnitude beta x) prec) emin hsub)
+    change CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp ctx magnitude beta
+        (FLT_exp emin prec) x = emin
+    unfold CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp
+    rw [hmax]
+
+end CompCert4Lean.Flocq.Core.FLT

@@ -3127,3 +3127,93 @@ noncomputable def linker_program_certificate_proof : Linker_program_obligations 
             · simpa using henvprop.2.2) }
 
 end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem compat_two_power_succ (n : Nat) :
+    two_power_nat (n + 1) =
+      ZArith.BinInt.Z.mul (zOfNat 2) (two_power_nat n) := by
+  apply intOfZ_injective
+  unfold two_power_nat ZArith.Zpower.two_power_nat
+  simp only [ZArith.BinInt.Z.pow, ZArith.BinInt.Z.of_nat,
+    ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  have h2 : intOfZ (Zpos (.xO .xH)) = (2 : Int) := by decide
+  rw [h2]
+  have hnonneg_succ : ¬ (Int.ofNat (n + 1) < 0) :=
+    Int.not_lt_of_ge (Int.ofNat_nonneg _)
+  have hnonneg : ¬ (Int.ofNat n < 0) :=
+    Int.not_lt_of_ge (Int.ofNat_nonneg _)
+  simp only [if_neg hnonneg_succ, if_neg hnonneg, intOfZ_zOfInt]
+  change (2 : Int) ^ n.succ = 2 * (2 : Int) ^ n
+  rw [Int.pow_succ]
+  simp [Int.mul_comm]
+
+private theorem compat_divide_eight_two_power (n : Nat) (h : 3 ≤ n) :
+    ZArith.BinInt.Z.divide (zOfNat 8) (two_power_nat n) := by
+  induction n with
+  | zero => omega
+  | succ n ih =>
+      by_cases hn : 3 ≤ n
+      · rcases ih hn with ⟨k, hk⟩
+        refine ⟨ZArith.BinInt.Z.mul (zOfNat 2) k, ?_⟩
+        rw [compat_two_power_succ, hk]
+        apply intOfZ_injective
+        simp [zOfInt_intOfZ, intOfZ_zOfInt, ZArith.BinInt.Z.mul,
+          ZArith.BinInt.Z.of_nat,
+          Int.mul_assoc, Int.mul_comm, Int.mul_left_comm]
+      · have hn2 : n = 2 := by omega
+        subst n
+        refine ⟨zOfNat 1, ?_⟩
+        decide
+
+private theorem compat_min_align_divides (co : composite) :
+    ZArith.BinInt.Z.divide
+      (zMin (zOfNat 8) co.co_alignof) co.co_alignof := by
+  rcases co.co_alignof_two_p with ⟨n, hn⟩
+  rw [hn]
+  by_cases hs : n < 4
+  · have hcases : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 := by omega
+    rcases hcases with rfl | rfl | rfl | rfl <;>
+      simp [zMin, ZArith.BinInt.Z.min] <;>
+      exact ZArith.BinInt.Z.divide_refl _
+  · rw [suffix_min_eight_two_power_nat n (by omega)]
+    exact compat_divide_eight_two_power n (by omega)
+
+private theorem compat_sizeof_alignof_blockcopy (env : composite_env) :
+    ∀ t, ZArith.BinInt.Z.divide
+      (alignof_blockcopy env t) (sizeof env t) := by
+  intro t
+  cases t with
+  | Tvoid => exact ZArith.BinInt.Z.divide_refl _
+  | Tint sz sg a => cases sz <;> exact ZArith.BinInt.Z.divide_refl _
+  | Tlong sg a => exact ZArith.BinInt.Z.divide_refl _
+  | Tfloat sz a => cases sz <;> exact ZArith.BinInt.Z.divide_refl _
+  | Tpointer t a =>
+      simp [alignof_blockcopy, sizeof,
+        CompCert4Lean.X86_64.Archi.ptr64]
+      exact ZArith.BinInt.Z.divide_refl _
+  | Tarray t n a =>
+      simpa [alignof_blockcopy, sizeof] using
+        (ZArith.BinInt.Z.divide_mul_l _ _ _ (compat_sizeof_alignof_blockcopy env t))
+  | Tfunction args res cc => exact ZArith.BinInt.Z.divide_refl _
+  | Tstruct id a =>
+      simp only [alignof_blockcopy, sizeof]
+      cases hget : CompCert4Lean.Lib.Maps.PTree.get id env with
+      | none => exact ZArith.BinInt.Z.divide_0_r _
+      | some co =>
+          exact ZArith.BinInt.Z.divide_trans _ _ _
+            (compat_min_align_divides co) co.co_sizeof_alignof
+  | Tunion id a =>
+      simp only [alignof_blockcopy, sizeof]
+      cases hget : CompCert4Lean.Lib.Maps.PTree.get id env with
+      | none => exact ZArith.BinInt.Z.divide_0_r _
+      | some co =>
+          exact ZArith.BinInt.Z.divide_trans _ _ _
+            (compat_min_align_divides co) co.co_sizeof_alignof
+
+theorem sizeof_alignof_blockcopy_compat : sizeof_alignof_blockcopy_compatStatement := by
+  exact compat_sizeof_alignof_blockcopy
+
+end CompCert4Lean.Cfrontend.Ctypes

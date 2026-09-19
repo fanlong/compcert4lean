@@ -1798,3 +1798,13 @@ theorem exec_straight_exec
   exact asmgenproof_exec_straight_exec_local
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+theorem exec_straight_at
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    exec_straight_atStatement := by
+  exact asmgenproof_exec_straight_at_local
+
+end CompCert4Lean.X86.Asmgenproof
