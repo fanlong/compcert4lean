@@ -3970,3 +3970,155 @@ theorem expr_is_addrof_ident_correct : expr_is_addrof_ident_correctStatement := 
   | Eload _ _ => simp [CompCert4Lean.Backend.Selection.expr_is_addrof_ident] at h
 
 end CompCert4Lean.Backend.Selectionproof
+
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Cminor
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Common.Linking
+
+theorem classify_call_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    classify_call_correctStatement := by
+  intro prog unit sp e m a v fd hlink hev hfd
+  cases hcall : CompCert4Lean.Backend.Selection.expr_is_addrof_ident a with
+  | none => simp [CompCert4Lean.Backend.Selection.classify_call, hcall]
+  | some id =>
+      have ha : a = Cminor.Econst (Cminor.Oaddrsymbol id Ptrofs.zero) :=
+        expr_is_addrof_ident_correct a id hcall
+      subst a
+      cases hev with
+      | eval_Econst cst v' heval =>
+          cases hs : Genv.find_symbol (Genv.globalenv prog) id with
+          | none =>
+              have hv : v = Vundef := by
+                simp [Cminor.eval_constant, Genv.symbol_address, hs] at heval
+                exact heval.symm
+              subst v
+              exfalso
+              simpa [Genv.find_funct] using hfd
+          | some b =>
+              have hv : v = Vptr b Ptrofs.zero := by
+                simp [Cminor.eval_constant, Genv.symbol_address, hs] at heval
+                exact heval.symm
+              cases hg : PTree.get
+                  (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+                  (prog_defmap unit) with
+              | none =>
+                  have hkind :
+                      CompCert4Lean.Backend.Selection.classify_call (prog_defmap unit)
+                        (Cminor.Econst (Cminor.Oaddrsymbol id Ptrofs.zero)) = Call_imm id := by
+                    change (match
+                      CompCert4Lean.Lib.Maps.PTree.get
+                        (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+                        (prog_defmap unit) with
+                      | some (.Gfun (.External ef)) =>
+                          if ef_inline ef then Call_builtin ef else Call_imm id
+                      | _ => Call_imm id) = Call_imm id
+                    rw [hg]
+                  rw [hkind]
+                  exact ⟨b, hs, hv⟩
+              | some gd =>
+                  cases gd with
+                  | Gvar gv =>
+                      have hkind :
+                          CompCert4Lean.Backend.Selection.classify_call (prog_defmap unit)
+                            (Cminor.Econst (Cminor.Oaddrsymbol id Ptrofs.zero)) = Call_imm id := by
+                        change (match
+                          CompCert4Lean.Lib.Maps.PTree.get
+                            (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+                            (prog_defmap unit) with
+                          | some (.Gfun (.External ef0)) =>
+                              if ef_inline ef0 then Call_builtin ef0 else Call_imm id
+                          | _ => Call_imm id) = Call_imm id
+                        rw [hg]
+                      rw [hkind]
+                      exact ⟨b, hs, hv⟩
+                  | Gfun f =>
+                      cases f with
+                      | Internal fn =>
+                          have hkind :
+                              CompCert4Lean.Backend.Selection.classify_call (prog_defmap unit)
+                                (Cminor.Econst (Cminor.Oaddrsymbol id Ptrofs.zero)) = Call_imm id := by
+                            change (match
+                          CompCert4Lean.Lib.Maps.PTree.get
+                            (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+                            (prog_defmap unit) with
+                          | some (.Gfun (.External ef0)) =>
+                              if ef_inline ef0 then Call_builtin ef0 else Call_imm id
+                          | _ => Call_imm id) = Call_imm id
+                            rw [hg]
+                          rw [hkind]
+                          exact ⟨b, hs, hv⟩
+                      | External ef =>
+                          cases hi : ef_inline ef with
+                          | false =>
+                              have hkind :
+                                  CompCert4Lean.Backend.Selection.classify_call (prog_defmap unit)
+                                    (Cminor.Econst (Cminor.Oaddrsymbol id Ptrofs.zero)) = Call_imm id := by
+                                change (match
+                                  CompCert4Lean.Lib.Maps.PTree.get
+                                    (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+                                    (prog_defmap unit) with
+                                  | some (.Gfun (.External ef0)) =>
+                                      if ef_inline ef0 then Call_builtin ef0 else Call_imm id
+                                  | _ => Call_imm id) = Call_imm id
+                                rw [hg]
+                                simp [hi]
+                              rw [hkind]
+                              exact ⟨b, hs, hv⟩
+                          | true =>
+                              have hkind :
+                                  CompCert4Lean.Backend.Selection.classify_call (prog_defmap unit)
+                                    (Cminor.Econst (Cminor.Oaddrsymbol id Ptrofs.zero)) = Call_builtin ef := by
+                                change (match
+                                  CompCert4Lean.Lib.Maps.PTree.get
+                                    (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+                                    (prog_defmap unit) with
+                                  | some (.Gfun (.External ef0)) =>
+                                      if ef_inline ef0 then Call_builtin ef0 else Call_imm id
+                                  | _ => Call_imm id) = Call_builtin ef
+                                rw [hg]
+                                simp [hi]
+                              rw [hkind]
+                              rcases prog_defmap_linkorder_proof unit prog id
+                                  (.Gfun (.External ef)) hlink hg with
+                                ⟨gd2, hg2, hgd⟩
+                              cases hgd with
+                              | linkorder_def_fun fd1 fd2 hfd12 =>
+                                  have hfun : Genv.find_funct_ptr (Genv.globalenv prog) b = some fd := by
+                                    rw [← Genv.find_funct_find_funct_ptr]
+                                    simpa [hv] using hfd
+                                  have hdef : Genv.find_def (Genv.globalenv prog) b = some (.Gfun fd) :=
+                                    (Genv.find_funct_ptr_iff (F := Cminor.fundef) (V := Unit)
+                                      (ge := Genv.globalenv prog) (b := b) (f := fd)).mp hfun
+                                  cases hfd12 with
+                                  | linkorder_fundef_refl _ =>
+                                      have hdef2 : Genv.find_def (Genv.globalenv prog) b =
+                                          some (.Gfun (.External ef)) := by
+                                        rcases (Genv.find_def_symbol (F := Cminor.fundef) (V := Unit)
+                                          prog id (.Gfun (.External ef))).mp hg2 with
+                                          ⟨b2, hs2, hdef2⟩
+                                        have hs2' : PTree.get id (Genv.globalenv prog).genv_symb = some b2 := by
+                                          simpa [Genv.find_symbol] using hs2
+                                        have hs' : PTree.get id (Genv.globalenv prog).genv_symb = some b := by
+                                          simpa [Genv.find_symbol] using hs
+                                        have hb : b2 = b := Option.some.inj (hs2'.symm.trans hs')
+                                        subst b2
+                                        exact hdef2
+                                      have hfd_eq : fd = .External ef := by
+                                        have hh := Option.some.inj (hdef.symm.trans hdef2)
+                                        cases hh
+                                        rfl
+                                      exact hfd_eq
+                                  | linkorder_fundef_ext_int fn2 name sg =>
+                                      simp [ef_inline] at hi
+
+end CompCert4Lean.Backend.Selectionproof

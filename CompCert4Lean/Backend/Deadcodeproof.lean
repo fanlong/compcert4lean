@@ -2652,3 +2652,39 @@ theorem symbols_preserved : ∀ cfg, symbols_preservedStatement cfg := by
     (fun x y : Unit => x = y) prog prog tprog hmatch id
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Backend.Deadcode
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Maps
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem analyze_successors : ∀ cfg, analyze_successorsStatement cfg := by
+  intro cfg cu f an pc instr pc' hAnalyze hpc hs
+  apply CompCert4Lean.Backend.Deadcode.DS.fixpoint_solution_proof
+    CompCert4Lean.Backend.Deadcode.solver_law_obligation_proof
+    (A := CompCert4Lean.Backend.RTL.instruction)
+    (code := f.fn_code)
+    (successors := CompCert4Lean.Backend.RTL.successors_instr)
+    (transf := CompCert4Lean.Backend.Deadcode.transfer cfg f (prog_defmap cu)
+      (vanalyze cfg cu f))
+    (res := an) (n := pc) (instr := instr) (s := pc')
+    hAnalyze hpc hs
+  intro n a hnone
+  unfold CompCert4Lean.Backend.Deadcode.transfer
+  rw [hnone]
+  change NA.eq NA.bot NA.bot
+  constructor
+  · intro p
+    rfl
+  · intro ge sp b ofs
+    rfl
+
+end CompCert4Lean.Backend.Deadcodeproof

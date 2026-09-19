@@ -4220,3 +4220,170 @@ theorem kill_loads_after_storebytes_holds
           (Vptr sp Ptrofs.zero) m args' vargs hargs hfilter) hsem
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem load_memcpy : load_memcpyStatement := by
+  unfold load_memcpyStatement
+  intro m b1 ofs1 sz bytes b2 ofs2 m' chunk i v
+    hLB hSB hload hofs hend hdiv
+  have hsizepos := size_chunk_pos chunk
+  have hn2 : zLe z0 (size_chunk chunk) := by
+    change 0 ≤ intOfZ (size_chunk chunk)
+    change 0 < intOfZ (size_chunk chunk) at hsizepos
+    omega
+  let n1 : Z := zSub i ofs1
+  let n2 : Z := size_chunk chunk
+  let n3 : Z := zSub sz (zAdd n1 n2)
+  have hn1 : zLe z0 n1 := by
+    dsimp [n1]
+    change 0 ≤ intOfZ (zSub i ofs1)
+    change intOfZ ofs1 ≤ intOfZ i at hofs
+    simp only [zSub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    omega
+  have hn3 : zLe z0 n3 := by
+    dsimp [n3]
+    change 0 ≤ intOfZ (ZArith.BinInt.Z.sub sz
+      (ZArith.BinInt.Z.add (ZArith.BinInt.Z.sub i ofs1) (size_chunk chunk)))
+    change intOfZ (ZArith.BinInt.Z.add i (size_chunk chunk)) ≤
+      intOfZ (ZArith.BinInt.Z.add ofs1 sz) at hend
+    simp only [zSub, zAdd, ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add,
+      intOfZ_zOfInt] at hend ⊢
+    change intOfZ ofs1 ≤ intOfZ i at hofs
+    have hh : intOfZ i - intOfZ ofs1 + intOfZ (size_chunk chunk) ≤ intOfZ sz := by omega
+    omega
+  have hn23 : zLe z0 (zAdd n2 n3) := by
+    dsimp [n3]
+    change 0 ≤ intOfZ (zAdd (size_chunk chunk)
+      (zSub sz (zAdd (zSub i ofs1) (size_chunk chunk))))
+    simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+      intOfZ_zOfInt]
+    have hn2' : 0 ≤ intOfZ (size_chunk chunk) := by
+      change 0 ≤ intOfZ (size_chunk chunk)
+      change 0 < intOfZ (size_chunk chunk) at hsizepos
+      omega
+    have hn3' : 0 ≤ intOfZ sz -
+        (intOfZ i - intOfZ ofs1 + intOfZ (size_chunk chunk)) := by
+      change 0 ≤ intOfZ n3 at hn3
+      dsimp [n3, n1, n2] at hn3
+      simp only [zSub, zAdd, ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add,
+        intOfZ_zOfInt] at hn3
+      exact hn3
+    omega
+  have hsz_eq : zAdd n1 (zAdd n2 n3) = sz := by
+    dsimp [n1, n2, n3]
+    apply intOfZ_injective
+    simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+      intOfZ_zOfInt]
+    omega
+  have hLB' : Mem.loadbytes m b1 ofs1 (zAdd n1 (zAdd n2 n3)) = some bytes := by
+    simpa [hsz_eq] using hLB
+  obtain ⟨bytes1, bytes23, hLB1, hLB23, hbytes⟩ :=
+    CompCert4Lean.Common.Memory.Mem.loadbytes_split m b1 ofs1 n1 (zAdd n2 n3) bytes hLB' hn1 hn23
+  obtain ⟨bytes2, bytes3, hLB2, hLB3, hbytes23⟩ :=
+    CompCert4Lean.Common.Memory.Mem.loadbytes_split m b1 (zAdd ofs1 n1) n2 n3 bytes23 hLB23 hn2 hn3
+  have hbytes_eq : bytes = bytes1 ++ bytes2 ++ bytes3 := by
+    rw [hbytes, hbytes23]
+    simp only [List.append_assoc]
+  have hloadbytes := CompCert4Lean.Common.Memory.Mem.load_loadbytes chunk m b1 i v hload
+  obtain ⟨bytes2', hLB2', hdecode⟩ := hloadbytes
+  have hi_eq : zAdd ofs1 n1 = i := by
+    dsimp [n1]
+    apply intOfZ_injective
+    simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+      intOfZ_zOfInt]
+    omega
+  have hLB2_at := hLB2
+  rw [hi_eq] at hLB2_at
+  have hbytes2eq : bytes2' = bytes2 := by
+    injection hLB2'.symm.trans hLB2_at
+  subst bytes2'
+  obtain ⟨m1, hSB1, hSB23⟩ :=
+    CompCert4Lean.Common.Memory.Mem.storebytes_split m b2 ofs2 (bytes1 ++ bytes2) bytes3 m' (by
+      simpa [hbytes_eq] using hSB)
+  obtain ⟨m2, hSB2, hSB3⟩ :=
+    CompCert4Lean.Common.Memory.Mem.storebytes_split m b2 ofs2 bytes1 bytes2 m1 hSB1
+  have hlen1 := CompCert4Lean.Common.Memory.Mem.loadbytes_length m b1 ofs1 n1 bytes1 hLB1
+  have hlen2 := CompCert4Lean.Common.Memory.Mem.loadbytes_length m b1 (zAdd ofs1 n1) n2 bytes2 hLB2
+  have hzlen1 : zOfNat bytes1.length = n1 := by
+    rw [hlen1]
+    exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Z2Nat.id n1 hn1
+  have hzlen2 : zOfNat bytes2.length = n2 := by
+    rw [hlen2]
+    exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Z2Nat.id n2 hn2
+  have hsame2 : Mem.loadbytes m1 b2 (zAdd ofs2 n1) n2 = some bytes2 := by
+    have hh := CompCert4Lean.Common.Memory.Mem.loadbytes_storebytes_same m2 b2
+      (zAdd ofs2 (zOfNat bytes1.length)) bytes2 m1 hSB3
+    rw [hzlen1] at hh
+    simpa [n2, hzlen2] using hh
+  have hother3 : Mem.loadbytes m' b2 (zAdd ofs2 n1) n2 =
+      Mem.loadbytes m1 b2 (zAdd ofs2 n1) n2 := by
+    apply CompCert4Lean.Common.Memory.Mem.loadbytes_storebytes_other m1 b2 _ bytes3 m' hSB23 b2
+      (zAdd ofs2 n1) n2 hn2
+    right
+    left
+    change intOfZ (zAdd (zAdd ofs2 n1) n2) ≤
+      intOfZ (zAdd ofs2 (zOfNat (bytes1 ++ bytes2).length))
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    have hsumz : zOfNat (bytes1 ++ bytes2).length = zAdd n1 n2 := by
+      apply intOfZ_injective
+      simp only [zOfNat, zAdd, ZArith.BinInt.Z.of_nat,
+        ZArith.BinInt.Z.add, intOfZ_zOfInt]
+      calc
+        Int.ofNat (bytes1 ++ bytes2).length =
+            Int.ofNat (bytes1.length + bytes2.length) := by
+              rw [List.length_append]
+        _ = Int.ofNat bytes1.length + Int.ofNat bytes2.length :=
+              (Int.ofNat_add_ofNat _ _).symm
+        _ = intOfZ n1 + intOfZ n2 := by
+          have h1 : Int.ofNat bytes1.length = intOfZ n1 := by
+            simpa only [zOfNat, ZArith.BinInt.Z.of_nat,
+              intOfZ_zOfInt] using congrArg intOfZ hzlen1
+          have h2 : Int.ofNat bytes2.length = intOfZ n2 := by
+            simpa only [zOfNat, ZArith.BinInt.Z.of_nat,
+              intOfZ_zOfInt] using congrArg intOfZ hzlen2
+          omega
+    have hsumint := congrArg intOfZ hsumz
+    simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.of_nat,
+      intOfZ_zOfInt] at hsumint ⊢
+    rw [hsumint]
+    omega
+  have hLBfinal : Mem.loadbytes m' b2 (zAdd ofs2 n1) n2 = some bytes2 := by
+    rw [hother3]
+    exact hsame2
+  have hvalid := CompCert4Lean.Common.Memory.Mem.load_valid_access m chunk b1 i v hload
+  have halign_i := hvalid.2
+  have hdiv' : zDivide (align_chunk chunk) (zAdd ofs2 n1) := by
+    have hsum := ZArith.BinInt.Z.divide_add_r (align_chunk chunk)
+      (zSub ofs2 ofs1) i hdiv halign_i
+    have heq : zAdd (zSub ofs2 ofs1) i = zAdd ofs2 n1 := by
+      dsimp [n1]
+      apply intOfZ_injective
+      simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+        intOfZ_zOfInt]
+      omega
+    rw [← heq]
+    exact hsum
+  have hload' := CompCert4Lean.Common.Memory.Mem.loadbytes_load chunk m' b2 (zAdd ofs2 n1)
+      bytes2 hLBfinal hdiv'
+  have hdecode : decode_val chunk bytes2 = v := by
+    have hloadbytes := CompCert4Lean.Common.Memory.Mem.load_loadbytes chunk m b1 i v hload
+    obtain ⟨bytes2', hLB2', hdecode'⟩ := hloadbytes
+    have hLB2_at := hLB2
+    rw [hi_eq] at hLB2_at
+    have heqbytes : bytes2' = bytes2 := by
+      injection hLB2'.symm.trans hLB2_at
+    exact (congrArg (decode_val chunk) heqbytes).symm.trans hdecode'.symm
+  have hoff : zAdd i (zSub ofs2 ofs1) = zAdd ofs2 n1 := by
+    dsimp [n1]
+    apply intOfZ_injective
+    simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+      intOfZ_zOfInt]
+    omega
+  rw [hoff]
+  simpa [hdecode] using hload'
+
+end CompCert4Lean.Backend.CSEproof

@@ -2741,3 +2741,218 @@ theorem loadv_parallel_rule : loadv_parallel_ruleStatement := by
       rcases hload' with ⟨v2, hv2, hinjv⟩
       refine ⟨v2, ?_, hinjv⟩
       simpa [Mem.loadv, hofs, haddr] using hv2
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem scc085_store_unchanged_on (P : massert)
+    (chunk : AST.memory_chunk) (m : Memory.mem) (b : Values.block) (ofs : Z)
+    (v : Values.val) (m' : Memory.mem)
+    (hstore : Mem.store chunk m b ofs v = some m')
+    (hout : ∀ i, zLe ofs i ∧ zLt i (zAdd ofs (size_chunk chunk)) →
+      ¬ P.m_footprint b i) :
+    Mem.unchanged_on P.m_footprint m m' := by
+  have hnext := Mem.nextblock_store chunk m b ofs v m' hstore
+  have hcontents := Mem.store_mem_contents chunk m b ofs v m' hstore
+  refine {
+    unchanged_on_nextblock := ?_,
+    unchanged_on_perm := ?_,
+    unchanged_on_contents := ?_ }
+  · change Ple m.nextblock m'.nextblock
+    rw [hnext]
+    exact Ple_refl _
+  · intro b' ofs' k p hP hvalid
+    constructor
+    · intro hp
+      exact Mem.perm_store_1 chunk m b ofs v m' hstore b' ofs' k p hp
+    · intro hp
+      exact Mem.perm_store_2 chunk m b ofs v m' hstore b' ofs' k p hp
+  · intro b' ofs' hP hp
+    rw [hcontents]
+    by_cases hb : b' = b
+    · subst b'
+      have hget : PMap.get b (PMap.set b
+          (Mem.setN (encode_val chunk v) ofs (PMap.get b m.mem_contents))
+          m.mem_contents) =
+          Mem.setN (encode_val chunk v) ofs (PMap.get b m.mem_contents) := by
+        exact scc085_pmap_get_set_same b _ m.mem_contents
+      rw [hget]
+      apply Mem.setN_other
+      intro i hi heq
+      subst i
+      apply hout ofs'
+      have hlen := CompCert4Lean.Common.Memdata.encode_val_length chunk v
+      have hi' := hi
+      rw [hlen] at hi'
+      have hsize' : ZArith.BinInt.Z.of_nat (size_chunk_nat chunk) = size_chunk chunk :=
+        (CompCert4Lean.Common.Memdata.size_chunk_conv chunk).symm
+      simpa [hsize'] using hi'
+      exact hP
+    · rw [scc085_pmap_get_set_other _ _ _ _ hb]
+
+private theorem scc085_store_injection_transport
+    (f : meminj) (chunk : AST.memory_chunk)
+    (m1 m1' m2 m2' : Memory.mem)
+    (sb1 sb2 : Values.block) (sofs1 sofs2 : Z)
+    (v1 v2 : Values.val)
+    (hinj : Mem.inject f m1 m2)
+    (hstore1 : Mem.store chunk m1 sb1 sofs1 v1 = some m1')
+    (hstore2 : Mem.store chunk m2 sb2 sofs2 v2 = some m2')
+    (hmem : Mem.mem_inj f m1' m2') : Mem.inject f m1' m2' := by
+  refine {
+    mi_inj := hmem,
+    mi_freeblocks := ?_,
+    mi_mappedblocks := ?_,
+    mi_no_overlap := ?_,
+    mi_representable := ?_,
+    mi_perm_inv := ?_ }
+  · intro b hb
+    change ¬ Plt b m1'.nextblock at hb
+    apply hinj.mi_freeblocks b
+    intro hb1
+    apply hb
+    rw [Mem.nextblock_store chunk m1 sb1 sofs1 v1 m1' hstore1]
+    exact hb1
+  · intro b b' delta hmap
+    apply Mem.store_valid_block_1 chunk m2 sb2 sofs2 v2 m2' hstore2
+    exact hinj.mi_mappedblocks b b' delta hmap
+  · intro b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 hne hmap1 hmap2 hp1 hp2
+    apply hinj.mi_no_overlap b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 hne hmap1 hmap2
+    · exact Mem.perm_store_2 chunk m1 sb1 sofs1 v1 m1' hstore1 b1 ofs1 Max Nonempty hp1
+    · exact Mem.perm_store_2 chunk m1 sb1 sofs1 v1 m1' hstore1 b2 ofs2 Max Nonempty hp2
+  · intro b b' delta ofs hmap hp
+    apply hinj.mi_representable b b' delta ofs hmap
+    rcases hp with hp | hp
+    · exact Or.inl (Mem.perm_store_2 chunk m1 sb1 sofs1 v1 m1' hstore1
+        b (Ptrofs.unsigned ofs) Max Nonempty hp)
+    · exact Or.inr (Mem.perm_store_2 chunk m1 sb1 sofs1 v1 m1' hstore1
+        b (zSub (Ptrofs.unsigned ofs) z1) Max Nonempty hp)
+  · intro b ofs b' delta k p hmap hp
+    obtain hp2 := Mem.perm_store_2 chunk m2 sb2 sofs2 v2 m2' hstore2
+      b' (zAdd ofs delta) k p hp
+    obtain hp1 | hn := hinj.mi_perm_inv b ofs b' delta k p hmap hp2
+    · exact Or.inl (Mem.perm_store_1 chunk m1 sb1 sofs1 v1 m1' hstore1 b ofs k p hp1)
+    · exact Or.inr (fun hp1' => hn
+        (Mem.perm_store_2 chunk m1 sb1 sofs1 v1 m1' hstore1 b ofs Max Nonempty hp1'))
+
+ theorem storev_parallel_rule : storev_parallel_ruleStatement := by
+  intro j m1 m2 P chunk addr1 v1 m1' addr2 v2 hpred hstore haddrinj hv
+  rcases hpred with ⟨hinj, hP, hdisj⟩
+  change Mem.inject j m1 m2 at hinj
+  cases haddrinj with
+  | inject_int i =>
+      simp [Mem.storev] at hstore
+  | inject_long i =>
+      simp [Mem.storev] at hstore
+  | inject_float f =>
+      simp [Mem.storev] at hstore
+  | inject_single f =>
+      simp [Mem.storev] at hstore
+  | val_inject_undef v =>
+      simp [Mem.storev] at hstore
+  | @inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      have hsrcstore : Mem.store chunk m1 b1 (Ptrofs.unsigned ofs1) v1 = some m1' := by
+        simpa [Mem.storev] using hstore
+      have hvalid1 : Mem.valid_access m1 chunk b1 (Ptrofs.unsigned ofs1) Writable :=
+        Mem.store_valid_access_3 chunk m1 b1 (Ptrofs.unsigned ofs1) v1 m1' hsrcstore
+      have hofs_lt : zLt (Ptrofs.unsigned ofs1)
+          (zAdd (Ptrofs.unsigned ofs1) (size_chunk chunk)) := by
+        have hs := CompCert4Lean.Common.Memdata.size_chunk_pos chunk
+        have hadd (x y : Z) : intOfZ (zAdd x y) = intOfZ x + intOfZ y := by
+          change intOfZ (zOfInt (intOfZ x + intOfZ y)) = _
+          rw [intOfZ_zOfInt]
+        change intOfZ (Ptrofs.unsigned ofs1) <
+          intOfZ (zAdd (Ptrofs.unsigned ofs1) (size_chunk chunk))
+        rw [hadd]
+        change (0 : Int) < intOfZ (size_chunk chunk) at hs
+        omega
+      have hpstore : Mem.perm m1 b1 (Ptrofs.unsigned ofs1) Max Nonempty := by
+        apply Mem.perm_implies m1 b1 (Ptrofs.unsigned ofs1) Max Writable Nonempty
+          (Mem.perm_cur_max m1 b1 (Ptrofs.unsigned ofs1) Writable
+            (hvalid1.1 (Ptrofs.unsigned ofs1)
+              ⟨by change intOfZ (Ptrofs.unsigned ofs1) ≤ intOfZ (Ptrofs.unsigned ofs1); omega,
+               hofs_lt⟩))
+          (perm_any_N Writable)
+      have hrep := hinj.mi_representable b1 b2 delta ofs1 hmap
+        (Or.inl hpstore)
+      have haddr : Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta)) =
+          zAdd (Ptrofs.unsigned ofs1) delta := by
+        change Ptrofs.unsigned (Ptrofs.repr
+          (zAdd (Ptrofs.unsigned ofs1) (Ptrofs.unsigned (Ptrofs.repr delta)))) = _
+        have hdelta : zLe z0 delta := hrep.1
+        have hofs0 : zLe z0 (Ptrofs.unsigned ofs1) := by
+          have h := ofs1.intrange.1
+          change (-1 : Int) < intOfZ (Ptrofs.unsigned ofs1) at h
+          change (0 : Int) ≤ intOfZ (Ptrofs.unsigned ofs1)
+          omega
+        have hdeltaMax : zLe delta Ptrofs.max_unsigned := by
+          change intOfZ delta ≤ intOfZ Ptrofs.max_unsigned
+          have hsum := hrep.2.2
+          change intOfZ (zAdd (Ptrofs.unsigned ofs1) delta) ≤
+            intOfZ Ptrofs.max_unsigned at hsum
+          change (0 : Int) ≤ intOfZ (Ptrofs.unsigned ofs1) at hofs0
+          have hadd : intOfZ (zAdd (Ptrofs.unsigned ofs1) delta) =
+              intOfZ (Ptrofs.unsigned ofs1) + intOfZ delta := by
+            change intOfZ (zOfInt (intOfZ (Ptrofs.unsigned ofs1) + intOfZ delta)) = _
+            rw [intOfZ_zOfInt]
+          omega
+        rw [scc085_ptrofs_unsigned_repr delta ⟨hdelta, hdeltaMax⟩]
+        rw [scc085_ptrofs_unsigned_repr
+          (zAdd (Ptrofs.unsigned ofs1) delta) ⟨hrep.2.1, hrep.2.2⟩]
+      rcases Mem.store_mapped_inj j chunk m1 b1 (Ptrofs.unsigned ofs1) v1 m1'
+          m2 b2 delta v2 hinj.mi_inj hsrcstore hinj.mi_no_overlap hmap hv with
+        ⟨m2', hstore2, hinj2⟩
+      have hout : ∀ i, zLe (zAdd (Ptrofs.unsigned ofs1) delta) i ∧
+          zLt i (zAdd (zAdd (Ptrofs.unsigned ofs1) delta) (size_chunk chunk)) →
+          ¬ P.m_footprint b2 i := by
+        intro i hi hPi
+        have intOfZ_zsub_local (x y : Z) :
+            intOfZ (zSub x y) = intOfZ x - intOfZ y := by
+          change intOfZ (zOfInt (intOfZ x - intOfZ y)) = _
+          rw [intOfZ_zOfInt]
+        have hsrcRange : zLe (Ptrofs.unsigned ofs1) (zSub i delta) ∧
+            zLt (zSub i delta)
+              (zAdd (Ptrofs.unsigned ofs1) (size_chunk chunk)) := by
+          have hi1 := hi.1
+          change intOfZ (zAdd (Ptrofs.unsigned ofs1) delta) ≤ intOfZ i at hi1
+          have hi2 := hi.2
+          change intOfZ i <
+            intOfZ (zAdd (zAdd (Ptrofs.unsigned ofs1) delta) (size_chunk chunk)) at hi2
+          change intOfZ (Ptrofs.unsigned ofs1) ≤ intOfZ (zSub i delta) ∧
+            intOfZ (zSub i delta) <
+              intOfZ (zAdd (Ptrofs.unsigned ofs1) (size_chunk chunk))
+          simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+            intOfZ_zOfInt] at hi1 hi2 ⊢
+          omega
+        have hpq := hvalid1.1 (zSub i delta) hsrcRange
+        have hpq' : Mem.perm m1 b1 (zSub i delta) Max Nonempty := by
+          exact Mem.perm_implies m1 b1 (zSub i delta) Max Writable Nonempty
+            (Mem.perm_cur_max m1 b1 (zSub i delta) Writable hpq) (perm_any_N Writable)
+        have hfoot : (minjection j m1).m_footprint b2 i :=
+          ⟨b1, delta, hmap, hpq'⟩
+        exact hdisj b2 i hfoot hPi
+      have hinjFinal : Mem.inject j m1' m2' :=
+        scc085_store_injection_transport j chunk m1 m1' m2 m2'
+          b1 b2 (Ptrofs.unsigned ofs1)
+          (zAdd (Ptrofs.unsigned ofs1) delta) v1 v2 hinj
+          hsrcstore hstore2 hinj2
+      have hP' : P.m_pred m2' :=
+        P.m_invar m2 m2' hP
+          (scc085_store_unchanged_on P chunk m2 b2
+            (zAdd (Ptrofs.unsigned ofs1) delta) v2 m2' hstore2 hout)
+      have hdisj' : disjoint_footprint (minjection j m1') P := by
+        intro b ofs hfoot hPfoot
+        rcases hfoot with ⟨b0, delta0, hmap0, hp⟩
+        apply hdisj b ofs
+        · exact ⟨b0, delta0, hmap0,
+            Mem.perm_store_2 chunk m1 b1 (Ptrofs.unsigned ofs1) v1 m1'
+              hsrcstore b0 (zSub ofs delta0) Max Nonempty hp⟩
+        · exact hPfoot
+      refine ⟨m2', ?_, ?_⟩
+      · simpa [Mem.storev, hofs, haddr] using hstore2
+      · exact ⟨hinjFinal, hP', hdisj'⟩

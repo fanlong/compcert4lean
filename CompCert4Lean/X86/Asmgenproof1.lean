@@ -2923,3 +2923,58 @@ theorem mk_shrxlimm_correct
     mk_shrxlimm_correctStatement := shrxlimm_trace shrxlimm_value
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Backend.Asmgenproof0
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Asm
+open CompCert4Lean.X86.Asmgen
+
+set_option maxHeartbeats 16000000
+
+theorem loadind_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    loadind_correctStatement := by
+  intro ge fn base ofs ty dst k rs c m v hmk hload
+  let addr : addrmode := .Addrmode (some base) none
+    (Sum.inl (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs))
+  have haddr : eval_addrmode ge addr rs = Val.offset_ptr (rs (.IR base)) ofs := by
+    apply eval_addrmode_indexed
+    cases h : rs (.IR base) <;> simp_all [Val.offset_ptr, Mem.loadv]
+  have hload' : Mem.loadv (chunk_of_type ty) m (eval_addrmode ge addr rs) = some v := by
+    rw [haddr]
+    exact hload
+  refine ⟨nextinstr_nf (Pregmap.set (A := CompCert4Lean.Common.Values.val) (preg_of dst) v rs), ?_, ?_, ?_⟩
+  · unfold loadind at hmk
+    cases ty <;> cases dst <;>
+      simp [preg_of, CompCert4Lean.X86_64.Archi.ptr64] at hmk
+    all_goals try contradiction
+    all_goals injection hmk with hc; subst c
+    all_goals simp only [chunk_of_type] at hload'
+    all_goals apply exec_straight_one
+    all_goals first
+      | (unfold CompCert4Lean.X86.Asm.exec_instr
+         simp only [CompCert4Lean.X86_64.Archi.ptr64, if_true]
+         change (match Mem.loadv _ m (eval_addrmode ge addr rs) with
+           | some w => Next (nextinstr_nf
+               (Pregmap.set (A := CompCert4Lean.Common.Values.val) _ w rs)) m
+           | none => Stuck) =
+           Next (nextinstr_nf
+             (Pregmap.set (A := CompCert4Lean.Common.Values.val) _ v rs)) m
+         rw [hload']
+         simp [preg_of])
+      | rfl
+  · have hn := nextinstr_nf_inv1 (preg_of dst)
+      (CompCert4Lean.X86.Asm.Pregmap.set (A := CompCert4Lean.Common.Values.val) (preg_of dst) v rs)
+      (preg_of_data dst)
+    simpa [CompCert4Lean.X86.Asm.Pregmap.set] using hn
+  · intro r hr hne
+    have hn := nextinstr_nf_inv1 r
+      (CompCert4Lean.X86.Asm.Pregmap.set (A := CompCert4Lean.Common.Values.val) (preg_of dst) v rs) hr
+    simpa [CompCert4Lean.X86.Asm.Pregmap.set, hne] using hn
+
+end CompCert4Lean.X86.Asmgenproof1

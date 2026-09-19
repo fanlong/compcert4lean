@@ -1035,3 +1035,147 @@ theorem generic_format_B2R :
   exact h
 
 end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem pg_b2r_inj_abs_mantissa (s : Bool) (m : positive) :
+    Zabs (cond_Zopp s (Zpos m)) = Zpos m := by
+  have ha := Zaux.abs_cond_Zopp s (Zpos m)
+  change Zabs (cond_Zopp s (Zpos m)) = Zabs (Zpos m) at ha
+  rw [ha]
+  apply intOfZ_injective
+  change intOfZ (ZArith.BinInt.Z.abs (Zpos m)) = intOfZ (Zpos m)
+  unfold ZArith.BinInt.Z.abs
+  rw [intOfZ_zOfInt]
+  simp [intOfZ]
+
+private theorem pg_b2r_inj_bounds (ctx : ExactRealContext) (m : positive) (e : Z) :
+    let d := Zadd (Zpos (BinarySingleNaN.digits2_pos m)) e
+    Exact.Rle ctx (Exact.bpow ctx radix2 (Zsub d Zone))
+        (Exact.F2R ctx (Float radix2 (Zpos m) e)) ∧
+      Exact.Rlt ctx (Exact.F2R ctx (Float radix2 (Zpos m) e))
+        (Exact.bpow ctx radix2 d) := by
+  let d := Digits.Zdigits radix2 (Zpos m)
+  have hd : Zlt Z0 d := Digits.Zdigits_gt_0 radix2 (Zpos m) (by intro h; cases h)
+  have hds : Zle Z0 (Zsub d Zone) := by
+    change (0 : Int) ≤ intOfZ (Zsub d Zone)
+    change (0 : Int) < intOfZ d at hd
+    simp only [Zsub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    change (0 : Int) ≤ intOfZ d - 1
+    omega
+  have hdl : Zlt (Zsub d Zone) d := by
+    change intOfZ (Zsub d Zone) < intOfZ d
+    simp only [Zsub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    change intOfZ d - 1 < intOfZ d
+    omega
+  have hl := Digits.Zpower_le_Zdigits radix2 (Zsub d Zone) (Zpos m) hdl
+  have hu := Digits.Zpower_gt_Zdigits radix2 d (Zpos m) (Int.le_refl _)
+  have ha : Digits.Zabs (Zpos m) = Zpos m := pg_b2r_inj_abs_mantissa false m
+  rw [ha] at hl hu
+  have hlow := Float_prop.F2R_le ctx radix2
+    (Zpower (radix2 : Z) (Zsub d Zone)) (Zpos m) e hl
+  have hupp := Float_prop.F2R_lt ctx radix2 e
+    (Zpos m) (Zpower (radix2 : Z) d) hu
+  have hp (k : Z) (hk : Zle Z0 k) :
+      Float_prop.Exact.F2R ctx (Float radix2 (Zpower (radix2 : Z) k) e) =
+        Exact.bpow ctx radix2 (Zadd k e) := by
+    have hz := Raux.IZR_Zpower ctx radix2 k hk
+    change ctx.spec.ofZ (Zpower (radix2 : Z) k) = Exact.bpow ctx radix2 k at hz
+    change ctx.spec.mul (ctx.spec.ofZ (Zpower (radix2 : Z) k))
+      (Exact.bpow ctx radix2 e) = _
+    rw [hz]
+    exact (Raux.bpow_plus ctx radix2 k e).symm
+  change Exact.Rle ctx
+    (Float_prop.Exact.F2R ctx (Float radix2 (Zpower (radix2 : Z) (Zsub d Zone)) e))
+    (Exact.F2R ctx (Float radix2 (Zpos m) e)) at hlow
+  change Exact.Rlt ctx (Exact.F2R ctx (Float radix2 (Zpos m) e))
+    (Float_prop.Exact.F2R ctx (Float radix2 (Zpower (radix2 : Z) d) e)) at hupp
+  rw [hp _ hds] at hlow
+  rw [hp _ (Int.le_of_lt hd)] at hupp
+  have he : Zadd (Zsub d Zone) e = Zsub (Zadd d e) Zone := by
+    apply intOfZ_injective
+    simp only [Zadd, Zsub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+      intOfZ_zOfInt]
+    omega
+  rw [he] at hlow
+  have hdigits : Zpos (BinarySingleNaN.digits2_pos m) = d :=
+    Digits.Zpos_digits2_pos m
+  dsimp only
+  rw [hdigits]
+  exact ⟨hlow, hupp⟩
+
+end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem B2R_inj :
+    ∀ {prec emax : Z} (ctx : ExactRealContext),
+      B2R_injStatement (prec := prec) (emax := emax) ctx := by
+  intro prec emax ctx ⟨x, hx⟩ ⟨y, hy⟩ hfx hfy heq
+  cases x <;> cases y <;>
+    simp only [is_finite_strict, Bool.false_eq_true] at hfx hfy
+  rename_i sx mx ex sy my ey
+  change Exact.F2R ctx (Float radix2 (cond_Zopp sx (Zpos mx)) ex) =
+    Exact.F2R ctx (Float radix2 (cond_Zopp sy (Zpos my)) ey) at heq
+  have habs := congrArg (Exact.Rabs ctx) heq
+  have habs_float (s : Bool) (m : positive) (e : Z) :
+      Exact.Rabs ctx (Exact.F2R ctx (Float radix2 (cond_Zopp s (Zpos m)) e)) =
+        Exact.F2R ctx (Float radix2 (Zpos m) e) := by
+    have h := Float_prop.F2R_Zabs ctx radix2 (cond_Zopp s (Zpos m)) e
+    change Exact.F2R ctx (Float radix2 (Zabs (cond_Zopp s (Zpos m))) e) =
+      Exact.Rabs ctx (Exact.F2R ctx (Float radix2 (cond_Zopp s (Zpos m)) e)) at h
+    rw [pg_b2r_inj_abs_mantissa] at h
+    exact h.symm
+  rw [habs_float, habs_float] at habs
+  have hbx := pg_b2r_inj_bounds ctx mx ex
+  have hby := pg_b2r_inj_bounds ctx my ey
+  rw [← habs] at hby
+  have hdigits := Raux.bpow_unique ctx radix2
+    (Exact.F2R ctx (Float radix2 (Zpos mx) ex))
+    (Zadd (Zpos (BinarySingleNaN.digits2_pos mx)) ex)
+    (Zadd (Zpos (BinarySingleNaN.digits2_pos my)) ey) hbx hby
+  change bounded0 prec emax mx ex = true at hx
+  change bounded0 prec emax my ey = true at hy
+  have hcx := (Bool.and_eq_true_iff.mp hx).1
+  have hcy := (Bool.and_eq_true_iff.mp hy).1
+  have hcx' := ZArith.Zbool.Zeq_bool_eq _ _ hcx
+  have hcy' := ZArith.Zbool.Zeq_bool_eq _ _ hcy
+  have he : ex = ey := by
+    calc
+      ex = fexp0 prec emax (Zadd (Zpos (BinarySingleNaN.digits2_pos mx)) ex) := hcx'.symm
+      _ = fexp0 prec emax (Zadd (Zpos (BinarySingleNaN.digits2_pos my)) ey) :=
+        congrArg (fexp0 prec emax) hdigits
+      _ = ey := hcy'
+  subst ey
+  have hm := Float_prop.eq_F2R ctx radix2 ex
+    (cond_Zopp sx (Zpos mx)) (cond_Zopp sy (Zpos my)) heq
+  have hmabs := congrArg Zabs hm
+  rw [pg_b2r_inj_abs_mantissa, pg_b2r_inj_abs_mantissa] at hmabs
+  have hm' : mx = my := by injection hmabs
+  subst my
+  have hs : sx = sy := by
+    cases sx <;> cases sy
+    · rfl
+    · change Zpos mx = Zopp (Zpos mx) at hm
+      have hi := congrArg intOfZ hm
+      change (↑(posToNat mx) : Int) = intOfZ (zOfInt (-↑(posToNat mx))) at hi
+      rw [intOfZ_zOfInt] at hi
+      have hp := posToNat_positive mx
+      omega
+    · change Zopp (Zpos mx) = Zpos mx at hm
+      have hi := congrArg intOfZ hm
+      change intOfZ (zOfInt (-↑(posToNat mx))) = (↑(posToNat mx) : Int) at hi
+      rw [intOfZ_zOfInt] at hi
+      have hp := posToNat_positive mx
+      omega
+    · rfl
+  subst sy
+  rfl
+
+end CompCert4Lean.Flocq.IEEE754.Binary

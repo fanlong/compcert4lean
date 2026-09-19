@@ -4210,3 +4210,12 @@ theorem frame_get_outgoing : frame_get_outgoingStatement := by
     hframe.1.1.2.1.1 hchecks.1 hbound hchecks.2
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+theorem frame_get_parent : frame_get_parentStatement := by
+  intro return_address_offset tprog cfg f hlocal houtgoing hstack hnorepet hcallee
+    j sp ls ls0 parent retaddr m P hframe
+  exact hasvalue_get_stack _ _ _ _ _ hframe.1.1.2.1.2.1.1
+
+end CompCert4Lean.Backend.Stackingproof
