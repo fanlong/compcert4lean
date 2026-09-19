@@ -2007,3 +2007,48 @@ theorem transl_instr_label' : transl_instr_label'Statement := by
       exact hlabel.2 lbl
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+open CompCert4Lean.Backend.Asmgenproof0
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.X86.Asmgen
+
+set_option maxHeartbeats 8000000 in
+theorem transl_code_label : transl_code_labelStatement := by
+  intro lbl f c ep tc h
+  induction c generalizing ep tc with
+  | nil =>
+      simp only [CompCert4Lean.X86.Asmgen.transl_code] at h
+      cases h
+      rfl
+  | cons i c ih =>
+      change CompCert4Lean.Common.Errors.bind
+          (CompCert4Lean.X86.Asmgen.transl_code f c
+            (CompCert4Lean.X86.Asmgen.it1_is_parent ep i))
+          (fun k => CompCert4Lean.X86.Asmgen.transl_instr f i ep k) = .OK tc at h
+      obtain ⟨k, hc, hi⟩ := CompCert4Lean.Common.Errors.bind_inversion _ _ _ _ _ h
+      have hil := transl_instr_label' lbl f i ep k tc hi
+      have hmach := CompCert4Lean.Backend.Mach.is_label_correct_proof lbl i
+      cases hfind : CompCert4Lean.Backend.Mach.is_label lbl i with
+      | true =>
+          have heqi : i = .Mlabel lbl := by
+            have := hmach
+            rw [hfind] at this
+            exact this
+          subst i
+          simp only [CompCert4Lean.Backend.Mach.find_label, hfind]
+          change CompCert4Lean.X86.Asmgen.transl_code f c false = .OK k at hc
+          exact ⟨k, (by simpa [hfind] using hil), hc⟩
+      | false =>
+          have heqi : i ≠ .Mlabel lbl := by
+            have := hmach
+            rw [hfind] at this
+            exact this
+          have hil' : CompCert4Lean.Backend.Asmgenproof0.find_label lbl tc =
+              CompCert4Lean.Backend.Asmgenproof0.find_label lbl k := by
+            simpa [hfind] using hil
+          have hih := ih (CompCert4Lean.X86.Asmgen.it1_is_parent ep i) k hc
+          simpa [CompCert4Lean.Backend.Mach.find_label, hfind, hil'] using hih
+
+end CompCert4Lean.X86.Asmgenproof

@@ -4658,3 +4658,15 @@ theorem generic_format_bpow' :
     simpa [heq'] using ((hvalid.valid_exp e).2 hrev).1
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem generic_format_F2R' :
+    ∀ ctx magnitude, generic_format_F2R'Statement ctx magnitude := by
+  intro ctx magnitude beta fexp x f hfx hbound
+  apply pg_suffix_generic_format_F2R ctx magnitude beta fexp x f hfx
+  by_cases hx0 : x = Exact.R0 ctx
+  · exact Or.inl hx0
+  · exact Or.inr (hbound hx0)
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

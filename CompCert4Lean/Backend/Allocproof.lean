@@ -8374,3 +8374,33 @@ theorem transf_function_inv : transf_function_invStatement := by
                                     ha hcode hmv he htm hcompat hundef hstack hsig
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.RTLtyping
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Lib.Maps
+
+theorem invert_code : invert_codeStatement := by
+  intro cfg f env tf pc i opte e hwt hcode htransfer
+  cases opte with
+  | Error msg =>
+      simp [CompCert4Lean.Backend.Allocation.transfer] at htransfer
+  | OK eafter =>
+      unfold CompCert4Lean.Backend.Allocation.transfer at htransfer
+      cases hshape : PTree.get pc (pair_codes f tf) with
+      | none => simp [hshape] at htransfer
+      | some bsh =>
+          cases haux : transfer_aux cfg f env bsh eafter with
+          | none => simp [hshape, haux] at htransfer
+          | some e' =>
+              simp [hshape, haux] at htransfer
+              cases htransfer
+              obtain ⟨bb, hbb, hexpand⟩ :=
+                matching_instr_block f tf pc bsh i hshape hcode
+              refine ⟨eafter, bsh, bb, rfl, rfl, hbb, hexpand, haux, ?_⟩
+              exact wt_instr_at cfg f env pc i hwt hcode
+
+end CompCert4Lean.Backend.Allocproof

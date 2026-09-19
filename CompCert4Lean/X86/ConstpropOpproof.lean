@@ -3478,3 +3478,328 @@ theorem addr_strength_reduction_32_correct :
     bc ge sp ae e hem addr args vl res hvl heval
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+
+private theorem cp64_unsigned_nat (x : int64) :
+    intOfZ (CompCert4Lean.Lib.Integers.Int64.unsigned x) = (x.val : _root_.Int) := by
+  have hnonneg : ZArith.BinInt.Z.le .Z0 x.intval := by
+    have h := x.intrange.1
+    change (-1 : _root_.Int) < intOfZ x.intval at h
+    change 0 ≤ intOfZ x.intval
+    omega
+  have h := (ZArith.Znat.Z2Nat.id x.intval hnonneg).symm
+  change x.intval = zOfNat x.val at h
+  change intOfZ x.intval = _
+  rw [h]
+  exact intOfZ_zOfInt _
+
+private theorem cp64_unsigned_repr (x : Z) :
+    intOfZ (CompCert4Lean.Lib.Integers.Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.repr x)) =
+      intOfZ x % (2 ^ 64 : _root_.Int) := by
+  rw [cp64_unsigned_nat]
+  have hx : x = zOfInt (intOfZ x) := (zOfInt_intOfZ x).symm
+  rw [hx]
+  change ((WordCore.repr 64 (zOfInt (intOfZ x))).val : _root_.Int) = _
+  rw [cp_suffixWordValRepr64]
+  simp only [intOfZ_zOfInt]
+  exact _root_.Int.toNat_of_nonneg (_root_.Int.emod_nonneg _ (by decide))
+
+private theorem cp64_repr_add (x y : Z) :
+    CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.add x y) =
+      CompCert4Lean.Lib.Integers.Int64.add (CompCert4Lean.Lib.Integers.Int64.repr x) (CompCert4Lean.Lib.Integers.Int64.repr y) := by
+  apply WordCore.ext
+  apply intOfZ_injective
+  change intOfZ (CompCert4Lean.Lib.Integers.Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.add x y))) =
+    intOfZ (CompCert4Lean.Lib.Integers.Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.repr
+      (ZArith.BinInt.Z.add (CompCert4Lean.Lib.Integers.Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.repr x))
+        (CompCert4Lean.Lib.Integers.Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.repr y)))))
+  simp only [cp64_unsigned_repr, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  exact _root_.Int.add_emod _ _ _
+
+private theorem cp64_repr_mul (x y : Z) :
+    CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.mul x y) =
+      CompCert4Lean.Lib.Integers.Int64.mul (CompCert4Lean.Lib.Integers.Int64.repr x) (CompCert4Lean.Lib.Integers.Int64.repr y) := by
+  apply WordCore.ext
+  apply intOfZ_injective
+  change intOfZ (CompCert4Lean.Lib.Integers.Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.mul x y))) =
+    intOfZ (CompCert4Lean.Lib.Integers.Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.repr
+      (ZArith.BinInt.Z.mul (CompCert4Lean.Lib.Integers.Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.repr x))
+        (CompCert4Lean.Lib.Integers.Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.repr y)))))
+  simp only [cp64_unsigned_repr, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  exact _root_.Int.mul_emod _ _ _
+
+private theorem cp64_signed_add (x : int64) (y : Z) :
+    CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.add (CompCert4Lean.Lib.Integers.Int64.signed x) y) =
+      CompCert4Lean.Lib.Integers.Int64.add x (CompCert4Lean.Lib.Integers.Int64.repr y) := by
+  rw [cp64_repr_add, cp_int64_repr_signed]
+
+private theorem cp64_signed_mul (x : int64) (y : Z) :
+    CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.mul (CompCert4Lean.Lib.Integers.Int64.signed x) y) =
+      CompCert4Lean.Lib.Integers.Int64.mul x (CompCert4Lean.Lib.Integers.Int64.repr y) := by
+  rw [cp64_repr_mul, cp_int64_repr_signed]
+
+private theorem cp64_generic :
+    addr_strength_reduction_64_generic_correctStatement := by
+  intro bc ge sp ae e hem addr args vl res hvl heval
+  unfold addr_strength_reduction_64_generic
+  cases hred : addr_strength_reduction_64_generic_match addr args vl with
+  | addr_strength_reduction_64_generic_case1 ofs r1 r2 n1 v2 =>
+      have hv : Regmap.get r1 e = .Vlong n1 := by
+        apply cp_cond_long_value
+        rw [(List.cons.inj hvl).1]
+        exact hem r1
+      simp only [reg_values, List.map_cons, List.map_nil, eval_addressing64,
+        hv, Option.some.injEq] at heval
+      refine ⟨_, rfl, ?_⟩
+      rw [← heval, cp64_signed_add]
+      change Val.lessdef
+        (Val.addl (Val.addl (.Vlong n1) (Regmap.get r2 e))
+          (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs)))
+        (Val.addl (Regmap.get r2 e)
+          (Val.addl (.Vlong n1) (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs))))
+      rw [Val.addl_assoc, Val.addl_permut (.Vlong n1)]
+      exact Val.lessdef_refl _
+  | addr_strength_reduction_64_generic_case2 ofs r1 r2 v1 n2 =>
+      have hv : Regmap.get r2 e = .Vlong n2 := by
+        apply cp_cond_long_value
+        rw [(List.cons.inj (List.cons.inj hvl).2).1]
+        exact hem r2
+      simp only [reg_values, List.map_cons, List.map_nil, eval_addressing64,
+        hv, Option.some.injEq] at heval
+      refine ⟨_, rfl, ?_⟩
+      rw [← heval, cp64_signed_add]
+      change Val.lessdef
+        (Val.addl (Val.addl (Regmap.get r1 e) (.Vlong n2))
+          (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs)))
+        (Val.addl (Regmap.get r1 e)
+          (Val.addl (.Vlong n2) (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs))))
+      rw [Val.addl_assoc]
+      exact Val.lessdef_refl _
+  | addr_strength_reduction_64_generic_case3 sc ofs r1 r2 v1 n2 =>
+      have hv : Regmap.get r2 e = .Vlong n2 := by
+        apply cp_cond_long_value
+        rw [(List.cons.inj (List.cons.inj hvl).2).1]
+        exact hem r2
+      simp only [reg_values, List.map_cons, List.map_nil, eval_addressing64,
+        hv, Option.some.injEq] at heval
+      refine ⟨_, rfl, ?_⟩
+      rw [← heval, cp64_repr_add, cp64_signed_mul]
+      exact Val.lessdef_refl _
+  | addr_strength_reduction_64_generic_case4 sc ofs r1 r2 n1 v2 =>
+      have hv : Regmap.get r1 e = .Vlong n1 := by
+        apply cp_cond_long_value
+        rw [(List.cons.inj hvl).1]
+        exact hem r1
+      simp only [reg_values, List.map_cons, List.map_nil, eval_addressing64,
+        hv, Option.some.injEq] at heval
+      refine ⟨_, rfl, ?_⟩
+      rw [← heval, cp64_signed_add]
+      change Val.lessdef
+        (Val.addl (.Vlong n1)
+          (Val.addl (Val.mull (Regmap.get r2 e)
+            (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr sc)))
+            (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs))))
+        (Val.addl (Val.mull (Regmap.get r2 e)
+          (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr sc)))
+          (Val.addl (.Vlong n1) (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs))))
+      rw [Val.addl_permut (.Vlong n1)]
+      exact Val.lessdef_refl _
+  | addr_strength_reduction_64_generic_default addr args vl =>
+      exact ⟨res, heval, Val.lessdef_refl _⟩
+
+
+end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+
+private theorem cp64_of_int64 (x : int64) : Ptrofs.of_int64 x = x := by
+  exact worker_int64_repr_unsigned x
+
+private theorem cp64_zero_add (x : ptrofs) : Ptrofs.add Ptrofs.zero x = x := by
+  rw [Ptrofs.add_commut_proof_api, cp_ptrofs_add_zero]
+
+private theorem cp64_gl {bc : block_classification} {ge : genv}
+    {v : val} {id : ident} {ofs : ptrofs}
+    (hge : genv_match bc ge) (hv : vmatch bc v (.Ptr (.Gl id ofs))) :
+    Val.lessdef v (Genv.symbol_address ge id ofs) := by
+  cases hv with
+  | ptrUndef => exact Val.lessdef_undef _
+  | ptr b ofs p hp =>
+      cases hp with
+      | gl id hbc =>
+          have hf := (hge.1 id b).mpr hbc
+          simp only [Genv.symbol_address, hf]
+          exact Val.lessdef_refl _
+
+private theorem cp64_stk {bc : block_classification} {sp : block}
+    {v : val} {ofs : ptrofs}
+    (hsp : bc sp = BCstack) (hv : vmatch bc v (.Ptr (.Stk ofs))) :
+    Val.lessdef v (.Vptr sp ofs) := by
+  cases hv with
+  | ptrUndef => exact Val.lessdef_undef _
+  | ptr b ofs p hp =>
+      cases hp with
+      | stk hbc =>
+          have hb := bc.bc_stack b sp hbc hsp
+          subst b
+          exact Val.lessdef_refl _
+
+private theorem cp64_shift (ge : genv) (id : ident) (ofs : ptrofs) (n : Z) :
+    Genv.symbol_address ge id (Ptrofs.add ofs (Ptrofs.repr n)) =
+      Val.addl (Genv.symbol_address ge id ofs)
+        (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr n)) := by
+  have h := Genv.shift_symbol_address_64 _ _ ge id ofs
+    (CompCert4Lean.Lib.Integers.Int64.repr n) rfl
+  rw [cp64_of_int64] at h
+  exact h
+
+end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+
+private theorem cp64_of_repr (n : Z) :
+    Ptrofs.of_int64 (CompCert4Lean.Lib.Integers.Int64.repr n) = Ptrofs.repr n := by
+  exact cp64_of_int64 _
+
+theorem addr_strength_reduction_64_correct :
+    addr_strength_reduction_64_correctStatement := by
+  intro bc ge hge sp hsp ae e hem addr args vl res hvl heval
+  unfold addr_strength_reduction_64
+  simp only [CompCert4Lean.X86_64.Archi.ptr64, Bool.not_true, Bool.false_eq_true,
+    ↓reduceIte]
+  cases hred : addr_strength_reduction_64_match addr args vl with
+  | addr_strength_reduction_64_case1 ofs r1 symb n =>
+      have hp : vmatch bc (Regmap.get r1 e) (.Ptr (.Gl symb n)) := by
+        rw [(List.cons.inj hvl).1]
+        exact hem r1
+      simp only [reg_values, List.map_cons, List.map_nil, eval_addressing64,
+        Option.some.injEq] at heval
+      refine ⟨_, rfl, ?_⟩
+      rw [← heval, cp64_shift]
+      exact Val.addl_lessdef _ _ _ _ (cp64_gl hge hp) (Val.lessdef_refl _)
+  | addr_strength_reduction_64_case2 ofs r1 n =>
+      have hp : vmatch bc (Regmap.get r1 e) (.Ptr (.Stk n)) := by
+        rw [(List.cons.inj hvl).1]
+        exact hem r1
+      simp only [reg_values, List.map_cons, List.map_nil, eval_addressing64,
+        Option.some.injEq] at heval
+      refine ⟨_, rfl, ?_⟩
+      rw [← heval]
+      have h := Val.addl_lessdef _ _ _ _ (cp64_stk hsp hp)
+        (Val.lessdef_refl (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs)))
+      simpa only [Val.addl, Val.offset_ptr, CompCert4Lean.X86_64.Archi.ptr64,
+        ↓reduceIte, cp64_of_repr, cp64_zero_add] using h
+  | addr_strength_reduction_64_case3 ofs r1 r2 symb n1 n2 =>
+      have hp : vmatch bc (Regmap.get r1 e) (.Ptr (.Gl symb n1)) := by
+        rw [(List.cons.inj hvl).1]
+        exact hem r1
+      have hv : Regmap.get r2 e = .Vlong n2 := by
+        apply cp_cond_long_value
+        rw [(List.cons.inj (List.cons.inj hvl).2).1]
+        exact hem r2
+      simp only [reg_values, List.map_cons, List.map_nil, eval_addressing64,
+        hv, Option.some.injEq] at heval
+      refine ⟨_, rfl, ?_⟩
+      rw [← heval, cp64_shift, Genv.shift_symbol_address_64 _ _ ge symb n1 n2 rfl]
+      exact Val.addl_lessdef _ _ _ _
+        (Val.addl_lessdef _ _ _ _ (cp64_gl hge hp) (Val.lessdef_refl _))
+        (Val.lessdef_refl _)
+  | addr_strength_reduction_64_case4 ofs r1 r2 n1 symb n2 =>
+      have hv : Regmap.get r1 e = .Vlong n1 := by
+        apply cp_cond_long_value
+        rw [(List.cons.inj hvl).1]
+        exact hem r1
+      have hp : vmatch bc (Regmap.get r2 e) (.Ptr (.Gl symb n2)) := by
+        rw [(List.cons.inj (List.cons.inj hvl).2).1]
+        exact hem r2
+      simp only [reg_values, List.map_cons, List.map_nil, eval_addressing64,
+        hv, Option.some.injEq] at heval
+      refine ⟨_, rfl, ?_⟩
+      rw [← heval, cp64_shift, Genv.shift_symbol_address_64 _ _ ge symb n2 n1 rfl,
+        Val.addl_commut (.Vlong n1)]
+      exact Val.addl_lessdef _ _ _ _
+        (Val.addl_lessdef _ _ _ _ (cp64_gl hge hp) (Val.lessdef_refl _))
+        (Val.lessdef_refl _)
+  | addr_strength_reduction_64_case5 ofs r1 r2 n1 n2 =>
+      have hp : vmatch bc (Regmap.get r1 e) (.Ptr (.Stk n1)) := by
+        rw [(List.cons.inj hvl).1]
+        exact hem r1
+      have hv : Regmap.get r2 e = .Vlong n2 := by
+        apply cp_cond_long_value
+        rw [(List.cons.inj (List.cons.inj hvl).2).1]
+        exact hem r2
+      simp only [reg_values, List.map_cons, List.map_nil, eval_addressing64,
+        hv, Option.some.injEq] at heval
+      refine ⟨_, rfl, ?_⟩
+      rw [← heval]
+      have h := Val.addl_lessdef _ _ _ _
+        (Val.addl_lessdef _ _ _ _ (cp64_stk hsp hp) (Val.lessdef_refl (.Vlong n2)))
+        (Val.lessdef_refl (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs)))
+      simpa only [Val.addl, Val.offset_ptr, CompCert4Lean.X86_64.Archi.ptr64,
+        ↓reduceIte, cp64_of_repr, cp64_zero_add] using h
+  | addr_strength_reduction_64_case6 ofs r1 r2 n1 n2 =>
+      have hv : Regmap.get r1 e = .Vlong n1 := by
+        apply cp_cond_long_value
+        rw [(List.cons.inj hvl).1]
+        exact hem r1
+      have hp : vmatch bc (Regmap.get r2 e) (.Ptr (.Stk n2)) := by
+        rw [(List.cons.inj (List.cons.inj hvl).2).1]
+        exact hem r2
+      simp only [reg_values, List.map_cons, List.map_nil, eval_addressing64,
+        hv, Option.some.injEq] at heval
+      refine ⟨_, rfl, ?_⟩
+      rw [← heval, Val.addl_commut (.Vlong n1)]
+      have h := Val.addl_lessdef _ _ _ _
+        (Val.addl_lessdef _ _ _ _ (cp64_stk hsp hp) (Val.lessdef_refl (.Vlong n1)))
+        (Val.lessdef_refl (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs)))
+      simpa only [Val.addl, Val.offset_ptr, CompCert4Lean.X86_64.Archi.ptr64,
+        ↓reduceIte, cp64_of_repr, cp64_zero_add,
+        Ptrofs.add_commut_proof_api n2 (Ptrofs.of_int64 n1)] using h
+  | addr_strength_reduction_64_case7 sc ofs r1 r2 symb n1 n2 =>
+      have hp : vmatch bc (Regmap.get r1 e) (.Ptr (.Gl symb n1)) := by
+        rw [(List.cons.inj hvl).1]
+        exact hem r1
+      have hv : Regmap.get r2 e = .Vlong n2 := by
+        apply cp_cond_long_value
+        rw [(List.cons.inj (List.cons.inj hvl).2).1]
+        exact hem r2
+      simp only [reg_values, List.map_cons, List.map_nil, eval_addressing64,
+        hv, Option.some.injEq] at heval
+      refine ⟨_, rfl, ?_⟩
+      rw [← heval, cp64_shift, Genv.shift_symbol_address_64 _ _ ge symb n1
+          (CompCert4Lean.Lib.Integers.Int64.mul n2
+            (CompCert4Lean.Lib.Integers.Int64.repr sc)) rfl,
+        Val.addl_assoc]
+      exact Val.addl_lessdef _ _ _ _ (cp64_gl hge hp) (Val.lessdef_refl _)
+  | addr_strength_reduction_64_default addr args vl =>
+      exact cp64_generic bc ge sp ae e hem addr args vl res hvl heval
+
+end CompCert4Lean.X86.ConstpropOpproof

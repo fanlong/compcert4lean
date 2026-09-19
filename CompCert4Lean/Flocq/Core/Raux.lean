@@ -4537,3 +4537,461 @@ theorem Ztrunc_abs (ctx : ExactRealContext) : Ztrunc_absStatement ctx := by
           exact (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs_eq _ hz).symm
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+private theorem pg_Zfloor_div_decomp (ctx : ExactRealContext)
+    (x y : Z) (hy : y ≠ Z0) :
+    Exact.Rdiv ctx (Exact.IZR ctx x) (Exact.IZR ctx y) =
+      Exact.Rplus ctx (Exact.IZR ctx (Zdiv x y))
+        (Exact.Rdiv ctx (Exact.IZR ctx (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y))
+          (Exact.IZR ctx y)) := by
+  have hxy := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Z_div_mod_eq_full x y
+  have hmul := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.mult_IZR
+    ctx y (Zdiv x y)
+  change ctx.spec.ofZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul y (Zdiv x y)) =
+    ctx.spec.mul (ctx.spec.ofZ y) (ctx.spec.ofZ (Zdiv x y)) at hmul
+  have hadd := ctx.certificate.sourceLaws.ofZ_add
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul y (Zdiv x y))
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y)
+  have hxyR : Exact.IZR ctx x =
+      Exact.Rplus ctx (Exact.IZR ctx (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul y (Zdiv x y)))
+        (Exact.IZR ctx (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y)) := by
+    calc
+      Exact.IZR ctx x = Exact.IZR ctx
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul y (Zdiv x y))
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y)) := congrArg _ hxy
+      _ = _ := by
+        change ctx.spec.ofZ
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul y (Zdiv x y))
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y)) = _
+        rw [ctx.certificate.sourceLaws.ofZ_add]
+        rfl
+  unfold Exact.Rdiv
+  unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv
+  change ctx.spec.div (Exact.IZR ctx x) (Exact.IZR ctx y) =
+    ctx.spec.add (Exact.IZR ctx (Zdiv x y))
+      (ctx.spec.div (Exact.IZR ctx
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y))
+        (Exact.IZR ctx y))
+  rw [ctx.certificate.orderedField.div_eq_mul_inv,
+    ctx.certificate.orderedField.div_eq_mul_inv]
+  unfold Exact.Rplus at hxyR
+  unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rplus at hxyR
+  rw [hxyR]
+  rw [ctx.certificate.orderedField.mul_comm
+      (ctx.spec.add
+        (Exact.IZR ctx (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul y (Zdiv x y)))
+        (Exact.IZR ctx (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y)))
+      (ctx.spec.inv (Exact.IZR ctx y))]
+  rw [ctx.certificate.orderedField.left_distrib]
+  unfold Exact.IZR at ⊢
+  unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR at ⊢
+  rw [hmul]
+  rw [← ctx.certificate.orderedField.mul_assoc]
+  have hyR : ctx.spec.ofZ y ≠ ctx.spec.zero := by
+    intro hz
+    apply hy
+    apply _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.eq_IZR ctx y Z0
+    calc
+      ctx.spec.ofZ y = ctx.spec.zero := hz
+      _ = ctx.spec.ofZ Z0 := ctx.certificate.sourceLaws.ofZ_zero.symm
+  have hinv : ctx.spec.mul (ctx.spec.inv (ctx.spec.ofZ y))
+      (ctx.spec.ofZ y) = ctx.spec.one := by
+    exact ctx.certificate.orderedField.inv_mul_cancel _ hyR
+  rw [hinv, ctx.certificate.orderedField.one_mul]
+  rw [ctx.certificate.orderedField.mul_comm
+      (ctx.spec.inv (ctx.spec.ofZ y))
+      (ctx.spec.ofZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y))]
+
+end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+private theorem pg_Zfloor_div_remainder_pos (ctx : ExactRealContext)
+    (r y : Z) (hy : Zlt Z0 y)
+    (hr : Zle Z0 r) (hry : Zlt r y) :
+    Exact.Rle ctx (Exact.R0 ctx)
+        (Exact.Rdiv ctx (Exact.IZR ctx r) (Exact.IZR ctx y)) ∧
+      Exact.Rlt ctx (Exact.Rdiv ctx (Exact.IZR ctx r) (Exact.IZR ctx y))
+        (Exact.Rone ctx) := by
+  have hy0 := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_lt ctx Z0 y hy
+  have hr0 := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_le ctx Z0 r hr
+  have hry' := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_lt ctx r y hry
+  have hinv0 := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rinv_0_lt_compat ctx
+    (Exact.IZR ctx y) hy0
+  have hr0' : ctx.spec.le ctx.spec.zero (ctx.spec.ofZ r) := by
+    change ctx.spec.le (ctx.spec.ofZ Z0) (ctx.spec.ofZ r) at hr0
+    rw [ctx.certificate.sourceLaws.ofZ_zero] at hr0
+    exact hr0
+  have hinv0' : ctx.spec.le ctx.spec.zero (ctx.spec.inv (ctx.spec.ofZ y)) := by
+    have h : ctx.spec.lt ctx.spec.zero (ctx.spec.inv (ctx.spec.ofZ y)) := by
+      change ctx.spec.lt (ctx.spec.ofZ Z0) (ctx.spec.inv (ctx.spec.ofZ y)) at hinv0
+      rw [ctx.certificate.sourceLaws.ofZ_zero] at hinv0
+      exact hinv0
+    exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h |>.1
+  have hinv0le := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rlt_le
+    ctx (Exact.IZR ctx Z0) (Exact.Rinv ctx (Exact.IZR ctx y)) hinv0
+  have hnon : Exact.Rle ctx (Exact.R0 ctx)
+      (Exact.Rmult ctx (Exact.IZR ctx r) (Exact.Rinv ctx (Exact.IZR ctx y))) := by
+    unfold Exact.Rle Exact.R0 Exact.Rmult Exact.IZR Exact.Rinv
+    unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rle
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.R0
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.Rmult
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.Rinv
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR
+    have h := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_le_pos
+      ctx (Exact.IZR ctx r) (Exact.Rinv ctx (Exact.IZR ctx y)) hr0 hinv0le
+    change ctx.spec.le (ctx.spec.ofZ Z0)
+      (ctx.spec.mul (ctx.spec.ofZ r) (ctx.spec.inv (ctx.spec.ofZ y))) at h
+    rw [ctx.certificate.sourceLaws.ofZ_zero] at h
+    exact h
+  have hyne : y ≠ Z0 := by
+    intro he
+    subst y
+    change (0 : Int) < 0 at hy
+    omega
+  have hprod : Exact.Rmult ctx
+      (Exact.Rdiv ctx (Exact.IZR ctx r) (Exact.IZR ctx y))
+      (Exact.IZR ctx y) = Exact.IZR ctx r := by
+    unfold Exact.Rmult Exact.IZR Exact.Rdiv
+    unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rmult
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv
+    rw [ctx.certificate.orderedField.div_eq_mul_inv]
+    change ctx.spec.mul (ctx.spec.mul (ctx.spec.ofZ r)
+      (ctx.spec.inv (ctx.spec.ofZ y))) (ctx.spec.ofZ y) = ctx.spec.ofZ r
+    rw [ctx.certificate.orderedField.mul_assoc]
+    have hyR : ctx.spec.ofZ y ≠ ctx.spec.zero := by
+      intro hz
+      apply hyne
+      apply _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.eq_IZR ctx y Z0
+      calc
+        ctx.spec.ofZ y = ctx.spec.zero := hz
+        _ = ctx.spec.ofZ Z0 := ctx.certificate.sourceLaws.ofZ_zero.symm
+    rw [ctx.certificate.orderedField.inv_mul_cancel _ hyR,
+      ctx.certificate.orderedField.mul_one]
+  have hlt : Exact.Rlt ctx
+      (Exact.Rdiv ctx (Exact.IZR ctx r) (Exact.IZR ctx y))
+      (Exact.IZR ctx (Zpos xH)) := by
+    apply _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_lt_reg_r
+      ctx (Exact.IZR ctx y) _ _ hy0
+    have hprod' := hprod
+    unfold Exact.Rmult Exact.IZR Exact.Rdiv at hprod'
+    unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rmult
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv at hprod'
+    rw [ctx.certificate.orderedField.div_eq_mul_inv] at hprod'
+    unfold Exact.Rdiv Exact.IZR at ⊢
+    unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rmult at ⊢
+    unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR at ⊢
+    rw [ctx.certificate.orderedField.div_eq_mul_inv]
+    rw [hprod']
+    rw [ctx.certificate.sourceLaws.ofZ_one,
+      ctx.certificate.orderedField.one_mul]
+    change ctx.spec.lt (ctx.spec.ofZ r) (ctx.spec.ofZ y) at hry'
+    exact hry'
+  constructor
+  · unfold Exact.Rle Exact.R0 Exact.Rdiv Exact.IZR
+    unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rle
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.R0
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR
+    rw [ctx.certificate.orderedField.div_eq_mul_inv]
+    exact hnon
+  · unfold Exact.Rlt Exact.Rone Exact.Rdiv Exact.IZR
+    unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rlt
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.Rone
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR
+    rw [ctx.certificate.orderedField.div_eq_mul_inv]
+    have hlt' := hlt
+    unfold Exact.Rlt Exact.Rdiv Exact.IZR at hlt'
+    unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rlt
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR at hlt'
+    rw [ctx.certificate.orderedField.div_eq_mul_inv] at hlt'
+    rw [ctx.certificate.sourceLaws.ofZ_one] at hlt'
+    exact hlt'
+
+end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+private theorem pg_Zmod_bounds_neg (x y : Z) (hy : Zlt y Z0) :
+    Zlt y (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y) ∧
+      Zle (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y) Z0 := by
+  have hopp : ∀ z : Z,
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zopp z) =
+        -_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z := by
+    intro z
+    cases z <;>
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] <;>
+      simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+  have hyn : Zlt Z0 (Zopp y) := by
+    change (0 : Int) <
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zopp y)
+    rw [hopp]
+    change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y < 0 at hy
+    omega
+  have hm := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Z_mod_lt
+    (Zopp x) (Zopp y) hyn
+  have hrel := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Zmod_opp_opp x y
+  have hm0 := hm.1
+  have hm1 := hm.2
+  change 0 ≤ _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo (Zopp x) (Zopp y)) at hm0
+  change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo (Zopp x) (Zopp y)) <
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zopp y) at hm1
+  have hrel' :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y =
+        Zopp (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo (Zopp x) (Zopp y)) := by
+    calc
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y =
+          Zopp (Zopp (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y)) :=
+        (pg_zopp_zopp _).symm
+      _ = Zopp (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo (Zopp x) (Zopp y)) := by
+        exact (congrArg Zopp hrel).symm
+  constructor
+  · change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y <
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y)
+    rw [hrel', hopp]
+    change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y <
+      -_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo (Zopp x) (Zopp y))
+    change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Zopp y) >
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo (Zopp x) (Zopp y)) at hm1
+    rw [hopp y] at hm1
+    omega
+  · change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y) ≤ 0
+    rw [hrel', hopp]
+    change -_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo (Zopp x) (Zopp y)) ≤ 0
+    omega
+
+end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+private theorem pg_div_opp_opp (ctx : ExactRealContext) (r y : Z) (hy : y ≠ Z0) :
+    Exact.Rdiv ctx (Exact.IZR ctx (Zopp r)) (Exact.IZR ctx (Zopp y)) =
+      Exact.Rdiv ctx (Exact.IZR ctx r) (Exact.IZR ctx y) := by
+  have hyR : Exact.IZR ctx y ≠ Exact.R0 ctx := by
+    intro hz
+    apply hy
+    apply _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.eq_IZR ctx y Z0
+    calc
+      Exact.IZR ctx y = Exact.R0 ctx := hz
+      _ = Exact.IZR ctx Z0 := by
+        change ctx.spec.zero = ctx.spec.ofZ Z0
+        exact ctx.certificate.sourceLaws.ofZ_zero.symm
+  unfold Exact.Rdiv Exact.IZR
+  unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv
+    CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR
+  rw [ctx.certificate.orderedField.div_eq_mul_inv,
+    ctx.certificate.orderedField.div_eq_mul_inv]
+  rw [ctx.certificate.sourceLaws.ofZ_neg,
+    ctx.certificate.sourceLaws.ofZ_neg]
+  have hinv : ctx.spec.inv (ctx.spec.neg (ctx.spec.ofZ y)) =
+      ctx.spec.neg (ctx.spec.inv (ctx.spec.ofZ y)) := by
+    have h := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_inv_permute_proof
+      ctx (ctx.spec.ofZ y) (by
+        intro hz
+        apply hyR
+        change ctx.spec.ofZ y = ctx.spec.zero
+        exact hz.trans ctx.certificate.sourceLaws.ofZ_zero)
+    exact h.symm
+  rw [hinv]
+  have hmul := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_opp_opp
+    ctx (ctx.spec.ofZ r) (ctx.spec.inv (ctx.spec.ofZ y))
+  exact hmul
+
+end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+private theorem pg_Zfloor_div_remainder_neg (ctx : ExactRealContext)
+    (r y : Z) (hy : Zlt y Z0)
+    (hry : Zlt y r) (hr : Zle r Z0) :
+    Exact.Rle ctx (Exact.R0 ctx)
+        (Exact.Rdiv ctx (Exact.IZR ctx r) (Exact.IZR ctx y)) ∧
+      Exact.Rlt ctx (Exact.Rdiv ctx (Exact.IZR ctx r) (Exact.IZR ctx y))
+        (Exact.Rone ctx) := by
+  have hopp : ∀ z : Z,
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zopp z) =
+        -_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z := by
+    intro z
+    cases z <;>
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] <;>
+      simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+  have hypos : Zlt Z0 (Zopp y) := by
+    change (0 : Int) < _
+    rw [hopp]
+    change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y < 0 at hy
+    omega
+  have hrpos : Zle Z0 (Zopp r) := by
+    change (0 : Int) ≤ _
+    rw [hopp]
+    change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r ≤ 0 at hr
+    omega
+  have hrrpos : Zlt (Zopp r) (Zopp y) := by
+    change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zopp r) <
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zopp y)
+    rw [hopp, hopp]
+    change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y <
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r at hry
+    omega
+  have hp := pg_Zfloor_div_remainder_pos ctx (Zopp r) (Zopp y)
+    hypos hrpos hrrpos
+  have hyne : y ≠ Z0 := by
+    intro he
+    subst y
+    change (0 : Int) < 0 at hy
+    omega
+  rw [pg_div_opp_opp ctx r y hyne] at hp
+  exact hp
+
+end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+private theorem pg_add_le (ctx : ExactRealContext) (q : Z)
+    (d : ctx.spec.carrier) (hd : ctx.spec.le ctx.spec.zero d) :
+    ctx.spec.le (ctx.spec.ofZ q) (ctx.spec.add (ctx.spec.ofZ q) d) := by
+  have hd' : Exact.Rle ctx (Exact.R0 ctx) d := by
+    unfold Exact.Rle Exact.R0
+    unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rle
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.R0
+    exact hd
+  have h := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_le_compat_l
+    ctx (Exact.IZR ctx q) (Exact.R0 ctx) d hd'
+  unfold Exact.IZR Exact.R0 at h
+  unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rle
+    CompCert4Lean.Foundation.FlocqReal.ExactReal.R0 at h
+  unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rplus
+    CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR at h
+  rw [ctx.certificate.orderedField.add_zero] at h
+  change ctx.spec.le (ctx.spec.ofZ q)
+    (ctx.spec.add (ctx.spec.ofZ q) d) at h
+  exact h
+
+private theorem pg_add_lt (ctx : ExactRealContext) (q : Z)
+    (d : ctx.spec.carrier) (hd : ctx.spec.lt d ctx.spec.one) :
+    ctx.spec.lt (ctx.spec.add (ctx.spec.ofZ q) d)
+      (ctx.spec.add (ctx.spec.ofZ q) ctx.spec.one) := by
+  have h := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Raxioms.Rplus_lt_compat_l
+    ctx (Exact.IZR ctx q) d (Exact.Rone ctx) hd
+  unfold Exact.IZR Exact.Rone at h
+  unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rplus
+    CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR
+    CompCert4Lean.Foundation.FlocqReal.ExactReal.Rone at h
+  change ctx.spec.lt (ctx.spec.add (ctx.spec.ofZ q) d)
+    (ctx.spec.add (ctx.spec.ofZ q) ctx.spec.one) at h
+  exact h
+
+theorem Zfloor_div :
+    ∀ (ctx : ExactRealContext), Zfloor_divStatement ctx := by
+  intro ctx x y hy
+  by_cases hypos : Zlt Z0 y
+  · have hm := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Z_mod_lt x y hypos
+    have hd := pg_Zfloor_div_remainder_pos ctx
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y) y
+      hypos hm.1 hm.2
+    have hdecomp := pg_Zfloor_div_decomp ctx x y hy
+    have hdle := hd.1
+    have hdlt := hd.2
+    unfold Exact.Rle Exact.R0 Exact.Rdiv Exact.IZR at hdle
+    unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rle
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.R0
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR at hdle
+    unfold Exact.Rlt Exact.Rone Exact.Rdiv Exact.IZR at hdlt
+    unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rlt
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.Rone
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR at hdlt
+    have hlower := pg_add_le ctx (Zdiv x y)
+      (ctx.spec.div (ctx.spec.ofZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y))
+        (ctx.spec.ofZ y)) hdle
+    have hupper := pg_add_lt ctx (Zdiv x y)
+      (ctx.spec.div (ctx.spec.ofZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y))
+        (ctx.spec.ofZ y)) hdlt
+    apply Zfloor_imp ctx (Zdiv x y)
+    constructor
+    · rw [hdecomp]
+      exact hlower
+    · rw [hdecomp]
+      unfold Exact.Rlt Exact.Rplus Exact.Rdiv Exact.IZR
+      unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rlt
+        CompCert4Lean.Foundation.FlocqReal.ExactReal.Rplus
+        CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv
+        CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR
+      rw [ctx.certificate.sourceLaws.ofZ_add,
+        ctx.certificate.sourceLaws.ofZ_one]
+      exact hupper
+  · have hyneg : Zlt y Z0 := by
+      change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y < 0
+      by_cases hpos : (0 : Int) <
+          _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y
+      · exact False.elim (hypos hpos)
+      · have hzero :
+            _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y ≠ 0 := by
+          intro hz
+          apply hy
+          apply _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+          exact hz
+        omega
+    have hm := pg_Zmod_bounds_neg x y hyneg
+    have hd := pg_Zfloor_div_remainder_neg ctx
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y) y
+      hyneg hm.1 hm.2
+    have hdecomp := pg_Zfloor_div_decomp ctx x y hy
+    have hdle := hd.1
+    have hdlt := hd.2
+    unfold Exact.Rle Exact.R0 Exact.Rdiv Exact.IZR at hdle
+    unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rle
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.R0
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR at hdle
+    unfold Exact.Rlt Exact.Rone Exact.Rdiv Exact.IZR at hdlt
+    unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rlt
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.Rone
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR at hdlt
+    have hlower := pg_add_le ctx (Zdiv x y)
+      (ctx.spec.div (ctx.spec.ofZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y))
+        (ctx.spec.ofZ y)) hdle
+    have hupper := pg_add_lt ctx (Zdiv x y)
+      (ctx.spec.div (ctx.spec.ofZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y))
+        (ctx.spec.ofZ y)) hdlt
+    apply Zfloor_imp ctx (Zdiv x y)
+    constructor
+    · rw [hdecomp]
+      exact hlower
+    · rw [hdecomp]
+      unfold Exact.Rlt Exact.Rplus Exact.Rdiv Exact.IZR
+      unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.Rlt
+        CompCert4Lean.Foundation.FlocqReal.ExactReal.Rplus
+        CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv
+        CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR
+      rw [ctx.certificate.sourceLaws.ofZ_add,
+        ctx.certificate.sourceLaws.ofZ_one]
+      exact hupper
+
+end CompCert4Lean.Flocq.Core.Raux
