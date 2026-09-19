@@ -3151,3 +3151,370 @@ theorem round_int_no_overflow :
   exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rle_lt_trans
     ctx _ _ _ hle hlt
 end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.IEEE754
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq (intOfZ intOfZ_injective intOfZ_zOfInt)
+
+private theorem bofz_repr_round_fixed (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) (prec emax : Z) (x : Exact.R ctx)
+    (hx : Exact.generic_format magnitude Zaux.radix2 (fexp prec emax) x) :
+    Exact.round magnitude Zaux.radix2 (fexp prec emax)
+      (Exact.round_mode ctx mode_NE) x = x := by
+  change Generic_fmt.Exact.round ctx magnitude Zaux.radix2 (fexp prec emax)
+    (Generic_fmt.Exact.Znearest ctx (fun m => Bool.not (Zaux.Zeven m))) x = x
+  unfold Generic_fmt.Exact.round
+  rw [Generic_fmt.scaled_mantissa_generic ctx magnitude Zaux.radix2
+    (fexp prec emax) x hx]
+  have hz : ∀ n : Z, Generic_fmt.Exact.Znearest ctx
+      (fun m => Bool.not (Zaux.Zeven m)) (Generic_fmt.Exact.IZR ctx n) = n := by
+    intro n
+    rcases Generic_fmt.Znearest_DN_or_UP ctx (fun m => Bool.not (Zaux.Zeven m))
+      (Exact.IZR ctx n) with h | h
+    · exact h.trans (Raux.Zfloor_IZR ctx n)
+    · exact h.trans (Raux.Zceil_IZR ctx n)
+  rw [hz]
+  exact hx.symm
+
+private theorem bofz_repr_shr_exponent (mrs : BinarySingleNaN.shr_record)
+    (e t : Z) (h : Zle e t) :
+    (BinarySingleNaN.shr mrs e (Zsub t e)).2 = t := by
+  have hi : intOfZ e ≤ intOfZ t := h
+  cases hn : Zsub t e with
+  | Z0 =>
+    change e = t
+    apply intOfZ_injective
+    have hh := congrArg intOfZ hn
+    simp only [Zsub, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+      intOfZ_zOfInt] at hh
+    change intOfZ t - intOfZ e = 0 at hh
+    omega
+  | Zpos p =>
+    change Zadd e (Zpos p) = t
+    have hh := congrArg intOfZ hn
+    apply intOfZ_injective
+    simp only [Zadd, Zsub,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub, intOfZ_zOfInt] at hh ⊢
+    change intOfZ t - intOfZ e = intOfZ (Zpos p) at hh
+    omega
+  | Zneg p =>
+    have hh := congrArg intOfZ hn
+    simp only [Zsub, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+      intOfZ_zOfInt] at hh
+    change intOfZ t - intOfZ e =
+      -Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at hh
+    have hp := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+    simp only [Int.ofNat_eq_natCast] at hh
+    omega
+
+
+private theorem bofz_repr_shift_exact (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) (prec emax : Z) (m : positive) (e : Z)
+    (he : Zle e (fexp prec emax (Zadd (Digits.Zdigits Zaux.radix2 (Zpos m)) e)))
+    (hx : Exact.generic_format magnitude Zaux.radix2 (fexp prec emax)
+      (Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zpos m) e))) :
+    ∃ (p : positive) (er : Z),
+      BinarySingleNaN.shr_fexp (prec := prec) (emax := emax)
+        (Zpos m) e BinarySingleNaN.loc_Exact =
+          (BinarySingleNaN.shr_record_of_loc (Zpos p) BinarySingleNaN.loc_Exact, er) ∧
+      Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zpos p) er) =
+        Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zpos m) e) ∧
+      Generic_fmt.Exact.canonical ctx magnitude Zaux.radix2 (fexp prec emax)
+        (Defs.Float Zaux.radix2 (Zpos p) er) := by
+  let x := Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zpos m) e)
+  let t := fexp prec emax (Zadd (Digits.Zdigits Zaux.radix2 (Zpos m)) e)
+  have hm0 : Zlt Z0 (Zpos m) := by
+    change (0 : Int) < Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m)
+    exact Int.natCast_pos.mpr (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive m)
+  have hxpos : Exact.Rlt ctx (Exact.R0 ctx) x :=
+    Float_prop.F2R_gt_0 ctx Zaux.radix2 (Defs.Float Zaux.radix2 (Zpos m) e) hm0
+  have hce : Generic_fmt.Exact.cexp ctx magnitude Zaux.radix2 (fexp prec emax) x = t := by
+    change fexp prec emax (Float_prop.Exact.mag magnitude Zaux.radix2 x) = t
+    rw [Float_prop.mag_F2R_Zdigits ctx magnitude Zaux.radix2 (Zpos m) e (by intro h; cases h)]
+  have hsdef : BinarySingleNaN.shr_fexp (prec := prec) (emax := emax)
+      (Zpos m) e BinarySingleNaN.loc_Exact =
+      BinarySingleNaN.shr (BinarySingleNaN.shr_record_of_loc (Zpos m)
+        BinarySingleNaN.loc_Exact) e (Zsub t e) := by
+    change CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shr
+      (BinarySingleNaN.shr_record_of_loc (Zpos m) BinarySingleNaN.loc_Exact) e
+      (Zsub (fexp prec emax (Zadd (Zpos (Digits.digits2_pos m)) e)) e) = _
+    have hd := Digits.Zpos_digits2_pos m
+    change Zpos (Digits.digits2_pos m) = Digits.Zdigits Zaux.radix2 (Zpos m) at hd
+    rw [hd]
+  generalize hs : BinarySingleNaN.shr_fexp
+    (prec := prec) (emax := emax) (Zpos m) e BinarySingleNaN.loc_Exact = pair
+  rcases pair with ⟨sr, er⟩
+  have her : er = t := by
+    have h := bofz_repr_shr_exponent
+      (BinarySingleNaN.shr_record_of_loc (Zpos m) BinarySingleNaN.loc_Exact) e t he
+    rw [← hsdef, hs] at h
+    exact h
+  have hb := BinarySingleNaN.inbetween_shr ctx x (Zpos m) e
+    BinarySingleNaN.loc_Exact (Zsub t e) (show Zle Z0 (Zpos m) from Int.le_of_lt hm0)
+    (CompCert4Lean.Flocq.Calc.Bracket.inbetween_Exact rfl)
+  change CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx Zaux.radix2
+    (BinarySingleNaN.shr_m (BinarySingleNaN.shr
+      (BinarySingleNaN.shr_record_of_loc (Zpos m) BinarySingleNaN.loc_Exact) e (Zsub t e)).1)
+    (BinarySingleNaN.shr
+      (BinarySingleNaN.shr_record_of_loc (Zpos m) BinarySingleNaN.loc_Exact) e (Zsub t e)).2
+    x (BinarySingleNaN.loc_of_shr_record (BinarySingleNaN.shr
+      (BinarySingleNaN.shr_record_of_loc (Zpos m) BinarySingleNaN.loc_Exact) e (Zsub t e)).1) at hb
+  rw [← hsdef, hs] at hb
+  dsimp only at hb
+  rw [her] at hb
+  have hfmt := hx
+  change x = Generic_fmt.Exact.F2R ctx
+    (Generic_fmt.Float Zaux.radix2
+      (Generic_fmt.Exact.Ztrunc ctx
+        (Generic_fmt.Exact.scaled_mantissa ctx magnitude Zaux.radix2 (fexp prec emax) x))
+      (Generic_fmt.Exact.cexp ctx magnitude Zaux.radix2 (fexp prec emax) x)) at hfmt
+  rw [hce] at hfmt
+  have hu := CompCert4Lean.Flocq.Calc.Bracket.inbetween_float_unique ctx Zaux.radix2 x t
+    (BinarySingleNaN.shr_m sr) (BinarySingleNaN.loc_of_shr_record sr)
+    (Generic_fmt.Exact.Ztrunc ctx
+      (Generic_fmt.Exact.scaled_mantissa ctx magnitude Zaux.radix2 (fexp prec emax) x))
+    BinarySingleNaN.loc_Exact hb
+    (CompCert4Lean.Flocq.Calc.Bracket.inbetween_Exact hfmt)
+  have hval : Defs.Exact.F2R ctx
+      (Defs.Float Zaux.radix2 (BinarySingleNaN.shr_m sr) er) = x := by
+    rw [her, hu.1]
+    exact hfmt.symm
+  have hp0 : Zlt Z0 (BinarySingleNaN.shr_m sr) :=
+    Float_prop.gt_0_F2R ctx Zaux.radix2 (BinarySingleNaN.shr_m sr) er
+      (by
+        change Exact.Rlt ctx (Exact.R0 ctx)
+          (Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (BinarySingleNaN.shr_m sr) er))
+        rw [hval]
+        exact hxpos)
+  have hpos : ∃ p : positive, BinarySingleNaN.shr_m sr = Zpos p := by
+    cases hm : BinarySingleNaN.shr_m sr with
+    | Z0 => rw [hm] at hp0; exact False.elim ((Int.lt_irrefl 0) hp0)
+    | Zpos p => exact ⟨p, rfl⟩
+    | Zneg p =>
+      rw [hm] at hp0
+      change (0 : Int) < -Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at hp0
+      have hnonneg := Int.ofNat_zero_le (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)
+      simp only [Int.ofNat_eq_natCast] at hp0
+      omega
+  obtain ⟨p, hp⟩ := hpos
+  have hrec : sr = BinarySingleNaN.shr_record_of_loc
+      (BinarySingleNaN.shr_m sr) BinarySingleNaN.loc_Exact := by
+    have hl := hu.2
+    rcases sr with ⟨m, r, s⟩
+    cases r <;> cases s <;> cases hl <;> rfl
+  refine ⟨p, er, ?_, ?_, ?_⟩
+  · rw [hp] at hrec
+    rw [hrec]
+  · rw [hp] at hval
+    exact hval
+  · change er = Generic_fmt.Exact.cexp ctx magnitude Zaux.radix2 (fexp prec emax)
+      (Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zpos p) er))
+    rw [hp] at hval
+    rw [hval, hce]
+    exact her
+
+
+private theorem bofz_repr_round_aux_exact {prec emax : Z}
+    [Prec_gt_0 prec] [Prec_lt_emax prec emax]
+    (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    (sx : Bool) (m : positive) (e : Z)
+    (he : Zle e (fexp prec emax (Zadd (Digits.Zdigits Zaux.radix2 (Zpos m)) e)))
+    (hx : Exact.generic_format magnitude Zaux.radix2 (fexp prec emax)
+      (Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zpos m) e)))
+    (hlt : Exact.Rlt ctx
+      (Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zpos m) e))
+      (Exact.bpow ctx Zaux.radix2 emax)) :
+    ∃ (p : positive) (er : Z),
+      BinarySingleNaN.binary_round_aux (prec := prec) (emax := emax)
+        mode_NE sx (Zpos m) e BinarySingleNaN.loc_Exact =
+          BinarySingleNaN.S754_finite sx p er ∧
+      Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zpos p) er) =
+        Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zpos m) e) := by
+  obtain ⟨p, er, hs, hv, hc⟩ := bofz_repr_shift_exact ctx magnitude prec emax m e he hx
+  have hb := BinarySingleNaN.bounded_canonical_lt_emax ctx magnitude p er hc
+    (show Exact.Rlt ctx (Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zpos p) er))
+      (Exact.bpow ctx Zaux.radix2 emax) from hv ▸ hlt)
+  have hb' : BinarySingleNaN.canonical_mantissa (prec := prec) (emax := emax) p er = true ∧
+      Zle_bool er (Zsub emax prec) = true := Bool.and_eq_true_iff.mp hb
+  have hcan : fexp prec emax (Zadd (Zpos (Digits.digits2_pos p)) er) = er :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zbool.Zeq_bool_eq _ _ hb'.1
+  have hs2 : BinarySingleNaN.shr_fexp (prec := prec) (emax := emax)
+      (Zpos p) er BinarySingleNaN.loc_Exact =
+        (BinarySingleNaN.shr_record_of_loc (Zpos p) BinarySingleNaN.loc_Exact, er) := by
+    change BinarySingleNaN.shr
+      (BinarySingleNaN.shr_record_of_loc (Zpos p) BinarySingleNaN.loc_Exact) er
+      (Zsub (fexp prec emax (Zadd (Zpos (Digits.digits2_pos p)) er)) er) = _
+    have hz : Zsub er er = Z0 := by
+      apply intOfZ_injective
+      change intOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (intOfZ er - intOfZ er)) = 0
+      rw [intOfZ_zOfInt]
+      omega
+    rw [hcan, hz]
+    rfl
+  refine ⟨p, er, ?_, hv⟩
+  unfold BinarySingleNaN.binary_round_aux
+  rw [hs]
+  change (match BinarySingleNaN.shr_m
+      (BinarySingleNaN.shr_fexp (prec := prec) (emax := emax)
+        (Zpos p) er BinarySingleNaN.loc_Exact).1 with
+    | .Z0 => BinarySingleNaN.S754_zero sx
+    | .Zpos q => BinarySingleNaN.binary_fit_aux (prec := prec) (emax := emax)
+        mode_NE sx q (BinarySingleNaN.shr_fexp (prec := prec) (emax := emax)
+          (Zpos p) er BinarySingleNaN.loc_Exact).2
+    | .Zneg _ => BinarySingleNaN.S754_nan) = _
+  rw [hs2]
+  change BinarySingleNaN.binary_fit_aux (prec := prec) (emax := emax) mode_NE sx p er = _
+  unfold BinarySingleNaN.binary_fit_aux
+  rw [show BinarySingleNaN.Zle_bool er (BinarySingleNaN.Zsub emax prec) = true from hb'.2]
+  rfl
+
+private theorem bofz_repr_binary_round_exact {prec emax : Z}
+    [Prec_gt_0 prec] [Prec_lt_emax prec emax]
+    (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    (sx : Bool) (m : positive) (e : Z)
+    (hx : Exact.generic_format magnitude Zaux.radix2 (fexp prec emax)
+      (Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zpos m) e)))
+    (hlt : Exact.Rlt ctx
+      (Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zpos m) e))
+      (Exact.bpow ctx Zaux.radix2 emax)) :
+    ∃ (p : positive) (er : Z),
+      BinarySingleNaN.binary_round (prec := prec) (emax := emax) mode_NE sx m e =
+          BinarySingleNaN.S754_finite sx p er ∧
+      Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zpos p) er) =
+        Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zpos m) e) := by
+  have ha := BinarySingleNaN.shl_align_fexp_correct (prec := prec) (emax := emax) ctx m e
+  generalize hs : BinarySingleNaN.shl_align_fexp (prec := prec) (emax := emax) m e = pair
+  rcases pair with ⟨ma, ea⟩
+  rw [hs] at ha
+  dsimp only at ha
+  have hv : Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zpos m) e) =
+      Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zpos ma) ea) := ha.1
+  obtain ⟨p, er, hr, hv'⟩ := bofz_repr_round_aux_exact ctx magnitude sx ma ea ha.2
+    (hv ▸ hx) (hv ▸ hlt)
+  refine ⟨p, er, ?_, hv'.trans hv.symm⟩
+  unfold BinarySingleNaN.binary_round
+  rw [hs]
+  exact hr
+
+
+private theorem bofz_repr_positive_round {prec emax : Z}
+    [Prec_gt_0 prec] [Prec_lt_emax prec emax]
+    (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    (sx : Bool) (m : positive)
+    (hx : integer_representable (prec := prec) (emax := emax) ctx magnitude (Zpos m)) :
+    ∃ (p : positive) (er : Z),
+      BinarySingleNaN.binary_round (prec := prec) (emax := emax) mode_NE sx m Z0 =
+        BinarySingleNaN.S754_finite sx p er ∧
+      Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zpos p) er) = Exact.IZR ctx (Zpos m) := by
+  have hf : Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zpos m) Z0) =
+      Exact.IZR ctx (Zpos m) := ctx.certificate.orderedField.mul_one _
+  have hround := bofz_repr_round_fixed ctx magnitude prec emax (Exact.IZR ctx (Zpos m)) hx.2
+  have hlt := round_int_no_overflow (prec := prec) (emax := emax) ctx magnitude (Zpos m) hx.1
+  change Exact.Rlt ctx
+    (Exact.Rabs ctx (Exact.round magnitude Zaux.radix2 (fexp prec emax)
+      (Exact.round_mode ctx mode_NE) (Exact.IZR ctx (Zpos m))))
+    (Exact.bpow ctx Zaux.radix2 emax) at hlt
+  rw [hround] at hlt
+  have habs : Exact.IZR ctx (Zpos m) = Exact.Rabs ctx (Exact.IZR ctx (Zpos m)) := by
+    have h := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rbasic_fun.abs_IZR ctx (Zpos m)
+    have hm : Zle Z0 (Zpos m) := Int.natCast_nonneg _
+    have hz : Zabs (Zpos m) = Zpos m :=
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs_eq _ hm
+    change Exact.IZR ctx (Zabs (Zpos m)) = Exact.Rabs ctx (Exact.IZR ctx (Zpos m)) at h
+    rw [hz] at h
+    exact h
+  rw [← habs] at hlt
+  obtain ⟨p, er, hr, hv⟩ := bofz_repr_binary_round_exact ctx magnitude sx m Z0
+    (hf.symm ▸ hx.2) (hf.symm ▸ hlt)
+  exact ⟨p, er, hr, hv.trans hf⟩
+
+private theorem bofz_repr_lift_finite {prec emax : Z}
+    (x : BinarySingleNaN.binary_float prec emax) (h : BinarySingleNaN.is_nan x = false)
+    (s : Bool) (p : positive) (e : Z) (hx : x = BinarySingleNaN.B754_finite s p e) :
+    Binary.BSN2B' x h = Binary.B754_finite s p e := by
+  cases hx
+  rfl
+
+theorem BofZ_representable :
+    ∀ {prec emax : Z} [Prec_gt_0 prec] [Prec_lt_emax prec emax]
+      [Binary.BinaryNormalizeCertificate prec emax],
+      BofZ_representableStatement (prec := prec) (emax := emax) := by
+  intro prec emax pgt ple cert ctx magnitude n hn
+  cases n with
+  | Z0 =>
+    refine ⟨?_, rfl, rfl⟩
+    exact ctx.certificate.sourceLaws.ofZ_zero.symm
+  | Zpos m =>
+    obtain ⟨p, er, hr, hv⟩ := bofz_repr_positive_round ctx magnitude false m hn
+    have hb : BofZ (prec := prec) (emax := emax) (Zpos m) =
+        Binary.B754_finite false p er := by
+      apply bofz_repr_lift_finite
+      change BinarySingleNaN.SF2B (prec := prec) (emax := emax)
+        (BinarySingleNaN.binary_round (prec := prec) (emax := emax) mode_NE false m Z0) = _
+      rw [hr]
+      rfl
+    change Exact.B2R ctx (BofZ (prec := prec) (emax := emax) (Zpos m)) =
+      Exact.IZR ctx (Zpos m) ∧
+      Binary.is_finite (BofZ (prec := prec) (emax := emax) (Zpos m)) = true ∧
+      Binary.Bsign (BofZ (prec := prec) (emax := emax) (Zpos m)) = Zlt_bool (Zpos m) Z0
+    rw [hb]
+    refine ⟨hv, rfl, ?_⟩
+    change false = (if Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m) < 0
+      then true else false)
+    simp
+  | Zneg m =>
+    have hop : Zopp (Zneg m) = Zpos m := by
+      apply intOfZ_injective
+      simp only [Zopp, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+        intOfZ_zOfInt]
+      change -(-Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m)) =
+        Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m)
+      omega
+    have hn' : integer_representable (prec := prec) (emax := emax) ctx magnitude (Zpos m) := by
+      have h := integer_representable_opp (prec := prec) (emax := emax) ctx magnitude (Zneg m) hn
+      rw [hop] at h
+      exact h
+    obtain ⟨p, er, hr, hv⟩ := bofz_repr_positive_round ctx magnitude true m hn'
+    have hb : BofZ (prec := prec) (emax := emax) (Zneg m) =
+        Binary.B754_finite true p er := by
+      apply bofz_repr_lift_finite
+      change BinarySingleNaN.SF2B (prec := prec) (emax := emax)
+        (BinarySingleNaN.binary_round (prec := prec) (emax := emax) mode_NE true m Z0) = _
+      rw [hr]
+      rfl
+    change Exact.B2R ctx (BofZ (prec := prec) (emax := emax) (Zneg m)) =
+      Exact.IZR ctx (Zneg m) ∧
+      Binary.is_finite (BofZ (prec := prec) (emax := emax) (Zneg m)) = true ∧
+      Binary.Bsign (BofZ (prec := prec) (emax := emax) (Zneg m)) = Zlt_bool (Zneg m) Z0
+    rw [hb]
+    refine ⟨?_, rfl, ?_⟩
+    · change Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zopp (Zpos p)) er) =
+        Exact.IZR ctx (Zneg m)
+      have hf : Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zopp (Zpos p)) er) =
+          Exact.Ropp ctx (Defs.Exact.F2R ctx (Defs.Float Zaux.radix2 (Zpos p) er)) :=
+        Float_prop.F2R_Zopp ctx Zaux.radix2 (Zpos p) er
+      rw [hf, hv]
+      have hop' : Zopp (Zpos m) = Zneg m := by
+        apply intOfZ_injective
+        simp only [Zopp, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+          intOfZ_zOfInt]
+        rfl
+      have hizr : Exact.IZR ctx (Zopp (Zpos m)) = Exact.Ropp ctx (Exact.IZR ctx (Zpos m)) :=
+        CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.opp_IZR ctx (Zpos m)
+      rw [hop'] at hizr
+      exact hizr.symm
+    · change true = (if -Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m) < 0
+        then true else false)
+      have hp := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive m
+      simp only [Int.ofNat_eq_natCast]
+      have hlt : -(Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m)) < 0 := by
+        simp only [Int.ofNat_eq_natCast]
+        omega
+      simp only [Int.ofNat_eq_natCast] at hlt
+      simp [hlt, hp]
+
+end CompCert4Lean.Lib.IEEE754_extra
