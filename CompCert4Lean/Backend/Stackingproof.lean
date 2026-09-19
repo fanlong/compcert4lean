@@ -4950,3 +4950,158 @@ theorem save_callee_save_correct
   · simpa [ls1, rs1] using hagree'
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.Backend.Conventions
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Separation
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Conventions1
+open CompCert4Lean.X86.Machregs
+open CompCert4Lean.X86.Stacklayout
+
+theorem restore_callee_save_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    restore_callee_save_correctStatement := by
+  intro cfg xi return_address_offset tprog f
+    bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop
+    m j sp ls ls0 pa ra P rs k cs fb hframe hagree
+  have hrec : ∀ (l : List mreg) (ofs : Z) (rs : regset) (k : Mach.code),
+      (contains_callee_saves j sp ofs l ls0).m_pred m →
+      agree_unused cfg f bound_local_pos bound_outgoing_pos bound_stack_data_pos
+        used_callee_save_norepet used_callee_save_prop j ls0 rs →
+      (∀ r, r ∈ l → mreg_within_bounds cfg (function_bounds cfg f) r) →
+      ∃ rs',
+        star (Mach.step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          cfg xi return_address_offset) (Genv.globalenv tprog)
+          (Mach.State cs fb (Vptr sp Ptrofs.zero)
+            (restore_callee_save_rec l ofs k) rs m)
+          E0 (Mach.State cs fb (Vptr sp Ptrofs.zero) k rs' m) ∧
+        (∀ r, r ∈ l → Val.inject j (ls0 (R r)) (rs' r)) ∧
+        (∀ r, r ∉ l → rs' r = rs r) ∧
+        agree_unused cfg f bound_local_pos bound_outgoing_pos bound_stack_data_pos
+          used_callee_save_norepet used_callee_save_prop j ls0 rs' := by
+    intro l
+    induction l with
+    | nil =>
+        intro ofs rs k hcontains hagree hbounds
+        refine ⟨rs, ?_, ?_, ?_, hagree⟩
+        · simpa [restore_callee_save_rec] using
+            (star_refl (Mach.step
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              cfg xi return_address_offset)
+              (Genv.globalenv tprog)
+              (Mach.State cs fb (Vptr sp Ptrofs.zero) k rs m))
+        · simp
+        · simp
+    | cons r l ih =>
+        intro ofs rs k hcontains hagree hbounds
+        let ty := mreg_type r
+        let sz := CompCert4Lean.Common.AST.typesize ty
+        let ofs1 := align ofs sz
+        rcases hcontains with ⟨hhead, htail, hdisj⟩
+        obtain ⟨v, hload, hspec⟩ :=
+          contains_get_stack (fun v' => Val.inject j (ls0 (R r)) v')
+            m ty sp ofs1 hhead
+        have hbounds_tail : ∀ r0, r0 ∈ l →
+            mreg_within_bounds cfg (function_bounds cfg f) r0 := by
+          intro r0 hr0
+          exact hbounds r0 (by simp [hr0])
+        have hagree1 :
+            agree_unused cfg f bound_local_pos bound_outgoing_pos bound_stack_data_pos
+              used_callee_save_norepet used_callee_save_prop j ls0
+                (Regmap.set r v rs) := by
+          intro r0 hr0
+          by_cases heq : r0 = r
+          · subst r0
+            have hreg : Regmap.set r v rs r = v := by
+              simpa [Regmap.get] using (Regmap.gss_proof val r v rs)
+            rw [hreg]
+            exact hspec
+          · have hreg : Regmap.set r v rs r0 = rs r0 := by
+              change Regmap.get r0 (Regmap.set r v rs) = Regmap.get r0 rs
+              simpa using (Regmap.gso_proof val r0 r v rs heq)
+            rw [hreg]
+            exact hagree r0 hr0
+        have hih := ih (ofs := zAdd ofs1 sz) (rs := Regmap.set r v rs) (k := k)
+          htail hagree1 hbounds_tail
+        rcases hih with ⟨rs', hstar, hin, hnot, hunused⟩
+        refine ⟨rs', ?_, ?_, ?_, hunused⟩
+        · exact star_left _ _ _ _ _ _ _ _ _ _
+            (Mach.exec_Mgetstack cs fb (Vptr sp Ptrofs.zero)
+              (Ptrofs.repr ofs1) ty r
+              (restore_callee_save_rec l (zAdd ofs1 sz) k) rs m v hload)
+            hstar rfl
+        · intro r0 hr0
+          by_cases hmem : r0 ∈ l
+          · exact hin r0 hmem
+          · have heq : r0 = r := by
+              simp at hr0
+              exact (hr0.resolve_right hmem)
+            subst r0
+            rw [hnot r (by exact hmem)]
+            have hreg : Regmap.set r v rs r = v := by
+              simpa [Regmap.get] using (Regmap.gss_proof val r v rs)
+            rw [hreg]
+            exact hspec
+        · intro r0 hr0
+          have hmem : r0 ∉ l := by
+            intro hm
+            exact hr0 (by simp [hm])
+          rw [hnot r0 hmem]
+          have hreg : Regmap.set r v rs r0 = rs r0 := by
+            change Regmap.get r0 (Regmap.set r v rs) = Regmap.get r0 rs
+            have hne : r0 ≠ r := by
+              intro heq
+              exact hr0 (by simp [heq])
+            simpa using (Regmap.gso_proof val r0 r v rs hne)
+          exact hreg
+  unfold frame_contents at hframe
+  unfold frame_contents_1 at hframe
+  have hframe' := mconj_proj1 _ _ _ m hframe
+  have hframe1 := hframe'.1
+  have hcallee := hframe1.2.1.2.1.2.1.2.1
+  have hbounds : ∀ r, r ∈ (function_bounds cfg f).used_callee_save →
+      mreg_within_bounds cfg (function_bounds cfg f) r := by
+    intro r hr _
+    exact hr
+  obtain ⟨rs', hstar, hsave, hnosave, _⟩ :=
+    hrec (function_bounds cfg f).used_callee_save
+      (make_env cfg (function_bounds cfg f)).fe_ofs_callee_save rs k
+      hcallee hagree hbounds
+  refine ⟨rs', ?_, ?_, ?_⟩
+  · simpa [restore_callee_save, make_env] using hstar
+  · intro r hr
+    by_cases hmem : r ∈ (function_bounds cfg f).used_callee_save
+    · exact hsave r hmem
+    · rw [hnosave r hmem]
+      apply hagree r
+      intro hbound
+      exact hmem (hbound hr)
+  · intro r hr
+    apply hnosave r
+    intro hmem
+    have hcallee := used_callee_save_prop r hmem
+    simpa [hr] using hcallee
+
+end CompCert4Lean.Backend.Stackingproof

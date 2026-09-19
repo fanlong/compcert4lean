@@ -4260,3 +4260,86 @@ theorem eval_andl : eval_andlStatement := by
   · exact hb
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+private theorem splitlong_nat_or_split (a b c d : Nat)
+    (ha : a < 2^32) (hb : b < 2^32) (hc : c < 2^32) (hd : d < 2^32) :
+    ((a <<< 32) ||| b) ||| ((c <<< 32) ||| d) =
+      ((a ||| c) <<< 32) ||| (b ||| d) := by
+  apply Nat.eq_of_testBit_eq
+  intro i
+  by_cases hi : i < 32
+  · have hge : ¬ i ≥ 32 := by omega
+    simp only [Nat.testBit_or, Nat.testBit_shiftLeft]
+    simp [hge]
+  · have hsplit : i = 32 + (i - 32) := by omega
+    rw [hsplit]
+    simp only [Nat.testBit_or, Nat.testBit_shiftLeft]
+    simp [splitlong_bit_zero_of_lt b (i - 32) hb,
+      splitlong_bit_zero_of_lt d (i - 32) hd]
+
+theorem eval_orl : eval_orlStatement := by
+  intro xi prog sp e m le a x b y ha hb
+  unfold orl
+  apply eval_splitlong2
+  · intro le' a1 a2 b1 b2 x1 x2 y1 y2 ha1 ha2 hb1 hb2
+    obtain ⟨v1, hv1, hd1⟩ := CompCert4Lean.X86.SelectOpproof.eval_or
+      xi (Genv.globalenv prog) sp e m le' a1 x1 b1 y1 ha1 hb1
+    obtain ⟨v2, hv2, hd2⟩ := CompCert4Lean.X86.SelectOpproof.eval_or
+      xi (Genv.globalenv prog) sp e m le' a2 x2 b2 y2 ha2 hb2
+    refine ⟨Val.longofwords v1 v2, ?_, ?_⟩
+    · apply eval_expr.eval_Eop (le := le')
+        (op := Omakelong) (al := Econs _ (Econs _ Enil))
+        (vl := [v1, v2]) (Val.longofwords v1 v2)
+      · exact eval_exprlist.cons le' _ _ v1 [v2] hv1
+          (eval_exprlist.cons le' _ _ v2 [] hv2 (eval_exprlist.nil le'))
+      · rfl
+    · intro p1 p2 q1 q2 hx1 hx2 hy1 hy2
+      subst x1; subst x2; subst y1; subst y2
+      have hv1' : v1 = .Vint (CompCert4Lean.Lib.Integers.Int.or p1 q1) := by
+        cases hd1
+        rfl
+      have hv2' : v2 = .Vint (CompCert4Lean.Lib.Integers.Int.or p2 q2) := by
+        cases hd2
+        rfl
+      subst v1
+      subst v2
+      change CompCert4Lean.Common.Values.val.Vlong (CompCert4Lean.Lib.Integers.Int64.ofwords
+          (CompCert4Lean.Lib.Integers.Int.or p1 q1)
+          (CompCert4Lean.Lib.Integers.Int.or p2 q2)) =
+        CompCert4Lean.Common.Values.val.Vlong (CompCert4Lean.Lib.Integers.Int64.or
+          (CompCert4Lean.Lib.Integers.Int64.ofwords p1 p2)
+          (CompCert4Lean.Lib.Integers.Int64.ofwords q1 q2))
+      congr 1
+      apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+      change (CompCert4Lean.Lib.Integers.Int64.ofwords
+          (CompCert4Lean.Lib.Integers.Int.or p1 q1)
+          (CompCert4Lean.Lib.Integers.Int.or p2 q2)).val =
+        (CompCert4Lean.Lib.Integers.WordCore.or
+          (CompCert4Lean.Lib.Integers.Int64.ofwords p1 p2)
+          (CompCert4Lean.Lib.Integers.Int64.ofwords q1 q2)).val
+      simp only [test_int64_ofwords_val, test_or_val, test_int_or_val]
+      have hnat := splitlong_nat_or_split p1.val p2.val q1.val q2.val
+        (CompCert4Lean.Lib.Integers.WordCore.Word.toFin p1).isLt
+        (CompCert4Lean.Lib.Integers.WordCore.Word.toFin p2).isLt
+        (CompCert4Lean.Lib.Integers.WordCore.Word.toFin q1).isLt
+        (CompCert4Lean.Lib.Integers.WordCore.Word.toFin q2).isLt
+      simpa [Nat.shiftLeft_eq] using hnat.symm
+  · cases x <;> cases y <;> simp [Val.orl]
+  · exact ha
+  · exact hb
+
+end CompCert4Lean.Backend.SplitLongproof

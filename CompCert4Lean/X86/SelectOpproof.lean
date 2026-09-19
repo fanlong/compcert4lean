@@ -5405,3 +5405,104 @@ theorem eval_compimm
     hsem_int hsem_undef hsem_eq hsem_ne hsem_default le c a n2 x h
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+private theorem intu_loword_repr (n : CompCert4Lean.Lib.Integers.Int.int) :
+    CompCert4Lean.Lib.Integers.Int64.loword
+      (CompCert4Lean.Lib.Integers.Int64.repr
+        (CompCert4Lean.Lib.Integers.Int.unsigned n)) = n := by
+  unfold CompCert4Lean.Lib.Integers.Int64.loword
+  let z := CompCert4Lean.Lib.Integers.Int.unsigned n
+  let n64 := CompCert4Lean.Lib.Integers.Int64.repr z
+  have hz0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 z := by
+    have h := (CompCert4Lean.Lib.Integers.Int.unsigned_range_2_proof n).1
+    exact h
+  have hzlt : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt z
+      CompCert4Lean.Lib.Integers.Int64.modulus := by
+    have h := (CompCert4Lean.Lib.Integers.Int.unsigned_range_2_proof n).2
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        CompCert4Lean.Lib.Integers.Int.max_unsigned at h
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        CompCert4Lean.Lib.Integers.Int64.modulus
+    have hmax :
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            CompCert4Lean.Lib.Integers.Int.max_unsigned <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            CompCert4Lean.Lib.Integers.Int64.modulus := by decide
+    omega
+  have hy0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0
+      (CompCert4Lean.Lib.Integers.Int64.unsigned n64) := by
+    change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n64.intval
+    have h := n64.intrange.1
+    change (-1 : Int) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n64.intval at h
+    omega
+  have hymod : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt
+      (CompCert4Lean.Lib.Integers.Int64.unsigned n64)
+      CompCert4Lean.Lib.Integers.Int64.modulus := by
+    exact n64.intrange.2
+  have heq : CompCert4Lean.Lib.Zbits.eqmod
+      CompCert4Lean.Lib.Integers.Int64.modulus z
+      (CompCert4Lean.Lib.Integers.Int64.unsigned n64) := by
+    have h := CompCert4Lean.Lib.Integers.Int64.eqm_unsigned_repr_proof z
+    simpa [CompCert4Lean.Lib.Integers.Int64.eqm,
+      CompCert4Lean.Lib.Integers.Int64.modulus,
+      CompCert4Lean.Lib.Integers.Int64.wordsize,
+      CompCert4Lean.Lib.Integers.WordCore.eqm, z, n64] using h
+  have hz_eq : z = CompCert4Lean.Lib.Integers.Int64.unsigned n64 := by
+    exact CompCert4Lean.Lib.Zbits.eqmod_small_eq
+      CompCert4Lean.Lib.Integers.Int64.modulus z
+      (CompCert4Lean.Lib.Integers.Int64.unsigned n64) heq
+      ⟨hz0, hzlt⟩ ⟨hy0, hymod⟩
+  change CompCert4Lean.Lib.Integers.Int.repr
+      (CompCert4Lean.Lib.Integers.Int64.unsigned n64) = n
+  rw [← hz_eq]
+  exact CompCert4Lean.Lib.Integers.Int.repr_unsigned_proof n
+
+theorem eval_intuoffloat
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_intuoffloatStatement := by
+  intro xi ge sp e m le a x y h hxy
+  cases x with
+  | Vundef => simp [Val.intuoffloat] at hxy
+  | Vint n => simp [Val.intuoffloat] at hxy
+  | Vsingle f => simp [Val.intuoffloat] at hxy
+  | Vlong n => simp [Val.intuoffloat] at hxy
+  | Vptr b ofs => simp [Val.intuoffloat] at hxy
+  | Vfloat f =>
+      cases hto : CompCert4Lean.Lib.Floats.Float.to_intu f with
+      | none => simp [Val.intuoffloat, hto] at hxy
+      | some n =>
+          simp [Val.intuoffloat, hto] at hxy
+          subst y
+          have hlong := CompCert4Lean.Lib.Floats.Float.to_intu_to_long f n hto
+          let n64 := CompCert4Lean.Lib.Integers.Int64.repr
+            (CompCert4Lean.Lib.Integers.Int.unsigned n)
+          refine ⟨.Vint (CompCert4Lean.Lib.Integers.Int64.loword n64), ?_, ?_⟩
+          · apply eval_expr.eval_Eop le Olowlong
+              (Econs (Eop Olongoffloat (Econs a Enil)) Enil) [Vlong n64] _
+            · exact eval_exprlist.cons le (Eop Olongoffloat (Econs a Enil)) Enil
+                (.Vlong n64) [] (by
+                  apply eval_expr.eval_Eop le Olongoffloat (Econs a Enil) [Vfloat f] _
+                  · exact eval_exprlist.cons le a Enil (Vfloat f) [] h (eval_exprlist.nil le)
+                  · change (CompCert4Lean.Lib.Floats.Float.to_long f).map
+                      CompCert4Lean.Common.Values.val.Vlong = some (.Vlong n64)
+                    rw [hlong]
+                    rfl)
+                (eval_exprlist.nil le)
+            · rfl
+          · rw [intu_loword_repr]
+            exact Val.lessdef_refl _
+end CompCert4Lean.X86.SelectOpproof

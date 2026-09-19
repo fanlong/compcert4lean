@@ -6398,3 +6398,10 @@ theorem le_pred_pos_lt :
     hxformat hyformat hxylt
   rw [hpred] at hge
   exact hge
+
+theorem succ_le_lt :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      succ_le_ltStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x y hxformat hyformat hxy
+  exact pg_current_succ_le_lt ctx magnitude beta fexp hvalid x y
+    hxformat hyformat hxy
