@@ -4705,3 +4705,45 @@ theorem semantics_strongly_receptive
             CompCert4Lean.Common.Events.E0]
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+open CompCert4Lean.Common.Smallstep
+
+set_option maxHeartbeats 1200000 in
+theorem strategy_simulation
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    strategy_simulationStatement := by
+  unfold strategy_simulationStatement
+  intro xi p
+  apply backward_simulation_plus
+    (L1 := Csem.semantics
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi p)
+    (L2 := semantics
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi p)
+    (match_states := fun s1 s2 => s1 = s2)
+  · intro id
+    rfl
+  · intro s1 hs1
+    exact ⟨s1, hs1⟩
+  · intro s1 s2 hs1 hs2
+    exact ⟨s2, hs2, rfl⟩
+  · intro s1 s2 r hmatch hfinal
+    subst s2
+    exact hfinal
+  · intro s1 s2 hmatch hsafe
+    subst s2
+    exact progress
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi (Csem.globalenv p) s1 hsafe
+  · intro s2 t s2' hstep s1 hmatch hsafe
+    subst s1
+    exact ⟨s2', step_simulation
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi (Csem.globalenv p) s2 t s2' hstep,
+      rfl⟩
+
+end CompCert4Lean.Cfrontend.Cstrategy

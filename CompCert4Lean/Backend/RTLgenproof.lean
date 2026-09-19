@@ -5851,3 +5851,14 @@ theorem transl_exitexpr_correct
           · exact match_env_unbind_letvar map e le rs2 r v hme2
 
 end CompCert4Lean.Backend.RTLgenproof
+
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+theorem invert_eval_builtin_arg
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    invert_eval_builtin_argStatement := by
+  exact invert_eval_builtin_arg_aux
+
+end CompCert4Lean.Backend.RTLgenproof

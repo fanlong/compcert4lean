@@ -8626,3 +8626,229 @@ theorem add_neg_zero_proof : add_neg_zero := by
   rfl
 
 end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem suffix_bits_shr_nat_worker (x y : int) (n : Nat) (hn : n < wordsize) :
+    testbit (shr x y) (zOfNat n) =
+      testbit x (zltSelect (zAdd (zOfNat n) (unsigned y)) zwordsize
+        (zAdd (zOfNat n) (unsigned y)) (zSub zwordsize zOne)) := by
+  have hn0 : zLe zZero (zOfNat n) := by
+    change 0 ≤ intOfZ (zOfNat n)
+    simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    exact Int.natCast_nonneg _
+  have hnlt : zLt (zOfNat n) zwordsize := by
+    change intOfZ (zOfNat n) < intOfZ zwordsize
+    simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    change (Int.ofNat n : Int) < intOfZ zwordsize
+    have hw : intOfZ zwordsize = (32 : Int) := by rfl
+    rw [hw]
+    exact Int.ofNat_lt.mpr (by simpa [wordsize] using hn)
+  change testbit (repr (zShiftr (signed x) (unsigned y))) (zOfNat n) = _
+  rw [testbit_repr_proof _ _ ⟨hn0, hnlt⟩]
+  change ZArith.BinInt.Z.testbit
+      (ZArith.BinInt.Z.shiftr (signed x) (unsigned y)) (zOfNat n) = _
+  rw [ZArith.BinInt.Z.shiftr_spec (signed x) (unsigned y) (zOfNat n) hn0]
+  have hsum0 : zLe zZero (zAdd (zOfNat n) (unsigned y)) := by
+    change 0 ≤ intOfZ (zAdd (zOfNat n) (unsigned y))
+    simp only [zAdd, ZArith.BinInt.Z.add, zOfNat,
+      ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    have hy0 := y.intrange.1
+    change (-1 : Int) < intOfZ (unsigned y) at hy0
+    have hy' : 0 ≤ intOfZ (unsigned y) := by omega
+    change (0 : Int) ≤ Int.ofNat n + intOfZ (unsigned y)
+    have hn' : (0 : Int) ≤ Int.ofNat n := Int.natCast_nonneg _
+    omega
+  have hs := bits_signed_proof x (zAdd (zOfNat n) (unsigned y)) hsum0
+  exact hs
+
+end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem bits_shr_proof_worker : bits_shr := by
+  intro x y i hi
+  cases i with
+  | Zneg p =>
+      have h := hi.1
+      change (0 : Int) ≤ -Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at h
+      have hp : 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p :=
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+      have hpI : (0 : Int) < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+        Int.natCast_pos.mpr hp
+      omega
+  | Z0 =>
+      exact suffix_bits_shr_nat_worker x y 0 (by decide)
+  | Zpos p =>
+      have hz : zOfNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) = .Zpos p := by
+        exact ZArith.Znat.positive_nat_Z p
+      rw [← hz] at hi ⊢
+      have hn : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p < wordsize := by
+        have hlt := hi.2
+        change intOfZ (zOfNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)) < intOfZ zwordsize at hlt
+        simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hlt
+        have hw : intOfZ zwordsize = (32 : Int) := by rfl
+        rw [hw] at hlt
+        exact Int.ofNat_lt.mp hlt
+      exact suffix_bits_shr_nat_worker x y _ hn
+
+end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem shr_shr_worker : shr_shr := by
+  intro x y z hy hz hsum
+  have hyv : y.val < wordsize := suffix_ltu_iwordsize_val y hy
+  have hzv : z.val < wordsize := suffix_ltu_iwordsize_val z hz
+  have hav : (add y z).val < wordsize := suffix_ltu_iwordsize_val (add y z) hsum
+  have hyu : unsigned y = zOfNat y.val := WordCore.intval_eq_zOfNat_val y
+  have hzu : unsigned z = zOfNat z.val := WordCore.intval_eq_zOfNat_val z
+  have haddval : (add y z).val = y.val + z.val := by
+    change (WordCore.add y z).val = _
+    rw [WordCore.add_val]
+    exact Nat.mod_eq_of_lt (by
+      change y.val + z.val < 2 ^ wordsize
+      change y.val < 32 at hyv
+      change z.val < 32 at hzv
+      change y.val + z.val < 2 ^ 32
+      omega)
+  have haddu : unsigned (add y z) = zOfNat (y.val + z.val) := by
+    change (add y z).intval = zOfNat (y.val + z.val)
+    rw [WordCore.intval_eq_zOfNat_val, haddval]
+  have hadd_u : unsigned (add y z) = zAdd (unsigned y) (unsigned z) := by
+    rw [hyu, hzu, haddu]
+    apply intOfZ_injective
+    simp only [zAdd, zOfNat, ZArith.BinInt.Z.add,
+      ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    simp only [Int.ofNat_eq_natCast, Int.natCast_add]
+  have hy0 : zLe zZero (unsigned y) := by
+    change 0 ≤ intOfZ (unsigned y)
+    have h := y.intrange.1
+    change (-1 : Int) < intOfZ (unsigned y) at h
+    omega
+  have hz0 : zLe zZero (unsigned z) := by
+    change 0 ≤ intOfZ (unsigned z)
+    have h := z.intrange.1
+    change (-1 : Int) < intOfZ (unsigned z) at h
+    omega
+  apply same_bits_eq_proof
+  intro i hi
+  rw [bits_shr_proof_worker (shr x y) z i hi,
+    bits_shr_proof_worker x (add y z) i hi]
+  cases houter : CompCert4Lean.Lib.Coqlib.zlt
+      (zAdd i (unsigned z)) zwordsize with
+  | left hout =>
+      simp only [zltSelect, sumboolSelect, houter]
+      have hj0 : zLe zZero (zAdd i (unsigned z)) := by
+        change 0 ≤ intOfZ (zAdd i (unsigned z))
+        simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+        have hi0 : 0 ≤ intOfZ i := hi.1
+        have hz0' : 0 ≤ intOfZ (unsigned z) := hz0
+        omega
+      have hjlt : zLt (zAdd i (unsigned z)) zwordsize := hout
+      have hinner := bits_shr_proof_worker x y (zAdd i (unsigned z))
+        ⟨hj0, hjlt⟩
+      rw [hinner]
+      have hidx : zAdd (zAdd i (unsigned z)) (unsigned y) =
+          zAdd i (unsigned (add y z)) := by
+        rw [hadd_u]
+        apply intOfZ_injective
+        simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+        omega
+      rw [hidx]
+      cases hright : CompCert4Lean.Lib.Coqlib.zlt
+          (zAdd i (unsigned (add y z))) zwordsize with
+      | left hright' => simp only [zltSelect, sumboolSelect, hright]
+      | right hright' => simp only [zltSelect, sumboolSelect, hright]
+  | right hout =>
+      simp only [zltSelect, sumboolSelect, houter]
+      have htop0 : zLe zZero (zSub zwordsize zOne) := by
+        change (0 : Int) ≤ 31
+        decide
+      have htoplt : zLt (zSub zwordsize zOne) zwordsize := by
+        change (31 : Int) < 32
+        decide
+      have hinner := bits_shr_proof_worker x y (zSub zwordsize zOne)
+        ⟨htop0, htoplt⟩
+      rw [hinner]
+      cases hleft : CompCert4Lean.Lib.Coqlib.zlt
+          (zAdd (zSub zwordsize zOne) (unsigned y)) zwordsize with
+      | left hleft' =>
+          simp only [zltSelect, sumboolSelect, hleft]
+          change intOfZ (zAdd (zSub zwordsize zOne) (unsigned y)) <
+            intOfZ zwordsize at hleft'
+          simp only [zAdd, zSub, zOne, ZArith.BinInt.Z.add,
+            ZArith.BinInt.Z.sub, intOfZ_zOfInt] at hleft'
+          have hy0' : 0 ≤ intOfZ (unsigned y) := hy0
+          have hw : intOfZ zwordsize = (32 : Int) := by rfl
+          have hone : intOfZ (Numbers.BinNums.Z.Zpos xH) = (1 : Int) := by rfl
+          rw [hw, hone] at hleft'
+          have htopY : zAdd (zSub zwordsize zOne) (unsigned y) =
+              zSub zwordsize zOne := by
+            apply intOfZ_injective
+            simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+            omega
+          rw [htopY]
+          cases hright : CompCert4Lean.Lib.Coqlib.zlt
+              (zAdd i (unsigned (add y z))) zwordsize with
+          | left hright' =>
+              exfalso
+              change intOfZ (zAdd i (unsigned (add y z))) <
+                intOfZ zwordsize at hright'
+              simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hright'
+              have hout' := hout
+              change intOfZ zwordsize ≤
+                intOfZ (zAdd i (unsigned z)) at hout'
+              simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hout'
+              have hy0' : 0 ≤ intOfZ (unsigned y) := hy0
+              have hadd' : intOfZ (unsigned (add y z)) =
+                  intOfZ (unsigned y) + intOfZ (unsigned z) := by
+                have hh := congrArg intOfZ hadd_u
+                simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hh
+                exact hh
+              rw [hadd'] at hright'
+              omega
+          | right hright' =>
+              simp only [zltSelect, sumboolSelect, hright]
+      | right hleft' =>
+          simp only [zltSelect, sumboolSelect, hleft]
+          cases hright : CompCert4Lean.Lib.Coqlib.zlt
+              (zAdd i (unsigned (add y z))) zwordsize with
+          | left hright' =>
+              exfalso
+              change intOfZ (zAdd i (unsigned (add y z))) <
+                intOfZ zwordsize at hright'
+              simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hright'
+              have hout' := hout
+              change intOfZ zwordsize ≤
+                intOfZ (zAdd i (unsigned z)) at hout'
+              simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hout'
+              have hy0' : 0 ≤ intOfZ (unsigned y) := hy0
+              have hadd' : intOfZ (unsigned (add y z)) =
+                  intOfZ (unsigned y) + intOfZ (unsigned z) := by
+                have hh := congrArg intOfZ hadd_u
+                simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hh
+                exact hh
+              rw [hadd'] at hright'
+              omega
+          | right hright' =>
+              simp only [sumboolSelect, hright]
+
+end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+theorem shr_shr_proof : shr_shr := by
+  exact shr_shr_worker
+
+end CompCert4Lean.Lib.Integers.Int

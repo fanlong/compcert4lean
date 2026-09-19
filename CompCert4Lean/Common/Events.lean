@@ -3509,3 +3509,54 @@ open CompCert4Lean.Common.Values
       exact external_functions_properties xi name sg
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+
+ theorem eval_builtin_arg_lessdef : eval_builtin_arg_lessdefStatement := by
+  intro A ge e1 e2 sp m1 m2 he hext a v1 h
+  induction h with
+  | eval_BA x =>
+      exact ⟨e2 x, eval_BA x, he x⟩
+  | eval_BA_int n =>
+      exact ⟨Vint n, eval_BA_int n, Val.lessdef_refl _⟩
+  | eval_BA_long n =>
+      exact ⟨Vlong n, eval_BA_long n, Val.lessdef_refl _⟩
+  | eval_BA_float n =>
+      exact ⟨Vfloat n, eval_BA_float n, Val.lessdef_refl _⟩
+  | eval_BA_single n =>
+      exact ⟨Vsingle n, eval_BA_single n, Val.lessdef_refl _⟩
+  | eval_BA_loadstack chunk ofs v hload =>
+      rcases Mem.loadv_extends chunk m1 m2 (Val.offset_ptr sp ofs)
+        (Val.offset_ptr sp ofs) v hext hload (Val.lessdef_refl _) with
+        ⟨v', hload', hld⟩
+      exact ⟨v', eval_BA_loadstack _ _ _ hload', hld⟩
+  | eval_BA_addrstack ofs =>
+      exact ⟨Val.offset_ptr sp ofs, eval_BA_addrstack _, Val.lessdef_refl _⟩
+  | eval_BA_loadglobal chunk id ofs v hload =>
+      rcases Mem.loadv_extends chunk m1 m2 (CompCert4Lean.Common.Globalenvs.Senv.symbol_address ge id ofs)
+        (CompCert4Lean.Common.Globalenvs.Senv.symbol_address ge id ofs) v hext hload (Val.lessdef_refl _) with
+        ⟨v', hload', hld⟩
+      exact ⟨v', eval_BA_loadglobal _ _ _ _ hload', hld⟩
+  | eval_BA_addrglobal id ofs =>
+      exact ⟨CompCert4Lean.Common.Globalenvs.Senv.symbol_address ge id ofs, eval_BA_addrglobal _ _, Val.lessdef_refl _⟩
+  | eval_BA_splitlong hi lo vhi vlo hhi hlo ihhi ihlo =>
+      rcases ihhi with ⟨vhi', hhi', hldhi⟩
+      rcases ihlo with ⟨vlo', hlo', hldlo⟩
+      exact ⟨_, eval_BA_splitlong _ _ _ _ hhi' hlo',
+        Val.longofwords_lessdef _ _ _ _ hldhi hldlo⟩
+  | eval_BA_addptr a1 a2 v1 v2 ha1 ha2 iha1 iha2 =>
+      rcases iha1 with ⟨v1', ha1', hld1⟩
+      rcases iha2 with ⟨v2', ha2', hld2⟩
+      refine ⟨_, eval_BA_addptr _ _ _ _ ha1' ha2', ?_⟩
+      cases hptr : CompCert4Lean.X86_64.Archi.ptr64 with
+      | false =>
+          simp [hptr]
+          exact Val.add_lessdef _ _ _ _ hld1 hld2
+      | true =>
+          simp [hptr]
+          exact Val.addl_lessdef _ _ _ _ hld1 hld2
+
+end CompCert4Lean.Common.Events

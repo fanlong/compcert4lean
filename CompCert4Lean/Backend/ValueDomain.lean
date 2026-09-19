@@ -5750,3 +5750,120 @@ theorem vincl_ge : vincl_geStatement := by
         (pincl_ge _ _ h.2)
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem vnormalize_cast : vnormalize_castStatement := by
+  intro bc chunk m b ofs v p hload hmatch
+  have hzero : is_uns z1 Int.zero := by
+    intro k hk hle
+    cases k with
+    | Zneg q =>
+        have hnonneg := hk.1
+        change (0 : Int) ≤ -Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q) at hnonneg
+        have hpos : (0 : Int) < Int.ofNat
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q) :=
+          Int.natCast_pos.mpr
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive q)
+        omega
+    | Z0 => rfl
+    | Zpos q =>
+        calc
+          Int.testbit Int.zero (.Zpos q) =
+              Int.zero.val.testBit
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q) :=
+            is_uns_1_testbit_pos Int.zero q
+          _ = false := by
+            have hz : Int.zero.val = 0 := by rfl
+            rw [hz]
+            exact Nat.zero_testBit _
+  have hone : is_uns z1 Int.one := by
+    intro k hk hle
+    cases k with
+    | Zneg q =>
+        have hnonneg := hk.1
+        change (0 : Int) ≤ -Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q) at hnonneg
+        have hpos : (0 : Int) < Int.ofNat
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q) :=
+          Int.natCast_pos.mpr
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive q)
+        omega
+    | Z0 =>
+        change (1 : Int) ≤ 0 at hle
+        omega
+    | Zpos q =>
+        calc
+          Int.testbit Int.one (.Zpos q) =
+              Int.one.val.testBit
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q) :=
+            is_uns_1_testbit_pos Int.one q
+          _ = false := by
+            have ho : Int.one.val = 1 := by rfl
+            rw [ho]
+            have hpos :=
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive q
+            apply Nat.testBit_lt_two_pow
+            exact Nat.one_lt_two_pow (Nat.ne_of_gt hpos)
+  have hcast := CompCert4Lean.Common.Memory.Mem.load_cast m chunk b ofs v hload
+  have htype := CompCert4Lean.Common.Memory.Mem.load_type m chunk b ofs v hload
+  simp [CompCert4Lean.Common.Values.Val.sign_ext,
+    CompCert4Lean.Common.Values.Val.zero_ext] at hcast
+  cases chunk <;> cases hmatch <;>
+    simp [vnormalize, CompCert4Lean.Common.AST.type_of_chunk,
+      CompCert4Lean.Common.Values.Val.has_type,
+      CompCert4Lean.X86_64.Archi.ptr64] at hcast htype ⊢
+  case Mbool.ifptrUndef =>
+    exact vmatch.vmatch_Uns_undef _ _
+  case Mbool.ifptrInt i =>
+    rcases CompCert4Lean.Common.Values.Val.norm_bool_cases
+      (CompCert4Lean.Common.Values.Vint i) with hi | hi | hi
+    · rw [hi] at hcast
+      cases hcast
+    · rw [hi] at hcast
+      cases hcast
+      exact vmatch.uns _ _ _ (by change (0 : Int) ≤ 1; omega) hzero
+    · rw [hi] at hcast
+      cases hcast
+      exact vmatch.uns _ _ _ (by change (0 : Int) ≤ 1; omega) hone
+  all_goals first
+    | exact vmatch.vmatch_Uns_undef _ _
+    | exact vmatch.sgnUndef _ _
+    | exact vmatch.numUndef _
+    | exact vmatch.ifptrUndef _
+    | apply vmatch.sgn
+      · change (0 : Int) < 8
+        omega
+      · exact (is_sgn_sign_ext _ _ (by change (0 : Int) < 8; omega)).2 hcast.symm
+    | apply vmatch.sgn
+      · change (0 : Int) < 16
+        omega
+      · exact (is_sgn_sign_ext _ _ (by change (0 : Int) < 16; omega)).2 hcast.symm
+    | apply vmatch.uns _ _ _
+      · change (0 : Int) ≤ 8
+        omega
+      · exact (is_uns_zero_ext _ _).2 hcast.symm
+    | apply vmatch.uns _ _ _
+      · change (0 : Int) ≤ 16
+        omega
+      · exact (is_uns_zero_ext _ _).2 hcast.symm
+    | apply vmatch.uns _ Int.zero z1
+      · change (0 : Int) ≤ 1
+        omega
+      · exact hzero
+    | apply vmatch.uns _ Int.one z1
+      · change (0 : Int) ≤ 1
+        omega
+      · exact hone
+    | exact vmatch.numInt _ _
+    | exact vmatch.numLong _ _
+    | exact vmatch.numFloat _ _
+    | exact vmatch.numSingle _ _
+    | exact vmatch.ifptrInt _ _
+    | exact vmatch.ifptrLong _ _
+    | exact vmatch.ifptrFloat _ _
+    | exact vmatch.ifptrSingle _ _
+    | apply vmatch.ifptrPtr <;> assumption
+
+end CompCert4Lean.Backend.ValueDomain

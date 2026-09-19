@@ -7847,3 +7847,32 @@ theorem free_parallel_extends : free_parallel_extendsStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+namespace Mem
+
+theorem valid_block_inject_1 : valid_block_inject_1Statement := by
+  intro f m1 m2 b1 b2 delta hmap hinj
+  by_cases hvalid : valid_block m1 b1
+  · exact hvalid
+  · exfalso
+    have hnone := hinj.mi_freeblocks b1 hvalid
+    rw [hmap] at hnone
+    cases hnone
+
+theorem valid_block_inject_2 : valid_block_inject_2Statement := by
+  intro f m1 m2 b1 b2 delta hmap hinj
+  exact hinj.mi_mappedblocks b1 b2 delta hmap
+
+theorem perm_inject : perm_injectStatement := by
+  intro f m1 m2 b1 b2 delta ofs k p hmap hinj hperm
+  exact hinj.mi_inj.mi_perm b1 b2 delta ofs k p hmap hperm
+
+theorem range_perm_inject : range_perm_injectStatement := by
+  intro f m1 m2 b1 b2 delta lo hi k p hmap hinj hrange
+  exact range_perm_inj f m1 m2 b1 lo hi k p b2 delta hinj.mi_inj hrange hmap
+
+end Mem
+
+end CompCert4Lean.Common.Memory

@@ -4213,3 +4213,18 @@ theorem Fexp_d : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
   rw [hdcanon, mag_d ctx magnitude beta fexp hvalid x d hd hdpos]
 
 end CompCert4Lean.Flocq.Prop.Round_odd
+
+
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+
+open CompCert4Lean.Flocq.Core
+
+theorem format_bpow_x : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
+    format_bpow_xStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x d hd hdcanon hdpos
+  have hmag := mag_d ctx magnitude beta fexp hvalid x d hd hdpos
+  rw [← hmag]
+  exact round_odd_format_bpow_at_mag_aux ctx magnitude beta fexp hvalid
+    d hdpos hdcanon
+
+end CompCert4Lean.Flocq.Prop.Round_odd

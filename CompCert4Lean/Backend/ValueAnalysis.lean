@@ -3040,3 +3040,20 @@ theorem sound_stack_ext
         (AN := analyze) (EM := ematch) (CONTENTS := hcontents')
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+theorem sound_stack_inv
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    sound_stack_invStatement := by
+  intro cfg prog ge m' bc stk m bound hstk hinv
+  apply sound_stack_ext
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    cfg prog ge m' bc stk m bound hstk
+  intro b ofs n bytes hb hbc hn hload
+  rw [← hinv b ofs n hb hbc hn]
+  exact hload
+
+end CompCert4Lean.Backend.ValueAnalysis

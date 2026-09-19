@@ -5349,3 +5349,37 @@ theorem eval_orimm
   exact eval_orimm_local xi ge sp e m n
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_shr
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_shrStatement := by
+  unfold eval_shrStatement binary_constructor_sound
+  intro xi ge sp e m le a x b y ha hb
+  cases hmatch : shr_match b with
+  | shr_case1 n =>
+      have hy : y = .Vint n := eval_intconst_value_local
+        xi ge sp e m le n y (by simpa [hmatch] using hb)
+      subst y
+      obtain ⟨v, hv, hd⟩ := test_eval_shrimm_for_eval_shr_local
+        xi ge sp e m n le a x ha
+      refine ⟨v, ?_, hd⟩
+      simpa [CompCert4Lean.X86.SelectOp.shr, hmatch] using hv
+  | shr_default e2 =>
+      refine ⟨Val.shr x y, ?_, Val.lessdef_refl _⟩
+      simp only [CompCert4Lean.X86.SelectOp.shr, hmatch]
+      exact eval_expr.eval_Eop le Oshr (Econs a (Econs b Enil))
+        [x, y] _
+        (eval_exprlist.cons le a (Econs b Enil) x [y] ha
+          (eval_exprlist.cons le b Enil y [] hb
+            (eval_exprlist.nil le))) rfl
+
+end CompCert4Lean.X86.SelectOpproof

@@ -6257,3 +6257,9 @@ theorem pred_pos_plus_ulp_aux2 :
       pred_pos_plus_ulp_aux2Statement ctx magnitude := by
   intro ctx magnitude
   exact pg_sp_pred_pos_plus_ulp_aux2 ctx magnitude
+
+theorem pred_pos_plus_ulp :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      pred_pos_plus_ulpStatement ctx magnitude := by
+  intro ctx magnitude
+  exact pg_sp_pred_pos_plus_ulp ctx magnitude

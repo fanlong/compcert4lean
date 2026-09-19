@@ -8785,3 +8785,99 @@ theorem makelong_sound : makelong_soundStatement := by
   | All => exact Val.longofwords_lessdef _ _ _ _ hhi hlo
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Common.Values
+
+private theorem pgLongofintuAgree (a b : Int.int) (m : Int64.int)
+    (h : iagree a b (Int64.loword m)) :
+    lagree (Int64.repr (Int.unsigned a))
+      (Int64.repr (Int.unsigned b)) m := by
+  intro i hi hm
+  cases i with
+  | Zneg p =>
+      exfalso
+      have h0 := hi.1
+      change (0 : Int) ≤ -(Int.ofNat (posToNat p)) at h0
+      have hp : (0 : Int) < Int.ofNat (posToNat p) :=
+        Int.natCast_pos.mpr (posToNat_positive p)
+      omega
+  | Z0 =>
+      have h32 : ZArith.BinInt.Z.le z0 z0 ∧
+          ZArith.BinInt.Z.lt z0 Int.zwordsize := by
+        constructor
+        · change (0 : Int) ≤ 0
+          omega
+        · change (0 : Int) < 32
+          omega
+      have hmask : Int.testbit (Int64.loword m) z0 = true := by
+        rw [test_loword_testbit m z0 h32]
+        exact hm
+      have hab := h (ZArith.BinInt.Z.of_nat 0) h32 hmask
+      rw [lagreeTestbitZero, lagreeTestbitZero,
+        pgMakelongReprVal, pgMakelongReprVal]
+      simpa [test_iagreeTestbitOfNat] using hab
+  | Zpos p =>
+      have hkz := hi.2
+      change (Int.ofNat (posToNat p) : Int) < Int.ofNat 64 at hkz
+      have hk : posToNat p < 64 := Int.ofNat_lt.mp hkz
+      have hz : ZArith.BinInt.Z.of_nat (posToNat p) = .Zpos p := by
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+        rfl
+      rw [lagreeTestbitPos, lagreeTestbitPos,
+        pgMakelongReprVal, pgMakelongReprVal]
+      by_cases hlt : posToNat p < 32
+      · have h32 : ZArith.BinInt.Z.le z0 (.Zpos p) ∧
+            ZArith.BinInt.Z.lt (.Zpos p)
+              Int.zwordsize := by
+          constructor
+          · change (0 : Int) ≤ Int.ofNat (posToNat p)
+            exact Int.natCast_nonneg _
+          · change (Int.ofNat (posToNat p) : Int) < Int.ofNat 32
+            exact Int.ofNat_lt.mpr hlt
+        have hab := h (.Zpos p) h32 (by
+          rw [test_loword_testbit m _ h32]
+          exact hm)
+        simpa [iagreeTestbitPos] using hab
+      · have hge : 32 ≤ posToNat p := Nat.le_of_not_gt hlt
+        have ha : a.val < 2 ^ posToNat p := by
+          exact Nat.lt_of_lt_of_le (iagreeWordValLt a)
+            (Nat.pow_le_pow_right (by decide) hge)
+        have hb : b.val < 2 ^ posToNat p := by
+          exact Nat.lt_of_lt_of_le (iagreeWordValLt b)
+            (Nat.pow_le_pow_right (by decide) hge)
+        simp [Nat.testBit_lt_two_pow ha, Nat.testBit_lt_two_pow hb]
+
+theorem longofintu_sound : longofintu_soundStatement := by
+  intro v w x h
+  cases x with
+  | Nothing => trivial
+  | I m =>
+      cases h with
+      | lessdef_refl v =>
+          cases v <;> simp [Val.longofintu, vagree, iVagree, lVagree]
+      | lessdef_undef =>
+          simp [Val.longofintu, vagree, iVagree, lVagree]
+  | L m =>
+      cases v with
+      | Vint a =>
+          cases w with
+          | Vint b =>
+              simp [longofintu, vagree, iVagree, lVagree,
+                Val.longofintu] at h ⊢
+              exact pgLongofintuAgree a b m h
+          | _ => simp [longofintu, vagree, iVagree, lVagree,
+              Val.longofintu] at h ⊢
+      | _ => simp [longofintu, vagree, iVagree, lVagree,
+          Val.longofintu] at h ⊢
+  | All =>
+      cases h with
+      | lessdef_refl v =>
+          exact Val.lessdef_refl _
+      | lessdef_undef v =>
+          exact Val.lessdef_undef _
+
+end CompCert4Lean.Backend.NeedDomain

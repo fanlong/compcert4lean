@@ -3276,3 +3276,183 @@ theorem eval_modu
               Val.lessdef_refl _⟩
 
 end CompCert4Lean.Backend.SelectDivproof
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SelectDiv
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_divs_mul
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] :
+    eval_divs_mulStatement := by
+  intro xi prog sp e m le x y p M hparams hnth
+  have hp : zLe z0 p ∧ zLt p z32 := by
+    obtain ⟨hm, hp, _⟩ := divs_mul_params_sound (intSigned y) M p hparams
+    exact hp
+  have hlet : eval_expr xi (Genv.globalenv prog) sp e m le
+      (Eletvar 0) (.Vint x) := eval_expr.eval_Eletvar le 0 (.Vint x) hnth
+  have hc := eval_intconst_local xi (Genv.globalenv prog) sp e m le (intRepr M)
+  have hmul : eval_expr xi (Genv.globalenv prog) sp e m le
+      (mulhs (Eletvar 0) (Eop (Ointconst (intRepr M)) Enil))
+      (.Vint (CompCert4Lean.Lib.Integers.Int.mulhs x (intRepr M))) := by
+    exact eval_binary_op_local xi (Genv.globalenv prog) sp e m le Omulhs
+      (Eletvar 0) (Eop (Ointconst (intRepr M)) Enil)
+      (.Vint x) (.Vint (intRepr M))
+      (.Vint (CompCert4Lean.Lib.Integers.Int.mulhs x (intRepr M))) hlet hc rfl
+  have hrepr : intUnsigned (intRepr p) = p := by
+    apply CompCert4Lean.Lib.Integers.Int.unsigned_repr_proof_api
+    refine ⟨hp.1, ?_⟩
+    have h := hp.2
+    change intOfZ p < 32 at h
+    change intOfZ p ≤ 4294967295
+    omega
+  have hlt : CompCert4Lean.Lib.Integers.Int.ltu (intRepr p)
+      CompCert4Lean.Lib.Integers.Int.iwordsize = true := by
+    change zltBool (intUnsigned (intRepr p)) z32 = true
+    rw [hrepr]
+    unfold zltBool boolOfSumbool
+    cases CompCert4Lean.Lib.Coqlib.zlt p z32 with
+    | left _ => rfl
+    | right h =>
+        have hpLt := hp.2
+        change intOfZ p < 32 at hpLt
+        change 32 ≤ intOfZ p at h
+        omega
+  have hword : CompCert4Lean.Lib.Integers.Int.ltu
+      (intRepr (zSub CompCert4Lean.Lib.Integers.Int.zwordsize z1))
+      CompCert4Lean.Lib.Integers.Int.iwordsize = true := by decide
+  have hshr : eval_expr xi (Genv.globalenv prog) sp e m le
+      (shrimm (mulhs (Eletvar 0) (Eop (Ointconst (intRepr M)) Enil)) (intRepr p))
+      (.Vint (CompCert4Lean.Lib.Integers.Int.shr
+        (CompCert4Lean.Lib.Integers.Int.mulhs x (intRepr M)) (intRepr p))) := by
+    obtain ⟨v, hv, hd⟩ := CompCert4Lean.X86.SelectOpproof.eval_shrimm
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m (intRepr p) le
+      (mulhs (Eletvar 0) (Eop (Ointconst (intRepr M)) Enil))
+      (.Vint (CompCert4Lean.Lib.Integers.Int.mulhs x (intRepr M))) hmul
+    change Val.lessdef
+      (Val.shr (.Vint (CompCert4Lean.Lib.Integers.Int.mulhs x (intRepr M)))
+        (.Vint (intRepr p))) v at hd
+    simp only [Val.shr, hlt, if_true] at hd
+    cases hd
+    exact hv
+  have hshru : eval_expr xi (Genv.globalenv prog) sp e m le
+      (shruimm (Eletvar 0)
+        (intRepr (zSub CompCert4Lean.Lib.Integers.Int.zwordsize z1)))
+      (.Vint (CompCert4Lean.Lib.Integers.Int.shru x
+        (intRepr (zSub CompCert4Lean.Lib.Integers.Int.zwordsize z1)))) := by
+    obtain ⟨v, hv, hd⟩ := CompCert4Lean.X86.SelectOpproof.eval_shruimm
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m
+      (intRepr (zSub CompCert4Lean.Lib.Integers.Int.zwordsize z1)) le
+      (Eletvar 0) (.Vint x) hlet
+    change Val.lessdef
+      (Val.shru (.Vint x)
+        (.Vint (intRepr (zSub CompCert4Lean.Lib.Integers.Int.zwordsize z1)))) v at hd
+    simp only [Val.shru, hword, if_true] at hd
+    cases hd
+    exact hv
+  have hform : divs_mul p M =
+      add (shrimm
+        (if zltBool M CompCert4Lean.Lib.Integers.Int.half_modulus then
+          mulhs (Eletvar 0) (Eop (Ointconst (intRepr M)) Enil)
+        else add (mulhs (Eletvar 0) (Eop (Ointconst (intRepr M)) Enil))
+          (Eletvar 0)) (intRepr p))
+      (shruimm (Eletvar 0)
+        (intRepr (zSub CompCert4Lean.Lib.Integers.Int.zwordsize z1))) := by
+    unfold divs_mul
+    rfl
+  cases hz : CompCert4Lean.Lib.Coqlib.zlt M CompCert4Lean.Lib.Integers.Int.half_modulus with
+  | left hm =>
+      have hshift := (divs_mul_shift_1 x y M p hparams hm).2
+      rw [hshift, hform]
+      have hb : zltBool M CompCert4Lean.Lib.Integers.Int.half_modulus = true := by
+        unfold zltBool boolOfSumbool
+        rw [hz]
+      simp only [hb, if_true]
+      obtain ⟨v, hv, hd⟩ := CompCert4Lean.X86.SelectOpproof.eval_add
+        xi (Genv.globalenv prog) sp e m le
+        (shrimm (mulhs (Eletvar 0) (Eop (Ointconst (intRepr M)) Enil)) (intRepr p))
+        (.Vint (CompCert4Lean.Lib.Integers.Int.shr
+          (CompCert4Lean.Lib.Integers.Int.mulhs x (intRepr M)) (intRepr p)))
+        (shruimm (Eletvar 0)
+          (intRepr (zSub CompCert4Lean.Lib.Integers.Int.zwordsize z1)))
+        (.Vint (CompCert4Lean.Lib.Integers.Int.shru x
+          (intRepr (zSub CompCert4Lean.Lib.Integers.Int.zwordsize z1)))) hshr hshru
+      change Val.lessdef
+        (Val.add
+          (.Vint (CompCert4Lean.Lib.Integers.Int.shr
+            (CompCert4Lean.Lib.Integers.Int.mulhs x (intRepr M)) (intRepr p)))
+          (.Vint (CompCert4Lean.Lib.Integers.Int.shru x
+            (intRepr (zSub CompCert4Lean.Lib.Integers.Int.zwordsize z1))))) v at hd
+      simp only [Val.add] at hd
+      cases hd
+      exact hv
+  | right hm =>
+      have hshift := (divs_mul_shift_2 x y M p hparams hm).2
+      rw [hshift, hform]
+      have hb : zltBool M CompCert4Lean.Lib.Integers.Int.half_modulus = false := by
+        unfold zltBool boolOfSumbool
+        rw [hz]
+      simp only [hb, if_false]
+      have hsum : eval_expr xi (Genv.globalenv prog) sp e m le
+          (add (mulhs (Eletvar 0) (Eop (Ointconst (intRepr M)) Enil))
+            (Eletvar 0))
+          (.Vint (CompCert4Lean.Lib.Integers.Int.add
+            (CompCert4Lean.Lib.Integers.Int.mulhs x (intRepr M)) x)) := by
+        obtain ⟨v, hv, hd⟩ := CompCert4Lean.X86.SelectOpproof.eval_add
+          xi (Genv.globalenv prog) sp e m le
+          (mulhs (Eletvar 0) (Eop (Ointconst (intRepr M)) Enil))
+          (.Vint (CompCert4Lean.Lib.Integers.Int.mulhs x (intRepr M)))
+          (Eletvar 0) (.Vint x) hmul hlet
+        change Val.lessdef
+          (Val.add (.Vint (CompCert4Lean.Lib.Integers.Int.mulhs x (intRepr M)))
+            (.Vint x)) v at hd
+        simp only [Val.add] at hd
+        cases hd
+        exact hv
+      obtain ⟨v1, hv1, hd1⟩ := CompCert4Lean.X86.SelectOpproof.eval_shrimm
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m (intRepr p) le
+        (add (mulhs (Eletvar 0) (Eop (Ointconst (intRepr M)) Enil)) (Eletvar 0))
+        (.Vint (CompCert4Lean.Lib.Integers.Int.add
+          (CompCert4Lean.Lib.Integers.Int.mulhs x (intRepr M)) x)) hsum
+      change Val.lessdef
+        (Val.shr (.Vint (CompCert4Lean.Lib.Integers.Int.add
+          (CompCert4Lean.Lib.Integers.Int.mulhs x (intRepr M)) x))
+          (.Vint (intRepr p))) v1 at hd1
+      simp only [Val.shr, hlt, if_true] at hd1
+      cases hd1
+      obtain ⟨v, hv, hd⟩ := CompCert4Lean.X86.SelectOpproof.eval_add
+        xi (Genv.globalenv prog) sp e m le
+        (shrimm (add (mulhs (Eletvar 0) (Eop (Ointconst (intRepr M)) Enil))
+          (Eletvar 0)) (intRepr p))
+        (.Vint (CompCert4Lean.Lib.Integers.Int.shr
+          (CompCert4Lean.Lib.Integers.Int.add
+            (CompCert4Lean.Lib.Integers.Int.mulhs x (intRepr M)) x) (intRepr p)))
+        (shruimm (Eletvar 0)
+          (intRepr (zSub CompCert4Lean.Lib.Integers.Int.zwordsize z1)))
+        (.Vint (CompCert4Lean.Lib.Integers.Int.shru x
+          (intRepr (zSub CompCert4Lean.Lib.Integers.Int.zwordsize z1)))) hv1 hshru
+      change Val.lessdef
+        (Val.add
+          (.Vint (CompCert4Lean.Lib.Integers.Int.shr
+            (CompCert4Lean.Lib.Integers.Int.add
+              (CompCert4Lean.Lib.Integers.Int.mulhs x (intRepr M)) x) (intRepr p)))
+          (.Vint (CompCert4Lean.Lib.Integers.Int.shru x
+            (intRepr (zSub CompCert4Lean.Lib.Integers.Int.zwordsize z1))))) v at hd
+      simp only [Val.add] at hd
+      cases hd
+      exact hv
+
+end CompCert4Lean.Backend.SelectDivproof

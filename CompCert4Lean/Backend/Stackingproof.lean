@@ -4648,3 +4648,210 @@ theorem agree_regs_set_pair : agree_regs_set_pairStatement := by
       simpa [Locmap.setpair, Mach.set_pair] using hlo
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Separation
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Machregs
+
+private theorem stackingproof_contains_set_stack
+    (spec : val → Prop) (v : val) (spec1 : val → Prop)
+    (m : mem) (ty : typ) (sp : block) (ofs : Z) (P : massert)
+    (hm : (sepconj (contains (chunk_of_type ty) sp ofs spec1) P).m_pred m)
+    (hspec : spec (Val.load_result (chunk_of_type ty) v)) :
+    ∃ m', Mach.store_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr ofs) v = some m' ∧
+      (sepconj (contains (chunk_of_type ty) sp ofs spec) P).m_pred m' := by
+  rcases hm with ⟨hc, hP, hdisj⟩
+  rcases hc with ⟨hbounds, hvalid, vold, hload, hspec1⟩
+  have hvalidW : Mem.valid_access m (chunk_of_type ty) sp ofs Writable :=
+    Mem.valid_access_implies m (chunk_of_type ty) sp ofs Freeable Writable hvalid
+      (perm_F_any Writable)
+  rcases Mem.valid_access_store m (chunk_of_type ty) sp ofs v hvalidW with ⟨m', hstore⟩
+  have hstore_stack : Mach.store_stack m (Vptr sp Ptrofs.zero) ty
+      (Ptrofs.repr ofs) v = some m' := by
+    unfold Mach.store_stack Mem.storev
+    simp only [Val.offset_ptr]
+    have hadd : Ptrofs.add Ptrofs.zero (Ptrofs.repr ofs) = Ptrofs.repr ofs := by
+      change WordCore.add (WordCore.zero Ptrofs.wordsize)
+        (WordCore.repr Ptrofs.wordsize ofs) = _
+      apply WordCore.ext_of_val_eq
+      rw [stackingproof_wordcore_add_val]
+      have hzero : (WordCore.zero Ptrofs.wordsize).val = 0 := by rfl
+      rw [hzero, Nat.zero_add]
+      exact Nat.mod_eq_of_lt (stackingproof_wordcore_val_lt _)
+    rw [hadd]
+    change Mem.store (chunk_of_type ty) m sp
+      (Ptrofs.unsigned (Ptrofs.repr ofs)) v = some m'
+    have hrepr : Ptrofs.unsigned (Ptrofs.repr ofs) = ofs := by
+      apply stackingproof_ptrofs_unsigned_repr
+      exact hbounds
+    rw [hrepr]
+    exact hstore
+  refine ⟨m', hstore_stack, ?_⟩
+  have hc' : (contains (chunk_of_type ty) sp ofs spec).m_pred m' := by
+    refine ⟨hbounds, Mem.store_valid_access_1 (chunk_of_type ty) m sp ofs v m'
+      hstore (chunk_of_type ty) sp ofs Freeable hvalid, ?_⟩
+    exact ⟨Val.load_result (chunk_of_type ty) v,
+      Mem.load_store_same (chunk_of_type ty) m sp ofs v m' hstore, hspec⟩
+  have hunch : Mem.unchanged_on P.m_footprint m m' :=
+    stackingproof_store_unchanged_on P (chunk_of_type ty) m sp ofs v m' hstore (by
+      intro i hi hPi
+      exact hdisj sp i (by
+        exact ⟨rfl, hi.1, hi.2⟩) hPi)
+  refine ⟨hc', P.m_invar m m' hP hunch, ?_⟩
+  intro b ofs' hfoot hPfoot
+  exact hdisj b ofs' hfoot hPfoot
+
+theorem save_callee_save_rec_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    save_callee_save_rec_correctStatement := by
+  intro cfg xi return_address_offset
+    tprog j cs fb sp ls hls_temp_undef wt_ls k l pos rs m P hcallee hsep hagree
+  induction l generalizing pos rs m P with
+  | nil =>
+      refine ⟨rs, m, ?_, ?_, ?_, hagree⟩
+      · exact star_refl _ _ (Mach.State cs fb (Vptr sp Ptrofs.zero) k rs m)
+      · have hP : P.m_pred m := hsep.2.1
+        refine ⟨True.intro, hP, ?_⟩
+        intro b ofs hfoot hPfoot
+        exact False.elim hfoot
+      · intro ofs k' p hp
+        exact hp
+  | cons r l ih =>
+      let ty := mreg_type r
+      let sz := CompCert4Lean.Common.AST.typesize ty
+      let pos1 := align pos sz
+      have hty := CompCert4Lean.Common.AST.typesize_pos ty
+      have hadd : ZArith.BinInt.Z.le pos1 (zAdd pos1 sz) := by
+        unfold ZArith.BinInt.Z.le at *
+        unfold zAdd ZArith.BinInt.Z.add
+        rw [intOfZ_zOfInt]
+        have hty' : 0 ≤ intOfZ sz := by
+          exact Int.le_of_lt (show 0 < intOfZ sz from hty)
+        omega
+      have hstep0 := size_callee_save_area_rec_incr l (zAdd pos1 sz)
+      have hstep : ZArith.BinInt.Z.le pos1 (size_callee_save_area_rec l (zAdd pos1 sz)) :=
+        ZArith.BinInt.Z.le_trans pos1 (zAdd pos1 sz)
+          (size_callee_save_area_rec l (zAdd pos1 sz)) hadd hstep0
+      have hpos : zLe pos pos1 := by
+        exact align_le pos sz hty
+      have hsep1 := range_drop_left sp pos
+        (size_callee_save_area_rec (r :: l) pos) P pos1 m
+        ⟨hpos, by
+          simp [size_callee_save_area_rec, pos1, ty, sz]
+          exact hstep⟩ hsep
+      have hsep2 := range_split sp pos1
+        (size_callee_save_area_rec l (zAdd pos1 sz)) P
+        (zAdd pos1 sz) m
+        ⟨hadd, hstep0⟩ hsep1
+      have hszdiv : zDivide (align_chunk (chunk_of_type ty)) sz := by
+        change ZArith.BinInt.Z.divide (align_chunk (chunk_of_type ty))
+          (CompCert4Lean.Common.AST.typesize ty)
+        rw [← size_type_chunk ty]
+        exact align_size_chunk_divides (chunk_of_type ty)
+      have halign : zDivide (align_chunk (chunk_of_type ty)) pos1 := by
+        apply ZArith.BinInt.Z.divide_trans (align_chunk (chunk_of_type ty)) sz pos1
+        · exact hszdiv
+        · simpa [pos1] using (align_divides pos sz hty)
+      have hsep2' : (sepconj (range sp pos1
+          (zAdd pos1 (size_chunk (chunk_of_type ty))))
+          (sepconj (range sp (zAdd pos1 sz)
+            (size_callee_save_area_rec l (zAdd pos1 sz))) P)).m_pred m := by
+        simpa [size_type_chunk ty] using hsep2
+      have hcontains0 := range_contains (chunk_of_type ty) sp pos1
+        (sepconj (range sp (zAdd pos1 sz)
+          (size_callee_save_area_rec l (zAdd pos1 sz))) P) m hsep2' halign
+      have hspec : Val.inject j (ls (R r)) (Val.load_result (chunk_of_type ty) (rs r)) :=
+        load_result_inject j (mreg_type r) (ls (R r)) (rs r) (hagree r) (wt_ls r)
+      have hset := stackingproof_contains_set_stack
+        (fun v => Val.inject j (ls (R r)) v) (rs r)
+        (fun _ => True) m ty sp pos1
+        (sepconj (range sp (zAdd pos1 sz)
+          (size_callee_save_area_rec l (zAdd pos1 sz))) P)
+        hcontains0 hspec
+      rcases hset with ⟨m1, hstore, hnew⟩
+      let rs1 := undef_regs (destroyed_by_setstack ty) rs
+      have hagree1 : agree_regs j ls rs1 := by
+        intro r0
+        by_cases hr0 : r0 ∈ destroyed_by_setstack ty
+        · change Val.inject j (ls (R r0))
+            (Mach.undef_regs (destroyed_by_setstack ty) rs r0)
+          rw [Mach.undef_regs_same_proof r0 (destroyed_by_setstack ty) rs hr0]
+          rw [hls_temp_undef ty r0 hr0]
+          exact Val.val_inject_undef j _
+        · have hother := Mach.undef_regs_other_proof r0
+            (destroyed_by_setstack ty) rs hr0
+          rw [show rs1 r0 = rs r0 by exact hother]
+          exact hagree r0
+      have hswap := (sep_swap
+        (contains (chunk_of_type ty) sp pos1
+          (fun v => Val.inject j (ls (R r)) v))
+        (range sp (zAdd pos1 sz) (size_callee_save_area_rec l (zAdd pos1 sz))) P).1.1 m1 hnew
+      have hih := ih (P := sepconj
+          (contains (chunk_of_type ty) sp pos1
+            (fun v => Val.inject j (ls (R r)) v)) P)
+        (pos := zAdd pos1 sz) (rs := rs1) (m := m1)
+        (by intro r0 hr0; exact hcallee r0 (by simp [hr0])) hswap hagree1
+      rcases hih with ⟨rs2, m2, hstar, hpred, hperm, hagree2⟩
+      have hposmax : zLe pos1 Ptrofs.max_unsigned := by
+        have hh := hsep2.1.2.1
+        change intOfZ (zAdd pos1 sz) ≤ intOfZ Ptrofs.modulus at hh
+        unfold zAdd ZArith.BinInt.Z.add at hh
+        rw [intOfZ_zOfInt] at hh
+        change intOfZ pos1 ≤ intOfZ Ptrofs.max_unsigned
+        have hm : intOfZ Ptrofs.max_unsigned = intOfZ Ptrofs.modulus - 1 := by rfl
+        rw [hm]
+        have hszi : 0 < intOfZ sz := hty
+        omega
+      refine ⟨rs2, m2, ?_, ?_, ?_, hagree2⟩
+      · exact star_left _ _ _ _ _ _ _ _ _ _
+          (Mach.exec_Msetstack cs fb (Vptr sp Ptrofs.zero) r
+            (Ptrofs.repr pos1) ty
+            (save_callee_save_rec l (zAdd pos1 sz) k) rs m m1 rs1
+            hstore rfl) hstar rfl
+      · have hfinal := (sep_swap
+          (contains_callee_saves j sp (zAdd pos1 sz) l ls)
+          (contains (chunk_of_type ty) sp pos1
+            (fun v => Val.inject j (ls (R r)) v)) P).1.1 m2 hpred
+        have hfinal2 := (sep_assoc_2
+          (contains (chunk_of_type ty) sp pos1
+            (fun v => Val.inject j (ls (R r)) v))
+          (contains_callee_saves j sp (zAdd pos1 sz) l ls) P).1 m2 hfinal
+        simpa [contains_callee_saves, pos1, ty, sz] using hfinal2
+      · intro ofs k' p hp
+        exact hperm ofs k' p (Mem.perm_store_1 (chunk_of_type ty) m sp
+          pos1 (rs r) m1 (by
+            unfold Mach.store_stack Mem.storev at hstore
+            simp only [Val.offset_ptr] at hstore
+            have hadd' : Ptrofs.add Ptrofs.zero (Ptrofs.repr pos1) = Ptrofs.repr pos1 := by
+              change WordCore.add (WordCore.zero Ptrofs.wordsize)
+                (WordCore.repr Ptrofs.wordsize pos1) = _
+              apply WordCore.ext_of_val_eq
+              rw [stackingproof_wordcore_add_val]
+              have hzero : (WordCore.zero Ptrofs.wordsize).val = 0 := by rfl
+              rw [hzero, Nat.zero_add]
+              exact Nat.mod_eq_of_lt (stackingproof_wordcore_val_lt _)
+            rw [hadd'] at hstore
+            change Mem.store (chunk_of_type ty) m sp
+              (Ptrofs.unsigned (Ptrofs.repr pos1)) (rs r) = some m1 at hstore
+            rw [stackingproof_ptrofs_unsigned_repr pos1 ⟨hsep2.1.1, hposmax⟩] at hstore
+            exact hstore) sp ofs k' p hp)
+
+end CompCert4Lean.Backend.Stackingproof

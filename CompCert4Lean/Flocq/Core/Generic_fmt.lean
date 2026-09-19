@@ -4792,3 +4792,29 @@ theorem round_le_pos :
   exact pg_round_le_pos
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem round_DN_opp :
+    ∀ ctx magnitude, round_DN_oppStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x
+  unfold Exact.round
+  have hc := pg_cexp_opp ctx magnitude beta fexp x
+  change Exact.cexp ctx magnitude beta fexp (Exact.Ropp ctx x) =
+    Exact.cexp ctx magnitude beta fexp x at hc
+  rw [hc, scaled_mantissa_opp ctx magnitude beta fexp x]
+  have hz : Exact.Zfloor ctx (Exact.Ropp ctx
+      (Exact.scaled_mantissa ctx magnitude beta fexp x)) =
+      Zopp (Exact.Zceil ctx
+        (Exact.scaled_mantissa ctx magnitude beta fexp x)) := by
+    change CompCert4Lean.Flocq.Core.Raux.Exact.Zfloor ctx
+        (CompCert4Lean.Flocq.Core.Raux.Exact.Ropp ctx
+          (Exact.scaled_mantissa ctx magnitude beta fexp x)) =
+      Zopp (Zopp (CompCert4Lean.Flocq.Core.Raux.Exact.Zfloor ctx
+        (CompCert4Lean.Flocq.Core.Raux.Exact.Ropp ctx
+          (Exact.scaled_mantissa ctx magnitude beta fexp x))))
+    rw [pg_zopp_zopp]
+  rw [hz]
+  exact CompCert4Lean.Flocq.Core.Float_prop.F2R_Zopp ctx beta _ _
+
+end CompCert4Lean.Flocq.Core.Generic_fmt
