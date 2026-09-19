@@ -2613,3 +2613,12 @@ theorem law_obligation_proof : law_obligation := by
   · exact CompCert4Lean.Backend.Kildall.NodeSetBackward.law_obligation_proof
 
 end DS
+
+namespace DS
+
+theorem fixpoint_allnodes_solution_proof : ∀ (laws : law_obligation), fixpoint_allnodes_solution laws := by
+  intro laws A code successors transf res n instr s hfix hcode hsucc
+  exact CompCert4Lean.Backend.Kildall.Backward_Dataflow_Solver.fixpoint_allnodes_solution
+    L NodeSetBackward laws.1 laws.2 code successors transf res n instr s hfix hcode hsucc
+
+end DS

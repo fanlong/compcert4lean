@@ -2760,3 +2760,177 @@ theorem eval_cmpl_gen : eval_cmpl_genStatement := by
       simpa [splitlong2, hmatch] using hele
 
 end CompCert4Lean.Backend.SplitLongproof
+
+
+namespace CompCert4Lean.Backend.SplitLongproof
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Backend.CminorSel
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+set_option maxHeartbeats 10000000 in
+private theorem splitlong_recompose_local (n : CCInt64) :
+    int64Ofwords (int64Hiword n) (int64Loword n) = n := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [test_int64_ofwords_val, splitlong_hiword_val, splitlong_loword_val]
+  have hshift : Nat.shiftLeft (n.val / 2 ^ 32) 32 = (n.val / 2 ^ 32) * 2 ^ 32 := Nat.shiftLeft_eq _ _
+  rw [hshift]
+  have hb : 0 < 2 ^ 32 := Nat.two_pow_pos 32
+  have hlt : n.val % (2 ^ 32) < 2 ^ 32 := Nat.mod_lt _ hb
+  have hlor : Nat.lor ((n.val / 2 ^ 32) * 2 ^ 32) (n.val % 2 ^ 32) =
+      ((n.val / 2 ^ 32) * 2 ^ 32) ||| (n.val % 2 ^ 32) := rfl
+  have hdiv : Nat.lor ((n.val / 2 ^ 32) * 2 ^ 32) (n.val % 2 ^ 32) / 2 ^ 32 = n.val / 2 ^ 32 := by
+    rw [hlor, Nat.or_div_two_pow]
+    rw [Nat.mul_comm, Nat.mul_div_right _ hb, Nat.div_eq_of_lt hlt, Nat.or_zero]
+  have hmod : Nat.lor ((n.val / 2 ^ 32) * 2 ^ 32) (n.val % 2 ^ 32) % 2 ^ 32 = n.val % 2 ^ 32 := by
+    rw [hlor, Nat.or_mod_two_pow]
+    rw [Nat.mul_comm, Nat.mul_mod_right, Nat.mod_eq_of_lt hlt, Nat.zero_or]
+  have hdecomp := Nat.div_add_mod' (Nat.lor ((n.val / 2 ^ 32) * 2 ^ 32) (n.val % 2 ^ 32)) (2 ^ 32)
+  rw [hdiv, hmod] at hdecomp
+  exact hdecomp.symm.trans (Nat.div_add_mod' n.val (2 ^ 32))
+
+private theorem splitlong_eval_makelong_any_local
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (ge : CompCert4Lean.Backend.CminorSel.genv)
+    (sp : CompCert4Lean.Common.Values.val)
+    (e : CompCert4Lean.Backend.Cminor.env)
+    (m : CompCert4Lean.Common.Memory.mem)
+    (le : CompCert4Lean.Backend.CminorSel.letenv)
+    (h l : CompCert4Lean.Backend.CminorSel.expr)
+    (v : CompCert4Lean.Common.Values.val)
+    (heval : eval_expr xi ge sp e m le
+      (Eop Omakelong (Econs h (Econs l Enil))) v) :
+    ∃ x y, eval_expr xi ge sp e m le h x ∧
+      eval_expr xi ge sp e m le l y ∧
+      v = CompCert4Lean.Common.Values.Val.longofwords x y := by
+  obtain ⟨vl, hargs, hop⟩ := splitlong_eval_eop_inv xi ge sp e m le
+    Omakelong (Econs h (Econs l Enil)) v heval
+  obtain ⟨x1, vl1, hvl1, h1, ht1⟩ := splitlong_eval_cons_inv xi ge sp e m le
+    h (Econs l Enil) vl hargs
+  obtain ⟨x2, vl2, hvl2, h2, ht2⟩ := splitlong_eval_cons_inv xi ge sp e m le
+    l Enil vl1 ht1
+  have hnil := splitlong_eval_nil_inv xi ge sp e m le vl2 ht2
+  rw [hvl1, hvl2, hnil] at hop
+  change some (CompCert4Lean.Common.Values.Val.longofwords x1 x2) = some v at hop
+  exact ⟨x1, x2, h1, h2, Option.some.inj hop |>.symm⟩
+
+private theorem splitlong_eval_high_local
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (ge : CompCert4Lean.Backend.CminorSel.genv)
+    (sp : CompCert4Lean.Common.Values.val)
+    (e : CompCert4Lean.Backend.Cminor.env)
+    (m : CompCert4Lean.Common.Memory.mem)
+    (le : CompCert4Lean.Backend.CminorSel.letenv)
+    (v : CompCert4Lean.Common.Values.val) :
+    eval_expr xi ge sp e m (v :: le)
+      (Eop Ohighlong (Econs (Eletvar 0) Enil))
+      (CompCert4Lean.Common.Values.Val.hiword v) := by
+  apply eval_expr.eval_Eop (v :: le) Ohighlong
+    (Econs (Eletvar 0) Enil) [v]
+    (CompCert4Lean.Common.Values.Val.hiword v)
+  · exact eval_exprlist.cons (v :: le) (Eletvar 0) Enil v []
+      (eval_expr.eval_Eletvar (v :: le) 0 v (by rfl))
+      (eval_exprlist.nil (v :: le))
+  · rfl
+
+private theorem splitlong_eval_low_local
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (ge : CompCert4Lean.Backend.CminorSel.genv)
+    (sp : CompCert4Lean.Common.Values.val)
+    (e : CompCert4Lean.Backend.Cminor.env)
+    (m : CompCert4Lean.Common.Memory.mem)
+    (le : CompCert4Lean.Backend.CminorSel.letenv)
+    (v : CompCert4Lean.Common.Values.val) :
+    eval_expr xi ge sp e m (v :: le)
+      (Eop Olowlong (Econs (Eletvar 0) Enil))
+      (CompCert4Lean.Common.Values.Val.loword v) := by
+  apply eval_expr.eval_Eop (v :: le) Olowlong
+    (Econs (Eletvar 0) Enil) [v]
+    (CompCert4Lean.Common.Values.Val.loword v)
+  · exact eval_exprlist.cons (v :: le) (Eletvar 0) Enil v []
+      (eval_expr.eval_Eletvar (v :: le) 0 v (by rfl))
+      (eval_exprlist.nil (v :: le))
+  · rfl
+
+set_option maxHeartbeats 10000000 in
+set_option maxRecDepth 100000 in
+theorem eval_splitlong : eval_splitlongStatement := by
+  intro xi prog sp e m le a f v sem hexec hun eaval
+  cases hm : splitlong_match a with
+  | splitlong_case1 h l =>
+      simp [splitlong, hm]
+      obtain ⟨x1, x2, h1, h2, hv⟩ :=
+        splitlong_eval_makelong_any_local xi (Genv.globalenv prog) sp e m le h l v eaval
+      subst v
+      obtain ⟨v', hv', heq⟩ := hexec le h l x1 x2 h1 h2
+      refine ⟨v', hv', ?_⟩
+      cases x1 with
+      | Vint p =>
+          cases x2 with
+          | Vint q =>
+              have heq' := heq _ _ rfl rfl
+              rw [heq']
+              exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+          | Vundef =>
+              simp [CompCert4Lean.Common.Values.Val.longofwords] at hun ⊢
+              rw [hun]
+              exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+          | Vlong _ | Vfloat _ | Vsingle _ | Vptr _ _ =>
+              simp [CompCert4Lean.Common.Values.Val.longofwords] at hun ⊢
+              rw [hun]
+              exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vundef | Vlong _ | Vfloat _ | Vsingle _ | Vptr _ _ =>
+          simp [CompCert4Lean.Common.Values.Val.longofwords] at hun ⊢
+          rw [hun]
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+  | splitlong_default a' =>
+      simp [splitlong, hm]
+      have hhigh := splitlong_eval_high_local xi
+        (Genv.globalenv prog) sp e m le v
+      have hlow := splitlong_eval_low_local xi
+        (Genv.globalenv prog) sp e m le v
+      obtain ⟨v', hv', hsem⟩ := hexec (v :: le)
+        (Eop Ohighlong (Econs (Eletvar 0) Enil))
+        (Eop Olowlong (Econs (Eletvar 0) Enil))
+        (CompCert4Lean.Common.Values.Val.hiword v)
+        (CompCert4Lean.Common.Values.Val.loword v) hhigh hlow
+      refine ⟨v', ?_, ?_⟩
+      · exact eval_expr.eval_Elet le a
+          (f (Eop Ohighlong (Econs (Eletvar 0) Enil))
+            (Eop Olowlong (Econs (Eletvar 0) Enil))) v v' eaval hv'
+      · cases v with
+        | Vundef =>
+            have hs : sem .Vundef = .Vundef := by simpa using hun
+            rw [hs]
+            exact CompCert4Lean.Common.Values.Val.lessdef_undef v'
+        | Vint n =>
+            have hs : sem (.Vint n) = .Vundef := by simpa using hun
+            rw [hs]
+            exact CompCert4Lean.Common.Values.Val.lessdef_undef v'
+        | Vfloat n =>
+            have hs : sem (.Vfloat n) = .Vundef := by simpa using hun
+            rw [hs]
+            exact CompCert4Lean.Common.Values.Val.lessdef_undef v'
+        | Vsingle n =>
+            have hs : sem (.Vsingle n) = .Vundef := by simpa using hun
+            rw [hs]
+            exact CompCert4Lean.Common.Values.Val.lessdef_undef v'
+        | Vptr b ofs =>
+            have hs : sem (.Vptr b ofs) = .Vundef := by simpa using hun
+            rw [hs]
+            exact CompCert4Lean.Common.Values.Val.lessdef_undef v'
+        | Vlong n =>
+            have hs := hsem
+              (CompCert4Lean.Lib.Integers.Int64.hiword n)
+              (CompCert4Lean.Lib.Integers.Int64.loword n) rfl rfl
+            rw [hs, splitlong_recompose_local]
+            exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+
+end CompCert4Lean.Backend.SplitLongproof

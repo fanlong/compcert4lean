@@ -694,3 +694,109 @@ theorem OrderedLoc.lt_not_eq : OrderedLoc.lt_not_eqStatement := by
         · exact OrderedTyp.lt_not_eq_proof _ _ hty rfl
 
 end CompCert4Lean.Backend.Locations
+
+namespace CompCert4Lean.Backend.Locations
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.X86.Machregs
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem outside_typesize_le_two (ty : typ) :
+    intOfZ (typesize ty) ≤ 2 := by
+  cases ty <;>
+    simp only [typesize, ZArith.BinInt.Z.of_nat]
+  all_goals rw [intOfZ_zOfInt]
+  all_goals decide
+
+private theorem outside_typesize_le_one_of_lt_any64 (ty : typ)
+    (h : OrderedTyp.lt ty .Tany64) : intOfZ (typesize ty) ≤ 1 := by
+  cases ty <;>
+    simp only [OrderedTyp.lt, CompCert4Lean.Lib.Coqlib.Plt,
+      PArith.BinPos.Pos.lt] at h
+  all_goals simp only [typesize, ZArith.BinInt.Z.of_nat]
+  all_goals rw [intOfZ_zOfInt]
+  all_goals first | decide | (exfalso; revert h; decide)
+
+private theorem outside_not_tlong_lt (ty : typ) :
+    ¬ OrderedTyp.lt .Tlong ty := by
+  intro h
+  cases ty <;>
+    simp only [OrderedTyp.lt, CompCert4Lean.Lib.Coqlib.Plt,
+      PArith.BinPos.Pos.lt] at h <;>
+    revert h <;> decide
+
+private theorem outside_low_gap (ofs ofs' : Z) (ty' : typ)
+    (h : zLt ofs' (zSub ofs (zOfNat 1))) :
+    zLe (zAdd ofs' (typesize ty')) ofs := by
+  have hs := outside_typesize_le_two ty'
+  change intOfZ (zAdd ofs' (typesize ty')) ≤ intOfZ ofs
+  change intOfZ ofs' < intOfZ (zSub ofs (zOfNat 1)) at h
+  simp only [zAdd, ZArith.BinInt.Z.add, zSub, ZArith.BinInt.Z.sub,
+    zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at h ⊢
+  change intOfZ ofs' < intOfZ ofs - (Int.ofNat 1) at h
+  change intOfZ ofs' + intOfZ (typesize ty') ≤ intOfZ ofs
+  have hone : (Int.ofNat 1 : Int) = 1 := Int.ofNat_one
+  omega
+
+private theorem outside_low_edge (ofs : Z) (ty' : typ)
+    (h : OrderedTyp.lt ty' .Tany64) :
+    zLe (zAdd (zSub ofs (zOfNat 1)) (typesize ty')) ofs := by
+  have hs := outside_typesize_le_one_of_lt_any64 ty' h
+  change intOfZ (zAdd (zSub ofs (zOfNat 1)) (typesize ty')) ≤ intOfZ ofs
+  simp only [zAdd, ZArith.BinInt.Z.add, zSub, ZArith.BinInt.Z.sub,
+    zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at ⊢
+  change intOfZ ofs - (Int.ofNat 1) + intOfZ (typesize ty') ≤ intOfZ ofs
+  have hone : (Int.ofNat 1 : Int) = 1 := Int.ofNat_one
+  omega
+
+private theorem outside_high_gap (ofs : Z) (ty : typ) (ofs' : Z)
+    (h : zLt (zSub (zAdd ofs (typesize ty)) (zOfNat 1)) ofs') :
+    zLe (zAdd ofs (typesize ty)) ofs' := by
+  change intOfZ (zAdd ofs (typesize ty)) ≤ intOfZ ofs'
+  change intOfZ (zSub (zAdd ofs (typesize ty)) (zOfNat 1)) < intOfZ ofs' at h
+  simp only [zSub, ZArith.BinInt.Z.sub, zAdd, ZArith.BinInt.Z.add,
+    zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at h ⊢
+  change intOfZ ofs + intOfZ (typesize ty) - (Int.ofNat 1) < intOfZ ofs' at h
+  change intOfZ ofs + intOfZ (typesize ty) ≤ intOfZ ofs'
+  have hone : (Int.ofNat 1 : Int) = 1 := Int.ofNat_one
+  omega
+
+theorem OrderedLoc.outside_interval_diff :
+    OrderedLoc.outside_interval_diffStatement := by
+  intro l l' h
+  cases l with
+  | R mr =>
+      cases l' with
+      | R mr' =>
+          change mr ≠ mr'
+          rcases h with h | h
+          · exact (CompCert4Lean.Lib.Coqlib.Plt_ne _ _ h) ∘
+              (fun heq => congrArg IndexedMreg.index heq.symm)
+          · exact (CompCert4Lean.Lib.Coqlib.Plt_ne _ _ h) ∘
+              (fun heq => congrArg IndexedMreg.index heq)
+      | S sl' ofs' ty' => trivial
+  | S sl ofs ty =>
+      cases l' with
+      | R mr' => trivial
+      | S sl' ofs' ty' =>
+          rcases h with h | h
+          · rcases h with hslot | ⟨hslot, hrest⟩
+            · exact Or.inl (fun heq =>
+                (OrderedSlot.lt_not_eq_proof _ _ hslot) heq.symm)
+            · rcases hrest with hofs | ⟨heqofs, hty⟩
+              · right; right
+                exact outside_low_gap ofs ofs' ty' hofs
+              · subst ofs'
+                right; right
+                exact outside_low_edge ofs ty' hty
+          · rcases h with hslot | ⟨hslot, hrest⟩
+            · exact Or.inl (fun heq =>
+                (OrderedSlot.lt_not_eq_proof _ _ hslot) heq)
+            · rcases hrest with hofs | ⟨heqofs, hty⟩
+              · right; left
+                exact outside_high_gap ofs ty ofs' hofs
+              · exfalso
+                subst ofs'
+                exact outside_not_tlong_lt ty' hty
+
+end CompCert4Lean.Backend.Locations

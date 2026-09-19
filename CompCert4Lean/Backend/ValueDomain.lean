@@ -5456,3 +5456,10 @@ theorem romatch_store : romatch_storeStatement := by
     exact Mem.perm_store_2 chunk m b ofs v m' hstore b' ofs' .Max .Writable hp'
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem ssize_pos : ssize_posStatement := by
+  exact ssize_pos_select_aux
+
+end CompCert4Lean.Backend.ValueDomain

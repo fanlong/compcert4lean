@@ -1788,3 +1788,13 @@ theorem transf_final_states : transf_final_statesStatement := by
             exact htarget _ hld''
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+theorem exec_straight_exec
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    exec_straight_execStatement := by
+  exact asmgenproof_exec_straight_exec_local
+
+end CompCert4Lean.X86.Asmgenproof

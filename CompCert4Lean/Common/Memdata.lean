@@ -2099,3 +2099,91 @@ theorem encode_val_int64 : encode_val_int64Statement := by
   simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr64
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+private abbrev pgZ := CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z
+private abbrev pgAdd : pgZ → pgZ → pgZ :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+private abbrev pgMul : pgZ → pgZ → pgZ :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+private abbrev pgDiv : pgZ → pgZ → pgZ :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div
+private abbrev pgOfNat : Nat → pgZ :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+private abbrev pgTwoP : pgZ → pgZ :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p
+private abbrev pg8 : pgZ := pgOfNat 8
+private abbrev pg256 : pgZ := pgOfNat 256
+
+private theorem pg_bytes_of_int_mod_pow_succ (n : Nat) :
+    pgTwoP (pgMul (pgOfNat (Nat.succ n)) pg8) =
+      pgMul (pgTwoP (pgMul (pgOfNat n) pg8)) pg256 := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  rw [show pgMul (pgOfNat (Nat.succ n)) pg8 =
+      pgOfNat ((Nat.succ n) * 8) by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        simp only [pgMul, pgOfNat, pg8,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        rfl]
+  rw [show pgMul (pgOfNat n) pg8 = pgOfNat (n * 8) by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        simp only [pgMul, pgOfNat, pg8,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        rfl]
+  simp only [pgMul, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  rw [intOfZ_two_p_zOfNat, intOfZ_two_p_zOfNat]
+  simp only [pg256, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  rw [show (Nat.succ n) * 8 = n * 8 + 8 by omega, _root_.Int.pow_add]
+  rfl
+
+private theorem pg_bytes_of_int_mod_head (n : Nat)
+    (x y : pgZ)
+    (h : CompCert4Lean.Lib.Zbits.eqmod
+      (pgTwoP (pgMul (pgOfNat (Nat.succ n)) pg8)) x y) :
+    CompCert4Lean.Lib.Integers.Byte.repr x =
+      CompCert4Lean.Lib.Integers.Byte.repr y := by
+  apply CompCert4Lean.Lib.Integers.Byte.eqm_samerepr_proof
+  apply CompCert4Lean.Lib.Zbits.eqmod_divides
+      (pgTwoP (pgMul (pgOfNat (Nat.succ n)) pg8)) (pgTwoP pg8) x y h
+  rw [pg_bytes_of_int_mod_pow_succ]
+  exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.divide_factor_r _ _
+
+theorem bytes_of_int_mod : bytes_of_int_modStatement := by
+  intro n
+  induction n with
+  | zero =>
+      intro x y h
+      rfl
+  | succ n ih =>
+      intro x y h
+      simp only [bytes_of_int]
+      congr 1
+      · apply pg_bytes_of_int_mod_head n x y
+        exact h
+      · apply ih
+        rcases h with ⟨k, hk⟩
+        refine ⟨k, ?_⟩
+        rw [hk]
+        change pgDiv (pgAdd (pgMul k (pgTwoP (pgMul (pgOfNat (Nat.succ n)) pg8))) y) pg256 =
+          pgAdd (pgMul k (pgTwoP (pgMul (pgOfNat n) pg8))) (pgDiv y pg256)
+        rw [pg_bytes_of_int_mod_pow_succ]
+        have hassoc : pgMul k
+            (pgMul (pgTwoP (pgMul (pgOfNat n) pg8)) pg256) =
+            pgMul (pgMul k (pgTwoP (pgMul (pgOfNat n) pg8))) pg256 :=
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul_assoc _ _ _
+        rw [hassoc]
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Z_div_plus_full_l
+        intro hz
+        have hz' := congrArg
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hz
+        change (256 : _root_.Int) = 0 at hz'
+        omega
+
+end CompCert4Lean.Common.Memdata
