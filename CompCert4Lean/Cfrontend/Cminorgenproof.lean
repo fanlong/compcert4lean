@@ -5118,3 +5118,604 @@ theorem match_callstack_function_entry : match_callstack_function_entryStatement
       hbind hargs hnparams hdisjoint)
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+open Lean Elab Tactic Meta
+
+private theorem wordcore_val_repr_aux (bits : Nat) (i : _root_.Int) :
+    (CompCert4Lean.Lib.Integers.WordCore.repr bits
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)).val =
+      _root_.Int.toNat (i % ((2 ^ bits : Nat) : _root_.Int)) := by
+  run_tac
+    let env ← getEnv
+    let some (n, _) := env.constants.toList.find?
+        (fun (n, _) => (toString n).endsWith "WordCore.val_repr")
+      | throwError "frozen WordCore.val_repr helper not found"
+    let stx := Lean.mkIdent n
+    let bitsArg := Lean.mkIdent `bits
+    let intArg := Lean.mkIdent `i
+    evalTactic (← `(tactic| exact $stx $bitsArg $intArg))
+
+private theorem wordcore_intval_eq_aux {bits : Nat}
+    (x : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    x.intval = zOfNat x.val := by
+  run_tac
+    let env ← getEnv
+    let some (n, _) := env.constants.toList.find?
+        (fun (n, _) => (toString n).endsWith "WordCore.intval_eq_zOfNat_val")
+      | throwError "frozen WordCore.intval helper not found"
+    let stx := Lean.mkIdent n
+    let arg := Lean.mkIdent `x
+    evalTactic (← `(tactic| exact $stx $arg))
+
+private theorem ptrofs_unsigned_repr_aux (z : Z)
+    (hz : ZArith.BinInt.Z.le z0 z ∧
+      ZArith.BinInt.Z.le z Ptrofs.max_unsigned) :
+    Ptrofs.unsigned (Ptrofs.repr z) = z := by
+  have hznonneg : 0 ≤ intOfZ z := hz.1
+  have hzlt : intOfZ z < ((2 ^ Ptrofs.wordsize : Nat) : _root_.Int) := by
+    have hzmax := hz.2
+    change intOfZ z ≤ intOfZ Ptrofs.max_unsigned at hzmax
+    unfold Ptrofs.max_unsigned Ptrofs.modulus at hzmax
+    change intOfZ z ≤ _root_.Int.ofNat (2 ^ Ptrofs.wordsize) - 1 at hzmax
+    simp only [_root_.Int.ofNat_eq_natCast] at hzmax
+    omega
+  change (CompCert4Lean.Lib.Integers.WordCore.repr Ptrofs.wordsize z).intval = z
+  rw [wordcore_intval_eq_aux]
+  have hval :
+      (CompCert4Lean.Lib.Integers.WordCore.repr Ptrofs.wordsize z).val =
+        _root_.Int.toNat (intOfZ z %
+          ((2 ^ Ptrofs.wordsize : Nat) : _root_.Int)) := by
+    rw [← zOfInt_intOfZ z]
+    simpa only [intOfZ_zOfInt] using
+      wordcore_val_repr_aux Ptrofs.wordsize (intOfZ z)
+  rw [hval, _root_.Int.emod_eq_of_lt hznonneg hzlt]
+  change zOfInt (_root_.Int.ofNat (_root_.Int.toNat (intOfZ z))) = z
+  calc
+    _ = zOfInt (intOfZ z) :=
+      congrArg zOfInt (_root_.Int.toNat_of_nonneg hznonneg)
+    _ = z := zOfInt_intOfZ z
+
+private theorem ptrofs_add_repr_unsigned_aux
+    (f : Val.meminj) (m tm : mem) (b b' : block) (ofs : Ptrofs.int) (delta : Z)
+    (hmem : Mem.inject f m tm)
+    (hweak : Mem.weak_valid_pointer m b (Ptrofs.unsigned ofs) = true)
+    (hmap : f b = some (b', delta)) :
+    Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta)) =
+      ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) delta := by
+  have hperm :
+      Mem.perm m b (Ptrofs.unsigned ofs) .Max .Nonempty ∨
+      Mem.perm m b (ZArith.BinInt.Z.sub (Ptrofs.unsigned ofs) (.Zpos .xH))
+        .Max .Nonempty := by
+    rcases (Mem.weak_valid_pointer_spec m b (Ptrofs.unsigned ofs)).mp hweak with hp | hp
+    · exact Or.inl (Mem.perm_max m b _ .Cur .Nonempty
+        ((Mem.valid_pointer_nonempty_perm m b _).mp hp))
+    · exact Or.inr (Mem.perm_max m b _ .Cur .Nonempty
+        ((Mem.valid_pointer_nonempty_perm m b _).mp hp))
+  have hrep := hmem.mi_representable b b' delta ofs hmap hperm
+  have hofsNonneg : 0 ≤ intOfZ (Ptrofs.unsigned ofs) := by
+    have h := ofs.intrange.1
+    change (-1 : _root_.Int) < intOfZ (Ptrofs.unsigned ofs) at h
+    omega
+  have hdeltaMax : ZArith.BinInt.Z.le delta Ptrofs.max_unsigned := by
+    have hsum := hrep.2.2
+    change intOfZ (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) delta) ≤
+      intOfZ Ptrofs.max_unsigned at hsum
+    change intOfZ delta ≤ intOfZ Ptrofs.max_unsigned
+    change intOfZ
+      (zOfInt (intOfZ (Ptrofs.unsigned ofs) + intOfZ delta)) ≤
+        intOfZ Ptrofs.max_unsigned at hsum
+    rw [intOfZ_zOfInt] at hsum
+    omega
+  have hdelta : Ptrofs.unsigned (Ptrofs.repr delta) = delta :=
+    ptrofs_unsigned_repr_aux delta ⟨hrep.1, hdeltaMax⟩
+  change Ptrofs.unsigned
+      (Ptrofs.repr (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs)
+        (Ptrofs.unsigned (Ptrofs.repr delta)))) = _
+  rw [hdelta]
+  exact ptrofs_unsigned_repr_aux _ ⟨hrep.2.1, hrep.2.2⟩
+
+private theorem weak_valid_pointer_inject_aux
+    (f : Val.meminj) (m tm : mem) (b b' : block)
+    (ofs ofs' : Ptrofs.int) (delta : Z)
+    (hmem : Mem.inject f m tm)
+    (hweak : Mem.weak_valid_pointer m b (Ptrofs.unsigned ofs) = true)
+    (hmap : f b = some (b', delta))
+    (hofs : ofs' = Ptrofs.add ofs (Ptrofs.repr delta)) :
+    Mem.weak_valid_pointer tm b' (Ptrofs.unsigned ofs') = true := by
+  have haddr := ptrofs_add_repr_unsigned_aux f m tm b b' ofs delta hmem hweak hmap
+  subst ofs'
+  apply (Mem.weak_valid_pointer_spec tm b'
+    (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta)))).mpr
+  rcases (Mem.weak_valid_pointer_spec m b (Ptrofs.unsigned ofs)).mp hweak with hp | hp
+  · left
+    apply (Mem.valid_pointer_nonempty_perm tm b' _).mpr
+    have hperm := (Mem.valid_pointer_nonempty_perm m b _).mp hp
+    have ht := hmem.mi_inj.mi_perm b b' delta (Ptrofs.unsigned ofs)
+      .Cur .Nonempty hmap hperm
+    rw [haddr]
+    exact ht
+  · right
+    have hperm := (Mem.valid_pointer_nonempty_perm m b _).mp hp
+    have ht := hmem.mi_inj.mi_perm b b' delta
+      (ZArith.BinInt.Z.sub (Ptrofs.unsigned ofs) (.Zpos .xH))
+      .Cur .Nonempty hmap hperm
+    have hoff :
+        ZArith.BinInt.Z.sub
+            (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) (.Zpos .xH) =
+          ZArith.BinInt.Z.add
+            (ZArith.BinInt.Z.sub (Ptrofs.unsigned ofs) (.Zpos .xH)) delta := by
+      apply intOfZ_injective
+      have haddr' :
+          intOfZ (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) =
+            intOfZ (Ptrofs.unsigned ofs) + intOfZ delta := by
+        rw [haddr]
+        simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+      change intOfZ
+        (ZArith.BinInt.Z.sub
+          (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) (.Zpos .xH)) =
+        intOfZ
+          (ZArith.BinInt.Z.add
+            (ZArith.BinInt.Z.sub (Ptrofs.unsigned ofs) (.Zpos .xH)) delta)
+      simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+      omega
+    have ht' : Mem.perm tm b'
+        (ZArith.BinInt.Z.sub
+          (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) (.Zpos .xH))
+        .Cur .Nonempty := by
+      rw [hoff]
+      exact ht
+    exact (Mem.valid_pointer_nonempty_perm tm b' _).mpr ht'
+
+private theorem valid_pointer_inject_aux
+    (f : Val.meminj) (m tm : mem) (b b' : block)
+    (ofs ofs' : Ptrofs.int) (delta : Z)
+    (hmem : Mem.inject f m tm)
+    (hvalid : Mem.valid_pointer m b (Ptrofs.unsigned ofs) = true)
+    (hmap : f b = some (b', delta))
+    (hofs : ofs' = Ptrofs.add ofs (Ptrofs.repr delta)) :
+    Mem.valid_pointer tm b' (Ptrofs.unsigned ofs') = true := by
+  have hweak := Mem.valid_pointer_implies m b (Ptrofs.unsigned ofs) hvalid
+  have haddr := ptrofs_add_repr_unsigned_aux f m tm b b' ofs delta
+    hmem hweak hmap
+  subst ofs'
+  apply (Mem.valid_pointer_nonempty_perm tm b' _).mpr
+  have hperm := (Mem.valid_pointer_nonempty_perm m b _).mp hvalid
+  have ht := hmem.mi_inj.mi_perm b b' delta (Ptrofs.unsigned ofs)
+    .Cur .Nonempty hmap hperm
+  rw [haddr]
+  exact ht
+
+private theorem different_pointers_inject_aux
+    (f : Val.meminj) (m tm : mem)
+    (b1 b2 b1' b2' : block) (ofs1 ofs2 : Ptrofs.int) (delta1 delta2 : Z)
+    (hmem : Mem.inject f m tm) (hne : b1 ≠ b2)
+    (hv1 : Mem.valid_pointer m b1 (Ptrofs.unsigned ofs1) = true)
+    (hv2 : Mem.valid_pointer m b2 (Ptrofs.unsigned ofs2) = true)
+    (hm1 : f b1 = some (b1', delta1)) (hm2 : f b2 = some (b2', delta2)) :
+    b1' ≠ b2' ∨
+      Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta1)) ≠
+        Ptrofs.unsigned (Ptrofs.add ofs2 (Ptrofs.repr delta2)) := by
+  have ha1 := ptrofs_add_repr_unsigned_aux f m tm b1 b1' ofs1 delta1
+    hmem (Mem.valid_pointer_implies m b1 _ hv1) hm1
+  have ha2 := ptrofs_add_repr_unsigned_aux f m tm b2 b2' ofs2 delta2
+    hmem (Mem.valid_pointer_implies m b2 _ hv2) hm2
+  have hp1 := Mem.perm_max m b1 _ .Cur .Nonempty
+    ((Mem.valid_pointer_nonempty_perm m b1 _).mp hv1)
+  have hp2 := Mem.perm_max m b2 _ .Cur .Nonempty
+    ((Mem.valid_pointer_nonempty_perm m b2 _).mp hv2)
+  rcases hmem.mi_no_overlap b1 b1' delta1 b2 b2' delta2
+      (Ptrofs.unsigned ofs1) (Ptrofs.unsigned ofs2) hne hm1 hm2 hp1 hp2 with h | h
+  · exact Or.inl h
+  · right
+    rw [ha1, ha2]
+    exact h
+
+private theorem weak_valid_pointer_no_overflow_aux
+    (f : Val.meminj) (m tm : mem) (b b' : block) (ofs : Ptrofs.int) (delta : Z)
+    (hmem : Mem.inject f m tm)
+    (hweak : Mem.weak_valid_pointer m b (Ptrofs.unsigned ofs) = true)
+    (hmap : f b = some (b', delta)) :
+    ZArith.BinInt.Z.le z0
+        (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs)
+          (Ptrofs.unsigned (Ptrofs.repr delta))) ∧
+      ZArith.BinInt.Z.le
+        (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs)
+          (Ptrofs.unsigned (Ptrofs.repr delta))) Ptrofs.max_unsigned := by
+  have hperm :
+      Mem.perm m b (Ptrofs.unsigned ofs) .Max .Nonempty ∨
+      Mem.perm m b (ZArith.BinInt.Z.sub (Ptrofs.unsigned ofs) (.Zpos .xH))
+        .Max .Nonempty := by
+    rcases (Mem.weak_valid_pointer_spec m b (Ptrofs.unsigned ofs)).mp hweak with hp | hp
+    · exact Or.inl (Mem.perm_max m b _ .Cur .Nonempty
+        ((Mem.valid_pointer_nonempty_perm m b _).mp hp))
+    · exact Or.inr (Mem.perm_max m b _ .Cur .Nonempty
+        ((Mem.valid_pointer_nonempty_perm m b _).mp hp))
+  have hrep := hmem.mi_representable b b' delta ofs hmap hperm
+  have hofsNonneg : 0 ≤ intOfZ (Ptrofs.unsigned ofs) := by
+    have h := ofs.intrange.1
+    change (-1 : _root_.Int) < intOfZ (Ptrofs.unsigned ofs) at h
+    omega
+  have hdeltaMax : ZArith.BinInt.Z.le delta Ptrofs.max_unsigned := by
+    have hsum := hrep.2.2
+    change intOfZ (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) delta) ≤
+      intOfZ Ptrofs.max_unsigned at hsum
+    change intOfZ
+      (zOfInt (intOfZ (Ptrofs.unsigned ofs) + intOfZ delta)) ≤
+        intOfZ Ptrofs.max_unsigned at hsum
+    rw [intOfZ_zOfInt] at hsum
+    change intOfZ delta ≤ intOfZ Ptrofs.max_unsigned
+    omega
+  rw [ptrofs_unsigned_repr_aux delta ⟨hrep.1, hdeltaMax⟩]
+  exact ⟨hrep.2.1, hrep.2.2⟩
+
+private theorem ptrofs_translate_cmpu_aux
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (x y d : Ptrofs.int)
+    (hx : ZArith.BinInt.Z.le z0
+        (ZArith.BinInt.Z.add (Ptrofs.unsigned x) (Ptrofs.unsigned d)) ∧
+      ZArith.BinInt.Z.le
+        (ZArith.BinInt.Z.add (Ptrofs.unsigned x) (Ptrofs.unsigned d))
+        Ptrofs.max_unsigned)
+    (hy : ZArith.BinInt.Z.le z0
+        (ZArith.BinInt.Z.add (Ptrofs.unsigned y) (Ptrofs.unsigned d)) ∧
+      ZArith.BinInt.Z.le
+        (ZArith.BinInt.Z.add (Ptrofs.unsigned y) (Ptrofs.unsigned d))
+        Ptrofs.max_unsigned) :
+    Ptrofs.cmpu c (Ptrofs.add x d) (Ptrofs.add y d) = Ptrofs.cmpu c x y := by
+  have hxu : Ptrofs.unsigned (Ptrofs.add x d) =
+      ZArith.BinInt.Z.add (Ptrofs.unsigned x) (Ptrofs.unsigned d) := by
+    change Ptrofs.unsigned (Ptrofs.repr
+      (ZArith.BinInt.Z.add (Ptrofs.unsigned x) (Ptrofs.unsigned d))) = _
+    exact ptrofs_unsigned_repr_aux _ hx
+  have hyu : Ptrofs.unsigned (Ptrofs.add y d) =
+      ZArith.BinInt.Z.add (Ptrofs.unsigned y) (Ptrofs.unsigned d) := by
+    change Ptrofs.unsigned (Ptrofs.repr
+      (ZArith.BinInt.Z.add (Ptrofs.unsigned y) (Ptrofs.unsigned d))) = _
+    exact ptrofs_unsigned_repr_aux _ hy
+  change CompCert4Lean.Lib.Integers.WordCore.unsigned (Ptrofs.add x d) =
+      ZArith.BinInt.Z.add
+        (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+        (CompCert4Lean.Lib.Integers.WordCore.unsigned d) at hxu
+  change CompCert4Lean.Lib.Integers.WordCore.unsigned (Ptrofs.add y d) =
+      ZArith.BinInt.Z.add
+        (CompCert4Lean.Lib.Integers.WordCore.unsigned y)
+        (CompCert4Lean.Lib.Integers.WordCore.unsigned d) at hyu
+  have heq : Ptrofs.eq (Ptrofs.add x d) (Ptrofs.add y d) = Ptrofs.eq x y := by
+    unfold Ptrofs.eq CompCert4Lean.Lib.Integers.WordCore.eq
+    change decide
+        (CompCert4Lean.Lib.Integers.WordCore.unsigned (Ptrofs.add x d) =
+          CompCert4Lean.Lib.Integers.WordCore.unsigned (Ptrofs.add y d)) =
+      decide (CompCert4Lean.Lib.Integers.WordCore.unsigned x =
+        CompCert4Lean.Lib.Integers.WordCore.unsigned y)
+    rw [hxu, hyu]
+    have hiff :
+        ZArith.BinInt.Z.add
+              (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+              (CompCert4Lean.Lib.Integers.WordCore.unsigned d) =
+            ZArith.BinInt.Z.add
+              (CompCert4Lean.Lib.Integers.WordCore.unsigned y)
+              (CompCert4Lean.Lib.Integers.WordCore.unsigned d) ↔
+          CompCert4Lean.Lib.Integers.WordCore.unsigned x =
+            CompCert4Lean.Lib.Integers.WordCore.unsigned y := by
+      constructor
+      · intro h
+        apply intOfZ_injective
+        have h' := congrArg intOfZ h
+        simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt] at h' ⊢
+        omega
+      · intro h
+        rw [h]
+    simpa using hiff
+  have hltu : Ptrofs.ltu (Ptrofs.add x d) (Ptrofs.add y d) = Ptrofs.ltu x y := by
+    unfold Ptrofs.ltu CompCert4Lean.Lib.Integers.WordCore.ltu
+    rw [hxu, hyu]
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "Integers.zltSelect")
+        | throwError "frozen zltSelect helper not found"
+      evalTactic (← `(tactic| unfold $(Lean.mkIdent n)))
+      let some (n', _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "Integers.sumboolSelect")
+        | throwError "frozen sumboolSelect helper not found"
+      evalTactic (← `(tactic| unfold $(Lean.mkIdent n')))
+    have hiff : ZArith.BinInt.Z.lt
+          (ZArith.BinInt.Z.add (Ptrofs.unsigned x) (Ptrofs.unsigned d))
+          (ZArith.BinInt.Z.add (Ptrofs.unsigned y) (Ptrofs.unsigned d)) ↔
+        ZArith.BinInt.Z.lt (Ptrofs.unsigned x) (Ptrofs.unsigned y) := by
+      change intOfZ
+          (ZArith.BinInt.Z.add (Ptrofs.unsigned x) (Ptrofs.unsigned d)) <
+            intOfZ (ZArith.BinInt.Z.add
+              (Ptrofs.unsigned y) (Ptrofs.unsigned d)) ↔
+        intOfZ (Ptrofs.unsigned x) < intOfZ (Ptrofs.unsigned y)
+      simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+      omega
+    cases hs : CompCert4Lean.Lib.Coqlib.zlt
+        (ZArith.BinInt.Z.add
+          (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+          (CompCert4Lean.Lib.Integers.WordCore.unsigned d))
+        (ZArith.BinInt.Z.add
+          (CompCert4Lean.Lib.Integers.WordCore.unsigned y)
+          (CompCert4Lean.Lib.Integers.WordCore.unsigned d)) with
+    | left hslt =>
+        have hxy := hiff.mp hslt
+        cases ht : CompCert4Lean.Lib.Coqlib.zlt
+            (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+            (CompCert4Lean.Lib.Integers.WordCore.unsigned y) with
+        | left _ => simp [hs, ht]
+        | right hn =>
+            exfalso
+            change intOfZ (Ptrofs.unsigned y) ≤ intOfZ (Ptrofs.unsigned x) at hn
+            change intOfZ (Ptrofs.unsigned x) < intOfZ (Ptrofs.unsigned y) at hxy
+            omega
+    | right hsge =>
+        cases ht : CompCert4Lean.Lib.Coqlib.zlt
+            (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+            (CompCert4Lean.Lib.Integers.WordCore.unsigned y) with
+        | left hxy =>
+            exfalso
+            have hsum := hiff.mpr hxy
+            change intOfZ
+                (ZArith.BinInt.Z.add (Ptrofs.unsigned y) (Ptrofs.unsigned d)) ≤
+              intOfZ
+                (ZArith.BinInt.Z.add (Ptrofs.unsigned x) (Ptrofs.unsigned d)) at hsge
+            change intOfZ
+                (ZArith.BinInt.Z.add (Ptrofs.unsigned x) (Ptrofs.unsigned d)) <
+              intOfZ
+                (ZArith.BinInt.Z.add (Ptrofs.unsigned y) (Ptrofs.unsigned d)) at hsum
+            omega
+        | right _ => simp [hs, ht]
+  have hltu' : Ptrofs.ltu (Ptrofs.add y d) (Ptrofs.add x d) = Ptrofs.ltu y x := by
+    unfold Ptrofs.ltu CompCert4Lean.Lib.Integers.WordCore.ltu
+    rw [hyu, hxu]
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "Integers.zltSelect")
+        | throwError "frozen zltSelect helper not found"
+      evalTactic (← `(tactic| unfold $(Lean.mkIdent n)))
+      let some (n', _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "Integers.sumboolSelect")
+        | throwError "frozen sumboolSelect helper not found"
+      evalTactic (← `(tactic| unfold $(Lean.mkIdent n')))
+    have hiff : ZArith.BinInt.Z.lt
+          (ZArith.BinInt.Z.add (Ptrofs.unsigned y) (Ptrofs.unsigned d))
+          (ZArith.BinInt.Z.add (Ptrofs.unsigned x) (Ptrofs.unsigned d)) ↔
+        ZArith.BinInt.Z.lt (Ptrofs.unsigned y) (Ptrofs.unsigned x) := by
+      change intOfZ
+          (ZArith.BinInt.Z.add (Ptrofs.unsigned y) (Ptrofs.unsigned d)) <
+            intOfZ (ZArith.BinInt.Z.add
+              (Ptrofs.unsigned x) (Ptrofs.unsigned d)) ↔
+        intOfZ (Ptrofs.unsigned y) < intOfZ (Ptrofs.unsigned x)
+      simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+      omega
+    cases hs : CompCert4Lean.Lib.Coqlib.zlt
+        (ZArith.BinInt.Z.add
+          (CompCert4Lean.Lib.Integers.WordCore.unsigned y)
+          (CompCert4Lean.Lib.Integers.WordCore.unsigned d))
+        (ZArith.BinInt.Z.add
+          (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+          (CompCert4Lean.Lib.Integers.WordCore.unsigned d)) with
+    | left hslt =>
+        have hyx := hiff.mp hslt
+        cases ht : CompCert4Lean.Lib.Coqlib.zlt
+            (CompCert4Lean.Lib.Integers.WordCore.unsigned y)
+            (CompCert4Lean.Lib.Integers.WordCore.unsigned x) with
+        | left _ => simp [hs, ht]
+        | right hn =>
+            exfalso
+            change intOfZ (Ptrofs.unsigned x) ≤ intOfZ (Ptrofs.unsigned y) at hn
+            change intOfZ (Ptrofs.unsigned y) < intOfZ (Ptrofs.unsigned x) at hyx
+            omega
+    | right hsge =>
+        cases ht : CompCert4Lean.Lib.Coqlib.zlt
+            (CompCert4Lean.Lib.Integers.WordCore.unsigned y)
+            (CompCert4Lean.Lib.Integers.WordCore.unsigned x) with
+        | left hyx =>
+            exfalso
+            have hsum := hiff.mpr hyx
+            change intOfZ
+                (ZArith.BinInt.Z.add (Ptrofs.unsigned x) (Ptrofs.unsigned d)) ≤
+              intOfZ
+                (ZArith.BinInt.Z.add (Ptrofs.unsigned y) (Ptrofs.unsigned d)) at hsge
+            change intOfZ
+                (ZArith.BinInt.Z.add (Ptrofs.unsigned y) (Ptrofs.unsigned d)) <
+              intOfZ
+                (ZArith.BinInt.Z.add (Ptrofs.unsigned x) (Ptrofs.unsigned d)) at hsum
+            omega
+        | right _ => simp [hs, ht]
+  cases c <;> simp [Ptrofs.cmpu, heq, hltu, hltu']
+
+private theorem cmplu_bool_inject_aux
+    (f : Val.meminj) (m tm : mem) (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 tv1 v2 tv2 : val) (b : Bool)
+    (hmem : Mem.inject f m tm)
+    (h1 : Val.inject f v1 tv1) (h2 : Val.inject f v2 tv2)
+    (h : Val.cmplu_bool (Mem.valid_pointer m) c v1 v2 = some b) :
+    Val.cmplu_bool (Mem.valid_pointer tm) c tv1 tv2 = some b := by
+  cases h1 <;> cases h2 <;>
+    simp [Val.cmplu_bool, CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+  all_goals subst_vars
+  case inject_long.inject_long => rfl
+  case inject_long.inject_ptr =>
+    rename_i i srcB srcOfs dstB delta hmap
+    rcases h with ⟨⟨hi, hweak⟩, hc⟩
+    have hweak' : Mem.weak_valid_pointer m srcB (Ptrofs.unsigned srcOfs) = true :=
+      (Mem.weak_valid_pointer_spec m srcB (Ptrofs.unsigned srcOfs)).mpr hweak
+    have ht := weak_valid_pointer_inject_aux f m tm srcB dstB srcOfs
+      (Ptrofs.add srcOfs (Ptrofs.repr delta)) delta hmem hweak' hmap rfl
+    exact ⟨⟨hi, (Mem.weak_valid_pointer_spec tm dstB _).mp ht⟩, hc⟩
+  case inject_ptr.inject_long =>
+    rename_i srcB srcOfs dstB delta hmap i
+    rcases h with ⟨⟨hi, hweak⟩, hc⟩
+    have hweak' : Mem.weak_valid_pointer m srcB (Ptrofs.unsigned srcOfs) = true :=
+      (Mem.weak_valid_pointer_spec m srcB (Ptrofs.unsigned srcOfs)).mpr hweak
+    have ht := weak_valid_pointer_inject_aux f m tm srcB dstB srcOfs
+      (Ptrofs.add srcOfs (Ptrofs.repr delta)) delta hmem hweak' hmap rfl
+    exact ⟨⟨hi, (Mem.weak_valid_pointer_spec tm dstB _).mp ht⟩, hc⟩
+  case inject_ptr.inject_ptr =>
+    rename_i srcB1 srcOfs1 dstB1 delta1 map1 srcB2 srcOfs2 dstB2 delta2 map2
+    run_tac
+      Lean.Elab.Tactic.liftMetaTactic fun goal => goal.withContext do
+        let unfoldPrivate (e : Lean.Expr) := do
+          match e.getAppFn.constName? with
+          | some name =>
+              if Lean.Name.isPrefixOf `_private name &&
+                  (toString name).endsWith "Values.boolOfSumbool" then
+                let e' ← Lean.Meta.withTransparency .all <| Lean.Meta.whnf e
+                return Lean.TransformStep.done e'
+              else
+                return Lean.TransformStep.continue
+          | none => return Lean.TransformStep.continue
+        let target ← goal.getType
+        let target' ← Lean.Meta.transform target (pre := unfoldPrivate)
+        let goal ← Lean.Meta.withTransparency .all <| goal.change target'
+        let lctx ← Lean.MonadLCtx.getLCtx
+        match lctx.findFromUserName? `h with
+        | some decl =>
+            let type' ← Lean.Meta.transform decl.type (pre := unfoldPrivate)
+            let goal ← goal.replaceLocalDeclDefEq decl.fvarId type'
+            return [goal]
+        | none => return [goal]
+    cases hsrc : eq_block srcB1 srcB2 with
+    | left hsrcEq =>
+        subst srcB2
+        have hpair : (dstB1, delta1) = (dstB2, delta2) :=
+          Option.some.inj (map1.symm.trans map2)
+        have hdst : dstB1 = dstB2 := congrArg Prod.fst hpair
+        have hdelta : delta1 = delta2 := congrArg Prod.snd hpair
+        subst dstB2
+        subst delta2
+        cases hdstEq : eq_block dstB1 dstB1 with
+        | right hne => exact (hne rfl).elim
+        | left _ =>
+            by_cases hw1 : Mem.weak_valid_pointer m srcB1
+                (Ptrofs.unsigned srcOfs1) = true
+            · by_cases hw2 : Mem.weak_valid_pointer m srcB1
+                  (Ptrofs.unsigned srcOfs2) = true
+              · have ht1 := weak_valid_pointer_inject_aux f m tm srcB1 dstB1
+                    srcOfs1 (Ptrofs.add srcOfs1 (Ptrofs.repr delta1)) delta1
+                    hmem hw1 map1 rfl
+                have ht2 := weak_valid_pointer_inject_aux f m tm srcB1 dstB1
+                    srcOfs2 (Ptrofs.add srcOfs2 (Ptrofs.repr delta1)) delta1
+                    hmem hw2 map2 rfl
+                have hn1 := weak_valid_pointer_no_overflow_aux f m tm srcB1 dstB1
+                  srcOfs1 delta1 hmem hw1 map1
+                have hn2 := weak_valid_pointer_no_overflow_aux f m tm srcB1 dstB1
+                  srcOfs2 delta1 hmem hw2 map2
+                have hcmp := ptrofs_translate_cmpu_aux c srcOfs1 srcOfs2
+                  (Ptrofs.repr delta1) hn1 hn2
+                have hs1 := (Mem.weak_valid_pointer_spec m srcB1 _).mp hw1
+                have hs2 := (Mem.weak_valid_pointer_spec m srcB1 _).mp hw2
+                have hd1 := (Mem.weak_valid_pointer_spec tm dstB1 _).mp ht1
+                have hd2 := (Mem.weak_valid_pointer_spec tm dstB1 _).mp ht2
+                simp [hsrc, hdstEq, hs1, hs2] at h
+                simpa [hd1, hd2, hcmp] using h
+              · have hs1 := (Mem.weak_valid_pointer_spec m srcB1 _).mp hw1
+                have hs2 : ¬(Mem.valid_pointer m srcB1 (Ptrofs.unsigned srcOfs2) = true ∨
+                    Mem.valid_pointer m srcB1
+                      (ZArith.BinInt.Z.sub (Ptrofs.unsigned srcOfs2) (.Zpos .xH)) = true) := by
+                  intro hs2
+                  exact hw2 ((Mem.weak_valid_pointer_spec m srcB1 _).mpr hs2)
+                simp [hsrc, hs1, hs2] at h
+            · have hs1 : ¬(Mem.valid_pointer m srcB1 (Ptrofs.unsigned srcOfs1) = true ∨
+                  Mem.valid_pointer m srcB1
+                    (ZArith.BinInt.Z.sub (Ptrofs.unsigned srcOfs1) (.Zpos .xH)) = true) := by
+                intro hs1
+                exact hw1 ((Mem.weak_valid_pointer_spec m srcB1 _).mpr hs1)
+              simp [hsrc, hs1] at h
+    | right hsrcNe =>
+        by_cases hv1 : Mem.valid_pointer m srcB1 (Ptrofs.unsigned srcOfs1) = true
+        · by_cases hv2 : Mem.valid_pointer m srcB2 (Ptrofs.unsigned srcOfs2) = true
+          · have ht1 := valid_pointer_inject_aux f m tm srcB1 dstB1 srcOfs1
+                (Ptrofs.add srcOfs1 (Ptrofs.repr delta1)) delta1
+                hmem hv1 map1 rfl
+            have ht2 := valid_pointer_inject_aux f m tm srcB2 dstB2 srcOfs2
+                (Ptrofs.add srcOfs2 (Ptrofs.repr delta2)) delta2
+                hmem hv2 map2 rfl
+            cases hdstEq : eq_block dstB1 dstB2 with
+            | right _ =>
+                simp [hsrc, hv1, hv2] at h
+                simpa [hdstEq, ht1, ht2] using h
+            | left hdst =>
+                subst dstB2
+                have hdiff := different_pointers_inject_aux f m tm srcB1 srcB2
+                  dstB1 dstB1 srcOfs1 srcOfs2 delta1 delta2 hmem hsrcNe
+                  hv1 hv2 map1 map2
+                have hoff :
+                    Ptrofs.unsigned (Ptrofs.add srcOfs1 (Ptrofs.repr delta1)) ≠
+                      Ptrofs.unsigned (Ptrofs.add srcOfs2 (Ptrofs.repr delta2)) := by
+                  rcases hdiff with hbad | hoff
+                  · exact (hbad rfl).elim
+                  · exact hoff
+                have heqfalse :
+                    Ptrofs.eq (Ptrofs.add srcOfs1 (Ptrofs.repr delta1))
+                      (Ptrofs.add srcOfs2 (Ptrofs.repr delta2)) = false := by
+                  change decide
+                    (Ptrofs.unsigned (Ptrofs.add srcOfs1 (Ptrofs.repr delta1)) =
+                      Ptrofs.unsigned (Ptrofs.add srcOfs2 (Ptrofs.repr delta2))) = false
+                  simp [hoff]
+                have hw1 := Mem.valid_pointer_implies tm dstB1 _ ht1
+                have hw2 := Mem.valid_pointer_implies tm dstB1 _ ht2
+                have hd1 := (Mem.weak_valid_pointer_spec tm dstB1 _).mp hw1
+                have hd2 := (Mem.weak_valid_pointer_spec tm dstB1 _).mp hw2
+                cases c <;>
+                  simp [hsrc, hv1, hv2, Val.cmp_different_blocks] at h <;>
+                  simp [hdstEq, hd1, hd2, Ptrofs.cmpu,
+                    CompCert4Lean.Lib.Integers.WordCore.cmpu,
+                    heqfalse, h]
+          · simp [hsrc, hv1, hv2] at h
+        · simp [hsrc, hv1] at h
+
+set_option maxHeartbeats 1000000 in
+theorem eval_binop_compat : eval_binop_compatStatement := by
+  intro f op v1 tv1 v2 tv2 v m tm heval hinj1 hinj2 hmem
+  cases op
+  case Oaddl =>
+    simp only [CM.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop] at heval ⊢
+    cases heval
+    exact ⟨_, rfl, Val.addl_inject f v1 tv1 v2 tv2 hinj1 hinj2⟩
+  case Osubl =>
+    simp only [CM.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop] at heval ⊢
+    cases heval
+    exact ⟨_, rfl, Val.subl_inject f v1 tv1 v2 tv2 hinj1 hinj2⟩
+  case Ocmplu c =>
+    simp only [CM.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop] at heval ⊢
+    cases hs : Val.cmplu_bool (Mem.valid_pointer m) c v1 v2 with
+    | none => simp [Val.cmplu, hs] at heval
+    | some b =>
+        have ht := cmplu_bool_inject_aux f m tm c v1 tv1 v2 tv2 b
+          hmem hinj1 hinj2 hs
+        simp [Val.cmplu, hs] at heval
+        subst v
+        exact ⟨Val.of_bool b, by simp [Val.cmplu, ht], val_inject_val_of_bool f b⟩
+  all_goals cases hinj1 <;> cases hinj2 <;>
+    simp [CM.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+      Val.add, Val.sub, Val.mul, Val.divs, Val.divu, Val.mods, Val.modu,
+      Val.and, Val.or, Val.xor, Val.shl, Val.shr, Val.shru,
+      Val.addf, Val.subf, Val.mulf, Val.divf,
+      Val.addfs, Val.subfs, Val.mulfs, Val.divfs,
+      Val.addl, Val.subl, Val.mull, Val.divls, Val.divlu, Val.modls, Val.modlu,
+      Val.andl, Val.orl, Val.xorl, Val.shll, Val.shrl, Val.shrlu,
+      Val.cmp, Val.cmpu, Val.cmpf, Val.cmpfs, Val.cmpl, Val.cmplu,
+      Val.cmp_bool, Val.cmpu_bool, Val.cmpf_bool, Val.cmpfs_bool,
+      Val.cmpl_bool, Val.cmplu_bool, Val.of_optbool,
+      CompCert4Lean.X86_64.Archi.ptr64] at heval ⊢
+  all_goals subst_vars
+  all_goals first
+    | rcases heval with ⟨hc, rfl⟩
+      exact ⟨_, ⟨hc, rfl⟩, by constructor⟩
+    | skip
+  all_goals first
+    | exact val_inject_val_of_bool f _
+    | split <;> constructor
+    | constructor
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
