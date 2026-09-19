@@ -2108,3 +2108,17 @@ theorem mag_F2R_bounds_Zdigits : ∀ (ctx : ExactRealContext)
       exact congrArg (fun d => Zadd d e) hd.symm
 
 end CompCert4Lean.Flocq.Core.Float_prop
+
+namespace CompCert4Lean.Flocq.Core.Float_prop
+
+theorem mag_F2R : ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+    mag_F2RStatement ctx magnitude := by
+  intro ctx magnitude beta m e hm
+  change (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta
+      (ctx.spec.mul (ctx.spec.ofZ m) (Exact.bpow ctx beta e))).mag_val =
+    Zadd (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta
+      (ctx.spec.ofZ m)).mag_val e
+  rw [pg_mag_mult_bpow ctx magnitude beta (ctx.spec.ofZ m) e
+    (pg_IZR_ne_zero ctx hm)]
+
+end CompCert4Lean.Flocq.Core.Float_prop
