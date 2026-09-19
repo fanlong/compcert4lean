@@ -5408,3 +5408,100 @@ theorem eval_condition_inject : eval_condition_injectStatement := by
         ((Mem.valid_pointer_nonempty_perm m1 b2 _).mp hp2))
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Integers
+
+ theorem eval_operation_inject
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_operation_injectStatement binary64_certificate binary32_certificate := by
+  intro F V genv f hglobals sp1 sp2 delta hsp op vl1 vl2 v1 m1 m2 hvl hinj heval
+  rw [eval_shift_stack_operation]
+  have hvalid : ∀ b ofs b' d,
+      f b = some (b', d) →
+      Mem.valid_pointer m1 b (Ptrofs.unsigned ofs) = true →
+      Mem.valid_pointer m2 b' (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr d))) = true := by
+    intro b ofs b' d hmap hp
+    rw [suffix_condition_inject_address f m1 m2 hinj b ofs b' d hmap
+      (Mem.valid_pointer_implies m1 b _ hp)]
+    apply (Mem.valid_pointer_nonempty_perm m2 b' _).mpr
+    exact hinj.mi_inj.mi_perm b b' d (Ptrofs.unsigned ofs) Cur Nonempty hmap
+      ((Mem.valid_pointer_nonempty_perm m1 b _).mp hp)
+  have hweak : ∀ b ofs b' d,
+      f b = some (b', d) →
+      Mem.weak_valid_pointer m1 b (Ptrofs.unsigned ofs) = true →
+      Mem.weak_valid_pointer m2 b' (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr d))) = true := by
+    intro b ofs b' d hmap hp
+    rw [suffix_condition_inject_address f m1 m2 hinj b ofs b' d hmap hp]
+    apply (Mem.weak_valid_pointer_spec m2 b' _).mpr
+    rcases (Mem.weak_valid_pointer_spec m1 b _).mp hp with h | h
+    · apply Or.inl
+      apply (Mem.valid_pointer_nonempty_perm m2 b' _).mpr
+      exact hinj.mi_inj.mi_perm b b' d (Ptrofs.unsigned ofs) Cur Nonempty hmap
+        ((Mem.valid_pointer_nonempty_perm m1 b _).mp h)
+    · apply Or.inr
+      have hshift :
+          ZArith.BinInt.Z.sub (zAdd (Ptrofs.unsigned ofs) d) (zOfNat 1) =
+          zAdd (ZArith.BinInt.Z.sub (Ptrofs.unsigned ofs) (zOfNat 1)) d := by
+        apply intOfZ_injective
+        simp only [zAdd, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        omega
+      change Mem.valid_pointer m2 b'
+        (ZArith.BinInt.Z.sub (zAdd (Ptrofs.unsigned ofs) d) (zOfNat 1)) = true
+      rw [hshift]
+      apply (Mem.valid_pointer_nonempty_perm m2 b' _).mpr
+      exact hinj.mi_inj.mi_perm b b' d
+        (ZArith.BinInt.Z.sub (Ptrofs.unsigned ofs) (zOfNat 1)) Cur Nonempty hmap
+        ((Mem.valid_pointer_nonempty_perm m1 b _).mp h)
+  have hbound : ∀ b ofs b' d,
+      f b = some (b', d) →
+      Mem.weak_valid_pointer m1 b (Ptrofs.unsigned ofs) = true →
+      zLe z0 (zAdd (Ptrofs.unsigned ofs) (Ptrofs.unsigned (Ptrofs.repr d))) ∧
+      zLe (zAdd (Ptrofs.unsigned ofs) (Ptrofs.unsigned (Ptrofs.repr d)))
+        Ptrofs.max_unsigned := by
+    intro b ofs b' d hmap hp
+    obtain ⟨hd, hs⟩ := suffix_condition_inject_bounds f m1 m2 hinj b ofs b' d hmap hp
+    rw [hd]
+    exact hs
+  have hdiff : ∀ b1 ofs1 b2 ofs2 b1' d1 b2' d2,
+      b1 ≠ b2 →
+      Mem.valid_pointer m1 b1 (Ptrofs.unsigned ofs1) = true →
+      Mem.valid_pointer m1 b2 (Ptrofs.unsigned ofs2) = true →
+      f b1 = some (b1', d1) →
+      f b2 = some (b2', d2) →
+      b1' ≠ b2' ∨
+      Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr d1)) ≠
+        Ptrofs.unsigned (Ptrofs.add ofs2 (Ptrofs.repr d2)) := by
+    intro b1 ofs1 b2 ofs2 b1' d1 b2' d2 hne hp1 hp2 hmap1 hmap2
+    rw [suffix_condition_inject_address f m1 m2 hinj b1 ofs1 b1' d1 hmap1
+        (Mem.valid_pointer_implies m1 b1 _ hp1),
+      suffix_condition_inject_address f m1 m2 hinj b2 ofs2 b2' d2 hmap2
+        (Mem.valid_pointer_implies m1 b2 _ hp2)]
+    exact hinj.mi_no_overlap b1 b1' d1 b2 b2' d2
+      (Ptrofs.unsigned ofs1) (Ptrofs.unsigned ofs2) hne hmap1 hmap2
+      (Mem.perm_cur_max m1 b1 _ Nonempty
+        ((Mem.valid_pointer_nonempty_perm m1 b1 _).mp hp1))
+      (Mem.perm_cur_max m1 b2 _ Nonempty
+        ((Mem.valid_pointer_nonempty_perm m1 b2 _).mp hp2))
+  have hsp' :
+      Val.inject f (.Vptr sp1 Ptrofs.zero)
+        (.Vptr sp2 (Ptrofs.repr delta)) :=
+    Val.inject.inject_ptr sp1 Ptrofs.zero sp2 (Ptrofs.repr delta) delta hsp (by
+      rw [CompCert4Lean.Lib.Integers.Ptrofs.add_commut_proof_api]
+      exact (suffixPtrofsAddZero _).symm)
+  exact eval_operation_inj F F V V genv genv f m1 m2
+    hvalid hweak hbound hdiff op
+    (.Vptr sp1 Ptrofs.zero) vl1
+    (.Vptr sp2 (Ptrofs.repr delta)) vl2 v1
+    (by
+      intro id ofs _
+      exact symbol_address_inject F V genv f hglobals id ofs)
+    hsp' hvl heval
+
+end CompCert4Lean.X86.Op

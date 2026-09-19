@@ -3614,3 +3614,87 @@ theorem inbetween_shr_1 :
   exact h
 
 end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+theorem inbetween_shr :
+    ∀ (ctx : ExactRealContext), inbetween_shrStatement ctx := by
+  intro ctx x m e l n hm hx
+  rcases CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zorder.Zle_or_lt_proof
+      Z0 n with hn | hn
+  · have hnonneg : ∀ (k : Nat) (mrs : shr_record),
+        Zle Z0 (shr_m mrs) →
+          Zle Z0 (shr_m (CompCert4Lean.Flocq.Core.Zaux.iter_nat shr_1 k mrs)) := by
+      intro k
+      induction k with
+      | zero =>
+          intro mrs hmrs
+          simpa [CompCert4Lean.Flocq.Core.Zaux.iter_nat] using hmrs
+      | succ k ih =>
+          intro mrs hmrs
+          simp only [CompCert4Lean.Flocq.Core.Zaux.iter_nat]
+          exact ih (shr_1 mrs) (le_shr1_le mrs hmrs).1
+    have haux : ∀ (k : Nat) (mrs : shr_record) (e : Z),
+        Zle Z0 (shr_m mrs) →
+        CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx radix2
+            (shr_m mrs) e x (loc_of_shr_record mrs) →
+        CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx radix2
+            (shr_m (CompCert4Lean.Flocq.Core.Zaux.iter_nat shr_1 k mrs))
+            (Zadd e
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat k)) x
+            (loc_of_shr_record
+              (CompCert4Lean.Flocq.Core.Zaux.iter_nat shr_1 k mrs)) := by
+      intro k
+      induction k with
+      | zero =>
+          intro mrs e hmrs hbetween
+          simp only [CompCert4Lean.Flocq.Core.Zaux.iter_nat]
+          have hzero : Zadd e
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 0) = e := by
+            change Zadd e Z0 = e
+            exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add_0_r e
+          rw [hzero]
+          exact hbetween
+      | succ k ih =>
+          intro mrs e hmrs hbetween
+          simp only [CompCert4Lean.Flocq.Core.Zaux.iter_nat]
+          rw [pg_iter_nat_comp]
+          have hsucc : Zadd e
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat (Nat.succ k)) =
+              Zadd (Zadd e
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat k)) Zone := by
+            rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Nat2Z.inj_succ]
+            unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.succ
+            exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add_assoc e
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat k) Zone
+          rw [hsucc]
+          apply inbetween_shr_1
+          · exact hnonneg k mrs hmrs
+          · exact ih mrs e hmrs hbetween
+    rw [shr_nat (shr_record_of_loc m l) e n hn]
+    have hnat := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Z2Nat.id n hn
+    have hm' : Zle Z0 (shr_m (shr_record_of_loc m l)) := by
+      rw [shr_m_shr_record_of_loc]
+      exact hm
+    have hx' : CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx radix2
+        (shr_m (shr_record_of_loc m l)) e x (loc_of_shr_record (shr_record_of_loc m l)) := by
+      rw [shr_m_shr_record_of_loc, loc_of_shr_record_of_loc]
+      exact hx
+    simpa [hnat] using haux
+      (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat n)
+      (shr_record_of_loc m l) e hm' hx'
+  · cases n with
+    | Z0 =>
+        exfalso
+        change (0 : Int) < 0 at hn
+        omega
+    | Zpos p =>
+        exfalso
+        change (Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) : Int) < 0 at hn
+        exact (Int.not_lt_of_ge (Int.ofNat_zero_le _)) hn
+    | Zneg p =>
+        simp [Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shr]
+        rw [shr_m_shr_record_of_loc, loc_of_shr_record_of_loc]
+        exact hx
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN

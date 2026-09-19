@@ -4047,3 +4047,306 @@ theorem divu_one : divu_oneStatement := by
   simp [hzero, hdiv]
 
 end CompCert4Lean.Common.Values.Val
+namespace CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Floats
+
+private theorem modu_pow2_p_pow (p : positive)
+    (h : CompCert4Lean.Lib.Zbits.P_is_power2 p = true) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p =
+      2 ^ Nat.log2 (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) := by
+  induction p with
+  | xH => decide
+  | xO p ih =>
+      simp only [CompCert4Lean.Lib.Zbits.P_is_power2] at h
+      have hp : 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p :=
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+      have hlog : Nat.log2 (2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) =
+          Nat.log2 (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) + 1 :=
+        Nat.log2_two_mul (Nat.ne_of_gt hp)
+      calc
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat (.xO p) =
+            2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p := by rfl
+        _ = 2 * (2 ^ Nat.log2
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)) := by
+              exact congrArg (fun t => 2 * t) (ih h)
+        _ = 2 ^ (Nat.log2
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) + 1) := by
+              rw [Nat.pow_succ]
+              omega
+        _ = 2 ^ Nat.log2
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat (.xO p)) := by
+              rw [show CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat (.xO p) =
+                2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p by rfl, hlog]
+  | xI p ih =>
+      simp only [CompCert4Lean.Lib.Zbits.P_is_power2] at h
+      cases h
+
+private theorem modu_pow2_int_pow (n : CompCert4Lean.Lib.Integers.Int.int)
+    (logn : CompCert4Lean.Lib.Integers.Int.int)
+    (h : CompCert4Lean.Lib.Integers.Int.is_power2 n = some logn) :
+    ∃ k : Nat, n.val = 2 ^ k := by
+  unfold CompCert4Lean.Lib.Integers.Int.is_power2 at h
+  cases n with
+  | mkint v hv =>
+      simp only [CompCert4Lean.Lib.Integers.Int.unsigned,
+        CompCert4Lean.Lib.Integers.WordCore.unsigned] at h
+      cases v with
+      | Z0 => simp [CompCert4Lean.Lib.Zbits.Z_is_power2] at h
+      | Zneg p => simp [CompCert4Lean.Lib.Zbits.Z_is_power2] at h
+      | Zpos p =>
+          simp only [CompCert4Lean.Lib.Zbits.Z_is_power2] at h
+          by_cases hpow : CompCert4Lean.Lib.Zbits.P_is_power2 p = true
+          · simp [hpow] at h
+            refine ⟨Nat.log2 (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p), ?_⟩
+            have hpw := modu_pow2_p_pow p hpow
+            exact hpw
+          · simp [hpow] at h
+
+private theorem modu_pow2_intval_eq_zOfNat_val
+    (x : CompCert4Lean.Lib.Integers.Int.int) :
+    x.intval = CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat x.val := by
+  have hx : 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval := by
+    have h := x.intrange.1
+    change (-1 : Int) < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval at h
+    omega
+  exact (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Z2Nat.id
+    x.intval hx).symm
+
+private theorem modu_pow2_unsigned_eq_zOfNat_val
+    (x : CompCert4Lean.Lib.Integers.Int.int) :
+    CompCert4Lean.Lib.Integers.Int.unsigned x =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat x.val := by
+  exact modu_pow2_intval_eq_zOfNat_val x
+
+private theorem modu_pow2_sub_one_repr (n : CompCert4Lean.Lib.Integers.Int.int)
+    (hn : 0 < n.val) :
+    CompCert4Lean.Lib.Integers.Int.sub n CompCert4Lean.Lib.Integers.Int.one =
+      CompCert4Lean.Lib.Integers.Int.repr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat (n.val - 1)) := by
+  unfold CompCert4Lean.Lib.Integers.Int.sub CompCert4Lean.Lib.Integers.WordCore.sub
+  congr 1
+  rw [show CompCert4Lean.Lib.Integers.WordCore.unsigned n =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val by
+        exact modu_pow2_unsigned_eq_zOfNat_val n]
+  have hone : CompCert4Lean.Lib.Integers.Int.unsigned
+      CompCert4Lean.Lib.Integers.Int.one =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1 := by rfl
+  rw [show CompCert4Lean.Lib.Integers.WordCore.unsigned
+      (CompCert4Lean.Lib.Integers.Int.one) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1 by exact hone]
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  have hs := Int.ofNat_sub (m := 1) (n := n.val) hn
+  simpa only [Int.ofNat_eq_natCast] using hs.symm
+
+private theorem modu_pow2_unsigned_and (x y : CompCert4Lean.Lib.Integers.Int.int) :
+    CompCert4Lean.Lib.Integers.Int.unsigned
+        (CompCert4Lean.Lib.Integers.Int.and x y) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+        (Nat.land x.val y.val) := by
+  unfold CompCert4Lean.Lib.Integers.Int.and CompCert4Lean.Lib.Integers.WordCore.and
+  apply CompCert4Lean.Lib.Integers.Int.unsigned_repr_proof_api
+  constructor
+  · change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+        (Nat.land x.val y.val))
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    exact Int.natCast_nonneg _
+  · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+        (Nat.land x.val y.val)) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        CompCert4Lean.Lib.Integers.Int.max_unsigned
+    have hmax : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        CompCert4Lean.Lib.Integers.Int.max_unsigned = (2 ^ 32 : Int) - 1 := by rfl
+    rw [hmax]
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    have hlt := Nat.and_lt_two_pow x.val
+      (by
+        have hy := y.intrange.2
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y.intval <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Lib.Integers.Int.modulus) at hy
+        change y.val < 2 ^ 32
+        have hz : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Lib.Integers.Int.modulus) = (2 ^ 32 : Int) := by rfl
+        have hy' : (y.val : Int) < (2 ^ 32 : Int) := by
+          rw [modu_pow2_intval_eq_zOfNat_val y] at hy
+          simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hy
+          rw [hz] at hy
+          exact hy
+        exact (Int.ofNat_lt).mp hy'
+        )
+    have hltI : (Int.ofNat (Nat.land x.val y.val)) < (2 ^ 32 : Int) :=
+      (Int.ofNat_lt).2 hlt
+    have hnonneg : (0 : Int) ≤ Int.ofNat (Nat.land x.val y.val) := Int.natCast_nonneg _
+    omega
+
+private theorem modu_pow2_mod_z (x n : CompCert4Lean.Lib.Integers.Int.int)
+    (hn : 0 < n.val) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo
+        (CompCert4Lean.Lib.Integers.Int.unsigned x)
+        (CompCert4Lean.Lib.Integers.Int.unsigned n) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+        (x.val % n.val) := by
+  rw [modu_pow2_unsigned_eq_zOfNat_val x, modu_pow2_unsigned_eq_zOfNat_val n]
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  change (if (Int.ofNat n.val) = 0 then Int.ofNat x.val else
+    if 0 < Int.ofNat n.val then (Int.ofNat x.val) % Int.ofNat n.val else
+      (if (Int.ofNat x.val) % (-(Int.ofNat n.val)) = 0 then 0 else
+        (Int.ofNat x.val) % (-(Int.ofNat n.val)) - (-(Int.ofNat n.val)))) =
+    Int.ofNat (x.val % n.val)
+  have hnI : (0 : Int) < Int.ofNat n.val := (Int.ofNat_lt).2 hn
+  rw [if_neg (by omega), if_pos hnI]
+  exact (Int.natCast_emod x.val n.val).symm
+
+private theorem modu_pow2_val_lt (x : CompCert4Lean.Lib.Integers.Int.int) :
+    x.val < 2 ^ 32 := by
+  have hx := x.intrange.2
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval <
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      CompCert4Lean.Lib.Integers.Int.modulus at hx
+  rw [modu_pow2_intval_eq_zOfNat_val x] at hx
+  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hx
+  have hm : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      CompCert4Lean.Lib.Integers.Int.modulus = (2 ^ 32 : Int) := by rfl
+  rw [hm] at hx
+  exact (Int.ofNat_lt).mp hx
+
+private theorem modu_pow2_unsigned_modu (x n : CompCert4Lean.Lib.Integers.Int.int)
+    (hn : 0 < n.val) :
+    CompCert4Lean.Lib.Integers.Int.unsigned
+        (CompCert4Lean.Lib.Integers.Int.modu x n) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+        (x.val % n.val) := by
+  unfold CompCert4Lean.Lib.Integers.Int.modu CompCert4Lean.Lib.Integers.WordCore.modu
+  change CompCert4Lean.Lib.Integers.Int.unsigned
+      (CompCert4Lean.Lib.Integers.Int.repr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo
+          (CompCert4Lean.Lib.Integers.Int.unsigned x)
+          (CompCert4Lean.Lib.Integers.Int.unsigned n))) = _
+  rw [modu_pow2_mod_z x n hn]
+  apply CompCert4Lean.Lib.Integers.Int.unsigned_repr_proof_api
+  constructor
+  · change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+        (x.val % n.val))
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    exact Int.natCast_nonneg _
+  · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+        (x.val % n.val)) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        CompCert4Lean.Lib.Integers.Int.max_unsigned
+    have hmax : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        CompCert4Lean.Lib.Integers.Int.max_unsigned = (2 ^ 32 : Int) - 1 := by rfl
+    rw [hmax]
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    have hmod : x.val % n.val < n.val := Nat.mod_lt _ hn
+    have hnle : n.val ≤ 2 ^ 32 := Nat.le_of_lt (modu_pow2_val_lt n)
+    have hlt : x.val % n.val < 2 ^ 32 := Nat.lt_of_lt_of_le hmod hnle
+    have hltI : (Int.ofNat (x.val % n.val)) < (2 ^ 32 : Int) :=
+      (Int.ofNat_lt).2 hlt
+    have hnonneg : (0 : Int) ≤ Int.ofNat (x.val % n.val) := Int.natCast_nonneg _
+    omega
+
+private theorem modu_pow2_repr_nat (m : Nat) (hm : m < 2 ^ 32) :
+    CompCert4Lean.Lib.Integers.Int.unsigned
+        (CompCert4Lean.Lib.Integers.Int.repr
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat m)) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat m := by
+  apply CompCert4Lean.Lib.Integers.Int.unsigned_repr_proof_api
+  constructor
+  · change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat m)
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    exact Int.natCast_nonneg _
+  · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat m) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        CompCert4Lean.Lib.Integers.Int.max_unsigned
+    have hmax : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        CompCert4Lean.Lib.Integers.Int.max_unsigned = (2 ^ 32 : Int) - 1 := by rfl
+    rw [hmax]
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    have hmI : (Int.ofNat m) < (2 ^ 32 : Int) := (Int.ofNat_lt).2 hm
+    omega
+
+private theorem modu_pow2_sub_one_val (n : CompCert4Lean.Lib.Integers.Int.int)
+    (hn : 0 < n.val) :
+    (CompCert4Lean.Lib.Integers.Int.sub n CompCert4Lean.Lib.Integers.Int.one).val = n.val - 1 := by
+  have hsub := modu_pow2_sub_one_repr n hn
+  have hm : n.val - 1 < 2 ^ 32 := by
+    exact Nat.lt_of_le_of_lt (Nat.sub_le _ _) (modu_pow2_val_lt n)
+  have hu := modu_pow2_repr_nat (n.val - 1) hm
+  have hu' := modu_pow2_unsigned_eq_zOfNat_val
+    (CompCert4Lean.Lib.Integers.Int.sub n CompCert4Lean.Lib.Integers.Int.one)
+  rw [hsub] at hu'
+  rw [hu] at hu'
+  have hz := congrArg CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hu'
+  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hz
+  have hvr :
+      (CompCert4Lean.Lib.Integers.Int.repr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat (n.val - 1))).val =
+        n.val - 1 := (Int.ofNat.inj hz).symm
+  simpa [hsub] using hvr
+
+private theorem modu_pow2_int_and (x n : CompCert4Lean.Lib.Integers.Int.int)
+    (hpow : ∃ k : Nat, n.val = 2 ^ k) :
+    CompCert4Lean.Lib.Integers.Int.modu x n =
+      CompCert4Lean.Lib.Integers.Int.and x
+        (CompCert4Lean.Lib.Integers.Int.sub n CompCert4Lean.Lib.Integers.Int.one) := by
+  rcases hpow with ⟨k, hk⟩
+  have hn : 0 < n.val := by rw [hk]; exact Nat.two_pow_pos k
+  apply CompCert4Lean.Lib.Integers.WordCore.ext
+  change CompCert4Lean.Lib.Integers.Int.unsigned
+      (CompCert4Lean.Lib.Integers.Int.modu x n) =
+    CompCert4Lean.Lib.Integers.Int.unsigned
+      (CompCert4Lean.Lib.Integers.Int.and x
+        (CompCert4Lean.Lib.Integers.Int.sub n CompCert4Lean.Lib.Integers.Int.one))
+  rw [modu_pow2_unsigned_modu x n hn, modu_pow2_unsigned_and x
+    (CompCert4Lean.Lib.Integers.Int.sub n CompCert4Lean.Lib.Integers.Int.one),
+    modu_pow2_sub_one_val n hn, hk]
+  congr 1
+  exact (Nat.and_two_pow_sub_one_eq_mod x.val k).symm
+
+namespace Val
+
+theorem modu_pow2 : modu_pow2Statement := by
+  intro x n logn y hp hm
+  cases x with
+  | Vint x =>
+      simp only [CompCert4Lean.Common.Values.Val.modu] at hm
+      split at hm
+      next hzero => cases hm
+      next hnonzero =>
+        cases hm
+        simp only [CompCert4Lean.Common.Values.Val.and]
+        congr 1
+        exact (modu_pow2_int_and x n (modu_pow2_int_pow n logn hp)).symm
+  | Vlong i => simp [CompCert4Lean.Common.Values.Val.modu] at hm
+  | Vfloat f => simp [CompCert4Lean.Common.Values.Val.modu] at hm
+  | Vsingle f => simp [CompCert4Lean.Common.Values.Val.modu] at hm
+  | Vptr b ofs => simp [CompCert4Lean.Common.Values.Val.modu] at hm
+  | Vundef => simp [CompCert4Lean.Common.Values.Val.modu] at hm
+
+end Val
+end CompCert4Lean.Common.Values
+

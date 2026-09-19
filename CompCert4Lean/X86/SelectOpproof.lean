@@ -5148,3 +5148,149 @@ open CompCert4Lean.X86.SelectOp
                 (eval_exprlist.cons le a Enil x [] ha (eval_exprlist.nil le)) rfl
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+private theorem int_eq_true_one_local (n : CCInt)
+    (h : CompCert4Lean.Lib.Integers.Int.eq n
+      CompCert4Lean.Lib.Integers.Int.one = true) :
+    n = CompCert4Lean.Lib.Integers.Int.one := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext
+  have hd : decide (n.intval =
+      CompCert4Lean.Lib.Integers.Int.one.intval) = true := by
+    simpa [CompCert4Lean.Lib.Integers.Int.eq,
+      CompCert4Lean.Lib.Integers.WordCore.eq] using h
+  exact of_decide_eq_true hd
+
+theorem eval_mulimm
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_mulimmStatement := by
+  unfold eval_mulimmStatement unary_constructor_sound
+  intro xi ge sp e mem0 n le a x h
+  by_cases hz : CompCert4Lean.Lib.Integers.Int.eq n
+      CompCert4Lean.Lib.Integers.Int.zero = true
+  · have hn : n = CompCert4Lean.Lib.Integers.Int.zero :=
+      int_eq_true_zero_local n hz
+    subst n
+    refine ⟨.Vint CompCert4Lean.Lib.Integers.Int.zero, ?_, ?_⟩
+    · simp only [CompCert4Lean.X86.SelectOp.mulimm, hz, if_true]
+      exact eval_expr.eval_Eop le
+        (Ointconst CompCert4Lean.Lib.Integers.Int.zero) Enil [] _
+        (eval_exprlist.nil le) rfl
+    · cases x with
+      | Vint q =>
+          simp only [Val.mul]
+          change Val.lessdef
+            (.Vint (CompCert4Lean.Lib.Integers.Int.mul q
+              CompCert4Lean.Lib.Integers.Int.zero))
+            (.Vint CompCert4Lean.Lib.Integers.Int.zero)
+          rw [CompCert4Lean.Lib.Integers.Int.mul_zero_proof]
+          exact Val.lessdef_refl _
+      | Vundef => exact Val.lessdef_undef _
+      | Vlong _ => exact Val.lessdef_undef _
+      | Vfloat _ => exact Val.lessdef_undef _
+      | Vsingle _ => exact Val.lessdef_undef _
+      | Vptr _ _ => exact Val.lessdef_undef _
+  · unfold CompCert4Lean.X86.SelectOp.mulimm
+    rw [if_neg hz]
+    by_cases ho : CompCert4Lean.Lib.Integers.Int.eq n
+        CompCert4Lean.Lib.Integers.Int.one = true
+    · have hn : n = CompCert4Lean.Lib.Integers.Int.one :=
+        int_eq_true_one_local n ho
+      subst n
+      refine ⟨x, ?_, ?_⟩
+      · simp only [if_pos ho]
+        exact h
+      · cases x with
+        | Vint q =>
+            simp only [Val.mul]
+            change Val.lessdef
+              (.Vint (CompCert4Lean.Lib.Integers.Int.mul q
+                CompCert4Lean.Lib.Integers.Int.one))
+              (.Vint q)
+            rw [CompCert4Lean.Lib.Integers.Int.mul_one_proof]
+            exact Val.lessdef_refl _
+        | Vundef => exact Val.lessdef_refl _
+        | Vlong _ => exact Val.lessdef_undef _
+        | Vfloat _ => exact Val.lessdef_undef _
+        | Vsingle _ => exact Val.lessdef_undef _
+        | Vptr _ _ => exact Val.lessdef_undef _
+    · rw [if_neg ho]
+      cases hcase : CompCert4Lean.X86.SelectOp.mulimm_match a with
+      | mulimm_case1 n2 =>
+          have hx : x = .Vint n2 := eval_intconst_value_local
+            xi ge sp e mem0 le n2 x (by simpa [hcase] using h)
+          subst x
+          refine ⟨.Vint (CompCert4Lean.Lib.Integers.Int.mul n n2), ?_, ?_⟩
+          · apply eval_expr.eval_Eop le
+              (Ointconst (CompCert4Lean.Lib.Integers.Int.mul n n2)) Enil [] _
+              (eval_exprlist.nil le) rfl
+          · change Val.lessdef
+              (.Vint (CompCert4Lean.Lib.Integers.Int.mul n2 n))
+              (.Vint (CompCert4Lean.Lib.Integers.Int.mul n n2))
+            rw [CompCert4Lean.Lib.Integers.Int.mul_commut_proof]
+            exact Val.lessdef_refl _
+      | mulimm_case2 n2 t2 =>
+          obtain ⟨v1, ht1, hx⟩ := eval_lea_indexed_inv_eval_shl_local
+            xi ge sp e mem0 le t2 n2 x (by simpa [hcase] using h)
+          subst x
+          obtain ⟨v', hv', hd'⟩ := eval_mulimm_base
+            xi ge sp e mem0 n le t2 v1 ht1
+          obtain ⟨v'', hv'', hd''⟩ := eval_addimm xi ge sp e mem0
+            (CompCert4Lean.Lib.Integers.Int.mul n
+              (CompCert4Lean.Lib.Integers.Int.repr n2)) le
+            (mulimm_base n t2) v' hv'
+          refine ⟨v'', ?_, ?_⟩
+          · simpa [hcase] using hv''
+          · have hconst : Val.mul
+                (.Vint (CompCert4Lean.Lib.Integers.Int.repr n2))
+                (.Vint n) =
+              .Vint (CompCert4Lean.Lib.Integers.Int.mul n
+                (CompCert4Lean.Lib.Integers.Int.repr n2)) := by
+              simp only [Val.mul]
+              change CompCert4Lean.Common.Values.val.Vint
+                (CompCert4Lean.Lib.Integers.Int.mul
+                  (CompCert4Lean.Lib.Integers.Int.repr n2) n) =
+                CompCert4Lean.Common.Values.val.Vint
+                  (CompCert4Lean.Lib.Integers.Int.mul n
+                    (CompCert4Lean.Lib.Integers.Int.repr n2))
+              exact congrArg
+                (fun q : CCInt => CompCert4Lean.Common.Values.val.Vint q)
+                (CompCert4Lean.Lib.Integers.Int.mul_commut_proof _ _)
+            have hleft : Val.lessdef
+                (Val.add (Val.mul v1 (.Vint n))
+                  (Val.mul (.Vint (CompCert4Lean.Lib.Integers.Int.repr n2))
+                    (.Vint n)))
+                (Val.add v' (.Vint (CompCert4Lean.Lib.Integers.Int.mul n
+                  (CompCert4Lean.Lib.Integers.Int.repr n2))) ) := by
+              apply Val.add_lessdef
+              · exact hd'
+              · rw [hconst]
+                exact Val.lessdef_refl _
+            have hsem : Val.mul
+                (Val.add v1
+                  (.Vint (CompCert4Lean.Lib.Integers.Int.repr n2)))
+                (.Vint n) =
+                Val.add (Val.mul v1 (.Vint n))
+                  (Val.mul (.Vint (CompCert4Lean.Lib.Integers.Int.repr n2))
+                    (.Vint n)) := Val.mul_add_distr_l _ _ _
+            change Val.lessdef
+              (Val.mul (Val.add v1
+                (.Vint (CompCert4Lean.Lib.Integers.Int.repr n2)))
+                (.Vint n)) v''
+            rw [hsem]
+            exact Val.lessdef_trans _ _ _ hleft hd''
+      | mulimm_default e2 =>
+          exact eval_mulimm_base xi ge sp e mem0 n le a x h
+
+end CompCert4Lean.X86.SelectOpproof

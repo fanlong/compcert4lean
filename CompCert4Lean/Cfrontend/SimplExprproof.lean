@@ -4423,3 +4423,920 @@ open CompCert4Lean.Common.Memory
                   (Clight.State f s1 k e le m))
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Cfrontend.SimplExpr
+open CompCert4Lean.Cfrontend.SimplExprspec
+open CompCert4Lean.Cfrontend.Cstrategy
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Lib.Maps
+
+section
+variable [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+  [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+private def pg4376Local (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (e : cenv) (m : mem) (r : cexpr) (t : trace) (m' : mem) (r' : cexpr) : Prop :=
+  ∀ (cu : cprogram), Ctypes.linkorder_program cu p →
+  ∀ le dst sl a tmp, tr_expr cu.prog_comp_env le dst r sl a tmp →
+  ∀ tf tk, ∃ le' sl',
+    (plus (Clight.step1 xi) (Clight.globalenv tp)
+      (.State tf .Sskip (Kseqlist sl tk) e le m) t
+      (.State tf .Sskip (Kseqlist sl' tk) e le' m') ∨
+    (star (Clight.step1 xi) (Clight.globalenv tp)
+      (.State tf .Sskip (Kseqlist sl tk) e le m) t
+      (.State tf .Sskip (Kseqlist sl' tk) e le' m') ∧ esize r' < esize r)) ∧
+    tr_expr cu.prog_comp_env le' dst r' sl' a tmp ∧
+    (∀ id, id ∉ tmp → PTree.get id le' = PTree.get id le)
+
+private theorem pg4376_lift (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (e : cenv) (m : mem) (r : cexpr) (t : trace) (m' : mem) (r' : cexpr)
+    (hnot : ∀ v ty, r ≠ .Eval v ty)
+    (htype : Csyntax.typeof r' = Csyntax.typeof r)
+    (hlocal : pg4376Local xi p tp e m r t m' r')
+    (f : cfunction) (k : ccont) (C : cexpr → cexpr)
+    (hc : leftcontext .RV .RV C) (s : tstate)
+    (hs : match_states p tp (.ExprState f (C r) k e m) s) :
+    ∃ s', (plus (Clight.step1 xi) (Clight.globalenv tp) s t s' ∨
+      (star (Clight.step1 xi) (Clight.globalenv tp) s t s' ∧
+       measure (.ExprState f (C r') k e m') < measure (.ExprState f (C r) k e m))) ∧
+      match_states p tp (.ExprState f (C r') k e m') s' := by
+  cases hs with
+  | match_exprstates _ _ _ _ _ tf sl tk le dst a tmp cu hlink htf htr hmk =>
+    obtain ⟨dst1, sl1, sl2, a1, tmp1, htr1, hsl, hinc, hrec⟩ :=
+      tr_top_leftcontext tp cu e le m dst (C r) sl a tmp htr r C rfl hc
+    have hr : tr_expr cu.prog_comp_env le dst1 r sl1 a1 tmp1 := by
+      cases htr1 with
+      | tr_top_val_val v ty _ _ _ _ => exact False.elim (hnot v ty rfl)
+      | tr_top_base _ _ _ _ _ h => exact h
+    obtain ⟨le', sl', hex, hr', hagree⟩ :=
+      hlocal cu hlink le dst1 sl1 a1 tmp1 hr tf (Kseqlist sl2 tk)
+    subst sl
+    refine ⟨.State tf .Sskip (Kseqlist (sl' ++ sl2) tk) e le' m', ?_,
+      match_exprstates f (C r') k e m' tf (sl' ++ sl2) tk le' dst a tmp cu
+        hlink htf (hrec le' m' r' sl' hr' hagree htype) hmk⟩
+    rw [Kseqlist_app sl1 sl2 tk, Kseqlist_app sl' sl2 tk]
+    rcases hex with hp | ⟨hst, hsize⟩
+    · exact Or.inl hp
+    · exact Or.inr ⟨hst, Nat.add_lt_add_right (leftcontext_size _ _ _ hc _ _ hsize) 1⟩
+
+private theorem pg4376_expr (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (hp : match_prog p tp) (f : cfunction) (r : cexpr) (k : ccont)
+    (e : cenv) (m : mem) (v : val)
+    (heval : eval_simple_rvalue (Csem.globalenv p) e m r v)
+    (hnot : match r with | .Eval _ _ => False | _ => True)
+    (s : tstate) (hs : match_states p tp (.ExprState f r k e m) s) :
+    ∃ s', (plus (Clight.step1 xi) (Clight.globalenv tp) s E0 s' ∨
+      (star (Clight.step1 xi) (Clight.globalenv tp) s E0 s' ∧
+       measure (.ExprState f (.Eval v (Csyntax.typeof r)) k e m) <
+         measure (.ExprState f r k e m))) ∧
+      match_states p tp (.ExprState f (.Eval v (Csyntax.typeof r)) k e m) s' := by
+  cases hs with
+  | match_exprstates _ _ _ _ _ tf sl tk le dst a tmp cu hlink htf htr hmk =>
+    have hr : tr_expr cu.prog_comp_env le dst r sl a tmp := by
+      cases htr with
+      | tr_top_val_val => contradiction
+      | tr_top_base _ _ _ _ _ h => exact h
+    have hv := tr_simple_rvalue p tp hp cu e m r v heval le dst sl a tmp hr
+    have hsize : esize r > 0 := by cases r <;> simp_all [esize]
+    cases dst with
+    | For_val =>
+      obtain ⟨rfl, hty, hev⟩ := hv
+      refine ⟨_, Or.inr ⟨star_refl _ _ _, ?_⟩,
+        match_exprstates _ _ _ _ _ tf [] tk le .For_val a tmp cu hlink htf ?_ hmk⟩
+      · simpa only [measure, esize] using Nat.add_lt_add_right hsize 1
+      · exact tr_top.tr_top_val_val v _ a tmp hty.symm hev
+    | For_effects =>
+      subst sl
+      refine ⟨_, Or.inr ⟨star_refl _ _ _, ?_⟩,
+        match_exprstates _ _ _ _ _ tf [] tk le .For_effects a tmp cu hlink htf ?_ hmk⟩
+      · simpa only [measure, esize] using Nat.add_lt_add_right hsize 1
+      · exact tr_top.tr_top_base _ _ _ _ _ (tr_expr.tr_val_effect _ _ _ _ _)
+    | For_set sd => cases hmk
+
+private theorem pg4376_comma (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (hp : match_prog p tp) (e : cenv) (m : mem) (r1 r2 : cexpr) (ty : ctype)
+    (v : val) (heval : eval_simple_rvalue (Csem.globalenv p) e m r1 v) :
+    pg4376Local xi p tp e m (.Ecomma r1 r2 ty) E0 m r2 := by
+  intro cu hlink le dst sl a tmp htr tf tk
+  cases htr with
+  | tr_comma _ _ _ _ sl1 a1 tmp1 sl2 a2 tmp2 tmp h1 h2 hd hi1 hi2 =>
+    have hnil := tr_simple_rvalue p tp hp cu e m r1 v heval le .For_effects sl1 a1 tmp1 h1
+    subst sl1
+    refine ⟨le, sl2, Or.inr ⟨star_refl _ _ _, ?_⟩, ?_, fun _ _ => rfl⟩
+    · simp only [esize]; omega
+    · exact tr_expr_monotone _ _ _ _ _ _ _ h2 tmp hi2
+
+private theorem pg4376_set_agree (le : ttemp_env) (tmp : List ident)
+    (id : ident) (v : val) (hin : id ∈ tmp) :
+    ∀ x, x ∉ tmp → PTree.get x (PTree.set id v le) = PTree.get x le := by
+  intro x hx
+  apply PTree.gso
+  intro heq
+  exact hx (heq ▸ hin)
+
+private theorem pg4376_temp_eval (le : ttemp_env) (tmp : List ident)
+    (id : ident) (v : val) (ty : ctype) (hin : id ∈ tmp) :
+    ∀ tge e le' m, (∀ x, x ∈ tmp → PTree.get x le' = PTree.get x (PTree.set id v le)) →
+    Clight.eval_expr tge e le' m (.Etempvar id ty) v := by
+  intro tge e le' m hagree
+  exact Clight.eval_expr.eval_Etempvar id ty v ((hagree id hin).trans (PTree.gss id v le))
+
+private theorem pg4376_paren (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (hp : match_prog p tp) (e : cenv) (m : mem) (r : cexpr) (tycast ty : ctype)
+    (v1 v : val) (heval : eval_simple_rvalue (Csem.globalenv p) e m r v1)
+    (hcast : sem_cast v1 (Csyntax.typeof r) tycast m = some v) :
+    pg4376Local xi p tp e m (.Eparen r tycast ty) E0 m (.Eval v ty) := by
+  intro cu hlink le dst sl a tmp htr tf tk
+  cases htr with
+  | tr_paren_val _ _ _ sl a1 id tmp h1 hin =>
+    obtain ⟨b, hsl, hty, hev⟩ := tr_simple_rvalue p tp hp cu e m r v1 heval
+      le (.For_set (.SDbase tycast ty id)) sl a1 tmp h1
+    subst sl
+    refine ⟨PTree.set id v le, [], Or.inl ?_, ?_, pg4376_set_agree le tmp id v hin⟩
+    · apply plus_two
+      · exact Clight.step_skip_seq _ _ _ _ _ _
+      · apply Clight.step_set
+        exact Clight.eval_expr.cast _ _ _ _ hev (hty ▸ hcast)
+      · rfl
+    · exact tr_expr.tr_val_value _ _ _ _ _ rfl (pg4376_temp_eval le tmp id v ty hin)
+  | tr_paren_effects _ _ _ sl a1 tmp any h1 =>
+    have hnil := tr_simple_rvalue p tp hp cu e m r v1 heval le .For_effects sl a1 tmp h1
+    subst sl
+    refine ⟨le, [], Or.inr ⟨star_refl _ _ _, ?_⟩,
+      tr_expr.tr_val_effect _ _ _ _ _, fun _ _ => rfl⟩
+    simp only [esize]; omega
+  | tr_paren_set id sd _ _ _ sl a1 tmp any h1 hin =>
+    obtain ⟨b, hsl, hty, hev⟩ := tr_simple_rvalue p tp hp cu e m r v1 heval
+      le (.For_set (.SDcons tycast ty id sd)) sl a1 tmp h1
+    subst sl
+    refine ⟨PTree.set id v le, do_set sd (.Etempvar id ty), Or.inl ?_, ?_,
+      pg4376_set_agree le tmp id v hin⟩
+    · apply plus_two
+      · exact Clight.step_skip_seq _ _ _ _ _ _
+      · apply Clight.step_set
+        exact Clight.eval_expr.cast _ _ _ _ hev (hty ▸ hcast)
+      · rfl
+    · exact tr_expr.tr_val_set _ _ _ _ _ _ _ rfl (pg4376_temp_eval le tmp id v ty hin)
+
+private theorem pg4376_if {xi : ExternalCalls} {tp : tprogram}
+    {tf : tfunction} {a : Clight.expr} {s1 s2 : Clight.statement} {tk : tcont}
+    {e : cenv} {le le' : ttemp_env} {m m' : mem} {v : val} {b : Bool}
+    {sl : List Clight.statement}
+    (hev : Clight.eval_expr (Clight.globalenv tp) e le m a v)
+    (hb : bool_val v (Clight.typeof a) m = some b)
+    (hex : star (Clight.step1 xi) (Clight.globalenv tp)
+      (.State tf (if b then s1 else s2) tk e le m) E0
+      (.State tf .Sskip (Kseqlist sl tk) e le' m')) :
+    plus (Clight.step1 xi) (Clight.globalenv tp)
+      (.State tf .Sskip (Kseqlist [makeif a s1 s2] tk) e le m) E0
+      (.State tf .Sskip (Kseqlist sl tk) e le' m') := by
+  refine plus_left (s2 := .State tf (makeif a s1 s2) tk e le m) _ E0 ?_ ?_ rfl
+  · exact Clight.step_skip_seq _ _ _ _ _ _
+  exact star_trans _ _ _ _ _ _ _ (step_makeif xi tp tf a s1 s2 tk e le m v b hev hb)
+    _ _ _ hex rfl
+
+private theorem pg4376_seqand_continue (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (hp : match_prog p tp) (e : cenv) (m : mem) (r1 r2 : cexpr) (ty : ctype)
+    (v : val) (heval : eval_simple_rvalue (Csem.globalenv p) e m r1 v)
+    (hbool : bool_val v (Csyntax.typeof r1) m = some true) :
+    pg4376Local xi p tp e m (.Eseqand r1 r2 ty) E0 m (.Eparen r2 type_bool ty) := by
+  intro cu hlink le dst sl a tmp htr tf tk
+  cases htr with
+  | tr_seqand_val _ _ _ sl1 a1 tmp1 id sl2 a2 tmp2 tmp h1 h2 hd hi1 hi2 hin =>
+    obtain ⟨rfl, hty, hev⟩ := tr_simple_rvalue p tp hp cu e m r1 v heval
+      le .For_val sl1 a1 tmp1 h1
+    refine ⟨le, sl2, Or.inl ?_, ?_, fun _ _ => rfl⟩
+    · exact pg4376_if (b := true) hev (hty ▸ hbool) (push_seq xi tp tf sl2 tk e le m)
+    · exact tr_expr.tr_paren_val _ _ _ _ _ _ _ _
+        (tr_expr_monotone _ _ _ _ _ _ _ h2 tmp hi2) hin
+  | tr_seqand_effects _ _ _ sl1 a1 tmp1 sl2 a2 tmp2 any tmp h1 h2 hd hi1 hi2 =>
+    obtain ⟨rfl, hty, hev⟩ := tr_simple_rvalue p tp hp cu e m r1 v heval
+      le .For_val sl1 a1 tmp1 h1
+    refine ⟨le, sl2, Or.inl ?_, ?_, fun _ _ => rfl⟩
+    · exact pg4376_if (b := true) hev (hty ▸ hbool) (push_seq xi tp tf sl2 tk e le m)
+    · exact tr_expr.tr_paren_effects _ _ _ _ _ _ _ _
+        (tr_expr_monotone _ _ _ _ _ _ _ h2 tmp hi2)
+  | tr_seqand_set sd _ _ _ sl1 a1 tmp1 id sl2 a2 tmp2 any tmp h1 h2 hd hi1 hi2 hin =>
+    obtain ⟨rfl, hty, hev⟩ := tr_simple_rvalue p tp hp cu e m r1 v heval
+      le .For_val sl1 a1 tmp1 h1
+    refine ⟨le, sl2, Or.inl ?_, ?_, fun _ _ => rfl⟩
+    · exact pg4376_if (b := true) hev (hty ▸ hbool) (push_seq xi tp tf sl2 tk e le m)
+    · exact tr_expr.tr_paren_set _ id sd _ _ _ _ _ _ _
+        (tr_expr_monotone _ _ _ _ _ _ _ h2 tmp hi2) hin
+
+private theorem pg4376_seqor_continue (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (hp : match_prog p tp) (e : cenv) (m : mem) (r1 r2 : cexpr) (ty : ctype)
+    (v : val) (heval : eval_simple_rvalue (Csem.globalenv p) e m r1 v)
+    (hbool : bool_val v (Csyntax.typeof r1) m = some false) :
+    pg4376Local xi p tp e m (.Eseqor r1 r2 ty) E0 m (.Eparen r2 type_bool ty) := by
+  intro cu hlink le dst sl a tmp htr tf tk
+  cases htr with
+  | tr_seqor_val _ _ _ sl1 a1 tmp1 id sl2 a2 tmp2 tmp h1 h2 hd hi1 hi2 hin =>
+    obtain ⟨rfl, hty, hev⟩ := tr_simple_rvalue p tp hp cu e m r1 v heval
+      le .For_val sl1 a1 tmp1 h1
+    refine ⟨le, sl2, Or.inl ?_, ?_, fun _ _ => rfl⟩
+    · exact pg4376_if (b := false) hev (hty ▸ hbool) (push_seq xi tp tf sl2 tk e le m)
+    · exact tr_expr.tr_paren_val _ _ _ _ _ _ _ _
+        (tr_expr_monotone _ _ _ _ _ _ _ h2 tmp hi2) hin
+  | tr_seqor_effects _ _ _ sl1 a1 tmp1 sl2 a2 tmp2 any tmp h1 h2 hd hi1 hi2 =>
+    obtain ⟨rfl, hty, hev⟩ := tr_simple_rvalue p tp hp cu e m r1 v heval
+      le .For_val sl1 a1 tmp1 h1
+    refine ⟨le, sl2, Or.inl ?_, ?_, fun _ _ => rfl⟩
+    · exact pg4376_if (b := false) hev (hty ▸ hbool) (push_seq xi tp tf sl2 tk e le m)
+    · exact tr_expr.tr_paren_effects _ _ _ _ _ _ _ _
+        (tr_expr_monotone _ _ _ _ _ _ _ h2 tmp hi2)
+  | tr_seqor_set sd _ _ _ sl1 a1 tmp1 id sl2 a2 tmp2 any tmp h1 h2 hd hi1 hi2 hin =>
+    obtain ⟨rfl, hty, hev⟩ := tr_simple_rvalue p tp hp cu e m r1 v heval
+      le .For_val sl1 a1 tmp1 h1
+    refine ⟨le, sl2, Or.inl ?_, ?_, fun _ _ => rfl⟩
+    · exact pg4376_if (b := false) hev (hty ▸ hbool) (push_seq xi tp tf sl2 tk e le m)
+    · exact tr_expr.tr_paren_set _ id sd _ _ _ _ _ _ _
+        (tr_expr_monotone _ _ _ _ _ _ _ h2 tmp hi2) hin
+
+private theorem pg4376_seqand_stop (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (hp : match_prog p tp) (e : cenv) (m : mem) (r1 r2 : cexpr) (ty : ctype)
+    (v : val) (heval : eval_simple_rvalue (Csem.globalenv p) e m r1 v)
+    (hbool : bool_val v (Csyntax.typeof r1) m = some false) :
+    pg4376Local xi p tp e m (.Eseqand r1 r2 ty) E0 m
+      (.Eval (.Vint CompCert4Lean.Lib.Integers.Int.zero) ty) := by
+  intro cu hlink le dst sl a tmp htr tf tk
+  cases htr with
+  | tr_seqand_val _ _ _ sl1 a1 tmp1 id sl2 a2 tmp2 tmp h1 h2 hd hi1 hi2 hin =>
+    obtain ⟨rfl, hty, hev⟩ := tr_simple_rvalue p tp hp cu e m r1 v heval
+      le .For_val sl1 a1 tmp1 h1
+    refine ⟨PTree.set id (.Vint CompCert4Lean.Lib.Integers.Int.zero) le, [],
+      Or.inl ?_, ?_, pg4376_set_agree _ _ _ _ hin⟩
+    · apply pg4376_if (b := false) hev (hty ▸ hbool)
+      apply star_one
+      exact Clight.step_set _ _ _ _ _ _ _ _ (.const_int _ _)
+    · exact tr_expr.tr_val_value _ _ _ _ _ rfl (pg4376_temp_eval _ _ _ _ _ hin)
+  | tr_seqand_effects _ _ _ sl1 a1 tmp1 sl2 a2 tmp2 any tmp h1 h2 hd hi1 hi2 =>
+    obtain ⟨rfl, hty, hev⟩ := tr_simple_rvalue p tp hp cu e m r1 v heval
+      le .For_val sl1 a1 tmp1 h1
+    refine ⟨le, [], Or.inl ?_, tr_expr.tr_val_effect _ _ _ _ _, fun _ _ => rfl⟩
+    exact pg4376_if (b := false) hev (hty ▸ hbool) (star_refl _ _ _)
+  | tr_seqand_set sd _ _ _ sl1 a1 tmp1 id sl2 a2 tmp2 any tmp h1 h2 hd hi1 hi2 hin =>
+    obtain ⟨rfl, hty, hev⟩ := tr_simple_rvalue p tp hp cu e m r1 v heval
+      le .For_val sl1 a1 tmp1 h1
+    refine ⟨le, do_set sd (.Econst_int CompCert4Lean.Lib.Integers.Int.zero ty),
+      Or.inl ?_, ?_, fun _ _ => rfl⟩
+    · exact pg4376_if (b := false) hev (hty ▸ hbool) (push_seq xi tp tf _ tk e le m)
+    · exact tr_expr.tr_val_set _ _ _ _ _ _ _ rfl (fun _ _ _ _ _ => .const_int _ _)
+
+private theorem pg4376_seqor_stop (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (hp : match_prog p tp) (e : cenv) (m : mem) (r1 r2 : cexpr) (ty : ctype)
+    (v : val) (heval : eval_simple_rvalue (Csem.globalenv p) e m r1 v)
+    (hbool : bool_val v (Csyntax.typeof r1) m = some true) :
+    pg4376Local xi p tp e m (.Eseqor r1 r2 ty) E0 m
+      (.Eval (.Vint CompCert4Lean.Lib.Integers.Int.one) ty) := by
+  intro cu hlink le dst sl a tmp htr tf tk
+  cases htr with
+  | tr_seqor_val _ _ _ sl1 a1 tmp1 id sl2 a2 tmp2 tmp h1 h2 hd hi1 hi2 hin =>
+    obtain ⟨rfl, hty, hev⟩ := tr_simple_rvalue p tp hp cu e m r1 v heval
+      le .For_val sl1 a1 tmp1 h1
+    refine ⟨PTree.set id (.Vint CompCert4Lean.Lib.Integers.Int.one) le, [],
+      Or.inl ?_, ?_, pg4376_set_agree _ _ _ _ hin⟩
+    · apply pg4376_if (b := true) hev (hty ▸ hbool)
+      apply star_one
+      exact Clight.step_set _ _ _ _ _ _ _ _ (.const_int _ _)
+    · exact tr_expr.tr_val_value _ _ _ _ _ rfl (pg4376_temp_eval _ _ _ _ _ hin)
+  | tr_seqor_effects _ _ _ sl1 a1 tmp1 sl2 a2 tmp2 any tmp h1 h2 hd hi1 hi2 =>
+    obtain ⟨rfl, hty, hev⟩ := tr_simple_rvalue p tp hp cu e m r1 v heval
+      le .For_val sl1 a1 tmp1 h1
+    refine ⟨le, [], Or.inl ?_, tr_expr.tr_val_effect _ _ _ _ _, fun _ _ => rfl⟩
+    exact pg4376_if (b := true) hev (hty ▸ hbool) (star_refl _ _ _)
+  | tr_seqor_set sd _ _ _ sl1 a1 tmp1 id sl2 a2 tmp2 any tmp h1 h2 hd hi1 hi2 hin =>
+    obtain ⟨rfl, hty, hev⟩ := tr_simple_rvalue p tp hp cu e m r1 v heval
+      le .For_val sl1 a1 tmp1 h1
+    refine ⟨le, do_set sd (.Econst_int CompCert4Lean.Lib.Integers.Int.one ty),
+      Or.inl ?_, ?_, fun _ _ => rfl⟩
+    · exact pg4376_if (b := true) hev (hty ▸ hbool) (push_seq xi tp tf _ tk e le m)
+    · exact tr_expr.tr_val_set _ _ _ _ _ _ _ rfl (fun _ _ _ _ _ => .const_int _ _)
+
+private theorem pg4376_volatile (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (hp : match_prog p tp) (e : cenv) (m : mem) (l : cexpr)
+    (b : block) (ofs : ptrofs) (bf : bitfield) (t : trace) (v : val)
+    (heval : eval_simple_lvalue (Csem.globalenv p) e m l b ofs bf)
+    (hderef : Csem.deref_loc (Csem.globalenv p) (Csyntax.typeof l) m b ofs bf t v)
+    (hvol : type_is_volatile (Csyntax.typeof l) = true) :
+    pg4376Local xi p tp e m (.Evalof l (Csyntax.typeof l)) t m
+      (.Eval v (Csyntax.typeof l)) := by
+  intro cu hlink le dst sl a tmp htr tf tk
+  cases htr with
+  | tr_valof dst _ _ tmp sl1 a1 tmp1 sl2 a2 tmp2 h1 h2 hd hi1 hi2 =>
+    obtain ⟨rfl, hty, hev⟩ := tr_simple_lvalue p tp hp cu e m l b ofs bf heval
+      le sl1 a1 tmp1 h1
+    cases h2 with
+    | tr_rvalof_nonvol _ hv => simp_all
+    | tr_rvalof_vol id bf' _ hv hin hbf =>
+      have heq := is_bitfield_access_sound p tp hp cu hlink e le m a1 b ofs bf bf' hev hbf
+      subst bf'
+      have hin' := hi2 id hin
+      refine ⟨PTree.set id v le, final dst (.Etempvar id (Csyntax.typeof l)),
+        Or.inl ?_, ?_, pg4376_set_agree _ _ _ _ hin'⟩
+      · apply plus_two
+        · exact Clight.step_skip_seq _ _ _ _ _ _
+        · exact step_make_set xi p tp hp id a1 _ m b ofs bf t v e le tf _ hderef hev hty.symm
+        · rfl
+      · exact tr_val_gen _ _ _ _ _ _ _ rfl (pg4376_temp_eval _ _ _ _ _ hin')
+
+private theorem pg4376_condition (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (hp : match_prog p tp) (e : cenv) (m : mem) (r1 r2 r3 : cexpr) (ty : ctype)
+    (v : val) (b : Bool) (heval : eval_simple_rvalue (Csem.globalenv p) e m r1 v)
+    (hbool : bool_val v (Csyntax.typeof r1) m = some b) :
+    pg4376Local xi p tp e m (.Econdition r1 r2 r3 ty) E0 m
+      (.Eparen (if b then r2 else r3) ty ty) := by
+  intro cu hlink le dst sl a tmp htr tf tk
+  cases htr with
+  | tr_condition_val _ _ _ _ sl1 a1 tmp1 sl2 a2 tmp2 sl3 a3 tmp3 id tmp h1 h2 h3 hd1 hd2 hi1 hi2 hi3 hin =>
+    obtain ⟨rfl, hty, hev⟩ := tr_simple_rvalue p tp hp cu e m r1 v heval
+      le .For_val sl1 a1 tmp1 h1
+    cases b with
+    | false =>
+      refine ⟨le, sl3, Or.inl ?_, ?_, fun _ _ => rfl⟩
+      · exact pg4376_if (b := false) hev (hty ▸ hbool) (push_seq xi tp tf sl3 tk e le m)
+      · exact tr_expr.tr_paren_val _ _ _ _ _ _ _ _
+          (tr_expr_monotone _ _ _ _ _ _ _ h3 tmp hi3) hin
+    | true =>
+      refine ⟨le, sl2, Or.inl ?_, ?_, fun _ _ => rfl⟩
+      · exact pg4376_if (b := true) hev (hty ▸ hbool) (push_seq xi tp tf sl2 tk e le m)
+      · exact tr_expr.tr_paren_val _ _ _ _ _ _ _ _
+          (tr_expr_monotone _ _ _ _ _ _ _ h2 tmp hi2) hin
+  | tr_condition_effects _ _ _ _ sl1 a1 tmp1 sl2 a2 tmp2 sl3 a3 tmp3 any tmp h1 h2 h3 hd1 hd2 hi1 hi2 hi3 =>
+    obtain ⟨rfl, hty, hev⟩ := tr_simple_rvalue p tp hp cu e m r1 v heval
+      le .For_val sl1 a1 tmp1 h1
+    cases b with
+    | false =>
+      refine ⟨le, sl3, Or.inl ?_, ?_, fun _ _ => rfl⟩
+      · exact pg4376_if (b := false) hev (hty ▸ hbool) (push_seq xi tp tf sl3 tk e le m)
+      · exact tr_expr.tr_paren_effects _ _ _ _ _ _ _ _
+          (tr_expr_monotone _ _ _ _ _ _ _ h3 tmp hi3)
+    | true =>
+      refine ⟨le, sl2, Or.inl ?_, ?_, fun _ _ => rfl⟩
+      · exact pg4376_if (b := true) hev (hty ▸ hbool) (push_seq xi tp tf sl2 tk e le m)
+      · exact tr_expr.tr_paren_effects _ _ _ _ _ _ _ _
+          (tr_expr_monotone _ _ _ _ _ _ _ h2 tmp hi2)
+  | tr_condition_set sd id _ _ _ _ sl1 a1 tmp1 sl2 a2 tmp2 sl3 a3 tmp3 any tmp h1 h2 h3 hd1 hd2 hi1 hi2 hi3 hin =>
+    obtain ⟨rfl, hty, hev⟩ := tr_simple_rvalue p tp hp cu e m r1 v heval
+      le .For_val sl1 a1 tmp1 h1
+    cases b with
+    | false =>
+      refine ⟨le, sl3, Or.inl ?_, ?_, fun _ _ => rfl⟩
+      · exact pg4376_if (b := false) hev (hty ▸ hbool) (push_seq xi tp tf sl3 tk e le m)
+      · exact tr_expr.tr_paren_set _ id sd _ _ _ _ _ _ _
+          (tr_expr_monotone _ _ _ _ _ _ _ h3 tmp hi3) hin
+    | true =>
+      refine ⟨le, sl2, Or.inl ?_, ?_, fun _ _ => rfl⟩
+      · exact pg4376_if (b := true) hev (hty ▸ hbool) (push_seq xi tp tf sl2 tk e le m)
+      · exact tr_expr.tr_paren_set _ id sd _ _ _ _ _ _ _
+          (tr_expr_monotone _ _ _ _ _ _ _ h2 tmp hi2) hin
+
+private theorem pg4376_invariant_set {ce : composite_env} {le : ttemp_env}
+    {dst : destination} {r : cexpr} {sl : List Clight.statement}
+    {a : Clight.expr} {tmp : List ident} (htr : tr_expr ce le dst r sl a tmp)
+    (id : ident) (v : val) (hn : id ∉ tmp) :
+    tr_expr ce (PTree.set id v le) dst r sl a tmp := by
+  apply tr_expr_invariant _ _ _ _ _ _ _ htr
+  intro x hx
+  apply PTree.gso
+  intro heq
+  exact hn (heq ▸ hx)
+
+private theorem pg4376_assign (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (hp : match_prog p tp) (e : cenv) (m m' : mem) (l r : cexpr)
+    (b : block) (ofs : ptrofs) (bf : bitfield) (t : trace) (v v1 v' : val)
+    (hl : eval_simple_lvalue (Csem.globalenv p) e m l b ofs bf)
+    (hr : eval_simple_rvalue (Csem.globalenv p) e m r v)
+    (hcast : sem_cast v (Csyntax.typeof r) (Csyntax.typeof l) m = some v1)
+    (ha : Csem.assign_loc (Csem.globalenv p) (Csyntax.typeof l) m b ofs bf v1 t m' v') :
+    pg4376Local xi p tp e m (.Eassign l r (Csyntax.typeof l)) t m'
+      (.Eval v' (Csyntax.typeof l)) := by
+  intro cu hlink le dst sl a tmp htr tf tk
+  cases htr with
+  | tr_assign_effects _ _ _ sl1 a1 tmp1 sl2 a2 tmp2 bf' any tmp h1 h2 hd hi1 hi2 hbf =>
+    obtain ⟨rfl, hty1, hev1⟩ := tr_simple_lvalue p tp hp cu e m l b ofs bf hl
+      le sl1 a1 tmp1 h1
+    obtain ⟨rfl, hty2, hev2⟩ := tr_simple_rvalue p tp hp cu e m r v hr
+      le .For_val sl2 a2 tmp2 h2
+    have heq := is_bitfield_access_sound p tp hp cu hlink e le m a1 b ofs bf bf' hev1 hbf
+    subst bf'
+    refine ⟨le, [], Or.inl ?_, tr_expr.tr_val_effect _ _ _ _ _, fun _ _ => rfl⟩
+    apply plus_two
+    · exact Clight.step_skip_seq _ _ _ _ _ _
+    · exact step_make_assign xi p tp hp a1 a2 _ m b ofs bf t v1 m' v' v e le tf tk
+        ha hev1 hev2 (hty2 ▸ hcast) hty1.symm
+    · rfl
+  | tr_assign_val dst _ _ _ sl1 a1 tmp1 sl2 a2 tmp2 id tmp ty1 ty2 bf'
+      h1 h2 hi1 hi2 hd hin hn1 hn2 ht1 ht2 hbf =>
+    subst ty1 ty2
+    obtain ⟨rfl, hty1, hev1⟩ := tr_simple_lvalue p tp hp cu e m l b ofs bf hl
+      le sl1 a1 tmp1 h1
+    obtain ⟨rfl, hty2, hev2⟩ := tr_simple_rvalue p tp hp cu e m r v hr
+      le .For_val sl2 a2 tmp2 h2
+    have hev1' := (tr_simple_lvalue p tp hp cu e m l b ofs bf hl
+      _ [] a1 tmp1 (pg4376_invariant_set h1 id v1 hn1)).2.2
+    have heq := is_bitfield_access_sound p tp hp cu hlink e le m a1 b ofs bf bf' hev1 hbf
+    subst bf'
+    refine ⟨PTree.set id v1 le, final dst (make_assign_value bf (.Etempvar id (Csyntax.typeof l))),
+      Or.inl ?_, ?_, pg4376_set_agree _ _ _ _ hin⟩
+    · apply plus_four
+      · exact Clight.step_skip_seq _ _ _ _ _ _
+      · exact Clight.step_set _ _ _ _ _ _ _ _ (.cast _ _ _ _ hev2 (hty2 ▸ hcast))
+      · exact Clight.step_skip_seq _ _ _ _ _ _
+      · exact step_make_assign xi p tp hp a1 (.Etempvar id (Csyntax.typeof l)) _ m b ofs bf t v1 m' v' v1
+          e _ tf _ ha hev1' (.eval_Etempvar _ _ _ (PTree.gss _ _ _))
+          (cast_idempotent _ _ _ _ _ hcast) hty1.symm
+      · rfl
+    · apply tr_val_gen
+      · exact typeof_make_assign_value bf _
+      · intro tge e' le' m'' hagree
+        exact make_assign_value_sound p _ m b ofs bf v1 t m' v' ha tge e' le' m''
+          (.Etempvar id (Csyntax.typeof l)) rfl (pg4376_temp_eval le tmp id v1 _ hin _ _ _ _ hagree)
+
+private theorem pg4376_invariant_disjoint {ce : composite_env} {le le' : ttemp_env}
+    {dst : destination} {r : cexpr} {sl : List Clight.statement}
+    {a : Clight.expr} {tmp tmp' : List ident} (htr : tr_expr ce le dst r sl a tmp)
+    (hd : CompCert4Lean.Lib.Coqlib.list_disjoint tmp tmp')
+    (hagree : ∀ x, x ∉ tmp' → PTree.get x le' = PTree.get x le) :
+    tr_expr ce le' dst r sl a tmp := by
+  apply tr_expr_invariant _ _ _ _ _ _ _ htr
+  intro x hx
+  apply hagree
+  intro hx'
+  exact hd x x hx hx' rfl
+
+private theorem pg4376_assignop (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (hp : match_prog p tp) (e : cenv) (m m' : mem) (op : binary_operation)
+    (l r : cexpr) (tyres : ctype) (b : block) (ofs : ptrofs) (bf : bitfield)
+    (t1 t2 : trace) (v1 v2 v3 v4 v' : val)
+    (hl : eval_simple_lvalue (Csem.globalenv p) e m l b ofs bf)
+    (hderef : Csem.deref_loc (Csem.globalenv p) (Csyntax.typeof l) m b ofs bf t1 v1)
+    (hr : eval_simple_rvalue (Csem.globalenv p) e m r v2)
+    (hop : sem_binary_operation (Csem.globalenv p).genv_cenv op v1 (Csyntax.typeof l)
+      v2 (Csyntax.typeof r) m = some v3)
+    (hcast : sem_cast v3 tyres (Csyntax.typeof l) m = some v4)
+    (ha : Csem.assign_loc (Csem.globalenv p) (Csyntax.typeof l) m b ofs bf v4 t2 m' v') :
+    pg4376Local xi p tp e m (.Eassignop op l r tyres (Csyntax.typeof l)) (Eapp t1 t2) m'
+      (.Eval v' (Csyntax.typeof l)) := by
+  intro cu hlink le dst sl a tmp htr tf tk
+  cases htr with
+  | tr_assignop_effects _ _ _ _ _ ty1 sl1 a1 tmp1 sl2 a2 tmp2 bf' sl3 a3 tmp3 any tmp
+      h1 h2 ht1 h3 hd12 hd13 hd23 hi1 hi2 hi3 hbf =>
+    subst ty1
+    obtain ⟨rfl, hty1, hev1⟩ := tr_simple_lvalue p tp hp cu e m l b ofs bf hl
+      le sl1 a1 tmp1 h1
+    obtain ⟨rfl, hty2, hev2⟩ := tr_simple_rvalue p tp hp cu e m r v2 hr
+      le .For_val sl2 a2 tmp2 h2
+    have heq := is_bitfield_access_sound p tp hp cu hlink e le m a1 b ofs bf bf' hev1 hbf
+    subst bf'
+    obtain ⟨le', hex, hev3, hty3, hagree⟩ := step_tr_rvalof xi p tp hp cu hlink _ m b ofs bf t1 v1
+      e le a1 sl3 a3 tmp3 tf (.Kseq (make_assign bf a1 (.Ebinop op a3 a2 tyres)) tk)
+      hderef hev1 h3 hty1.symm
+    have hev1' := (tr_simple_lvalue p tp hp cu e m l b ofs bf hl
+      _ [] a1 tmp1 (pg4376_invariant_disjoint h1 hd13 hagree)).2.2
+    have hev2' := (tr_simple_rvalue p tp hp cu e m r v2 hr
+      _ .For_val [] a2 tmp2 (pg4376_invariant_disjoint h2 hd23 hagree)).2.2
+    refine ⟨le', [], Or.inl ?_, tr_expr.tr_val_effect _ _ _ _ _, ?_⟩
+    · simp only [List.nil_append, Kseqlist_app sl3 [_] tk]
+      apply star_plus_trans _ _ _ _ _ _ _ _ _ _ hex
+      · apply plus_two
+        · exact Clight.step_skip_seq _ _ _ _ _ _
+        · apply step_make_assign xi p tp hp a1 (.Ebinop op a3 a2 tyres) _ m b ofs bf t2 v4 m' v' v3
+            e le' tf tk ha hev1' _ hcast hty1.symm
+          apply Clight.eval_expr.binary _ _ _ _ _ _ _ hev3 hev2'
+          simpa only [hty3, ← hty1, ← hty2, comp_env_preserved p tp hp] using hop
+        · rfl
+      · rfl
+    · intro x hx
+      exact hagree x (fun hin => hx (hi3 x hin))
+  | tr_assignop_val dst _ _ _ _ _ sl1 a1 tmp1 sl2 a2 tmp2 sl3 a3 tmp3 id bf' tmp ty1
+      h1 h2 h3 hd12 hd13 hd23 hi1 hi2 hi3 hin hn1 hn2 hn3 ht1 hbf =>
+    subst ty1
+    obtain ⟨rfl, hty1, hev1⟩ := tr_simple_lvalue p tp hp cu e m l b ofs bf hl
+      le sl1 a1 tmp1 h1
+    obtain ⟨rfl, hty2, hev2⟩ := tr_simple_rvalue p tp hp cu e m r v2 hr
+      le .For_val sl2 a2 tmp2 h2
+    have heq := is_bitfield_access_sound p tp hp cu hlink e le m a1 b ofs bf bf' hev1 hbf
+    subst bf'
+    obtain ⟨le', hex, hev3, hty3, hagree⟩ := step_tr_rvalof xi p tp hp cu hlink _ m b ofs bf t1 v1
+      e le a1 sl3 a3 tmp3 tf
+      (Kseqlist (.Sset id (.Ecast (.Ebinop op a3 a2 tyres) (Csyntax.typeof l)) ::
+        make_assign bf a1 (.Etempvar id (Csyntax.typeof l)) ::
+        final dst (make_assign_value bf (.Etempvar id (Csyntax.typeof l)))) tk)
+      hderef hev1 h3 hty1.symm
+    have h1' := pg4376_invariant_disjoint h1 hd13 hagree
+    have hev1' := (tr_simple_lvalue p tp hp cu e m l b ofs bf hl
+      _ [] a1 tmp1 (pg4376_invariant_set h1' id v4 hn1)).2.2
+    have hev2' := (tr_simple_rvalue p tp hp cu e m r v2 hr
+      _ .For_val [] a2 tmp2 (pg4376_invariant_disjoint h2 hd23 hagree)).2.2
+    refine ⟨PTree.set id v4 le', final dst (make_assign_value bf (.Etempvar id (Csyntax.typeof l))),
+      Or.inl ?_, ?_, ?_⟩
+    · simp only [List.nil_append, Kseqlist_app sl3 (_ :: _ :: _) tk]
+      apply star_plus_trans _ _ _ _ _ _ _ _ _ _ hex
+      · apply plus_four
+        · exact Clight.step_skip_seq _ _ _ _ _ _
+        · apply Clight.step_set
+          apply Clight.eval_expr.cast _ _ _ _ _ hcast
+          apply Clight.eval_expr.binary _ _ _ _ _ _ _ hev3 hev2'
+          simpa only [hty3, ← hty1, ← hty2, comp_env_preserved p tp hp] using hop
+        · exact Clight.step_skip_seq _ _ _ _ _ _
+        · exact step_make_assign xi p tp hp a1 (.Etempvar id (Csyntax.typeof l)) _ m b ofs bf t2 v4 m' v' v4
+            e _ tf _ ha hev1' (.eval_Etempvar _ _ _ (PTree.gss _ _ _))
+            (cast_idempotent _ _ _ _ _ hcast) hty1.symm
+        · rfl
+      · rfl
+    · apply tr_val_gen
+      · exact typeof_make_assign_value bf _
+      · intro tge e' le'' m'' hagree'
+        exact make_assign_value_sound p _ m b ofs bf v4 t2 m' v' ha tge e' le'' m''
+          (.Etempvar id (Csyntax.typeof l)) rfl (pg4376_temp_eval le' tmp id v4 _ hin _ _ _ _ hagree')
+    · intro x hx
+      exact (pg4376_set_agree le' tmp id v4 hin x hx).trans
+        (hagree x (fun hin => hx (hi3 x hin)))
+
+private theorem pg4376_incr_eval (p : cprogram) (tp : tprogram) (hp : match_prog p tp)
+    (id : incr_or_decr) (e : cenv) (le : ttemp_env) (m : mem)
+    (a : Clight.expr) (ty : ctype) (v v' : val)
+    (hev : Clight.eval_expr (Clight.globalenv tp) e le m a v)
+    (htype : Clight.typeof a = ty)
+    (hincr : sem_incrdecr (Csem.globalenv p).genv_cenv id v ty m = some v') :
+    Clight.eval_expr (Clight.globalenv tp) e le m (transl_incrdecr id a ty) v' := by
+  cases id <;> simp only [transl_incrdecr] <;>
+    apply Clight.eval_expr.binary _ _ _ _ _ _ _ hev (.const_int _ _) <;>
+    rw [htype, comp_env_preserved p tp hp] <;> exact hincr
+
+private theorem pg4376_postincr (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (hp : match_prog p tp) (e : cenv) (m m' : mem) (id : incr_or_decr) (l : cexpr)
+    (b : block) (ofs : ptrofs) (bf : bitfield) (t1 t2 : trace) (v1 v2 v3 v' : val)
+    (hl : eval_simple_lvalue (Csem.globalenv p) e m l b ofs bf)
+    (hderef : Csem.deref_loc (Csem.globalenv p) (Csyntax.typeof l) m b ofs bf t1 v1)
+    (hop : sem_incrdecr (Csem.globalenv p).genv_cenv id v1 (Csyntax.typeof l) m = some v2)
+    (hcast : sem_cast v2 (incrdecr_type (Csyntax.typeof l)) (Csyntax.typeof l) m = some v3)
+    (ha : Csem.assign_loc (Csem.globalenv p) (Csyntax.typeof l) m b ofs bf v3 t2 m' v') :
+    pg4376Local xi p tp e m (.Epostincr id l (Csyntax.typeof l)) (Eapp t1 t2) m'
+      (.Eval v1 (Csyntax.typeof l)) := by
+  intro cu hlink le dst sl a tmp htr tf tk
+  cases htr with
+  | tr_postincr_effects _ _ _ ty1 sl1 a1 tmp1 sl2 a2 tmp2 bf' any tmp
+      h1 h2 ht1 hi1 hi2 hd hbf =>
+    subst ty1
+    obtain ⟨rfl, hty1, hev1⟩ := tr_simple_lvalue p tp hp cu e m l b ofs bf hl
+      le sl1 a1 tmp1 h1
+    have heq := is_bitfield_access_sound p tp hp cu hlink e le m a1 b ofs bf bf' hev1 hbf
+    subst bf'
+    obtain ⟨le', hex, hev2, hty2, hagree⟩ := step_tr_rvalof xi p tp hp cu hlink _ m b ofs bf t1 v1
+      e le a1 sl2 a2 tmp2 tf (.Kseq (make_assign bf a1 (transl_incrdecr id a2 (Csyntax.typeof l))) tk)
+      hderef hev1 h2 hty1.symm
+    have hev1' := (tr_simple_lvalue p tp hp cu e m l b ofs bf hl
+      _ [] a1 tmp1 (pg4376_invariant_disjoint h1 hd hagree)).2.2
+    refine ⟨le', [], Or.inl ?_, tr_expr.tr_val_effect _ _ _ _ _, ?_⟩
+    · simp only [List.nil_append, Kseqlist_app sl2 [_] tk]
+      apply star_plus_trans _ _ _ _ _ _ _ _ _ _ hex
+      · apply plus_two
+        · exact Clight.step_skip_seq _ _ _ _ _ _
+        · apply step_make_assign xi p tp hp a1 (transl_incrdecr id a2 (Csyntax.typeof l)) _ m b ofs bf t2 v3 m' v' v2
+            e le' tf tk ha hev1' _ _ hty1.symm
+          · exact pg4376_incr_eval p tp hp id e le' m a2 _ v1 v2 hev2 (hty2.trans hty1.symm) hop
+          · cases id <;> exact hcast
+        · rfl
+      · rfl
+    · intro x hx
+      exact hagree x (fun hin => hx (hi2 x hin))
+  | tr_postincr_val dst _ _ _ sl1 a1 tmp1 bf' temp ty1 tmp h1 hi1 hin hn1 ht1 hbf =>
+    subst ty1
+    obtain ⟨rfl, hty1, hev1⟩ := tr_simple_lvalue p tp hp cu e m l b ofs bf hl
+      le sl1 a1 tmp1 h1
+    have hev1' := (tr_simple_lvalue p tp hp cu e m l b ofs bf hl
+      _ [] a1 tmp1 (pg4376_invariant_set h1 temp v1 hn1)).2.2
+    have heq := is_bitfield_access_sound p tp hp cu hlink e le m a1 b ofs bf bf' hev1 hbf
+    subst bf'
+    refine ⟨PTree.set temp v1 le, final dst (.Etempvar temp (Csyntax.typeof l)),
+      Or.inl ?_, ?_, pg4376_set_agree _ _ _ _ hin⟩
+    · apply plus_four
+      · exact Clight.step_skip_seq _ _ _ _ _ _
+      · exact step_make_set xi p tp hp temp a1 _ m b ofs bf t1 v1 e le tf _ hderef hev1 hty1.symm
+      · exact Clight.step_skip_seq _ _ _ _ _ _
+      · apply step_make_assign xi p tp hp a1 (transl_incrdecr id (.Etempvar temp (Csyntax.typeof l)) (Csyntax.typeof l))
+          _ m b ofs bf t2 v3 m' v' v2 e _ tf _ ha hev1' _ _ hty1.symm
+        · exact pg4376_incr_eval p tp hp id e _ m _ _ v1 v2
+            (.eval_Etempvar _ _ _ (PTree.gss _ _ _)) rfl hop
+        · cases id <;> exact hcast
+      · rfl
+    · exact tr_val_gen _ _ _ _ _ _ _ rfl (pg4376_temp_eval _ _ _ _ _ hin)
+
+private def pg4376Prefix (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (e : cenv) (m : mem) (r : cexpr) (t : trace) : Prop :=
+  ∀ (cu : cprogram), Ctypes.linkorder_program cu p →
+  ∀ le dst sl a tmp, tr_expr cu.prog_comp_env le dst r sl a tmp →
+  ∀ tf tk, ∃ s', star (Clight.step1 xi) (Clight.globalenv tp)
+    (.State tf .Sskip (Kseqlist sl tk) e le m) t s'
+
+private theorem pg4376_stuck_lift (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (e : cenv) (m : mem) (r : cexpr) (t : trace)
+    (hnot : ∀ v ty, r ≠ .Eval v ty)
+    (hlocal : pg4376Prefix xi p tp e m r t)
+    (f : cfunction) (k : ccont) (C : cexpr → cexpr)
+    (hc : leftcontext .RV .RV C) (s : tstate)
+    (hs : match_states p tp (.ExprState f (C r) k e m) s) :
+    ∃ s', (plus (Clight.step1 xi) (Clight.globalenv tp) s t s' ∨
+      (star (Clight.step1 xi) (Clight.globalenv tp) s t s' ∧
+       measure .Stuckstate < measure (.ExprState f (C r) k e m))) ∧
+      match_states p tp .Stuckstate s' := by
+  cases hs with
+  | match_exprstates _ _ _ _ _ tf sl tk le dst a tmp cu hlink htf htr hmk =>
+    obtain ⟨dst1, sl1, sl2, a1, tmp1, htr1, hsl, hinc, hrec⟩ :=
+      tr_top_leftcontext tp cu e le m dst (C r) sl a tmp htr r C rfl hc
+    have hr : tr_expr cu.prog_comp_env le dst1 r sl1 a1 tmp1 := by
+      cases htr1 with
+      | tr_top_val_val v ty _ _ _ _ => exact False.elim (hnot v ty rfl)
+      | tr_top_base _ _ _ _ _ h => exact h
+    obtain ⟨s', hex⟩ := hlocal cu hlink le dst1 sl1 a1 tmp1 hr tf (Kseqlist sl2 tk)
+    subst sl
+    refine ⟨s', Or.inr ⟨?_, by simp only [measure]; omega⟩, .match_stuckstate _⟩
+    simpa only [Kseqlist_app sl1 sl2 tk] using hex
+
+private theorem pg4376_assignop_prefix (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (hp : match_prog p tp) (e : cenv) (m : mem) (op : binary_operation)
+    (l r : cexpr) (tyres : ctype) (b : block) (ofs : ptrofs) (bf : bitfield)
+    (t : trace) (v1 v2 : val)
+    (hl : eval_simple_lvalue (Csem.globalenv p) e m l b ofs bf)
+    (hderef : Csem.deref_loc (Csem.globalenv p) (Csyntax.typeof l) m b ofs bf t v1)
+    (hr : eval_simple_rvalue (Csem.globalenv p) e m r v2) :
+    pg4376Prefix xi p tp e m (.Eassignop op l r tyres (Csyntax.typeof l)) t := by
+  intro cu hlink le dst sl a tmp htr tf tk
+  cases htr with
+  | tr_assignop_effects _ _ _ _ _ ty1 sl1 a1 tmp1 sl2 a2 tmp2 bf' sl3 a3 tmp3 any tmp
+      h1 h2 ht1 h3 hd12 hd13 hd23 hi1 hi2 hi3 hbf =>
+    subst ty1
+    obtain ⟨rfl, hty1, hev1⟩ := tr_simple_lvalue p tp hp cu e m l b ofs bf hl
+      le sl1 a1 tmp1 h1
+    obtain ⟨rfl, hty2, hev2⟩ := tr_simple_rvalue p tp hp cu e m r v2 hr
+      le .For_val sl2 a2 tmp2 h2
+    obtain ⟨le', hex, _⟩ := step_tr_rvalof xi p tp hp cu hlink _ m b ofs bf t v1
+      e le a1 sl3 a3 tmp3 tf (.Kseq (make_assign bf' a1 (.Ebinop op a3 a2 tyres)) tk)
+      hderef hev1 h3 hty1.symm
+    refine ⟨.State tf .Sskip (.Kseq (make_assign bf' a1 (.Ebinop op a3 a2 tyres)) tk) e le' m, ?_⟩
+    simpa only [List.nil_append, Kseqlist_app sl3 [_] tk, Kseqlist] using hex
+  | tr_assignop_val dst _ _ _ _ _ sl1 a1 tmp1 sl2 a2 tmp2 sl3 a3 tmp3 id bf' tmp ty1
+      h1 h2 h3 hd12 hd13 hd23 hi1 hi2 hi3 hin hn1 hn2 hn3 ht1 hbf =>
+    subst ty1
+    obtain ⟨rfl, hty1, hev1⟩ := tr_simple_lvalue p tp hp cu e m l b ofs bf hl
+      le sl1 a1 tmp1 h1
+    obtain ⟨rfl, hty2, hev2⟩ := tr_simple_rvalue p tp hp cu e m r v2 hr
+      le .For_val sl2 a2 tmp2 h2
+    obtain ⟨le', hex, _⟩ := step_tr_rvalof xi p tp hp cu hlink _ m b ofs bf t v1
+      e le a1 sl3 a3 tmp3 tf
+      (Kseqlist (.Sset id (.Ecast (.Ebinop op a3 a2 tyres) (Csyntax.typeof l)) ::
+        make_assign bf' a1 (.Etempvar id (Csyntax.typeof l)) ::
+        final dst (make_assign_value bf' (.Etempvar id (Csyntax.typeof l)))) tk)
+      hderef hev1 h3 hty1.symm
+    refine ⟨.State tf .Sskip
+      (Kseqlist (.Sset id (.Ecast (.Ebinop op a3 a2 tyres) (Csyntax.typeof l)) ::
+        make_assign bf' a1 (.Etempvar id (Csyntax.typeof l)) ::
+        final dst (make_assign_value bf' (.Etempvar id (Csyntax.typeof l)))) tk) e le' m, ?_⟩
+    simpa only [List.nil_append, Kseqlist_app sl3 (_ :: _ :: _) tk] using hex
+
+private theorem pg4376_postincr_prefix (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (hp : match_prog p tp) (e : cenv) (m : mem) (id : incr_or_decr) (l : cexpr)
+    (b : block) (ofs : ptrofs) (bf : bitfield) (t : trace) (v : val)
+    (hl : eval_simple_lvalue (Csem.globalenv p) e m l b ofs bf)
+    (hderef : Csem.deref_loc (Csem.globalenv p) (Csyntax.typeof l) m b ofs bf t v) :
+    pg4376Prefix xi p tp e m (.Epostincr id l (Csyntax.typeof l)) t := by
+  intro cu hlink le dst sl a tmp htr tf tk
+  cases htr with
+  | tr_postincr_effects _ _ _ ty1 sl1 a1 tmp1 sl2 a2 tmp2 bf' any tmp
+      h1 h2 ht1 hi1 hi2 hd hbf =>
+    subst ty1
+    obtain ⟨rfl, hty1, hev1⟩ := tr_simple_lvalue p tp hp cu e m l b ofs bf hl
+      le sl1 a1 tmp1 h1
+    obtain ⟨le', hex, _⟩ := step_tr_rvalof xi p tp hp cu hlink _ m b ofs bf t v
+      e le a1 sl2 a2 tmp2 tf (.Kseq (make_assign bf' a1 (transl_incrdecr id a2 (Csyntax.typeof l))) tk)
+      hderef hev1 h2 hty1.symm
+    refine ⟨.State tf .Sskip (.Kseq (make_assign bf' a1 (transl_incrdecr id a2 (Csyntax.typeof l))) tk) e le' m, ?_⟩
+    simpa only [List.nil_append, Kseqlist_app sl2 [_] tk, Kseqlist] using hex
+  | tr_postincr_val dst _ _ _ sl1 a1 tmp1 bf' temp ty1 tmp h1 hi1 hin hn1 ht1 hbf =>
+    subst ty1
+    obtain ⟨rfl, hty1, hev1⟩ := tr_simple_lvalue p tp hp cu e m l b ofs bf hl
+      le sl1 a1 tmp1 h1
+    have heq := is_bitfield_access_sound p tp hp cu hlink e le m a1 b ofs bf bf' hev1 hbf
+    subst bf'
+    refine ⟨.State tf .Sskip
+      (Kseqlist (make_assign bf a1 (transl_incrdecr id (.Etempvar temp (Csyntax.typeof l)) (Csyntax.typeof l)) ::
+        final dst (.Etempvar temp (Csyntax.typeof l))) tk) e (PTree.set temp v le) m, ?_⟩
+    apply star_two
+    · exact Clight.step_skip_seq _ _ _ _ _ _
+    · exact step_make_set xi p tp hp temp a1 _ m b ofs bf t v e le tf _ hderef hev1 hty1.symm
+    · rfl
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.AST
+
+private theorem pg4376_external (xi : ExternalCalls) (ef : external_function)
+    (ge1 ge2 : CompCert4Lean.Common.Globalenvs.Senv.t) (vargs : List val) (m : mem)
+    (t : trace) (v : val) (m' : mem)
+    (heq : CompCert4Lean.Common.Globalenvs.Senv.equiv ge1 ge2)
+    (hcall : external_call xi ef ge1 vargs m t v m') :
+    external_call xi ef ge2 vargs m t v m' := by
+  have hbe : ∀ name sg, builtin_or_external_sem xi name sg ge1 vargs m t v m' →
+      builtin_or_external_sem xi name sg ge2 vargs m t v m' := by
+    intro name sg h
+    cases hlookup : CompCert4Lean.Common.Builtins.lookup_builtin_function name sg with
+    | some bf =>
+      simp only [builtin_or_external_sem, hlookup] at h ⊢
+      cases h
+      constructor
+      assumption
+    | none =>
+      simp only [builtin_or_external_sem, hlookup] at h ⊢
+      exact (external_functions_properties xi name sg).ec_symbols_preserved _ _ _ _ _ _ _ heq h
+  cases ef with
+  | EF_external name sg =>
+    exact (external_functions_properties xi name sg).ec_symbols_preserved _ _ _ _ _ _ _ heq hcall
+  | EF_builtin name sg => exact hbe name sg hcall
+  | EF_runtime name sg => exact hbe name sg hcall
+  | EF_vload chunk => exact (volatile_load_ok chunk).ec_symbols_preserved _ _ _ _ _ _ _ heq hcall
+  | EF_vstore chunk => exact (volatile_store_ok chunk).ec_symbols_preserved _ _ _ _ _ _ _ heq hcall
+  | EF_malloc => cases hcall; constructor <;> assumption
+  | EF_free => cases hcall <;> constructor <;> assumption
+  | EF_memcpy sz al => cases hcall; constructor <;> assumption
+  | EF_annot kind text targs =>
+    exact (extcall_annot_ok text targs).ec_symbols_preserved _ _ _ _ _ _ _ heq hcall
+  | EF_annot_val kind text targ =>
+    cases hcall with
+    | extcall_annot_val_sem_intro varg m arg hmatch =>
+      constructor
+      exact eventval_match_preserved ge1 ge2 heq.2.1 heq.1 _ _ _ hmatch
+  | EF_inline_asm text sg clobber =>
+    exact (inline_assembly_properties xi text sg).ec_symbols_preserved _ _ _ _ _ _ _ heq hcall
+  | EF_debug kind text targs => cases hcall; constructor
+
+private theorem pg4376_builtin (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (hp : match_prog p tp) (e : cenv) (m m' : mem) (ef : external_function)
+    (tyargs : List ctype) (args : cexprlist) (ty : ctype)
+    (vargs : List val) (t : trace) (v : val)
+    (heval : eval_simple_list (Csem.globalenv p) e m args tyargs vargs)
+    (hcall : external_call xi ef (Genv.to_senv (Csem.globalenv p).genv_genv) vargs m t v m') :
+    pg4376Local xi p tp e m (.Ebuiltin ef tyargs args ty) t m' (.Eval v ty) := by
+  intro cu hlink le dst sl a tmp htr tf tk
+  have hcall' := pg4376_external xi ef _ _ vargs m t v m' (senv_preserved p tp hp) hcall
+  cases htr with
+  | tr_builtin_effects _ _ _ _ sl al tmp1 any tmp h1 hi =>
+    obtain ⟨rfl, hev⟩ := tr_simple_exprlist p tp hp cu le args sl al tmp1 h1 e m tyargs vargs heval
+    refine ⟨le, [], Or.inl ?_, tr_expr.tr_val_effect _ _ _ _ _, fun _ _ => rfl⟩
+    apply plus_two
+    · exact Clight.step_skip_seq _ _ _ _ _ _
+    · exact Clight.step_builtin _ _ _ _ _ _ _ _ _ _ _ _ _ hev hcall'
+    · rfl
+  | tr_builtin_val dst _ _ _ _ sl al tmp1 id tmp hdst h1 hin hi =>
+    obtain ⟨rfl, hev⟩ := tr_simple_exprlist p tp hp cu le args sl al tmp1 h1 e m tyargs vargs heval
+    refine ⟨PTree.set id v le, final dst (.Etempvar id ty), Or.inl ?_, ?_,
+      pg4376_set_agree _ _ _ _ hin⟩
+    · apply plus_two
+      · exact Clight.step_skip_seq _ _ _ _ _ _
+      · exact Clight.step_builtin _ (some id) _ _ _ _ _ _ _ _ _ _ _ hev hcall'
+      · rfl
+    · exact tr_val_gen _ _ _ _ _ _ _ rfl (pg4376_temp_eval _ _ _ _ _ hin)
+
+private theorem pg4376_call (xi : ExternalCalls) (p : cprogram) (tp : tprogram)
+    (hp : match_prog p tp) (f : cfunction) (C : cexpr → cexpr) (rf : cexpr)
+    (args : cexprlist) (ty : ctype) (k : ccont) (e : cenv) (m : mem)
+    (tyargs : List ctype) (tres : ctype) (cc : calling_convention)
+    (vf : val) (vargs : List val) (fd : cfundef)
+    (hc : leftcontext .RV .RV C)
+    (hclass : classify_fun (Csyntax.typeof rf) = .fun_case_f tyargs tres cc)
+    (hfun : eval_simple_rvalue (Csem.globalenv p) e m rf vf)
+    (hargs : eval_simple_list (Csem.globalenv p) e m args tyargs vargs)
+    (hfind : Genv.find_funct (Csem.globalenv p).genv_genv vf = some fd)
+    (htype : Csyntax.type_of_fundef fd = .Tfunction tyargs tres cc)
+    (s : tstate) (hs : match_states p tp (.ExprState f (C (.Ecall rf args ty)) k e m) s) :
+    ∃ s', plus (Clight.step1 xi) (Clight.globalenv tp) s E0 s' ∧
+      match_states p tp (.Callstate fd vargs (.Kcall f e C ty k) m) s' := by
+  obtain ⟨cu', tfd, hfind', hfd, hlink'⟩ := functions_translated p tp hp vf fd hfind
+  have htype' := (type_of_fundef_preserved cu' fd tfd hfd).trans htype
+  cases hs with
+  | match_exprstates _ _ _ _ _ tf sl tk le dst a tmp cu hlink htf htr hmk =>
+    obtain ⟨dst1, sl1, sl2, a1, tmp1, htr1, hsl, hinc, hrec⟩ :=
+      tr_top_leftcontext tp cu e le m dst (C (.Ecall rf args ty)) sl a tmp htr
+        (.Ecall rf args ty) C rfl hc
+    subst sl
+    cases htr1 with
+    | tr_top_base _ _ _ _ _ htr1 =>
+      cases htr1 with
+      | tr_call_effects _ _ _ slf af tmpf sla al tmpa any tmp1 hf ha hd hi1 hi2 =>
+        obtain ⟨rfl, hty, hevf⟩ := tr_simple_rvalue p tp hp cu e m rf vf hfun
+          le .For_val slf af tmpf hf
+        obtain ⟨rfl, heva⟩ := tr_simple_exprlist p tp hp cu le args sla al tmpa ha e m tyargs vargs hargs
+        refine ⟨.Callstate tfd vargs (.Kcall none tf e le (Kseqlist sl2 tk)) m, ?_, ?_⟩
+        · apply plus_two
+          · exact Clight.step_skip_seq _ _ _ _ _ _
+          · exact Clight.step_call _ _ _ _ _ _ _ _ _ _ _ _ _ _ (hty ▸ hclass) hevf heva hfind' htype'
+          · rfl
+        · apply match_states.match_callstates _ _ _ _ _ _ cu' hlink' hfd
+          intro ce
+          apply match_cont.match_Kcall f e C ty k none tf le sl2 tk a dst tmp cu ce hlink htf hc _ hmk
+          intro v m'
+          exact hrec le m' (.Eval v ty) [] (tr_expr.tr_val_effect _ _ _ _ _) (fun _ _ => rfl) rfl
+      | tr_call_val dst1 _ _ _ slf af tmpf sla al tmpa id tmp1 hdst hf ha hd hin hi1 hi2 =>
+        obtain ⟨rfl, hty, hevf⟩ := tr_simple_rvalue p tp hp cu e m rf vf hfun
+          le .For_val slf af tmpf hf
+        obtain ⟨rfl, heva⟩ := tr_simple_exprlist p tp hp cu le args sla al tmpa ha e m tyargs vargs hargs
+        refine ⟨.Callstate tfd vargs
+          (.Kcall (some id) tf e le (Kseqlist (final dst1 (.Etempvar id ty) ++ sl2) tk)) m, ?_, ?_⟩
+        · apply plus_two
+          · exact Clight.step_skip_seq _ _ _ _ _ _
+          · exact Clight.step_call _ _ _ _ _ _ _ _ _ _ _ _ _ _ (hty ▸ hclass) hevf heva hfind' htype'
+          · rfl
+        · apply match_states.match_callstates _ _ _ _ _ _ cu' hlink' hfd
+          intro ce
+          apply match_cont.match_Kcall f e C ty k (some id) tf le
+            (final dst1 (.Etempvar id ty) ++ sl2) tk a dst tmp cu ce hlink htf hc _ hmk
+          intro v m'
+          exact hrec (PTree.set id v le) m' (.Eval v ty) (final dst1 (.Etempvar id ty))
+            (tr_val_gen _ _ _ _ _ _ _ rfl (pg4376_temp_eval _ _ _ _ _ hin))
+            (pg4376_set_agree _ _ _ _ hin) rfl
+
+set_option maxHeartbeats 1600000 in
+ theorem estep_simulation : estep_simulationStatement := by
+  intro xi p tp hp S1 t S2 hstep s hs
+  cases hstep with
+  | @step_expr f r k e m v ty heval hnot hty =>
+    subst ty
+    exact pg4376_expr xi p tp hp f r k e m v heval (by cases r <;> exact hnot) s hs
+  | @step_rvalof_volatile f C l ty k e m b ofs bf t v hc hl hd ht hv =>
+    subst ty
+    exact pg4376_lift xi p tp e m (.Evalof l (Csyntax.typeof l)) t m (.Eval v (Csyntax.typeof l))
+      (by intro v ty h; cases h) rfl
+      (pg4376_volatile xi p tp hp e m l b ofs bf t v hl hd hv) f k C hc s hs
+  | @step_seqand_true f C r1 r2 ty k e m v hc hr hb =>
+    exact pg4376_lift xi p tp e m (.Eseqand r1 r2 ty) E0 m (.Eparen r2 type_bool ty)
+      (by intro v ty h; cases h) rfl
+      (pg4376_seqand_continue xi p tp hp e m r1 r2 ty v hr hb) f k C hc s hs
+  | @step_seqand_false f C r1 r2 ty k e m v hc hr hb =>
+    exact pg4376_lift xi p tp e m (.Eseqand r1 r2 ty) E0 m (.Eval (.Vint Lib.Integers.Int.zero) ty)
+      (by intro v ty h; cases h) rfl
+      (pg4376_seqand_stop xi p tp hp e m r1 r2 ty v hr hb) f k C hc s hs
+  | @step_seqor_true f C r1 r2 ty k e m v hc hr hb =>
+    exact pg4376_lift xi p tp e m (.Eseqor r1 r2 ty) E0 m (.Eval (.Vint Lib.Integers.Int.one) ty)
+      (by intro v ty h; cases h) rfl
+      (pg4376_seqor_stop xi p tp hp e m r1 r2 ty v hr hb) f k C hc s hs
+  | @step_seqor_false f C r1 r2 ty k e m v hc hr hb =>
+    exact pg4376_lift xi p tp e m (.Eseqor r1 r2 ty) E0 m (.Eparen r2 type_bool ty)
+      (by intro v ty h; cases h) rfl
+      (pg4376_seqor_continue xi p tp hp e m r1 r2 ty v hr hb) f k C hc s hs
+  | @step_condition f C r1 r2 r3 ty k e m v b hc hr hb =>
+    exact pg4376_lift xi p tp e m (.Econdition r1 r2 r3 ty) E0 m (.Eparen (if b then r2 else r3) ty ty)
+      (by intro v ty h; cases h) rfl
+      (pg4376_condition xi p tp hp e m r1 r2 r3 ty v b hr hb) f k C hc s hs
+  | @step_assign f C l r ty k e m b ofs bf v v1 t m' v' hc hl hr hcast ha ht =>
+    subst ty
+    exact pg4376_lift xi p tp e m (.Eassign l r (Csyntax.typeof l)) t m' (.Eval v' (Csyntax.typeof l))
+      (by intro v ty h; cases h) rfl
+      (pg4376_assign xi p tp hp e m m' l r b ofs bf t v v1 v' hl hr hcast ha) f k C hc s hs
+  | @step_assignop f C op l r tyres ty k e m b ofs bf v1 v2 v3 v4 t1 t2 m' v' t
+      hc hl hd hr hop hcast ha ht htrace =>
+    subst ty t
+    exact pg4376_lift xi p tp e m (.Eassignop op l r tyres (Csyntax.typeof l)) (Eapp t1 t2) m'
+      (.Eval v' (Csyntax.typeof l)) (by intro v ty h; cases h) rfl
+      (pg4376_assignop xi p tp hp e m m' op l r tyres b ofs bf t1 t2 v1 v2 v3 v4 v'
+        hl hd hr hop hcast ha) f k C hc s hs
+  | @step_assignop_stuck f C op l r tyres ty k e m b ofs bf v1 v2 t hc hl hd hr hstuck ht =>
+    subst ty
+    exact pg4376_stuck_lift xi p tp e m (.Eassignop op l r tyres (Csyntax.typeof l)) t
+      (by intro v ty h; cases h)
+      (pg4376_assignop_prefix xi p tp hp e m op l r tyres b ofs bf t v1 v2 hl hd hr) f k C hc s hs
+  | @step_postincr f C id l ty k e m b ofs bf v1 v2 v3 t1 t2 m' v' t hc hl hd hop hcast ha ht htrace =>
+    subst ty t
+    exact pg4376_lift xi p tp e m (.Epostincr id l (Csyntax.typeof l)) (Eapp t1 t2) m'
+      (.Eval v1 (Csyntax.typeof l)) (by intro v ty h; cases h) rfl
+      (pg4376_postincr xi p tp hp e m m' id l b ofs bf t1 t2 v1 v2 v3 v' hl hd hop hcast ha)
+      f k C hc s hs
+  | @step_postincr_stuck f C id l ty k e m b ofs bf v1 t hc hl hd hstuck ht =>
+    subst ty
+    exact pg4376_stuck_lift xi p tp e m (.Epostincr id l (Csyntax.typeof l)) t
+      (by intro v ty h; cases h)
+      (pg4376_postincr_prefix xi p tp hp e m id l b ofs bf t v1 hl hd) f k C hc s hs
+  | @step_comma f C r1 r2 ty k e m v hc hr ht =>
+    exact pg4376_lift xi p tp e m (.Ecomma r1 r2 ty) E0 m r2
+      (by intro v ty h; cases h) ht.symm
+      (pg4376_comma xi p tp hp e m r1 r2 ty v hr) f k C hc s hs
+  | @step_paren f C r tycast ty k e m v1 v hc hr hcast =>
+    exact pg4376_lift xi p tp e m (.Eparen r tycast ty) E0 m (.Eval v ty)
+      (by intro v ty h; cases h) rfl
+      (pg4376_paren xi p tp hp e m r tycast ty v1 v hr hcast) f k C hc s hs
+  | @step_call f C rf args ty k e m tyargs tres cc vf vargs fd hc hclass hf ha hfind ht =>
+    obtain ⟨s', hex, hm⟩ := pg4376_call xi p tp hp f C rf args ty k e m tyargs tres cc vf vargs fd
+      hc hclass hf ha hfind ht s hs
+    exact ⟨s', Or.inl hex, hm⟩
+  | @step_builtin f C ef tyargs args ty k e m vargs t v m' hc ha hcall =>
+    exact pg4376_lift xi p tp e m (.Ebuiltin ef tyargs args ty) t m' (.Eval v ty)
+      (by intro v ty h; cases h) rfl
+      (pg4376_builtin xi p tp hp e m m' ef tyargs args ty vargs t v ha hcall) f k C hc s hs
+
+end
+end CompCert4Lean.Cfrontend.SimplExprproof

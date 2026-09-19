@@ -8529,3 +8529,72 @@ theorem divu_pow2_proof : divu_pow2 := by
   exact (shru_div_two_p_proof x logn).symm
 
 end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem suffix_bits_signed_stable (z i : Z)
+    (hz : (-2147483648 : _root_.Int) ≤ intOfZ z ∧ intOfZ z ≤ 2147483647)
+    (hi : (32 : _root_.Int) ≤ intOfZ i) :
+    zTestbit z i = zTestbit z (zSub zwordsize zOne) := by
+  cases i with
+  | Z0 =>
+      change (32 : _root_.Int) ≤ 0 at hi
+      omega
+  | Zneg p =>
+      change (32 : _root_.Int) ≤ -_root_.Int.ofNat (posToNat p) at hi
+      have hp := posToNat_positive p
+      simp only [_root_.Int.ofNat_eq_natCast] at hi
+      omega
+  | Zpos p =>
+      have hip : 31 ≤ posToNat p := by
+        change (32 : _root_.Int) ≤ _root_.Int.ofNat (posToNat p) at hi
+        simp only [_root_.Int.ofNat_eq_natCast] at hi
+        omega
+      have hpow : (2 : Nat) ^ 31 ≤ 2 ^ posToNat p :=
+        Nat.pow_le_pow_right (by decide) hip
+      cases z with
+      | Z0 => rfl
+      | Zpos q =>
+          have hq : posToNat q < 2 ^ 31 := by
+            change (-2147483648 : _root_.Int) ≤ _root_.Int.ofNat (posToNat q) ∧
+              _root_.Int.ofNat (posToNat q) ≤ 2147483647 at hz
+            change posToNat q < 2147483648
+            simp only [_root_.Int.ofNat_eq_natCast] at hz
+            omega
+          change Nat.testBit (posToNat q) (posToNat p) =
+            Nat.testBit (posToNat q) 31
+          rw [Nat.testBit_lt_two_pow (Nat.lt_of_lt_of_le hq hpow),
+            Nat.testBit_lt_two_pow hq]
+      | Zneg q =>
+          have hq : posToNat q - 1 < 2 ^ 31 := by
+            change (-2147483648 : _root_.Int) ≤ -_root_.Int.ofNat (posToNat q) ∧
+              -_root_.Int.ofNat (posToNat q) ≤ 2147483647 at hz
+            change posToNat q - 1 < 2147483648
+            simp only [_root_.Int.ofNat_eq_natCast] at hz
+            omega
+          change (!Nat.testBit (posToNat q - 1) (posToNat p)) =
+            (!Nat.testBit (posToNat q - 1) 31)
+          rw [Nat.testBit_lt_two_pow (Nat.lt_of_lt_of_le hq hpow),
+            Nat.testBit_lt_two_pow hq]
+
+theorem bits_signed_proof : bits_signed := by
+  intro x i hi
+  cases hcmp : CompCert4Lean.Lib.Coqlib.zlt i zwordsize with
+  | left hlt =>
+      simp only [zltSelect, sumboolSelect, hcmp]
+      rw [suffix_testbit_unsigned x i hi]
+      exact CompCert4Lean.Lib.Zbits.same_bits_eqmod wordsize
+        (signed x) (unsigned x) i (eqm_signed_unsigned_proof x) ⟨hi, hlt⟩
+  | right hge =>
+      simp only [zltSelect, sumboolSelect, hcmp]
+      have hstable := suffix_bits_signed_stable (signed x) i
+        (signed_range_proof x) hge
+      rw [hstable]
+      have htop := testbit_repr_proof (signed x) (zSub zwordsize zOne)
+        (by change (0 : _root_.Int) ≤ 31 ∧ (31 : _root_.Int) < 32; omega)
+      rw [repr_signed_proof] at htop
+      exact htop.symm
+
+end CompCert4Lean.Lib.Integers.Int

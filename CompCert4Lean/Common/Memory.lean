@@ -7271,3 +7271,192 @@ theorem loadbytes_storebytes_disjoint : loadbytes_storebytes_disjointStatement :
 
 end Mem
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem drop_mapped_inj : drop_mapped_injStatement := by
+  intro f m1 m2 b1 b2 delta lo hi p m1' hmem hdrop hno hf
+  have hzadd (x y : Z) : intOfZ (zAdd x y) = intOfZ x + intOfZ y := by
+    change intOfZ (zOfInt (intOfZ x + intOfZ y)) = _
+    rw [intOfZ_zOfInt]
+  have hzsub (x y : Z) : intOfZ (zSub x y) = intOfZ x - intOfZ y := by
+    change intOfZ (zOfInt (intOfZ x - intOfZ y)) = _
+    rw [intOfZ_zOfInt]
+  have hzadd_sub (x y : Z) : zAdd (zSub x y) y = x := by
+    apply intOfZ_injective
+    rw [hzadd, hzsub]
+    omega
+  have hsrcRange := range_perm_drop_1 m1 b1 lo hi p m1' hdrop
+  have hdstRange : range_perm m2 b2 (zAdd lo delta) (zAdd hi delta)
+      Cur Freeable := by
+    intro ofs' hofs'
+    rw [← hzadd_sub ofs' delta]
+    apply perm_inj f m1 m2 b1 (zSub ofs' delta) Cur Freeable b2 delta hmem
+      (hsrcRange (zSub ofs' delta) ?_) hf
+    rcases hofs' with ⟨hlo', hhi'⟩
+    constructor
+    · change intOfZ lo ≤ intOfZ (zSub ofs' delta)
+      rw [hzsub]
+      change intOfZ (zAdd lo delta) ≤ intOfZ ofs' at hlo'
+      rw [hzadd] at hlo'
+      omega
+    · change intOfZ (zSub ofs' delta) < intOfZ hi
+      rw [hzsub]
+      change intOfZ ofs' < intOfZ (zAdd hi delta) at hhi'
+      rw [hzadd] at hhi'
+      omega
+  rcases range_perm_drop_2 m2 b2 (zAdd lo delta) (zAdd hi delta) p hdstRange with
+    ⟨m2', hdrop2⟩
+  refine ⟨m2', hdrop2, ?_⟩
+  constructor
+  · intro b1' b2' delta' ofs k p' hmap hperm'
+    have hperm_old : perm m1 b1' ofs k p' :=
+      perm_drop_4 m1 b1 lo hi p m1' hdrop b1' ofs k p' hperm'
+    have hperm_target : perm m2 b2' (zAdd ofs delta') k p' :=
+      hmem.mi_perm b1' b2' delta' ofs k p' hmap hperm_old
+    by_cases hsrc : b1' = b1
+    · subst b1'
+      have hpair : (b2', delta') = (b2, delta) :=
+        Option.some.inj (hmap.symm.trans hf)
+      cases hpair
+      by_cases houtlo : zLt (zAdd ofs delta) (zAdd lo delta)
+      · exact perm_drop_3 m2 b2 (zAdd lo delta) (zAdd hi delta) p m2'
+          hdrop2 b2 (zAdd ofs delta) k p' (Or.inr (Or.inl houtlo))
+          hperm_target
+      · by_cases outhi : zLe (zAdd hi delta) (zAdd ofs delta)
+        · exact perm_drop_3 m2 b2 (zAdd lo delta) (zAdd hi delta) p m2'
+            hdrop2 b2 (zAdd ofs delta) k p' (Or.inr (Or.inr outhi))
+            hperm_target
+        · have hbounds : zLe lo ofs ∧ zLt ofs hi := by
+            constructor
+            · change intOfZ lo ≤ intOfZ ofs
+              have h := houtlo
+              change ¬ intOfZ (zAdd ofs delta) < intOfZ (zAdd lo delta) at h
+              have h' : ¬ (intOfZ ofs + intOfZ delta < intOfZ lo + intOfZ delta) := by
+                simpa only [hzadd] using h
+              omega
+            · change intOfZ ofs < intOfZ hi
+              have h := outhi
+              change ¬ intOfZ (zAdd hi delta) ≤ intOfZ (zAdd ofs delta) at h
+              have h' : ¬ (intOfZ hi + intOfZ delta ≤ intOfZ ofs + intOfZ delta) := by
+                simpa only [hzadd] using h
+              omega
+          apply perm_implies m2' b2 (zAdd ofs delta) k p p'
+            (perm_drop_1 m2 b2 (zAdd lo delta) (zAdd hi delta) p m2'
+              hdrop2 (zAdd ofs delta) k
+              (by
+                constructor
+                · exact by
+                    have hb : intOfZ lo ≤ intOfZ ofs := by
+                      change intOfZ lo ≤ intOfZ ofs
+                      exact hbounds.1
+                    change intOfZ (zAdd lo delta) ≤ intOfZ (zAdd ofs delta)
+                    rw [hzadd lo delta, hzadd ofs delta]
+                    omega
+                · exact by
+                    have hb : intOfZ ofs < intOfZ hi := by
+                      change intOfZ ofs < intOfZ hi
+                      exact hbounds.2
+                    change intOfZ (zAdd ofs delta) < intOfZ (zAdd hi delta)
+                    rw [hzadd ofs delta, hzadd hi delta]
+                    omega))
+            (perm_drop_2 m1 b1 lo hi p m1' hdrop ofs k p' hbounds hperm')
+    · by_cases hdst : b2' = b2
+      · subst b2'
+        by_cases houtlo : zLt (zAdd ofs delta') (zAdd lo delta)
+        · exact perm_drop_3 m2 b2 (zAdd lo delta) (zAdd hi delta) p m2'
+            hdrop2 b2 (zAdd ofs delta') k p'
+            (Or.inr (Or.inl houtlo)) hperm_target
+        · by_cases outhi : zLe (zAdd hi delta) (zAdd ofs delta')
+          · exact perm_drop_3 m2 b2 (zAdd lo delta) (zAdd hi delta) p m2'
+              hdrop2 b2 (zAdd ofs delta') k p'
+              (Or.inr (Or.inr outhi)) hperm_target
+          · have hlow : zLe (zAdd lo delta) (zAdd ofs delta') := by
+              change intOfZ (zAdd lo delta) ≤ intOfZ (zAdd ofs delta')
+              have h := houtlo
+              change ¬ intOfZ (zAdd ofs delta') < intOfZ (zAdd lo delta) at h
+              omega
+            have hhigh : zLt (zAdd ofs delta') (zAdd hi delta) := by
+              change intOfZ (zAdd ofs delta') < intOfZ (zAdd hi delta)
+              have h := outhi
+              change ¬ intOfZ (zAdd hi delta) ≤ intOfZ (zAdd ofs delta') at h
+              omega
+            have hsrcBounds : zLe lo (zSub (zAdd ofs delta') delta) ∧
+                zLt (zSub (zAdd ofs delta') delta) hi := by
+              constructor
+              · change intOfZ lo ≤ intOfZ (zSub (zAdd ofs delta') delta)
+                rw [hzsub, hzadd ofs delta']
+                have hlow' := hlow
+                change intOfZ (zAdd lo delta) ≤ intOfZ (zAdd ofs delta') at hlow'
+                rw [hzadd lo delta, hzadd ofs delta'] at hlow'
+                omega
+              · change intOfZ (zSub (zAdd ofs delta') delta) < intOfZ hi
+                rw [hzsub, hzadd ofs delta']
+                have hhigh' := hhigh
+                change intOfZ (zAdd ofs delta') < intOfZ (zAdd hi delta) at hhigh'
+                rw [hzadd ofs delta', hzadd hi delta] at hhigh'
+                omega
+            have hpq : perm m1 b1' ofs Max Memtype.Nonempty := by
+              apply perm_implies m1 b1' ofs Max p' Memtype.Nonempty
+                (perm_max m1 b1' ofs k p' hperm_old)
+                (perm_any_N p')
+            have hpq' : perm m1 b1 (zSub (zAdd ofs delta') delta)
+                Max Memtype.Nonempty := by
+              apply perm_implies m1 b1 (zSub (zAdd ofs delta') delta)
+                Max Freeable Memtype.Nonempty
+                (perm_cur_max m1 b1 (zSub (zAdd ofs delta') delta) Freeable
+                  (hsrcRange (zSub (zAdd ofs delta') delta) hsrcBounds))
+                (perm_any_N Freeable)
+            have hcontra := hno b1' b2 delta' b1 b2 delta ofs
+              (zSub (zAdd ofs delta') delta) (by exact hsrc) hmap hf hpq hpq'
+            rcases hcontra with hne | hne
+            · exact (hne rfl).elim
+            · apply False.elim
+              apply hne
+              apply intOfZ_injective
+              simp only [hzadd, hzsub]
+              omega
+      · exact perm_drop_3 m2 b2 (zAdd lo delta) (zAdd hi delta) p m2'
+          hdrop2 b2' (zAdd ofs delta') k p' (Or.inl hdst) hperm_target
+  · intro b1' b2' delta' chunk ofs p' hmap hrange
+    apply hmem.mi_align b1' b2' delta' chunk ofs p' hmap
+    intro q hq
+    exact perm_drop_4 m1 b1 lo hi p m1' hdrop b1' q Max p'
+      (hrange q hq)
+  · intro b1' ofs b2' delta' hmap hperm'
+    have hperm_old : perm m1 b1' ofs Cur Readable :=
+      perm_drop_4 m1 b1 lo hi p m1' hdrop b1' ofs Cur Readable hperm'
+    have hmemval := hmem.mi_memval b1' ofs b2' delta' hmap hperm_old
+    have hcont1 : m1'.mem_contents = m1.mem_contents := by
+      have hd := hdrop
+      unfold drop_perm at hd
+      cases hdec : range_perm_dec m1 b1 lo hi Cur Freeable with
+      | right _ => simp [hdec] at hd
+      | left _ =>
+          simp [hdec] at hd
+          cases hd
+          rfl
+    have hcont2 : m2'.mem_contents = m2.mem_contents := by
+      have hd := hdrop2
+      unfold drop_perm at hd
+      cases hdec : range_perm_dec m2 b2 (zAdd lo delta) (zAdd hi delta)
+          Cur Freeable with
+      | right _ => simp [hdec] at hd
+      | left _ =>
+          simp [hdec] at hd
+          cases hd
+          rfl
+    rw [hcont1, hcont2]
+    exact hmemval
+
+end Mem
+
+end CompCert4Lean.Common.Memory

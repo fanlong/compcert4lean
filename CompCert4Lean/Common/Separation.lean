@@ -3113,3 +3113,16 @@ theorem alloc_parallel_rule : alloc_parallel_ruleStatement := by
 theorem globalenv_inject_obligation_2 : globalenv_inject_obligation_2Statement := by
   intro F V ge j m b hpred hfalse
   exact False.elim hfalse
+
+theorem globalenv_inject_preserves_globals : globalenv_inject_preserves_globalsStatement := by
+  intro F V ge j m hpred
+  rcases hpred with ⟨bound, hbound, hge⟩
+  cases hge with
+  | globalenv_preserved_intro hdom himg hsym hfun hvar =>
+      refine ⟨?_, ?_, ?_⟩
+      · intro id b hfind
+        exact hdom b (hsym id b hfind)
+      · intro b gv hfind
+        exact hdom b (hvar b gv hfind)
+      · intro b1 b2 delta gv hfind hmap
+        exact (himg b1 b2 delta hmap (hvar b2 gv hfind)).symm

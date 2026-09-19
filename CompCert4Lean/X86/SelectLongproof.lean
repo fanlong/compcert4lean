@@ -3599,3 +3599,117 @@ theorem eval_shrlu
       · rfl
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+private theorem selectlong_val_addl_zero (x : val) :
+    Val.lessdef (Val.addl x (.Vlong CompCert4Lean.Lib.Integers.Int64.zero)) x := by
+  cases x with
+  | Vlong q =>
+      change Val.lessdef (.Vlong (CompCert4Lean.Lib.Integers.Int64.add q
+        (CompCert4Lean.Lib.Integers.Int64.repr .Z0))) (.Vlong q)
+      have hadd : CompCert4Lean.Lib.Integers.Int64.add q
+          (CompCert4Lean.Lib.Integers.Int64.repr .Z0) = q :=
+        shll_add_zero_aux q
+      rw [hadd]
+      exact Val.lessdef_refl _
+  | Vptr b ofs =>
+      change Val.lessdef
+        (.Vptr b (CompCert4Lean.Lib.Integers.Ptrofs.add ofs
+          (CompCert4Lean.Lib.Integers.Ptrofs.of_int64
+            CompCert4Lean.Lib.Integers.Int64.zero))) (.Vptr b ofs)
+      have hzero : CompCert4Lean.Lib.Integers.Ptrofs.of_int64
+          CompCert4Lean.Lib.Integers.Int64.zero =
+          CompCert4Lean.Lib.Integers.Ptrofs.zero := by rfl
+      rw [hzero]
+      have hadd : CompCert4Lean.Lib.Integers.Ptrofs.add ofs
+          CompCert4Lean.Lib.Integers.Ptrofs.zero = ofs := by
+        change CompCert4Lean.Lib.Integers.Int64.add ofs
+            (CompCert4Lean.Lib.Integers.Int64.repr .Z0) = ofs
+        exact shll_add_zero_aux ofs
+      rw [hadd]
+      exact Val.lessdef_refl _
+  | Vundef => exact Val.lessdef_refl _
+  | Vint _ => exact Val.lessdef_undef _
+  | Vfloat _ => exact Val.lessdef_undef _
+  | Vsingle _ => exact Val.lessdef_undef _
+
+private theorem selectlong_int64_add_comm
+    (x y : CompCert4Lean.Lib.Integers.Int64.int) :
+    CompCert4Lean.Lib.Integers.Int64.add x y =
+      CompCert4Lean.Lib.Integers.Int64.add y x := by
+  exact CompCert4Lean.Lib.Integers.Ptrofs.add_commut_proof_api x y
+
+theorem eval_addlimm
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_addlimmStatement binary64_certificate binary32_certificate := by
+  unfold eval_addlimmStatement unary_constructor_sound
+  intro xi prog sp e m n le a x h
+  unfold addlimm
+  by_cases hz : CompCert4Lean.Lib.Integers.Int64.eq n
+      CompCert4Lean.Lib.Integers.Int64.zero = true
+  · have hn := int64_eq_true_zero n hz
+    rw [if_pos hz]
+    refine ⟨x, h, ?_⟩
+    subst n
+    exact selectlong_val_addl_zero x
+  · rw [if_neg hz]
+    cases hmatch : addlimm_match a with
+    | addlimm_case1 m0 =>
+        have hx : x = .Vlong m0 := eval_longconst_value xi
+          (Genv.globalenv prog) sp e m le m0 x (by simpa [hmatch] using h)
+        subst x
+        refine ⟨.Vlong (CompCert4Lean.Lib.Integers.Int64.add n m0), ?_, ?_⟩
+        · exact eval_longconst xi prog sp e m le
+            (CompCert4Lean.Lib.Integers.Int64.add n m0)
+        · change Val.lessdef
+            (.Vlong (CompCert4Lean.Lib.Integers.Int64.add m0 n))
+            (.Vlong (CompCert4Lean.Lib.Integers.Int64.add n m0))
+          rw [selectlong_int64_add_comm]
+          exact Val.lessdef_refl _
+    | addlimm_case2 addr args =>
+        cases h with
+        | eval_Eop le' op al vl v hargs hop =>
+            change eval_addressing64 (Genv.globalenv prog) sp addr vl = some x at hop
+            have hnew := CompCert4Lean.X86.Op.eval_offset_addressing_total_64
+              (F := CompCert4Lean.Backend.CminorSel.fundef) (V := Unit)
+              (Genv.globalenv prog) sp addr vl
+              (CompCert4Lean.Lib.Integers.Int64.signed n) x hop
+            refine ⟨Val.addl x (.Vlong n), ?_, Val.lessdef_refl _⟩
+            simp only [hmatch]
+            apply eval_expr.eval_Eop le
+              (Oleal (offset_addressing_total addr
+                (CompCert4Lean.Lib.Integers.Int64.signed n)))
+              args vl (Val.addl x (.Vlong n))
+            · exact hargs
+            · change eval_addressing64 (Genv.globalenv prog) sp
+                (offset_addressing_total addr
+                  (CompCert4Lean.Lib.Integers.Int64.signed n)) vl =
+                some (Val.addl x (.Vlong n))
+              simpa only [shrl_int64_repr_signed] using hnew
+    | addlimm_default e1 =>
+        refine ⟨Val.addl x (.Vlong n), ?_, Val.lessdef_refl _⟩
+        simp only [hmatch]
+        apply eval_expr.eval_Eop le
+          (Oleal (Aindexed
+            (CompCert4Lean.Lib.Integers.Int64.signed n)))
+          (Econs a Enil) [x] (Val.addl x (.Vlong n))
+        · exact eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+        · change eval_addressing64 (Genv.globalenv prog) sp
+            (Aindexed (CompCert4Lean.Lib.Integers.Int64.signed n)) [x] =
+            some (Val.addl x (.Vlong n))
+          simp [eval_addressing64]
+          rw [shrl_int64_repr_signed]
+
+end CompCert4Lean.X86.SelectLongproof

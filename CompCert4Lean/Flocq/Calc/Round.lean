@@ -2692,3 +2692,18 @@ theorem truncate_correct' : ∀ (ctx : ExactRealContext)
               Or.inr ⟨rfl, hformat⟩⟩
 
 end CompCert4Lean.Flocq.Calc.Round
+
+namespace CompCert4Lean.Flocq.Calc.Round
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem truncate_correct : ∀ (ctx : ExactRealContext)
+    (magnitude : ExactMagnitude ctx),
+    truncate_correctStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x m e l hx hbetween hcase
+  have hcase' := cexp_inbetween_float_loc_Exact ctx magnitude beta fexp
+    hvalid x m e l hx hbetween
+  exact truncate_correct' ctx magnitude beta fexp hvalid x m e l hx hbetween
+    (hcase'.mpr hcase)
+
+end CompCert4Lean.Flocq.Calc.Round

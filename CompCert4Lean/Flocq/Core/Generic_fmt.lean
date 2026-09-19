@@ -4707,3 +4707,72 @@ theorem cexp_fexp :
   exact cexp_fexp_pos ctx magnitude beta fexp (Exact.Rabs ctx x) ex hbounds
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem mag_generic_gt :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      mag_generic_gtStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x hx0 hformat
+  apply Int.lt_of_not_ge
+  intro hge
+  have hmag_cexp : Zle (Exact.mag magnitude beta x)
+      (Exact.cexp ctx magnitude beta fexp x) := by
+    exact hge
+  have hm := (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_bound hx0
+  have hsmall := scaled_mantissa_lt_1 ctx magnitude beta fexp hvalid x
+    (Exact.mag magnitude beta x) hm.2 hmag_cexp
+  have hscaled := scaled_mantissa_generic ctx magnitude beta fexp x hformat
+  rw [hscaled] at hsmall
+  have habs : Exact.IZR ctx (Zabs (Exact.Ztrunc ctx
+      (Exact.scaled_mantissa ctx magnitude beta fexp x))) =
+      Exact.Rabs ctx (Exact.IZR ctx (Exact.Ztrunc ctx
+        (Exact.scaled_mantissa ctx magnitude beta fexp x))) := by
+    exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rbasic_fun.abs_IZR ctx _
+  rw [← habs] at hsmall
+  have hzlt : Zlt
+      (Zabs (Exact.Ztrunc ctx (Exact.scaled_mantissa ctx magnitude beta fexp x)))
+      Zone :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.lt_IZR ctx
+      (Zabs (Exact.Ztrunc ctx (Exact.scaled_mantissa ctx magnitude beta fexp x)))
+      Zone hsmall
+  have hzzero : Exact.Ztrunc ctx
+      (Exact.scaled_mantissa ctx magnitude beta fexp x) = Z0 := by
+    generalize hz : Exact.Ztrunc ctx
+      (Exact.scaled_mantissa ctx magnitude beta fexp x) = z at hzlt ⊢
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z = 0
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zabs z) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone at hzlt
+    cases z with
+    | Z0 => rfl
+    | Zpos p =>
+        simp only [Zabs,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hzlt
+        simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ] at hzlt
+        have hone : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.xH = 1 := by rfl
+        rw [hone] at hzlt
+        have hp := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+        omega
+    | Zneg p =>
+        simp only [Zabs,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hzlt
+        simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ] at hzlt
+        have hone : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.xH = 1 := by rfl
+        rw [hone] at hzlt
+        have hp := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+        omega
+  unfold Exact.generic_format at hformat
+  rw [hzzero] at hformat
+  have hzero := CompCert4Lean.Flocq.Core.Float_prop.F2R_0 ctx beta
+    (Exact.cexp ctx magnitude beta fexp x)
+  change Exact.F2R ctx (Float beta Z0
+      (Exact.cexp ctx magnitude beta fexp x)) = Exact.R0 ctx at hzero
+  rw [hzero] at hformat
+  exact hx0 hformat
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

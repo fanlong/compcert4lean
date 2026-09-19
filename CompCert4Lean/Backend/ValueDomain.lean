@@ -5716,3 +5716,10 @@ theorem vmatch_lub_l : vmatch_lub_lStatement := by
   exact vmatch_lub_l_select_aux
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem vmatch_lub_r : vmatch_lub_rStatement := by
+  exact vmatch_lub_r_select_aux
+
+end CompCert4Lean.Backend.ValueDomain

@@ -8378,3 +8378,28 @@ theorem eqmod_lagree : eqmod_lagreeStatement := by
       (Int64.unsigned (Int64.repr y)) hux' hmid
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem ror_sound : ror_soundStatement := by
+  intro v w x n h
+  cases x with
+  | Nothing =>
+      trivial
+  | I m =>
+      cases v <;> cases w <;>
+        simp [ror, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.ror] at h ⊢
+      exact iagree_ror _ _ _ _ h
+  | L m =>
+      cases v <;> cases w <;>
+        simp [ror, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.ror] at h ⊢
+  | All =>
+      cases h with
+      | lessdef_refl v =>
+          exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+      | lessdef_undef v =>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+
+end CompCert4Lean.Backend.NeedDomain

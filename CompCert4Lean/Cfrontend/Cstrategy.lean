@@ -3858,3 +3858,153 @@ theorem estep_simulation
       exact Or.inl (Csem.estep.step_rred (.builtin hcast hext) hC)
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+open CompCert4Lean.Cfrontend.Csem
+open CompCert4Lean.Cfrontend.Csyntax
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Common.Events
+
+set_option maxHeartbeats 800000 in
+ theorem can_estep
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    can_estepStatement := by
+  classical
+  unfold can_estepStatement
+  intro xi ge f a k e m hsafe hnotval
+  rcases decompose_topexpr xi ge f k e m a hsafe with hs | ⟨C, a', ha, hs, hl⟩
+  · rcases simple_can_eval xi ge f k e m a .RV (fun x => x) hs (.ctx_top .RV) hsafe with
+      ⟨v, hv⟩
+    exact ⟨_, _, estep.step_expr hv hnotval rfl⟩
+  · subst a
+    have hC := leftcontext_context _ _ _ hl
+    cases a' <;> simp only [simple_side_effect] at hs
+    case Evalof l ty =>
+      rcases simple_can_eval_lval xi ge f k e m l (fun x => C (.Evalof x ty))
+        hs.1 (context_compose _ _ _ hC _ _ (.rvalof (.ctx_top .LV))) hsafe with
+        ⟨b, ofs, bf, hv, hs1⟩
+      rcases safe_inv xi ge e .RV C f _ k m hs1 hC with ⟨ht, t, v, hd⟩
+      exact ⟨_, _, estep.step_rvalof_volatile hl hv hd ht.symm (ht ▸ hs.2)⟩
+    case Eseqand r1 r2 ty =>
+      rcases simple_can_eval_rval xi ge f k e m r1 (fun x => C (.Eseqand x r2 ty))
+        hs (context_compose _ _ _ hC _ _ (.seqand (.ctx_top .RV))) hsafe with
+        ⟨v, hv, hs1⟩
+      rcases safe_inv xi ge e .RV C f _ k m hs1 hC with ⟨b, hb⟩
+      cases b
+      · exact ⟨_, _, estep.step_seqand_false hl hv hb⟩
+      · exact ⟨_, _, estep.step_seqand_true hl hv hb⟩
+    case Eseqor r1 r2 ty =>
+      rcases simple_can_eval_rval xi ge f k e m r1 (fun x => C (.Eseqor x r2 ty))
+        hs (context_compose _ _ _ hC _ _ (.seqor (.ctx_top .RV))) hsafe with
+        ⟨v, hv, hs1⟩
+      rcases safe_inv xi ge e .RV C f _ k m hs1 hC with ⟨b, hb⟩
+      cases b
+      · exact ⟨_, _, estep.step_seqor_false hl hv hb⟩
+      · exact ⟨_, _, estep.step_seqor_true hl hv hb⟩
+    case Econdition r1 r2 r3 ty =>
+      rcases simple_can_eval_rval xi ge f k e m r1
+        (fun x => C (.Econdition x r2 r3 ty))
+        hs (context_compose _ _ _ hC _ _ (.condition (.ctx_top .RV))) hsafe with
+        ⟨v, hv, hs1⟩
+      rcases safe_inv xi ge e .RV C f _ k m hs1 hC with ⟨b, hb⟩
+      exact ⟨_, _, estep.step_condition hl hv hb⟩
+    case Eassign l r ty =>
+      rcases simple_can_eval_lval xi ge f k e m l (fun x => C (.Eassign x r ty))
+        hs.1 (context_compose _ _ _ hC _ _ (.assignLeft (.ctx_top .LV))) hsafe with
+        ⟨b, ofs, bf, hv1, hs1⟩
+      rcases simple_can_eval_rval xi ge f k e m r
+        (fun x => C (.Eassign (.Eloc b ofs bf (typeof l)) x ty))
+        hs.2 (context_compose _ _ _ hC _ _ (.assignRight (.ctx_top .RV))) hs1 with
+        ⟨v, hv2, hs2⟩
+      rcases safe_inv xi ge e .RV C f _ k m hs2 hC with
+        ⟨v1, m', v', t, ht, hcast, ha⟩
+      exact ⟨_, _, estep.step_assign hl hv1 hv2 hcast ha ht⟩
+    case Eassignop op l r tyres ty =>
+      rcases simple_can_eval_lval xi ge f k e m l
+        (fun x => C (.Eassignop op x r tyres ty))
+        hs.1 (context_compose _ _ _ hC _ _ (.assignopLeft (.ctx_top .LV))) hsafe with
+        ⟨b, ofs, bf, hv1, hs1⟩
+      rcases simple_can_eval_rval xi ge f k e m r
+        (fun x => C (.Eassignop op (.Eloc b ofs bf (typeof l)) x tyres ty))
+        hs.2 (context_compose _ _ _ hC _ _ (.assignopRight (.ctx_top .RV))) hs1 with
+        ⟨v, hv2, hs2⟩
+      rcases safe_inv xi ge e .RV C f _ k m hs2 hC with ⟨t1, v1, ht, hd⟩
+      cases hop : sem_binary_operation ge.genv_cenv op v1 (typeof l) v (typeof r) m with
+      | none =>
+          exact ⟨_, _, estep.step_assignop_stuck hl hv1 hd hv2 (by simp [hop]) ht⟩
+      | some v3 =>
+          cases hcast : sem_cast v3 tyres (typeof l) m with
+          | none =>
+              exact ⟨_, _, estep.step_assignop_stuck hl hv1 hd hv2
+                (by simp [hop, hcast]) ht⟩
+          | some v4 =>
+              by_cases ha : ∃ t2 m' v', assign_loc ge (typeof l) m b ofs bf v4 t2 m' v'
+              · rcases ha with ⟨t2, m', v', ha⟩
+                exact ⟨_, _, estep.step_assignop hl hv1 hd hv2 hop hcast ha ht rfl⟩
+              · refine ⟨_, _, estep.step_assignop_stuck hl hv1 hd hv2 ?_ ht⟩
+                simp only [hop, hcast]
+                intro t2 m' v' h
+                exact ha ⟨t2, m', v', h⟩
+    case Epostincr id l ty =>
+      rcases simple_can_eval_lval xi ge f k e m l
+        (fun x => C (.Epostincr id x ty))
+        hs (context_compose _ _ _ hC _ _ (.postincr (.ctx_top .LV))) hsafe with
+        ⟨b, ofs, bf, hv, hs1⟩
+      rcases safe_inv xi ge e .RV C f _ k m hs1 hC with ⟨t1, v1, ht, hd⟩
+      subst ty
+      cases hop : sem_incrdecr ge.genv_cenv id v1 (typeof l) m with
+      | none =>
+          exact ⟨_, _, estep.step_postincr_stuck hl hv hd (by simp [hop]) rfl⟩
+      | some v2 =>
+          cases hcast : sem_cast v2 (incrdecr_type (typeof l)) (typeof l) m with
+          | none =>
+              exact ⟨_, _, estep.step_postincr_stuck hl hv hd
+                (by simp [hop, hcast]) rfl⟩
+          | some v3 =>
+              by_cases ha : ∃ t2 m' v', assign_loc ge (typeof l) m b ofs bf v3 t2 m' v'
+              · rcases ha with ⟨t2, m', v', ha⟩
+                exact ⟨_, _, estep.step_postincr hl hv hd hop hcast ha rfl rfl⟩
+              · refine ⟨_, _, estep.step_postincr_stuck hl hv hd ?_ rfl⟩
+                simp only [hop, hcast]
+                intro t2 m' v' h
+                exact ha ⟨t2, m', v', h⟩
+    case Ecomma r1 r2 ty =>
+      rcases simple_can_eval_rval xi ge f k e m r1 (fun x => C (.Ecomma x r2 ty))
+        hs (context_compose _ _ _ hC _ _ (.comma (.ctx_top .RV))) hsafe with
+        ⟨v, hv, hs1⟩
+      have ht := safe_inv xi ge e .RV C f _ k m hs1 hC
+      exact ⟨_, _, estep.step_comma hl hv ht.symm⟩
+    case Ecall r rl ty =>
+      rcases simple_can_eval_rval xi ge f k e m r (fun x => C (.Ecall x rl ty))
+        hs.1 (context_compose _ _ _ hC _ _ (.callLeft (.ctx_top .RV))) hsafe with
+        ⟨vf, hv, hs1⟩
+      have hcl : contextlist' (fun x => C (.Ecall (.Eval vf (typeof r)) x ty)) :=
+        contextlist'_call _ .Enil _ _ hC
+      rcases simple_list_can_eval xi ge f k e m rl _ hs.2 hcl hs1 with ⟨vl, hvl⟩
+      have hs2 := safe_steps xi ge _ _ hs1
+        (eval_simple_list_steps xi ge f k e m rl vl hvl _ hcl)
+      have hinv := safe_inv xi ge e .RV C f _ k m hs2 hC
+      rcases hinv (rval_list_all_values vl rl) with
+        ⟨tyargs, tyres, cconv, fd, vargs, hclass, hfind, hcast, hty⟩
+      exact ⟨_, _, estep.step_call hl hclass hv
+        (can_eval_simple_list ge e m rl vl hvl tyargs vargs hcast) hfind hty⟩
+    case Ebuiltin ef tyargs rl ty =>
+      have hcl : contextlist' (fun x => C (.Ebuiltin ef tyargs x ty)) :=
+        contextlist'_builtin _ _ .Enil _ _ hC
+      rcases simple_list_can_eval xi ge f k e m rl _ hs hcl hsafe with ⟨vl, hvl⟩
+      have hs1 := safe_steps xi ge _ _ hsafe
+        (eval_simple_list_steps xi ge f k e m rl vl hvl _ hcl)
+      have hinv := safe_inv xi ge e .RV C f _ k m hs1 hC
+      rcases hinv (rval_list_all_values vl rl) with ⟨vargs, t, vres, m', hcast, hext⟩
+      exact ⟨_, _, estep.step_builtin hl
+        (can_eval_simple_list ge e m rl vl hvl tyargs vargs hcast) hext⟩
+    case Eparen r tycast ty =>
+      rcases simple_can_eval_rval xi ge f k e m r (fun x => C (.Eparen x tycast ty))
+        hs (context_compose _ _ _ hC _ _ (.paren (.ctx_top .RV))) hsafe with
+        ⟨v1, hv, hs1⟩
+      rcases safe_inv xi ge e .RV C f _ k m hs1 hC with ⟨v, hcast⟩
+      exact ⟨_, _, estep.step_paren hl hv hcast⟩
+
+end CompCert4Lean.Cfrontend.Cstrategy

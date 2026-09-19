@@ -4219,3 +4219,354 @@ theorem frame_get_parent : frame_get_parentStatement := by
   exact hasvalue_get_stack _ _ _ _ _ hframe.1.1.2.1.2.1.1
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Separation
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.X86.Stacklayout
+open CompCert4Lean.Backend.Stacking
+
+private theorem stackingproof_pmap_get_set_same {A : Type} (i : positive) (x : A)
+    (m : PMap.t A) : PMap.get i (PMap.set i x m) = x := by
+  change (match PTree.get i (PTree.set i x m.2) with
+    | some y => y
+    | none => m.1) = x
+  rw [PTree.gsspec_proof]
+  cases hpeq : CompCert4Lean.Lib.Coqlib.peq i i with
+  | left _ => simp
+  | right hne => exact False.elim (hne rfl)
+
+private theorem stackingproof_pmap_get_set_other {A : Type} (i j : positive) (x : A)
+    (m : PMap.t A) (h : i ≠ j) : PMap.get i (PMap.set j x m) = PMap.get i m := by
+  change (match PTree.get i (PTree.set j x m.2) with
+    | some y => y
+    | none => m.1) = PMap.get i m
+  rw [PTree.gsspec_proof]
+  cases hpeq : CompCert4Lean.Lib.Coqlib.peq i j with
+  | left heq => exact False.elim (h heq)
+  | right _ => rfl
+
+private theorem stackingproof_store_unchanged_on (P : massert)
+    (chunk : memory_chunk) (m : mem) (b : block) (ofs : Z)
+    (v : val) (m' : mem)
+    (hstore : Mem.store chunk m b ofs v = some m')
+    (hout : ∀ i, zLe ofs i ∧ zLt i (zAdd ofs (size_chunk chunk)) →
+      ¬ P.m_footprint b i) :
+    Mem.unchanged_on P.m_footprint m m' := by
+  have hnext := Mem.nextblock_store chunk m b ofs v m' hstore
+  have hcontents := Mem.store_mem_contents chunk m b ofs v m' hstore
+  refine ⟨?_, ?_, ?_⟩
+  · change CompCert4Lean.Lib.Coqlib.Ple m.nextblock m'.nextblock
+    rw [hnext]
+    exact CompCert4Lean.Lib.Coqlib.Ple_refl _
+  · intro b' ofs' k p hP hvalid
+    constructor
+    · intro hp
+      exact Mem.perm_store_1 chunk m b ofs v m' hstore b' ofs' k p hp
+    · intro hp
+      exact Mem.perm_store_2 chunk m b ofs v m' hstore b' ofs' k p hp
+  · intro b' ofs' hP hp
+    rw [hcontents]
+    by_cases hb : b' = b
+    · subst b'
+      have hpmap := stackingproof_pmap_get_set_same b
+        (Mem.setN (encode_val chunk v) ofs (PMap.get b m.mem_contents)) m.mem_contents
+      rw [hpmap]
+      apply Mem.setN_other
+      intro i hi heq
+      subst i
+      have hlen := CompCert4Lean.Common.Memdata.encode_val_length chunk v
+      have hi' := hi
+      rw [hlen] at hi'
+      have hsize' : zOfNat (size_chunk_nat chunk) = size_chunk chunk := by
+        cases chunk <;> rfl
+      have hrange : zLe ofs ofs' ∧ zLt ofs' (zAdd ofs (size_chunk chunk)) := by
+        simpa [hsize'] using hi'
+      exact (hout ofs' hrange) hP
+    · rw [show PMap.get b' (PMap.set b
+          (Mem.setN (encode_val chunk v) ofs (PMap.get b m.mem_contents))
+          m.mem_contents) = PMap.get b' m.mem_contents by
+            exact stackingproof_pmap_get_set_other b' b _ _ hb]
+
+private theorem stackingproof_set_location
+    (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program) (m : mem) (j : meminj) (sp : block)
+    (pos bound : Z) (sl : slot) (ls : locset) (P : massert)
+    (ofs : Z) (ty : typ) (v v' : val)
+    (hm : (sepconj (contains_locations return_address_offset tprog j sp pos bound sl ls) P).m_pred m)
+    (hofs : zLe z0 ofs)
+    (hbound : zLe (zAdd ofs (Locations.typesize ty)) bound)
+    (halign : zDivide (Locations.typealign ty) ofs)
+    (hinj : Val.inject j v v') :
+    ∃ m',
+      Mem.store (chunk_of_type ty) m sp (zAdd pos (zMul z4 ofs)) v' = some m' ∧
+      Mach.store_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr (zAdd pos (zMul z4 ofs))) v' = some m' ∧
+      (sepconj (contains_locations return_address_offset tprog j sp pos bound sl
+        (Locmap.set (S sl ofs ty) v ls)) P).m_pred m' := by
+  rcases hm with ⟨hc, hP, hdisj⟩
+  rcases hc with ⟨hdiv, hpos, hmax, hperm, hload⟩
+  have hvalid : Mem.valid_access m (chunk_of_type ty) sp
+      (zAdd pos (zMul z4 ofs)) Writable := by
+    refine ⟨?_, locationAligned pos ofs ty hdiv halign⟩
+    intro i hi
+    exact Mem.perm_implies m sp i Cur Freeable Writable
+      (hperm i (locationChunkRange pos bound ofs i ty hofs hbound hi))
+      (perm_F_any Writable)
+  rcases Mem.valid_access_store m (chunk_of_type ty) sp
+      (zAdd pos (zMul z4 ofs)) v' hvalid with ⟨m', hstore⟩
+  have hstore_stack : Mach.store_stack m (Vptr sp Ptrofs.zero) ty
+      (Ptrofs.repr (zAdd pos (zMul z4 ofs))) v' = some m' := by
+    unfold Mach.store_stack Mem.storev
+    simp only [Val.offset_ptr]
+    have hadd : Ptrofs.add Ptrofs.zero
+        (Ptrofs.repr (zAdd pos (zMul z4 ofs))) =
+        Ptrofs.repr (zAdd pos (zMul z4 ofs)) := by
+      change WordCore.add (WordCore.zero Ptrofs.wordsize)
+        (WordCore.repr Ptrofs.wordsize (zAdd pos (zMul z4 ofs))) = _
+      apply WordCore.ext_of_val_eq
+      rw [stackingproof_wordcore_add_val]
+      have hzero : (WordCore.zero Ptrofs.wordsize).val = 0 := by rfl
+      rw [hzero, Nat.zero_add]
+      exact Nat.mod_eq_of_lt (stackingproof_wordcore_val_lt _)
+    rw [hadd]
+    change Mem.store (chunk_of_type ty) m sp
+      (Ptrofs.unsigned (Ptrofs.repr (zAdd pos (zMul z4 ofs)))) v' = some m'
+    have haddr0 : zLe z0 (zAdd pos (zMul z4 ofs)) :=
+      locationAddrNonneg pos ofs hpos hofs
+    have haddrmax : zLe (zAdd pos (zMul z4 ofs)) Ptrofs.max_unsigned :=
+      locationAddrMax pos bound ofs ty hmax hbound
+    rw [stackingproof_ptrofs_unsigned_repr _ ⟨haddr0, haddrmax⟩]
+    exact hstore
+  refine ⟨m', hstore, hstore_stack, ?_⟩
+  let ls' := Locmap.set (S sl ofs ty) v ls
+  have hc' : (contains_locations return_address_offset tprog j sp pos bound sl ls').m_pred m' := by
+    refine ⟨hdiv, hpos, hmax, ?_, ?_⟩
+    · intro i hi
+      exact Mem.perm_store_1 (chunk_of_type ty) m sp
+        (zAdd pos (zMul z4 ofs)) v' m' hstore sp i Cur Freeable (hperm i hi)
+    · intro ofs0 ty0 hofs0 hbound0 halign0
+      have haddr0 : zLe z0 (zAdd pos (zMul z4 ofs0)) :=
+        locationAddrNonneg pos ofs0 hpos hofs0
+      have haddrmax : zLe (zAdd pos (zMul z4 ofs0)) Ptrofs.max_unsigned :=
+        locationAddrMax pos bound ofs0 ty0 hmax hbound0
+      have hvalid0 : Mem.valid_access m' (chunk_of_type ty0) sp
+          (zAdd pos (zMul z4 ofs0)) Readable := by
+        apply Mem.store_valid_access_1 (chunk_of_type ty) m sp
+          (zAdd pos (zMul z4 ofs)) v' m' hstore
+          (chunk_of_type ty0) sp (zAdd pos (zMul z4 ofs0)) Readable
+        refine ⟨?_, locationAligned pos ofs0 ty0 hdiv halign0⟩
+        intro i hi
+        exact Mem.perm_implies m sp i Cur Freeable Readable
+          (hperm i (locationChunkRange pos bound ofs0 i ty0 hofs0 hbound0 hi))
+          (perm_F_any Readable)
+      have hload0 := hload ofs0 ty0 hofs0 hbound0 halign0
+      rcases hload0 with ⟨v0, hv0, hinj0⟩
+      by_cases heq : S sl ofs ty = S sl ofs0 ty0
+      · injection heq with hofsEq htyEq
+        subst ofs0
+        subst ty0
+        refine ⟨Val.load_result (chunk_of_type ty) v', ?_, ?_⟩
+        · exact Mem.load_store_same (chunk_of_type ty) m sp
+            (zAdd pos (zMul z4 ofs)) v' m' hstore
+        · rw [show ls' (S sl ofs ty) =
+              Val.load_result (chunk_of_type ty) v by
+                exact Locmap.gss (S sl ofs ty) v ls]
+          exact CompCert4Lean.Common.Values.Val.load_result_inject j
+            (chunk_of_type ty) v v' hinj
+      · cases hd : Loc.diff_dec (S sl ofs ty) (S sl ofs0 ty0) with
+          | left hdiff =>
+              refine ⟨v0, ?_, ?_⟩
+              · rw [Mem.load_store_other (chunk_of_type ty) m sp
+                  (zAdd pos (zMul z4 ofs)) v' m'
+                  hstore (chunk_of_type ty0) sp
+                  (zAdd pos (zMul z4 ofs0)) (by
+                right
+                rcases hdiff with hslot | hleft | hright
+                · exact False.elim (hslot rfl)
+                · right
+                  change intOfZ (zAdd ofs (Locations.typesize ty)) ≤ intOfZ ofs0 at hleft
+                  change intOfZ (zAdd (zAdd pos (zMul z4 ofs))
+                    (size_chunk (chunk_of_type ty))) ≤ intOfZ (zAdd pos (zMul z4 ofs0))
+                  simp only [zAdd, zMul, ZArith.BinInt.Z.add,
+                    ZArith.BinInt.Z.mul, intOfZ_zOfInt, locationChunkSize] at hleft ⊢
+                  have hz4 : intOfZ z4 = 4 := rfl
+                  rw [hz4]
+                  omega
+                · left
+                  change intOfZ (zAdd ofs0 (Locations.typesize ty0)) ≤ intOfZ ofs at hright
+                  change intOfZ (zAdd (zAdd pos (zMul z4 ofs0))
+                    (size_chunk (chunk_of_type ty0))) ≤ intOfZ (zAdd pos (zMul z4 ofs))
+                  simp only [zAdd, zMul, ZArith.BinInt.Z.add,
+                    ZArith.BinInt.Z.mul, intOfZ_zOfInt, locationChunkSize] at hright ⊢
+                  have hz4 : intOfZ z4 = 4 := rfl
+                  rw [hz4]
+                  omega)]
+                exact hv0
+              · rw [show ls' (S sl ofs0 ty0) = ls (S sl ofs0 ty0) by
+                    exact Locmap.gso (S sl ofs ty) v ls (S sl ofs0 ty0) hdiff]
+                exact hinj0
+          | right hndiff =>
+              rcases Mem.valid_access_load m' (chunk_of_type ty0) sp
+                  (zAdd pos (zMul z4 ofs0)) hvalid0 with ⟨v1, hv1⟩
+              refine ⟨v1, hv1, ?_⟩
+              unfold ls' Locmap.set
+              cases Loc.eq (S sl ofs ty) (S sl ofs0 ty0) with
+              | left heq' => exact (heq heq').elim
+              | right _ =>
+                  cases Loc.diff_dec (S sl ofs ty) (S sl ofs0 ty0) with
+                  | left hd' => exact (hndiff hd').elim
+                  | right _ => exact Val.val_inject_undef j _
+  have hunch : Mem.unchanged_on P.m_footprint m m' :=
+    stackingproof_store_unchanged_on P (chunk_of_type ty) m sp
+      (zAdd pos (zMul z4 ofs)) v' m' hstore (by
+        intro i hi hPi
+        apply hdisj sp i
+        · exact ⟨rfl,
+            (locationChunkRange pos bound ofs i ty hofs hbound hi).1,
+            (locationChunkRange pos bound ofs i ty hofs hbound hi).2⟩
+        · exact hPi)
+  refine ⟨hc', P.m_invar m m' hP hunch, ?_⟩
+  intro b ofs0 hfoot hPfoot
+  apply hdisj b ofs0 hfoot
+  exact hPfoot
+
+theorem frame_set_outgoing : frame_set_outgoingStatement := by
+  intro return_address_offset tprog cfg f bound_local_pos bound_outgoing_pos
+    bound_stack_data_pos used_callee_save_norepet used_callee_save_prop
+    ofs ty v v' j sp ls ls0 parent retaddr m P hm hwithin hvalid hinj
+  unfold frame_contents at hm
+  have hframe := mconj_proj1 _ _ _ m hm
+  have hout := sep_pick2 _ _ _ m hframe.1
+  have houtP : (sepconj
+      (contains_locations return_address_offset tprog j sp
+        (CompCert4Lean.X86.Stacklayout.fe_ofs_arg cfg)
+        (CompCert4Lean.Backend.Bounds.function_bounds cfg f).bound_outgoing
+        Outgoing ls) P).m_pred m := by
+    refine ⟨hout, hframe.2.1, ?_⟩
+    intro b ofs0 ho hp
+    exact hframe.2.2 b ofs0 (Or.inr (Or.inl ho)) hp
+  have hchecks : zLe z0 ofs ∧ zDivide (typealign ty) ofs := by
+    revert hvalid
+    unfold CompCert4Lean.Backend.Lineartyping.slot_valid
+    run_tac
+      Lean.Elab.Tactic.liftMetaTactic fun goal => goal.withContext do
+        let target ← goal.getType
+        let target' ← Lean.Meta.transform target (pre := fun e => do
+          match e.getAppFn.constName? with
+          | some name =>
+              if Lean.Name.isPrefixOf `_private name then
+                let e' ← Lean.Meta.withTransparency .all <| Lean.Meta.whnf e
+                return Lean.TransformStep.done e'
+              else
+                return Lean.TransformStep.continue
+          | none => return Lean.TransformStep.continue)
+        let goal ← Lean.Meta.withTransparency .all <| goal.change target'
+        return [goal]
+    generalize hle : CompCert4Lean.Lib.Coqlib.zle
+      ZArith.BinInt.Z.Z0 ofs = d
+    cases d with
+    | right h => simp
+    | left hnonneg =>
+      generalize heq : CompCert4Lean.Lib.Coqlib.zeq
+        (ZArith.BinInt.Z.modulo ofs (typealign ty)) ZArith.BinInt.Z.Z0 = d
+      cases d with
+      | right h => simp
+      | left hmod =>
+        intro _
+        refine ⟨hnonneg, ZArith.Znumtheory.Zmod_divide ofs (typealign ty) ?_ hmod⟩
+        cases ty <;> decide
+  have hset := stackingproof_set_location return_address_offset tprog m j sp
+    (CompCert4Lean.X86.Stacklayout.fe_ofs_arg cfg)
+    (CompCert4Lean.Backend.Bounds.function_bounds cfg f).bound_outgoing
+    Outgoing ls P ofs ty v v' houtP hchecks.1 hwithin hchecks.2 hinj
+  rcases hset with ⟨m', hstore_mem, hstore, hnew⟩
+  refine ⟨m', ?_, ?_⟩
+  · simpa [CompCert4Lean.Backend.Stacking.offset_arg] using hstore
+  · have hrangesP := mconj_proj2 _ _ _ m hm
+    have hranges := hrangesP.1
+    have hrange1 := range_preserved m m' sp .Z0
+        (CompCert4Lean.X86.Stacklayout.make_env cfg
+          (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_stack_data hranges.1
+        (by
+          intro i k p hi hp
+          exact Mem.perm_store_1 (chunk_of_type ty) m sp
+            (zAdd (CompCert4Lean.X86.Stacklayout.fe_ofs_arg cfg) (zMul z4 ofs))
+            v' m' hstore_mem sp i k p hp)
+    have hrange2 := range_preserved m m' sp
+        (ZArith.BinInt.Z.add
+          (CompCert4Lean.X86.Stacklayout.make_env cfg
+            (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_stack_data
+          (CompCert4Lean.Backend.Bounds.function_bounds cfg f).bound_stack_data)
+        (CompCert4Lean.X86.Stacklayout.make_env cfg
+          (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_size hranges.2.1
+        (by
+          intro i k p hi hp
+          exact Mem.perm_store_1 (chunk_of_type ty) m sp
+            (zAdd (CompCert4Lean.X86.Stacklayout.fe_ofs_arg cfg) (zMul z4 ofs))
+            v' m' hstore_mem sp i k p hp)
+    have hranges' : (sepconj
+        (range sp .Z0
+          (CompCert4Lean.X86.Stacklayout.make_env cfg
+            (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_stack_data)
+        (range sp (ZArith.BinInt.Z.add
+          (CompCert4Lean.X86.Stacklayout.make_env cfg
+            (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_stack_data
+          (CompCert4Lean.Backend.Bounds.function_bounds cfg f).bound_stack_data)
+          (CompCert4Lean.X86.Stacklayout.make_env cfg
+            (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_size)).m_pred m' := by
+      exact ⟨hrange1, hrange2, hranges.2.2⟩
+    let localarea := contains_locations return_address_offset tprog j sp
+      (make_env cfg (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_ofs_local
+      (CompCert4Lean.Backend.Bounds.function_bounds cfg f).bound_local Local ls
+    let rest := sepconj
+      (hasvalue Mptr sp (make_env cfg (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_ofs_link parent)
+      (sepconj
+        (hasvalue Mptr sp (make_env cfg (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_ofs_retaddr retaddr)
+        (contains_callee_saves j sp
+          (make_env cfg (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_ofs_callee_save
+          (CompCert4Lean.Backend.Bounds.function_bounds cfg f).used_callee_save ls0))
+    have hfoot : ∀ i,
+        zLe (zAdd (fe_ofs_arg cfg) (zMul z4 ofs)) i ∧
+        zLt i (zAdd (zAdd (fe_ofs_arg cfg) (zMul z4 ofs)) (size_chunk (chunk_of_type ty))) →
+        (contains_locations return_address_offset tprog j sp (fe_ofs_arg cfg)
+          (CompCert4Lean.Backend.Bounds.function_bounds cfg f).bound_outgoing Outgoing ls).m_footprint sp i := by
+      intro i hi
+      exact ⟨rfl, locationChunkRange _ _ _ _ _ hchecks.1 hwithin hi⟩
+    have hlocal_mem : localarea.m_pred m' :=
+      localarea.m_invar m m' hframe.1.1
+        (stackingproof_store_unchanged_on localarea _ _ _ _ _ _ hstore_mem (by
+          intro i hi hl
+          exact hframe.1.2.2 sp i hl (Or.inl (hfoot i hi))))
+    have hrest_mem : rest.m_pred m' :=
+      rest.m_invar m m' hframe.1.2.1.2.1
+        (stackingproof_store_unchanged_on rest _ _ _ _ _ _ hstore_mem (by
+          intro i hi hr
+          exact hframe.1.2.1.2.2 sp i (hfoot i hi) hr))
+    have hlocal_new := (contains_locations_exten return_address_offset tprog ls
+      (Locmap.set (S Outgoing ofs ty) v ls) j sp
+      (make_env cfg (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_ofs_local
+      (CompCert4Lean.Backend.Bounds.function_bounds cfg f).bound_local Local (by
+        intro ofs0 ty0
+        rw [Locmap.gso (S Outgoing ofs ty) v ls (S Local ofs0 ty0)
+          (Or.inl (by intro h; cases h))]
+        exact Val.lessdef_refl _)).1 m' hlocal_mem
+    have hframe1' : (frame_contents_1 return_address_offset tprog cfg f
+        bound_local_pos bound_outgoing_pos bound_stack_data_pos
+        used_callee_save_norepet used_callee_save_prop j sp
+        (Locmap.set (S Outgoing ofs ty) v ls) ls0 parent retaddr).m_pred m' :=
+      ⟨hlocal_new, ⟨hnew.1, hrest_mem, hframe.1.2.1.2.2⟩, hframe.1.2.2⟩
+    exact frame_mconj _ _ _ _ _ _ hm
+      ⟨hframe1', hnew.2.1, hframe.2.2⟩ hranges'
+
+end CompCert4Lean.Backend.Stackingproof

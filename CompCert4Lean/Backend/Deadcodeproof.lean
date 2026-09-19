@@ -2769,3 +2769,262 @@ theorem eagree_set_res : eagree_set_resStatement := by
   | BR_splitlong hi lo => exact he
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Backend.Deadcode
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.IntvSets
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem builtin_nlive_all (ge : RTL.genv) (sp b : block) (i : Z) :
+    nlive ge sp nmem_all b i := by
+  constructor
+  · intro _
+    exact ISet.In_empty i
+  · intro id iv _ h
+    rw [PTree.gempty ISet.t id] at h
+    cases h
+
+private theorem builtin_nlive_stack_mono (ge : RTL.genv) (sp b : block)
+    (i : Z) (nm : nmem) (ofs : Ptrofs.int) (sz : Z)
+    (h : nlive ge sp nm b i) : nlive ge sp (nmem_add nm (Stk ofs) sz) b i := by
+  cases h with
+  | nlive_intro stk gl b i hs hg =>
+      constructor
+      · intro hb hi
+        exact hs hb ((ISet.In_remove _ _ _ _).mp hi).2
+      · exact hg
+
+private theorem builtin_nlive_global_mono (ge : RTL.genv) (sp b : block)
+    (i : Z) (nm : nmem) (id : ident) (ofs : Ptrofs.int) (sz : Z)
+    (h : nlive ge sp nm b i) : nlive ge sp (nmem_add nm (Gl id ofs) sz) b i := by
+  cases h with
+  | nlive_intro stk gl b i hs hg =>
+      simp only [nmem_add]
+      cases hx : PTree.get id gl with
+      | none => exact nlive.nlive_intro _ _ _ _ hs hg
+      | some iv =>
+          constructor
+          · exact hs
+          · intro id' iv' hsym hget hi
+            by_cases heq : id' = id
+            · subst id'
+              rw [PTree.gss (A := ISet.t) id _ gl] at hget
+              cases hget
+              exact hg id iv hsym hx ((ISet.In_remove _ _ _ _).mp hi).2
+            · rw [PTree.gso (A := ISet.t) (i := id') (j := id) _ gl heq] at hget
+              exact hg id' iv' hsym hget hi
+
+private theorem builtin_nlive_stack (ge : RTL.genv) (sp : block)
+    (bc : block_classification) (nm : nmem) (ofs : Ptrofs.int) (sz i : Z)
+    (gm : genv_match bc ge) (hsp : bc sp = BCstack)
+    (hi : zLe (Ptrofs.unsigned ofs) i ∧ zLt i (zAdd (Ptrofs.unsigned ofs) sz)) :
+    nlive ge sp (nmem_add nm (Stk ofs) sz) sp i := by
+  cases nm with
+  | NMemDead => exact builtin_nlive_all ge sp sp i
+  | NMem stk gl =>
+      constructor
+      · intro _ h
+        exact ((ISet.In_remove _ _ _ _).mp h).1 hi
+      · intro id iv hsym _
+        have hc := (gm.1 id sp).mp hsym
+        rw [hsp] at hc
+        cases hc
+
+private theorem builtin_nlive_global (ge : RTL.genv) (sp b : block)
+    (bc : block_classification) (nm : nmem) (id : ident) (ofs : Ptrofs.int) (sz i : Z)
+    (gm : genv_match bc ge) (hsp : bc sp = BCstack)
+    (hsym : Genv.find_symbol ge id = some b)
+    (hi : zLe (Ptrofs.unsigned ofs) i ∧ zLt i (zAdd (Ptrofs.unsigned ofs) sz)) :
+    nlive ge sp (nmem_add nm (Gl id ofs) sz) b i := by
+  have hb := (gm.1 id b).mp hsym
+  have hbs : b ≠ sp := by
+    intro h
+    subst b
+    rw [hsp] at hb
+    cases hb
+  have hid : ∀ id', Genv.find_symbol ge id' = some b → id' = id := by
+    intro id' hsym'
+    have hb' := (gm.1 id' b).mp hsym'
+    rw [hb] at hb'
+    cases hb'
+    rfl
+  cases nm with
+  | NMemDead => exact builtin_nlive_all ge sp b i
+  | NMem stk gl =>
+      simp only [nmem_add]
+      cases hx : PTree.get id gl with
+      | none =>
+          constructor
+          · intro h
+            exact False.elim (hbs h)
+          · intro id' iv hsym' hget
+            have heq := hid id' hsym'
+            subst id'
+            rw [hx] at hget
+            cases hget
+      | some iv =>
+          constructor
+          · intro h
+            exact False.elim (hbs h)
+          · intro id' iv' hsym' hget hmem
+            have heq := hid id' hsym'
+            subst id'
+            rw [PTree.gss (A := ISet.t) id _ gl] at hget
+            cases hget
+            exact ((ISet.In_remove _ _ _ _).mp hmem).1 hi
+
+end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Backend.Deadcode
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open Lean Elab Tactic Meta
+
+private theorem builtin_ptrofs_zero_add (x : Ptrofs.int) :
+    Ptrofs.add Ptrofs.zero x = x := by
+  change WordCore.add (WordCore.zero Ptrofs.wordsize) x = x
+  apply WordCore.ext_of_val_eq
+  have hadd : (WordCore.add (WordCore.zero Ptrofs.wordsize) x).val =
+      ((WordCore.zero Ptrofs.wordsize).val + x.val) % (2 ^ Ptrofs.wordsize) := by
+    run_tac
+      let lctx ← getLCtx
+      let xF := (lctx.findFromUserName? `x).get!
+      let zeroE ← mkAppM ``CompCert4Lean.Lib.Integers.WordCore.zero
+        #[mkConst ``CompCert4Lean.Lib.Integers.Ptrofs.wordsize]
+      let e ← mkAppM (privateName "CompCert4Lean.Lib.Integers.WordCore.add_val")
+        #[zeroE, mkFVar xF.fvarId]
+      closeMainGoal Name.anonymous e
+  rw [hadd]
+  have hz : (WordCore.zero Ptrofs.wordsize).val = 0 := by
+    change (WordCore.repr Ptrofs.wordsize (zOfNat 0)).val = 0
+    simpa using (residue_zOfNat_local Ptrofs.wordsize 0)
+  rw [hz, Nat.zero_add]
+  exact Nat.mod_eq_of_lt (word64_val_lt_local x)
+
+end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Backend.Deadcode
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+theorem transfer_builtin_arg_sound : transfer_builtin_arg_soundStatement := by
+  intro prog bc e e' sp m m' a v heval
+  induction heval with
+  | eval_BA x =>
+      intro nv ne1 nm1 ne2 nm2 htr he hm gm hs
+      rcases Prod.mk.inj htr with ⟨rfl, rfl⟩
+      exact ⟨Regmap.get x e', eval_BA x, add_need_vagree e e' x nv ne1 he,
+        add_need_eagree e e' x nv ne1 he, hm⟩
+  | eval_BA_int n =>
+      intro nv ne1 nm1 ne2 nm2 htr he hm gm hs
+      rcases Prod.mk.inj htr with ⟨rfl, rfl⟩
+      exact ⟨_, eval_BA_int n, vagree_same _ nv, he, hm⟩
+  | eval_BA_long n =>
+      intro nv ne1 nm1 ne2 nm2 htr he hm gm hs
+      rcases Prod.mk.inj htr with ⟨rfl, rfl⟩
+      exact ⟨_, eval_BA_long n, vagree_same _ nv, he, hm⟩
+  | eval_BA_float n =>
+      intro nv ne1 nm1 ne2 nm2 htr he hm gm hs
+      rcases Prod.mk.inj htr with ⟨rfl, rfl⟩
+      exact ⟨_, eval_BA_float n, vagree_same _ nv, he, hm⟩
+  | eval_BA_single n =>
+      intro nv ne1 nm1 ne2 nm2 htr he hm gm hs
+      rcases Prod.mk.inj htr with ⟨rfl, rfl⟩
+      exact ⟨_, eval_BA_single n, vagree_same _ nv, he, hm⟩
+  | eval_BA_loadstack chunk ofs v hload =>
+      intro nv ne1 nm1 ne2 nm2 htr he hm gm hs
+      rcases Prod.mk.inj htr with ⟨rfl, rfl⟩
+      simp only [Val.offset_ptr, Mem.loadv, builtin_ptrofs_zero_add] at hload
+      rcases magree_load _ _ _ chunk sp (Ptrofs.unsigned ofs) v hm hload
+        (fun i hi => builtin_nlive_stack _ sp bc nm1 ofs _ i gm hs hi) with
+        ⟨v', hl', hv'⟩
+      refine ⟨v', eval_BA_loadstack chunk ofs v' ?_,
+        vagree_lessdef _ _ nv hv', he, ?_⟩
+      · simpa only [Val.offset_ptr, Mem.loadv, builtin_ptrofs_zero_add] using hl'
+      · exact magree_monotone _ _ _ _ hm
+          (fun b i hi => builtin_nlive_stack_mono _ sp b i nm1 ofs _ hi)
+  | eval_BA_addrstack ofs =>
+      intro nv ne1 nm1 ne2 nm2 htr he hm gm hs
+      rcases Prod.mk.inj htr with ⟨rfl, rfl⟩
+      exact ⟨_, eval_BA_addrstack ofs, vagree_same _ nv, he, hm⟩
+  | eval_BA_loadglobal chunk id ofs v hload =>
+      intro nv ne1 nm1 ne2 nm2 htr he hm gm hs
+      rcases Prod.mk.inj htr with ⟨rfl, rfl⟩
+      change Mem.loadv chunk m
+        (match Genv.find_symbol (Genv.globalenv prog) id with
+        | some b => Vptr b ofs | none => Vundef) = some v at hload
+      cases hsym : Genv.find_symbol (Genv.globalenv prog) id with
+      | none => simp only [hsym, Mem.loadv] at hload; cases hload
+      | some b =>
+          simp only [hsym, Mem.loadv] at hload
+          rcases magree_load _ _ _ chunk b (Ptrofs.unsigned ofs) v hm hload
+            (fun i hi => builtin_nlive_global _ sp b bc nm1 id ofs _ i gm hs hsym hi) with
+            ⟨v', hl', hv'⟩
+          refine ⟨v', eval_BA_loadglobal chunk id ofs v' ?_,
+            vagree_lessdef _ _ nv hv', he, ?_⟩
+          · change Mem.loadv chunk m'
+              (match Genv.find_symbol (Genv.globalenv prog) id with
+              | some b => Vptr b ofs | none => Vundef) = some v'
+            simpa only [hsym, Mem.loadv] using hl'
+          · exact magree_monotone _ _ _ _ hm
+              (fun b i hi => builtin_nlive_global_mono _ sp b i nm1 id ofs _ hi)
+  | eval_BA_addrglobal id ofs =>
+      intro nv ne1 nm1 ne2 nm2 htr he hm gm hs
+      rcases Prod.mk.inj htr with ⟨rfl, rfl⟩
+      exact ⟨_, eval_BA_addrglobal id ofs, vagree_same _ nv, he, hm⟩
+  | eval_BA_splitlong hi lo vhi vlo hhi hlo ihhi ihlo =>
+      intro nv ne1 nm1 ne2 nm2 htr he hm gm hs
+      change transfer_builtin_arg All (transfer_builtin_arg All (ne1, nm1) hi) lo =
+        (ne2, nm2) at htr
+      rcases hna : transfer_builtin_arg All (ne1, nm1) hi with ⟨ne, nm⟩
+      rw [hna] at htr
+      rcases ihlo All ne nm ne2 nm2 htr he hm gm hs with ⟨vlo', hlo', hvlo, he', hm'⟩
+      rcases ihhi All ne1 nm1 ne nm hna he' hm' gm hs with ⟨vhi', hhi', hvhi, he'', hm''⟩
+      exact ⟨_, eval_BA_splitlong hi lo vhi' vlo' hhi' hlo',
+        vagree_lessdef _ _ nv (Val.longofwords_lessdef _ _ _ _ hvhi hvlo), he'', hm''⟩
+  | eval_BA_addptr a1 a2 v1 v2 ha1 ha2 ih1 ih2 =>
+      intro nv ne1 nm1 ne2 nm2 htr he hm gm hs
+      change transfer_builtin_arg All (transfer_builtin_arg All (ne1, nm1) a1) a2 =
+        (ne2, nm2) at htr
+      rcases hna : transfer_builtin_arg All (ne1, nm1) a1 with ⟨ne, nm⟩
+      rw [hna] at htr
+      rcases ih2 All ne nm ne2 nm2 htr he hm gm hs with ⟨v2', h2', hv2, he', hm'⟩
+      rcases ih1 All ne1 nm1 ne nm hna he' hm' gm hs with ⟨v1', h1', hv1, he'', hm''⟩
+      exact ⟨_, eval_BA_addptr a1 a2 v1' v2' h1' h2',
+        vagree_lessdef _ _ nv (Val.addl_lessdef _ _ _ _ hv1 hv2), he'', hm''⟩
+
+end CompCert4Lean.Backend.Deadcodeproof

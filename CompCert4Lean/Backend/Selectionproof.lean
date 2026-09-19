@@ -4290,3 +4290,530 @@ theorem sel_switch_int_correct
         exact Rint.intro j
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem selection_is_longconst_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (prog : CompCert4Lean.Backend.CminorSel.program)
+    (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
+    (le : letenv) (a : expr) (x : val) (n : CompCert4Lean.Lib.Integers.Int64.int) :
+    is_longconst a = some n →
+    eval_expr xi (Genv.globalenv prog) sp e m le a x → x = .Vlong n := by
+  intro hconst heval
+  have ha : a = Eop (Olongconst n) Enil := by
+    cases a with
+    | Evar id => simp [is_longconst] at hconst
+    | Eop op args =>
+        cases op <;> cases args <;> simp [is_longconst] at hconst ⊢ <;>
+          cases hconst <;> rfl
+    | Eload chunk addr args => simp [is_longconst] at hconst
+    | Econdition c b d => simp [is_longconst] at hconst
+    | Elet b d => simp [is_longconst] at hconst
+    | Eletvar i => simp [is_longconst] at hconst
+    | Ebuiltin ef args => simp [is_longconst] at hconst
+    | Eexternal id sg args => simp [is_longconst] at hconst
+  subst a
+  cases heval with
+  | eval_Eop _ _ _ vl _ hargs hop =>
+      cases hargs
+      change some (.Vlong n) = some x at hop
+      cases hop
+      rfl
+
+private theorem selection_cmpl_result
+    (c : CompCert4Lean.Lib.Integers.comparison) (x y v : val)
+    (h : Val.cmpl c x y = some v) :
+    some (Val.of_optbool (Val.cmpl_bool c x y)) = some v := by
+  unfold Val.cmpl at h
+  cases hc : Val.cmpl_bool c x y with
+  | none => simp [hc] at h
+  | some bv =>
+      simp [hc] at h
+      rw [← h]
+      cases bv <;> rfl
+
+private theorem selection_swap_cmpl_bool
+    (c : CompCert4Lean.Lib.Integers.comparison) (x y : val) :
+    Val.cmpl_bool (swap_comparison c) x y = Val.cmpl_bool c y x := by
+  cases c <;> cases x <;> cases y <;>
+    simp [Val.cmpl_bool, swap_comparison, CompCert4Lean.Lib.Integers.Int64.cmp, WordCore.cmp,
+      WordCore.eq, eq_comm]
+
+private theorem selection_eval_cmpl
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (prog : CompCert4Lean.Backend.CminorSel.program)
+    (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
+    (c : CompCert4Lean.Lib.Integers.comparison) (le : letenv) (a : expr) (x : val)
+    (b : expr) (y v : val) :
+    eval_expr xi (Genv.globalenv prog) sp e m le a x →
+    eval_expr xi (Genv.globalenv prog) sp e m le b y →
+    Val.cmpl c x y = some v →
+    eval_expr xi (Genv.globalenv prog) sp e m le (cmpl c a b) v := by
+  intro ha hb hv
+  unfold cmpl
+  cases hca : is_longconst a with
+  | none =>
+      cases hcb : is_longconst b with
+      | none =>
+          simp only [hca, hcb]
+          exact eval_expr.eval_Eop le (Ocmp (Ccompl c))
+            (Econs a (Econs b Enil)) [x, y] v
+            (eval_exprlist.cons le a (Econs b Enil) x [y] ha
+              (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le)))
+            (selection_cmpl_result c x y v hv)
+      | some n2 =>
+          have hy : y = .Vlong n2 :=
+            selection_is_longconst_sound xi prog sp e m le b y n2 hcb hb
+          subst y
+          simp only [hca, hcb]
+          exact eval_expr.eval_Eop le (Ocmp (Ccomplimm c n2))
+            (Econs a Enil) [x] v
+            (eval_exprlist.cons le a Enil x [] ha (eval_exprlist.nil le))
+            (selection_cmpl_result c x (.Vlong n2) v hv)
+  | some n1 =>
+      have hx : x = .Vlong n1 :=
+        selection_is_longconst_sound xi prog sp e m le a x n1 hca ha
+      subst x
+      cases hcb : is_longconst b with
+      | none =>
+          simp only [hca, hcb]
+          apply eval_expr.eval_Eop le (Ocmp (Ccomplimm (swap_comparison c) n1))
+            (Econs b Enil) [y] v
+            (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))
+          change some (Val.of_optbool
+            (Val.cmpl_bool (swap_comparison c) y (.Vlong n1))) = some v
+          rw [selection_swap_cmpl_bool]
+          exact selection_cmpl_result c (.Vlong n1) y v hv
+      | some n2 =>
+          have hy : y = .Vlong n2 :=
+            selection_is_longconst_sound xi prog sp e m le b y n2 hcb hb
+          subst y
+          simp only [hca, hcb]
+          apply eval_expr.eval_Eop le (Ointconst
+            (if CompCert4Lean.Lib.Integers.Int64.cmp c n1 n2 then Int.one else Int.zero)) Enil [] v
+            (eval_exprlist.nil le)
+          unfold Val.cmpl Val.cmpl_bool at hv
+          simp only [Option.map_some] at hv
+          rw [← hv]
+          cases CompCert4Lean.Lib.Integers.Int64.cmp c n1 n2 <;> rfl
+
+private theorem selection_cmplu_result
+    (valid : block → CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z → Bool) (c : CompCert4Lean.Lib.Integers.comparison) (x y v : val)
+    (h : Val.cmplu valid c x y = some v) :
+    some (Val.of_optbool (Val.cmplu_bool valid c x y)) = some v := by
+  unfold Val.cmplu at h
+  cases hc : Val.cmplu_bool valid c x y with
+  | none => simp [hc] at h
+  | some bv =>
+      simp [hc] at h
+      rw [← h]
+      cases bv <;> rfl
+
+private theorem selection_swap_int64_cmpu
+    (c : CompCert4Lean.Lib.Integers.comparison) (x y : CompCert4Lean.Lib.Integers.Int64.int) :
+    CompCert4Lean.Lib.Integers.Int64.cmpu (swap_comparison c) x y = CompCert4Lean.Lib.Integers.Int64.cmpu c y x := by
+  cases c <;>
+    simp [CompCert4Lean.Lib.Integers.Int64.cmpu, WordCore.cmpu, swap_comparison, WordCore.eq, eq_comm]
+
+private theorem selection_swap_cmplu_bool_long
+    (valid : block → CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z → Bool) (c : CompCert4Lean.Lib.Integers.comparison) (n : CompCert4Lean.Lib.Integers.Int64.int) (y : val) :
+    Val.cmplu_bool valid (swap_comparison c) y (.Vlong n) =
+      Val.cmplu_bool valid c (.Vlong n) y := by
+  cases y with
+  | Vlong y => exact congrArg some (selection_swap_int64_cmpu c y n)
+  | Vundef => cases c <;> rfl
+  | Vint y => cases c <;> rfl
+  | Vfloat y => cases c <;> rfl
+  | Vsingle y => cases c <;> rfl
+  | Vptr b ofs =>
+      cases c <;>
+        simp [Val.cmplu_bool, Val.cmp_different_blocks, swap_comparison]
+
+private theorem selection_eval_cmplu
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (prog : CompCert4Lean.Backend.CminorSel.program)
+    (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
+    (c : CompCert4Lean.Lib.Integers.comparison) (le : letenv) (a : expr) (x : val)
+    (b : expr) (y v : val) :
+    eval_expr xi (Genv.globalenv prog) sp e m le a x →
+    eval_expr xi (Genv.globalenv prog) sp e m le b y →
+    Val.cmplu (fun b ofs => Mem.valid_pointer m b ofs) c x y = some v →
+    eval_expr xi (Genv.globalenv prog) sp e m le (cmplu c a b) v := by
+  intro ha hb hv
+  unfold cmplu
+  cases hca : is_longconst a with
+  | none =>
+      cases hcb : is_longconst b with
+      | none =>
+          simp only [hca, hcb]
+          exact eval_expr.eval_Eop le (Ocmp (Ccomplu c))
+            (Econs a (Econs b Enil)) [x, y] v
+            (eval_exprlist.cons le a (Econs b Enil) x [y] ha
+              (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le)))
+            (selection_cmplu_result (fun b ofs => Mem.valid_pointer m b ofs)
+              c x y v hv)
+      | some n2 =>
+          have hy : y = .Vlong n2 :=
+            selection_is_longconst_sound xi prog sp e m le b y n2 hcb hb
+          subst y
+          simp only [hca, hcb]
+          exact eval_expr.eval_Eop le (Ocmp (Ccompluimm c n2))
+            (Econs a Enil) [x] v
+            (eval_exprlist.cons le a Enil x [] ha (eval_exprlist.nil le))
+            (selection_cmplu_result (fun b ofs => Mem.valid_pointer m b ofs)
+              c x (.Vlong n2) v hv)
+  | some n1 =>
+      have hx : x = .Vlong n1 :=
+        selection_is_longconst_sound xi prog sp e m le a x n1 hca ha
+      subst x
+      cases hcb : is_longconst b with
+      | none =>
+          simp only [hca, hcb]
+          apply eval_expr.eval_Eop le (Ocmp (Ccompluimm (swap_comparison c) n1))
+            (Econs b Enil) [y] v
+            (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))
+          change some (Val.of_optbool
+            (Val.cmplu_bool (Mem.valid_pointer m) (swap_comparison c) y
+              (.Vlong n1))) = some v
+          rw [selection_swap_cmplu_bool_long
+            (valid := fun b ofs => Mem.valid_pointer m b ofs)]
+          exact selection_cmplu_result (fun b ofs => Mem.valid_pointer m b ofs)
+            c (.Vlong n1) y v hv
+      | some n2 =>
+          have hy : y = .Vlong n2 :=
+            selection_is_longconst_sound xi prog sp e m le b y n2 hcb hb
+          subst y
+          simp only [hca, hcb]
+          apply eval_expr.eval_Eop le (Ointconst
+            (if CompCert4Lean.Lib.Integers.Int64.cmpu c n1 n2 then Int.one else Int.zero)) Enil [] v
+            (eval_exprlist.nil le)
+          unfold Val.cmplu Val.cmplu_bool at hv
+          simp only [Option.map_some] at hv
+          rw [← hv]
+          cases CompCert4Lean.Lib.Integers.Int64.cmpu c n1 n2 <;> rfl
+
+
+open Lean Elab Tactic Meta
+
+private theorem selection_int64_unsigned_repr_eq_exact (x : Z) :
+    CompCert4Lean.Lib.Integers.Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.repr x) = ZArith.BinInt.Z.modulo x CompCert4Lean.Lib.Integers.Int64.modulus := by
+  run_tac
+    let n := Name.mkSimple "_private" |>.str "CompCert4Lean" |>.str "Lib" |>.str "Integers"
+      |>.num 0 |>.str "CompCert4Lean" |>.str "Lib" |>.str "Integers"
+      |>.str "Int64" |>.str "suffix_int64_unsigned_repr_eq_exact"
+    let ident := Lean.mkIdent n
+    let arg := Lean.mkIdent `x
+    evalTactic (← `(tactic| exact $ident $arg))
+
+private theorem selection_int64_mod_int (x : Z) :
+    intOfZ (ZArith.BinInt.Z.modulo x CompCert4Lean.Lib.Integers.Int64.modulus) =
+      intOfZ x % intOfZ CompCert4Lean.Lib.Integers.Int64.modulus := by
+  run_tac
+    let env ← getEnv
+    let some (n, _) := env.constants.toList.find?
+        (fun (n, _) => (toString n).endsWith "X86.Op.suffix64_mod_int")
+      | throwError "frozen modular arithmetic helper not found"
+    let ident := Lean.mkIdent n
+    let arg := Lean.mkIdent `x
+    evalTactic (← `(tactic| exact $ident $arg))
+
+private theorem selection_int64_unsigned_range (i : int64) :
+    ZArith.BinInt.Z.le .Z0 (CompCert4Lean.Lib.Integers.Int64.unsigned i) ∧
+      ZArith.BinInt.Z.lt (CompCert4Lean.Lib.Integers.Int64.unsigned i) CompCert4Lean.Lib.Integers.Int64.modulus := by
+  constructor
+  · have h := i.intrange.1
+    change (-1 : _root_.Int) < intOfZ (CompCert4Lean.Lib.Integers.Int64.unsigned i) at h
+    change 0 ≤ intOfZ (CompCert4Lean.Lib.Integers.Int64.unsigned i)
+    omega
+  · exact i.intrange.2
+
+private theorem selection_int64_unsigned_repr_small (n : Z)
+    (hn : ZArith.BinInt.Z.le .Z0 n ∧ ZArith.BinInt.Z.lt n CompCert4Lean.Lib.Integers.Int64.modulus) :
+    CompCert4Lean.Lib.Integers.Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.repr n) = n := by
+  rw [selection_int64_unsigned_repr_eq_exact]
+  exact ZArith.BinInt.Z.mod_small _ _ hn
+
+private theorem selection_int64_repr_unsigned (i : int64) :
+    CompCert4Lean.Lib.Integers.Int64.repr (CompCert4Lean.Lib.Integers.Int64.unsigned i) = i := by
+  apply WordCore.ext
+  exact selection_int64_unsigned_repr_small _ (selection_int64_unsigned_range i)
+
+private theorem selection_int64_repr_signed (i : int64) :
+    CompCert4Lean.Lib.Integers.Int64.repr (CompCert4Lean.Lib.Integers.Int64.signed i) = i := by
+  apply WordCore.ext
+  change CompCert4Lean.Lib.Integers.Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.repr (CompCert4Lean.Lib.Integers.Int64.signed i)) = CompCert4Lean.Lib.Integers.Int64.unsigned i
+  rw [selection_int64_unsigned_repr_eq_exact]
+  apply intOfZ_injective
+  rw [selection_int64_mod_int]
+  have hu := selection_int64_unsigned_range i
+  change 0 ≤ intOfZ (CompCert4Lean.Lib.Integers.Int64.unsigned i) ∧
+    intOfZ (CompCert4Lean.Lib.Integers.Int64.unsigned i) < intOfZ CompCert4Lean.Lib.Integers.Int64.modulus at hu
+  change intOfZ (WordCore.signed i) % intOfZ CompCert4Lean.Lib.Integers.Int64.modulus = _
+  unfold WordCore.signed
+  dsimp
+  run_tac
+    for suffix in ["CompCert4Lean.Lib.Integers.zltSelect",
+        "CompCert4Lean.Lib.Integers.sumboolSelect"] do
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith suffix)
+        | throwError "frozen comparison helper not found"
+      let ident := Lean.mkIdent n
+      evalTactic (← `(tactic| unfold $ident))
+  split
+  · exact _root_.Int.emod_eq_of_lt hu.1 hu.2
+  · change intOfZ (ZArith.BinInt.Z.sub
+      (CompCert4Lean.Lib.Integers.Int64.unsigned i)
+      CompCert4Lean.Lib.Integers.Int64.modulus) %
+        intOfZ CompCert4Lean.Lib.Integers.Int64.modulus = _
+    simp [ZArith.BinInt.Z.sub, intOfZ_zOfInt, _root_.Int.sub_emod,
+      _root_.Int.emod_eq_of_lt hu.1 hu.2]
+
+private theorem selection_int64_add_comm (i j : int64) :
+    CompCert4Lean.Lib.Integers.Int64.add i j = CompCert4Lean.Lib.Integers.Int64.add j i := by
+  change CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.add (CompCert4Lean.Lib.Integers.Int64.unsigned i) (CompCert4Lean.Lib.Integers.Int64.unsigned j)) =
+    CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.add (CompCert4Lean.Lib.Integers.Int64.unsigned j) (CompCert4Lean.Lib.Integers.Int64.unsigned i))
+  congr 1
+  apply intOfZ_injective
+  simp [ZArith.BinInt.Z.add, _root_.Int.add_comm]
+
+private theorem selection_int64_add_zero (i : int64) :
+    CompCert4Lean.Lib.Integers.Int64.add i CompCert4Lean.Lib.Integers.Int64.zero = i := by
+  change CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.add (CompCert4Lean.Lib.Integers.Int64.unsigned i) .Z0) = i
+  have h : ZArith.BinInt.Z.add (CompCert4Lean.Lib.Integers.Int64.unsigned i) .Z0 = CompCert4Lean.Lib.Integers.Int64.unsigned i := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    change intOfZ _ + 0 = intOfZ _
+    omega
+  rw [h]
+  exact selection_int64_repr_unsigned i
+
+private theorem selection_int64_sub_add_neg (i j : int64) :
+    CompCert4Lean.Lib.Integers.Int64.sub i j = CompCert4Lean.Lib.Integers.Int64.add i (CompCert4Lean.Lib.Integers.Int64.neg j) := by
+  apply WordCore.ext
+  change CompCert4Lean.Lib.Integers.Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.sub (CompCert4Lean.Lib.Integers.Int64.unsigned i)
+      (CompCert4Lean.Lib.Integers.Int64.unsigned j))) =
+    CompCert4Lean.Lib.Integers.Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.add (CompCert4Lean.Lib.Integers.Int64.unsigned i)
+      (CompCert4Lean.Lib.Integers.Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.opp (CompCert4Lean.Lib.Integers.Int64.unsigned j))))))
+  rw [selection_int64_unsigned_repr_eq_exact, selection_int64_unsigned_repr_eq_exact,
+    selection_int64_unsigned_repr_eq_exact]
+  apply intOfZ_injective
+  simp only [selection_int64_mod_int, ZArith.BinInt.Z.sub,
+    ZArith.BinInt.Z.add, ZArith.BinInt.Z.opp, intOfZ_zOfInt]
+  rw [_root_.Int.add_emod, _root_.Int.emod_emod]
+  rw [_root_.Int.sub_eq_add_neg, _root_.Int.add_emod]
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+open Lean Elab Tactic Meta
+
+private theorem selection_eval_addlimm_long
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (prog : CminorSelProgram)
+    (sp : val) (e : Env) (m : mem) (le : letenv)
+    (a : expr) (i n : int64)
+    (ha : eval_expr xi (Genv.globalenv prog) sp e m le a (.Vlong i)) :
+    eval_expr xi (Genv.globalenv prog) sp e m le (addlimm n a)
+      (.Vlong (CompCert4Lean.Lib.Integers.Int64.add i n)) := by
+  by_cases hz : CompCert4Lean.Lib.Integers.Int64.eq n
+      CompCert4Lean.Lib.Integers.Int64.zero = true
+  · have hn : n = CompCert4Lean.Lib.Integers.Int64.zero := by
+      apply WordCore.ext
+      exact of_decide_eq_true hz
+    subst n
+    simpa [addlimm, hz, selection_int64_add_zero] using ha
+  · unfold addlimm
+    rw [if_neg hz]
+    cases hc : addlimm_match a with
+    | addlimm_case1 j =>
+        have hij : i = j := by
+          have h := selection_is_longconst_sound xi prog sp e m le
+            (Eop (Olongconst j) Enil) (.Vlong i) j rfl ha
+          exact val.Vlong.inj h
+        subst i
+        rw [selection_int64_add_comm]
+        exact eval_expr.eval_Eop le (Olongconst _) Enil [] _
+          (eval_exprlist.nil le) rfl
+    | addlimm_case2 addr args =>
+        cases ha with
+        | eval_Eop le' op al vl v hargs hop =>
+            change eval_addressing64 (Genv.globalenv prog) sp addr vl =
+              some (.Vlong i) at hop
+            have hnew := eval_offset_addressing_total_64
+              (F := CompCert4Lean.Backend.CminorSel.fundef) (V := Unit)
+              (Genv.globalenv prog) sp addr vl
+              (CompCert4Lean.Lib.Integers.Int64.signed n) (.Vlong i) hop
+            simp only [hc]
+            apply eval_expr.eval_Eop le
+              (Oleal (offset_addressing_total addr
+                (CompCert4Lean.Lib.Integers.Int64.signed n))) args vl _ hargs
+            change eval_addressing64 (Genv.globalenv prog) sp
+              (offset_addressing_total addr
+                (CompCert4Lean.Lib.Integers.Int64.signed n)) vl = _
+            simpa only [selection_int64_repr_signed, Val.addl] using hnew
+    | addlimm_default a' =>
+        simp only [hc]
+        apply eval_expr.eval_Eop le
+          (Oleal (Aindexed (CompCert4Lean.Lib.Integers.Int64.signed n)))
+          (Econs a Enil) [.Vlong i] _
+          (eval_exprlist.cons le a Enil (.Vlong i) [] ha (eval_exprlist.nil le))
+        change some (Val.addl (.Vlong i) (.Vlong
+          (CompCert4Lean.Lib.Integers.Int64.repr
+            (CompCert4Lean.Lib.Integers.Int64.signed n)))) = _
+        rw [selection_int64_repr_signed]
+        rfl
+
+private theorem selection_int64_ltu_repr (j : int64) (n : Z)
+    (hn : ZArith.BinInt.Z.le .Z0 n ∧
+      ZArith.BinInt.Z.lt n CompCert4Lean.Lib.Integers.Int64.modulus) :
+    CompCert4Lean.Lib.Integers.Int64.ltu j
+        (CompCert4Lean.Lib.Integers.Int64.repr n) =
+      proj_sumbool (CompCert4Lean.Lib.Coqlib.zlt
+        (CompCert4Lean.Lib.Integers.Int64.unsigned j) n) := by
+  unfold CompCert4Lean.Lib.Integers.Int64.ltu WordCore.ltu
+  run_tac
+    for suffix in ["CompCert4Lean.Lib.Integers.zltSelect",
+        "CompCert4Lean.Lib.Integers.sumboolSelect"] do
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith suffix)
+        | throwError "frozen comparison helper not found"
+      let ident := Lean.mkIdent n
+      evalTactic (← `(tactic| unfold $ident))
+  have hu := selection_int64_unsigned_repr_small n hn
+  change WordCore.unsigned (CompCert4Lean.Lib.Integers.Int64.repr n) = n at hu
+  rw [hu]
+
+  unfold CompCert4Lean.Lib.Integers.Int64.unsigned
+  cases CompCert4Lean.Lib.Coqlib.zlt (WordCore.unsigned j) n <;> rfl
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+ theorem sel_switch_long_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    sel_switch_long_correctStatement := by
+  intro xi tprog dfl cases arg sp e m i t le hvalid harg
+  have hConst (n : int64) (sp : val) (e : Env) (m : mem) (le : letenv) :
+      eval_expr xi (Genv.globalenv tprog) sp e m le (longconst n) (.Vlong n) :=
+    eval_expr.eval_Eop le (.Olongconst n) .Enil [] (.Vlong n) (eval_exprlist.nil le) rfl
+  refine sel_switch_correct xi tprog _ _ _ _ CompCert4Lean.Lib.Integers.Int64.modulus Rlong
+    ?_ ?_ ?_ ?_ dfl cases arg sp e m (.Vlong i)
+    (CompCert4Lean.Lib.Integers.Int64.unsigned i) t le
+    hvalid harg (Rlong.intro i) (selection_int64_unsigned_range i)
+  · intro sp e m le a v i n heval hR hn
+    cases hR with
+    | intro j =>
+        apply selection_eval_cmpl xi tprog sp e m .Ceq le a (.Vlong j)
+          (longconst (CompCert4Lean.Lib.Integers.Int64.repr n))
+          (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr n)) _ heval
+          (hConst (CompCert4Lean.Lib.Integers.Int64.repr n) sp e m le)
+        have hb : CompCert4Lean.Lib.Integers.Int64.eq j
+            (CompCert4Lean.Lib.Integers.Int64.repr n) =
+            proj_sumbool (zeq (CompCert4Lean.Lib.Integers.Int64.unsigned j) n) := by
+          change decide (CompCert4Lean.Lib.Integers.Int64.unsigned j =
+            CompCert4Lean.Lib.Integers.Int64.unsigned
+              (CompCert4Lean.Lib.Integers.Int64.repr n)) = _
+          rw [selection_int64_unsigned_repr_small n hn]
+          cases h : zeq (CompCert4Lean.Lib.Integers.Int64.unsigned j) n with
+          | left heq => simp [proj_sumbool, heq]
+          | right hne => simp [proj_sumbool, hne]
+        change some (Val.of_bool (CompCert4Lean.Lib.Integers.Int64.eq j
+          (CompCert4Lean.Lib.Integers.Int64.repr n))) = _
+        rw [hb]
+  · intro sp e m le a v i n heval hR hn
+    cases hR with
+    | intro j =>
+        apply selection_eval_cmplu xi tprog sp e m .Clt le a (.Vlong j)
+          (longconst (CompCert4Lean.Lib.Integers.Int64.repr n))
+          (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr n)) _ heval
+          (hConst (CompCert4Lean.Lib.Integers.Int64.repr n) sp e m le)
+        change some (Val.of_bool (CompCert4Lean.Lib.Integers.Int64.ltu j
+          (CompCert4Lean.Lib.Integers.Int64.repr n))) = _
+        rw [selection_int64_ltu_repr j n hn]
+  · intro sp e m le a v i n heval hR hn
+    cases hR with
+    | intro j =>
+        refine ⟨.Vlong (CompCert4Lean.Lib.Integers.Int64.sub j
+          (CompCert4Lean.Lib.Integers.Int64.repr n)), ?_, ?_⟩
+        · have hs : subl a (longconst (CompCert4Lean.Lib.Integers.Int64.repr n)) =
+              addlimm (CompCert4Lean.Lib.Integers.Int64.neg
+                (CompCert4Lean.Lib.Integers.Int64.repr n)) a := by
+            cases a <;> rfl
+          rw [hs, selection_int64_sub_add_neg]
+          exact selection_eval_addlimm_long xi tprog sp e m le a j _ heval
+        · have hu : CompCert4Lean.Lib.Integers.Int64.unsigned
+              (CompCert4Lean.Lib.Integers.Int64.sub j
+                (CompCert4Lean.Lib.Integers.Int64.repr n)) =
+              ZArith.BinInt.Z.modulo
+                (ZArith.BinInt.Z.sub (CompCert4Lean.Lib.Integers.Int64.unsigned j) n)
+                CompCert4Lean.Lib.Integers.Int64.modulus := by
+            change CompCert4Lean.Lib.Integers.Int64.unsigned
+              (CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.sub
+                (CompCert4Lean.Lib.Integers.Int64.unsigned j)
+                (CompCert4Lean.Lib.Integers.Int64.unsigned
+                  (CompCert4Lean.Lib.Integers.Int64.repr n)))) = _
+            rw [selection_int64_unsigned_repr_eq_exact,
+              selection_int64_unsigned_repr_small n hn]
+          rw [← hu]
+          exact Rlong.intro _
+  · intro sp e m le a v i heval hR
+    cases hR with
+    | intro j =>
+        obtain ⟨v', he, hv⟩ := CompCert4Lean.Backend.SplitLongproof.eval_lowlong
+          xi tprog sp e m le a (.Vlong j) heval
+        change Val.lessdef (.Vint (CompCert4Lean.Lib.Integers.Int64.loword j)) v' at hv
+        cases hv
+        refine ⟨_, he, ?_⟩
+        have hu : CompCert4Lean.Lib.Integers.Int.unsigned
+            (CompCert4Lean.Lib.Integers.Int64.loword j) =
+            ZArith.BinInt.Z.modulo (CompCert4Lean.Lib.Integers.Int64.unsigned j)
+              CompCert4Lean.Lib.Integers.Int.modulus :=
+          CompCert4Lean.Lib.Integers.Int.unsigned_repr_eq_proof _
+        rw [← hu]
+        exact Rint.intro _
+
+end CompCert4Lean.Backend.Selectionproof

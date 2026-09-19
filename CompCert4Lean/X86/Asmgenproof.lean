@@ -2207,3 +2207,36 @@ theorem find_label_goto_label : find_label_goto_labelStatement := by
     · rfl
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+open CompCert4Lean.Backend.Asmgenproof0
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Lib.Coqlib
+
+theorem return_address_exists : return_address_existsStatement := by
+  apply CompCert4Lean.Backend.Asmgenproof0.return_address_exists
+  · intro f i ep k c h
+    have hl := transl_instr_label f i ep k c h
+    cases i <;> try exact hl.1
+    subst c
+    exact is_tail.cons _ (is_tail.refl k)
+  · intro f tf h
+    unfold CompCert4Lean.X86.Asmgen.transf_function at h
+    obtain ⟨tf0, ht, hs⟩ := bind_inversion _ _ _ _ _ h
+    cases hz : zlt CompCert4Lean.Lib.Integers.Ptrofs.max_unsigned
+        (list_length_z tf0.fn_code) with
+    | left hlt =>
+        rw [hz] at hs
+        cases hs
+    | right hge =>
+        rw [hz] at hs
+        cases hs
+        unfold CompCert4Lean.X86.Asmgen.transl_function at ht
+        obtain ⟨c, hc, he⟩ := bind_inversion _ _ _ _ _ ht
+        cases he
+        rw [transl_code'_transl_code] at hc
+        exact ⟨c, true, hc, is_tail.cons _ (is_tail.refl c)⟩
+  · exact transf_function_no_overflow
+
+end CompCert4Lean.X86.Asmgenproof

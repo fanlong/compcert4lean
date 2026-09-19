@@ -5966,3 +5966,41 @@ theorem transl_expr_correct
           exact ⟨tv, .eval_Eload chunk ta1 tv1 tv heval1 hload', hinj⟩
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+set_option maxHeartbeats 1000000 in
+theorem transl_exprlist_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_exprlist_correctStatement := by
+  intro prog tprog hprog f m tm cenv tf e le te sp lo hi cs hminj hmatch
+  intro a v hev
+  induction hev with
+  | eval_Enil =>
+      intro ta htr
+      simp only [CompCert4Lean.Cfrontend.Cminorgen.transl_exprlist] at htr
+      cases htr
+      exact ⟨[], .eval_Enil, CompCert4Lean.Common.Values.Val.inject_list_nil f⟩
+  | eval_Econs a1 al v1 vl ha1 hal ih =>
+      intro ta htr
+      simp only [CompCert4Lean.Cfrontend.Cminorgen.transl_exprlist] at htr
+      cases q1 : CompCert4Lean.Cfrontend.Cminorgen.transl_expr cenv a1 with
+      | Error msg =>
+          rw [q1] at htr
+          cases htr
+      | OK ta1 =>
+          cases q2 : CompCert4Lean.Cfrontend.Cminorgen.transl_exprlist cenv al with
+          | Error msg =>
+              rw [q1, q2] at htr
+              cases htr
+          | OK ta2 =>
+              rw [q1, q2] at htr
+              cases htr
+              rcases transl_expr_correct prog tprog hprog f m tm cenv tf e le te sp lo hi cs
+                hminj hmatch a1 v1 ha1 ta1 q1 with ⟨tv1, heval1, hinj1⟩
+              rcases ih ta2 q2 with ⟨tv2, heval2, hinj2⟩
+              exact ⟨tv1 :: tv2, .eval_Econs ta1 ta2 tv1 tv2 heval1 heval2,
+                CompCert4Lean.Common.Values.Val.inject_list_cons f v1 tv1 vl tv2 hinj1 hinj2⟩
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

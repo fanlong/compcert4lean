@@ -5682,3 +5682,55 @@ theorem ZArith.Zpower.two_power_pos_nat :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zpower.two_power_pos_is_exp :
+    ZArith.Zpower.two_power_pos_is_expStatement := by
+  intro x y
+  apply intOfZ_injective
+  simp only [two_power_pos, ZArith.Zpower.two_power_pos,
+    ZArith.BinInt.Z.pow_pos, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  unfold PArith.BinPos.Pos.to_nat PArith.BinPos.Pos.add
+  have hsum : 0 < posToNat x + posToNat y := by
+    have hx := posToNat_positive x
+    omega
+  rw [posToNat_posOfNat hsum]
+  exact Int.pow_add _ _ _
+
+theorem ZArith.Zpower.two_p_is_exp :
+    ZArith.Zpower.two_p_is_expStatement := by
+  intro x y hx hy
+  exact ZArith.Zpower.Zpower_exp (Zpos (.xO .xH)) x y hx hy
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zpower.two_p_gt_ZERO :
+    ZArith.Zpower.two_p_gt_ZEROStatement := by
+  intro x hx
+  change (0 : Int) ≤ intOfZ x at hx
+  change (0 : Int) < intOfZ (ZArith.BinInt.Z.pow (Zpos (.xO .xH)) x)
+  rw [zpower_nonneg_int_worker _ _ hx]
+  change (0 : Int) < Int.pow 2 (Int.toNat (intOfZ x))
+  rw [numbers_int_pow_two_nat]
+  exact Int.natCast_pos.mpr (Nat.two_pow_pos _)
+
+theorem ZArith.Zpower.two_p_S :
+    ZArith.Zpower.two_p_SStatement := by
+  intro x hx
+  change two_p (ZArith.BinInt.Z.add x (Zpos .xH)) = _
+  rw [ZArith.Zpower.two_p_is_exp x (Zpos .xH) hx (by
+    change (0 : Int) ≤ 1
+    decide)]
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  change intOfZ (two_p x) * 2 = 2 * intOfZ (two_p x)
+  exact Int.mul_comm _ _
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

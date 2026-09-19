@@ -5990,3 +5990,98 @@ theorem make_or_correct
     rfl
   · intro x y m
     rfl
+
+
+theorem make_shl_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_shl_correctStatement := by
+  intro ge a tya b tyb c va vb v e le m hsem hmake h1 h2
+  have hclassified : Cshmgen.make_shl a tya b tyb =
+      match Cop.classify_shift tya tyb with
+      | .shift_case_ii _ => .OK (.Ebinop .Oshl a b)
+      | .shift_case_ll _ => .OK (.Ebinop .Oshll a (.Eunop .Ointoflong b))
+      | .shift_case_il _ => .OK (.Ebinop .Oshl a (.Eunop .Ointoflong b))
+      | .shift_case_li _ => .OK (.Ebinop .Oshll a b)
+      | .shift_default => Cshmgen.make_shl a tya b tyb := by
+    cases hta : Ctypes.typeconv tya <;> cases htb : Ctypes.typeconv tyb <;>
+      simp [Cshmgen.make_shl, Cop.classify_shift, hta, htb]
+    case Tint.Tint sz sg attr sz2 sg2 attr2 =>
+      cases sz <;> cases sg <;> rfl
+    case Tint.Tlong sz sg attr sg2 attr2 =>
+      cases sz <;> cases sg <;> rfl
+  rw [hclassified] at hmake
+  unfold Cop.sem_shl Cop.sem_shift at hsem
+  cases hclass : Cop.classify_shift tya tyb <;>
+    simp only [hclass] at hsem hmake
+  case shift_case_ii sg =>
+    cases va <;> cases vb <;> simp only at hsem
+    all_goals try contradiction
+    rename_i n1 n2
+    split at hsem <;> try contradiction
+    rename_i hlt
+    cases hsem
+    cases hmake
+    apply Csharpminor.eval_Ebinop
+    · exact h1
+    · exact h2
+    · simp [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+        Val.shl, hlt]
+  case shift_case_ll sg =>
+    cases va <;> cases vb <;> simp only at hsem
+    all_goals try contradiction
+    rename_i n1 n2
+    split at hsem <;> try contradiction
+    rename_i hlt
+    cases hsem
+    cases hmake
+    obtain ⟨hsmall, hunsigned⟩ := small_shift_amount_1 n2 hlt
+    apply Csharpminor.eval_Ebinop (v2 := .Vint (Int64.loword n2))
+    · exact h1
+    · apply Csharpminor.eval_Eunop
+      · exact h2
+      · rfl
+    · simp only [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+        Val.shll, hsmall, ↓reduceIte]
+      change some (Vlong (Int64.repr (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftl
+          (Int64.unsigned n1) (CompCert4Lean.Lib.Integers.Int.unsigned (Int64.loword n2))))) =
+        some (Vlong (Int64.repr (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftl
+          (Int64.unsigned n1) (Int64.unsigned n2))))
+      rw [hunsigned]
+  case shift_case_il sg =>
+    cases va <;> cases vb <;> simp only at hsem
+    all_goals try contradiction
+    rename_i n1 n2
+    split at hsem <;> try contradiction
+    rename_i hlt
+    cases hsem
+    cases hmake
+    have hsmall := small_shift_amount_2 n2 hlt
+    apply Csharpminor.eval_Ebinop (v2 := .Vint (Int64.loword n2))
+    · exact h1
+    · apply Csharpminor.eval_Eunop
+      · exact h2
+      · rfl
+    · simp [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+        Val.shl, hsmall]
+  case shift_case_li sg =>
+    cases va <;> cases vb <;> simp only at hsem
+    all_goals try contradiction
+    rename_i n1 n2
+    split at hsem <;> try contradiction
+    rename_i hlt
+    cases hsem
+    cases hmake
+    have hunsigned := small_shift_amount_3 n2 hlt
+    apply Csharpminor.eval_Ebinop
+    · exact h1
+    · exact h2
+    · simp only [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+        Val.shll, hlt, ↓reduceIte]
+      change some (Vlong (Int64.repr (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftl
+          (Int64.unsigned n1) (CompCert4Lean.Lib.Integers.Int.unsigned n2)))) =
+        some (Vlong (Int64.repr (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftl
+          (Int64.unsigned n1) (Int64.unsigned
+            (Int64.repr (CompCert4Lean.Lib.Integers.Int.unsigned n2))))))
+      rw [hunsigned]
+  case shift_default => contradiction

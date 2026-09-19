@@ -5635,3 +5635,10 @@ theorem init_mem_characterization : init_mem_characterizationStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs.Genv
+
+theorem alloc_global_neutral : alloc_global_neutralStatement :=
+  pg_alloc_global_neutral
+
+end CompCert4Lean.Common.Globalenvs.Genv
