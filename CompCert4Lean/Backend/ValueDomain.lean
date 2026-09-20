@@ -6450,3 +6450,12 @@ theorem pdisjoint_sound_strong : pdisjoint_sound_strongStatement := by
   · exact Or.inl hb
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem ablock_store_anywhere_sound : ablock_store_anywhere_soundStatement := by
+  intro bc chunk m b ofs v m' b' ab av hstore hbm hvm
+  exact ablock_init_sound bc m' b' (vplub av ab.ab_summary)
+    (smatch_store bc chunk m b ofs v m' b' ab.ab_summary av hstore hbm.1 hvm)
+
+end CompCert4Lean.Backend.ValueDomain

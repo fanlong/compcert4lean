@@ -6642,3 +6642,11 @@ theorem round_DN_plus_eps_pos :
           (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h).2 hxle)
     exact pg_sllt_round_DN_plus_eps_strict ctx magnitude beta fexp x hxpos
       hformat eps heps
+
+
+theorem succ_le_lt_aux :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      succ_le_lt_auxStatement ctx magnitude :=
+  pg_pred_ge_gt_succ_le_lt_aux
+
+end CompCert4Lean.Flocq.Core.Ulp

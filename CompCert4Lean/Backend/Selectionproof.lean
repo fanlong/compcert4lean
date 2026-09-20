@@ -4863,3 +4863,207 @@ theorem call_cont_commut
       hlink hhf hsel hty hcont hld
 
 end CompCert4Lean.Backend.Selectionproof
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+open CompCert4Lean.X86.SelectOpproof
+open CompCert4Lean.X86.Builtins1
+
+theorem eval_sel_known_builtin
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_sel_known_builtinStatement := by
+  intro xi tprog sp e m bf args a vl v le hsel hargs hsem
+  cases bf with
+  | BI_standard bf =>
+      cases bf with
+      | BI_select ty =>
+          cases args with
+          | Enil => simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+          | Econs a1 rest =>
+              cases rest with
+              | Enil => simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+              | Econs a2 rest2 =>
+                  cases rest2 with
+                  | Enil => simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+                  | Econs a3 rest3 =>
+                      cases rest3 with
+                      | Enil =>
+                          simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+                          subst a
+                          cases hargs with
+                          | cons _ _ _ vv0 _ h1 ht =>
+                              cases ht with
+                              | cons _ _ _ vv1 _ h2 ht2 =>
+                                  cases ht2 with
+                                  | cons _ _ _ vv2 _ h3 ht3 =>
+                                      cases ht3
+                                      cases vv0 with
+                                      | Vundef => change none = some v at hsem; cases hsem
+                                      | Vint n =>
+                                          change some (Val.normalize
+                                            (if CompCert4Lean.Lib.Integers.Int.eq n CompCert4Lean.Lib.Integers.Int.zero then vv2 else vv1) ty) = some v at hsem
+                                          cases hsem
+                                          have hb : Val.bool_of_val (.Vint n) (!(CompCert4Lean.Lib.Integers.Int.eq n CompCert4Lean.Lib.Integers.Int.zero)) :=
+                                            Val.bool_of_val_int n
+                                          have hs := eval_sel_select xi tprog sp e m le
+                                            a1 a2 a3 (.Vint n) vv1 vv2 (!(CompCert4Lean.Lib.Integers.Int.eq n CompCert4Lean.Lib.Integers.Int.zero)) ty
+                                            h1 h2 h3 hb
+                                          rcases hs with ⟨v', hev, hless⟩
+                                          refine ⟨v', hev, ?_⟩
+                                          have heq : Val.normalize
+                                              (if CompCert4Lean.Lib.Integers.Int.eq n CompCert4Lean.Lib.Integers.Int.zero then vv2 else vv1) ty =
+                                              Val.select (some (!(CompCert4Lean.Lib.Integers.Int.eq n CompCert4Lean.Lib.Integers.Int.zero))) vv1 vv2 ty := by
+                                            by_cases hn : CompCert4Lean.Lib.Integers.Int.eq n CompCert4Lean.Lib.Integers.Int.zero = true <;>
+                                              simp [hn, Val.select]
+                                          rw [heq]
+                                          exact hless
+                                      | Vlong n => change none = some v at hsem; cases hsem
+                                      | Vfloat f => change none = some v at hsem; cases hsem
+                                      | Vsingle f => change none = some v at hsem; cases hsem
+                                      | Vptr b ofs => change none = some v at hsem; cases hsem
+                      | Econs _ _ => simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+      | BI_fabs =>
+          cases args with
+          | Enil => simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+          | Econs a1 rest =>
+              cases rest with
+              | Enil =>
+                  simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+                  subst a
+                  cases hargs with
+                  | cons _ _ _ vv _ h1 ht =>
+                      cases ht
+                      cases vv with
+                      | Vfloat f =>
+                          change some (Val.absf (.Vfloat f)) = some v at hsem
+                          cases hsem
+                          exact CompCert4Lean.X86.SelectOpproof.eval_absf xi
+                            (Genv.globalenv tprog) sp e m le a1 (.Vfloat f) h1
+                      | _ =>
+                          dsimp [builtin_function_sem, standard_builtin_sem,
+                            CompCert4Lean.Common.Builtins0.mkbuiltin_n1t,
+                            CompCert4Lean.Common.Builtins0.mkbuiltin_v1t] at hsem
+                          cases hsem
+                          exact CompCert4Lean.X86.SelectOpproof.eval_absf xi
+                            (Genv.globalenv tprog) sp e m le a1 _ h1
+              | Econs _ _ => simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+      | BI_fabsf =>
+          cases args with
+          | Enil => simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+          | Econs a1 rest =>
+              cases rest with
+              | Enil =>
+                  simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+                  subst a
+                  cases hargs with
+                  | cons _ _ _ vv _ h1 ht =>
+                      cases ht
+                      cases vv with
+                      | Vsingle f =>
+                          change some (Val.absfs (.Vsingle f)) = some v at hsem
+                          cases hsem
+                          exact CompCert4Lean.X86.SelectOpproof.eval_absfs xi
+                            (Genv.globalenv tprog) sp e m le a1 (.Vsingle f) h1
+                      | _ =>
+                          dsimp [builtin_function_sem, standard_builtin_sem,
+                            CompCert4Lean.Common.Builtins0.mkbuiltin_n1t,
+                            CompCert4Lean.Common.Builtins0.mkbuiltin_v1t] at hsem
+                          cases hsem
+                          exact CompCert4Lean.X86.SelectOpproof.eval_absfs xi
+                            (Genv.globalenv tprog) sp e m le a1 _ h1
+              | Econs _ _ => simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+      | _ => simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+  | BI_platform bf =>
+      cases bf with
+      | BI_fmin =>
+          cases args with
+          | Enil => simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+          | Econs a1 rest =>
+              cases rest with
+              | Enil => simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+              | Econs a2 rest2 =>
+                  cases rest2 with
+                  | Enil =>
+                      simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+                      subst a
+                      cases hargs with
+                      | cons _ _ _ vv1 _ h1 ht =>
+                          cases ht with
+                          | cons _ _ _ vv2 _ h2 ht2 =>
+                              cases ht2
+                              cases vv1 <;> cases vv2
+                              all_goals
+                                try
+                                  change some Vundef = some v at hsem
+                                  cases hsem
+                                  refine ⟨Vundef, ?_, Val.lessdef_refl _⟩
+                                  apply eval_expr.eval_Eop le Ominf
+                                    (Econs a1 (Econs a2 Enil)) _ Vundef
+                                  · exact eval_exprlist.cons le a1 (Econs a2 Enil) _ [_] h1
+                                      (eval_exprlist.cons le a2 Enil _ [] h2
+                                        (eval_exprlist.nil le))
+                                  · rfl
+                              case Vfloat.Vfloat f1 f2 =>
+                                change some (Vfloat (match CompCert4Lean.Lib.Floats.Float.compare f1 f2 with
+                                  | some .Lt => f1
+                                  | some .Eq | some .Gt | none => f2)) = some v at hsem
+                                cases hsem
+                                refine ⟨_, ?_, Val.lessdef_refl _⟩
+                                apply eval_expr.eval_Eop le Ominf
+                                  (Econs a1 (Econs a2 Enil)) [Vfloat f1, Vfloat f2] _
+                                · exact eval_exprlist.cons le a1 (Econs a2 Enil) _ [Vfloat f2] h1
+                                    (eval_exprlist.cons le a2 Enil _ [] h2
+                                      (eval_exprlist.nil le))
+                                · rfl
+                  | Econs _ _ => simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+      | BI_fmax =>
+          cases args with
+          | Enil => simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+          | Econs a1 rest =>
+              cases rest with
+              | Enil => simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+              | Econs a2 rest2 =>
+                  cases rest2 with
+                  | Enil =>
+                      simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+                      subst a
+                      cases hargs with
+                      | cons _ _ _ vv1 _ h1 ht =>
+                          cases ht with
+                          | cons _ _ _ vv2 _ h2 ht2 =>
+                              cases ht2
+                              cases vv1 <;> cases vv2
+                              all_goals
+                                try
+                                  change some Vundef = some v at hsem
+                                  cases hsem
+                                  refine ⟨Vundef, ?_, Val.lessdef_refl _⟩
+                                  apply eval_expr.eval_Eop le Omaxf
+                                    (Econs a1 (Econs a2 Enil)) _ Vundef
+                                  · exact eval_exprlist.cons le a1 (Econs a2 Enil) _ [_] h1
+                                      (eval_exprlist.cons le a2 Enil _ [] h2
+                                        (eval_exprlist.nil le))
+                                  · rfl
+                              case Vfloat.Vfloat f1 f2 =>
+                                change some (Vfloat (match CompCert4Lean.Lib.Floats.Float.compare f1 f2 with
+                                  | some .Gt => f1
+                                  | some .Eq | some .Lt | none => f2)) = some v at hsem
+                                cases hsem
+                                refine ⟨_, ?_, Val.lessdef_refl _⟩
+                                apply eval_expr.eval_Eop le Omaxf
+                                  (Econs a1 (Econs a2 Enil)) [Vfloat f1, Vfloat f2] _
+                                · exact eval_exprlist.cons le a1 (Econs a2 Enil) _ [Vfloat f2] h1
+                                    (eval_exprlist.cons le a2 Enil _ [] h2
+                                      (eval_exprlist.nil le))
+                                · rfl
+                  | Econs _ _ => simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
+
+end CompCert4Lean.Backend.Selectionproof

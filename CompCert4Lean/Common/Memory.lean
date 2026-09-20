@@ -9344,3 +9344,29 @@ theorem load_store_similar_2 : load_store_similar_2Statement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+theorem alloc_right_inject : alloc_right_injectStatement := by
+  intro f m1 m2 lo hi b2 m2' hinj halloc
+  refine {
+    mi_inj := alloc_right_inj f m1 m2 lo hi b2 m2' hinj.mi_inj halloc
+    mi_freeblocks := hinj.mi_freeblocks
+    mi_mappedblocks := ?_
+    mi_no_overlap := hinj.mi_no_overlap
+    mi_representable := hinj.mi_representable
+    mi_perm_inv := ?_ }
+  · intro b b' delta hmap
+    exact valid_block_alloc m2 lo hi m2' b2 halloc b'
+      (hinj.mi_mappedblocks b b' delta hmap)
+  · intro b ofs b' delta k p hmap hperm
+    have hne : b' ≠ b2 := by
+      intro heq
+      apply fresh_block_alloc m2 lo hi m2' b2 halloc
+      rw [← heq]
+      exact hinj.mi_mappedblocks b b' delta hmap
+    exact hinj.mi_perm_inv b ofs b' delta k p hmap
+      (perm_alloc_4 m2 lo hi m2' b2 halloc b' _ k p hperm hne)
+
+end CompCert4Lean.Common.Memory.Mem
