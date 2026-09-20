@@ -4487,3 +4487,102 @@ theorem eval_longconst
       (splitlong_recompose_local n)
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+private theorem splitlong_int_not_val (x : CCInt) :
+    (CompCert4Lean.Lib.Integers.Int.not x).val =
+      Nat.xor x.val (2 ^ 32 - 1) := by
+  unfold CompCert4Lean.Lib.Integers.Int.not
+    CompCert4Lean.Lib.Integers.WordCore.not
+  rw [test_repr_zOfNat]
+  have hp : 0 < 2 ^ 32 := Nat.two_pow_pos 32
+  exact Nat.mod_eq_of_lt (Nat.xor_lt_two_pow
+    (CompCert4Lean.Lib.Integers.WordCore.Word.toFin x).isLt (by decide))
+
+private theorem splitlong_int64_not_val (x : CCInt64) :
+    (CompCert4Lean.Lib.Integers.Int64.not x).val =
+      Nat.xor x.val (2 ^ 64 - 1) := by
+  unfold CompCert4Lean.Lib.Integers.Int64.not
+    CompCert4Lean.Lib.Integers.WordCore.not
+  rw [test_repr_zOfNat]
+  have hp : 0 < 2 ^ 64 := Nat.two_pow_pos 64
+  exact Nat.mod_eq_of_lt (Nat.xor_lt_two_pow
+    (CompCert4Lean.Lib.Integers.WordCore.Word.toFin x).isLt (by decide))
+
+private theorem splitlong_nat_not_split (a b : Nat)
+    (ha : a < 2 ^ 32) (hb : b < 2 ^ 32) :
+    Nat.xor (Nat.lor (Nat.shiftLeft a 32) b) (2 ^ 64 - 1) =
+      Nat.lor (Nat.shiftLeft (Nat.xor a (2 ^ 32 - 1)) 32)
+        (Nat.xor b (2 ^ 32 - 1)) := by
+  have h := splitlong_nat_xor_split a b (2 ^ 32 - 1) (2 ^ 32 - 1)
+    ha hb (by omega) (by omega)
+  have hm : Nat.lor (Nat.shiftLeft (2 ^ 32 - 1) 32) (2 ^ 32 - 1) =
+      2 ^ 64 - 1 := by
+    decide
+  change Nat.xor (Nat.lor (Nat.shiftLeft a 32) b)
+      (Nat.lor (Nat.shiftLeft (2 ^ 32 - 1) 32) (2 ^ 32 - 1)) =
+    Nat.lor (Nat.shiftLeft (Nat.xor a (2 ^ 32 - 1)) 32)
+      (Nat.xor b (2 ^ 32 - 1)) at h
+  rw [hm] at h
+  exact h
+
+theorem eval_notl : eval_notlStatement := by
+  intro xi prog sp e m le a x ha
+  unfold notl
+  apply eval_splitlong
+  · intro le' a1 a2 x1 x2 h1 h2
+    obtain ⟨v1, hv1, hd1⟩ := CompCert4Lean.X86.SelectOpproof.eval_notint
+      xi (Genv.globalenv prog) sp e m le' a1 x1 h1
+    obtain ⟨v2, hv2, hd2⟩ := CompCert4Lean.X86.SelectOpproof.eval_notint
+      xi (Genv.globalenv prog) sp e m le' a2 x2 h2
+    refine ⟨Val.longofwords v1 v2, ?_, ?_⟩
+    · apply eval_expr.eval_Eop (le := le')
+        (op := Omakelong) (al := Econs _ (Econs _ Enil))
+        (vl := [v1, v2]) (Val.longofwords v1 v2)
+      · exact eval_exprlist.cons le' _ _ v1 [v2] hv1
+          (eval_exprlist.cons le' _ _ v2 [] hv2 (eval_exprlist.nil le'))
+      · rfl
+    · intro p q hx hy
+      subst x1
+      subst x2
+      have hv1' : v1 = .Vint (CompCert4Lean.Lib.Integers.Int.not p) := by
+        cases hd1
+        rfl
+      have hv2' : v2 = .Vint (CompCert4Lean.Lib.Integers.Int.not q) := by
+        cases hd2
+        rfl
+      subst v1
+      subst v2
+      change CompCert4Lean.Common.Values.val.Vlong
+          (CompCert4Lean.Lib.Integers.Int64.ofwords
+            (CompCert4Lean.Lib.Integers.Int.not p)
+            (CompCert4Lean.Lib.Integers.Int.not q)) =
+        CompCert4Lean.Common.Values.val.Vlong
+          (CompCert4Lean.Lib.Integers.Int64.not
+            (CompCert4Lean.Lib.Integers.Int64.ofwords p q))
+      congr 1
+      apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+      rw [test_int64_ofwords_val, splitlong_int_not_val,
+        splitlong_int_not_val, splitlong_int64_not_val,
+        test_int64_ofwords_val]
+      have hnat := splitlong_nat_not_split p.val q.val
+        (CompCert4Lean.Lib.Integers.WordCore.Word.toFin p).isLt
+        (CompCert4Lean.Lib.Integers.WordCore.Word.toFin q).isLt
+      simpa [Nat.shiftLeft_eq] using hnat.symm
+  · cases x <;> simp [Val.notl]
+  · exact ha
+
+end CompCert4Lean.Backend.SplitLongproof

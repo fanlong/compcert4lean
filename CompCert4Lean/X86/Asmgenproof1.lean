@@ -4576,3 +4576,10 @@ theorem transl_addressing_mode_32_correct : transl_addressing_mode_32_correctSta
       cases args <;> simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+theorem transl_addressing_mode_64_correct : transl_addressing_mode_64_correctStatement := by
+  exact transl_addressing_mode_correct
+
+end CompCert4Lean.X86.Asmgenproof1
