@@ -5625,3 +5625,158 @@ theorem contains_set_stack : contains_set_stackStatement := by
   exact stackingproof_contains_set_stack
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.Backend.Lineartyping
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Separation
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Stacklayout
+
+theorem frame_set_local : frame_set_localStatement := by
+  intro return_address_offset tprog cfg f bound_local_pos bound_outgoing_pos
+    bound_stack_data_pos used_callee_save_norepet used_callee_save_prop
+    ofs ty v v' j sp ls ls0 parent retaddr m P hm hwithin hvalid hinj
+  unfold frame_contents at hm
+  have hframe := mconj_proj1 _ _ _ m hm
+  have hlocal := hframe.1.1
+  have hlocalP : (sepconj
+      (contains_locations return_address_offset tprog j sp
+        (make_env cfg (function_bounds cfg f)).fe_ofs_local
+        (function_bounds cfg f).bound_local Local ls) P).m_pred m := by
+    refine ⟨hlocal, hframe.2.1, ?_⟩
+    intro b ofs0 hl hp
+    exact hframe.2.2 b ofs0 (Or.inl hl) hp
+  have hchecks : zLe z0 ofs ∧ zDivide (typealign ty) ofs := by
+    revert hvalid
+    unfold CompCert4Lean.Backend.Lineartyping.slot_valid
+    run_tac
+      Lean.Elab.Tactic.liftMetaTactic fun goal => goal.withContext do
+        let target ← goal.getType
+        let target' ← Lean.Meta.transform target (pre := fun e => do
+          match e.getAppFn.constName? with
+          | some name =>
+              if Lean.Name.isPrefixOf `_private name then
+                let e' ← Lean.Meta.withTransparency .all <| Lean.Meta.whnf e
+                return Lean.TransformStep.done e'
+              else
+                return Lean.TransformStep.continue
+          | none => return Lean.TransformStep.continue)
+        let goal ← Lean.Meta.withTransparency .all <| goal.change target'
+        return [goal]
+    generalize hle : CompCert4Lean.Lib.Coqlib.zle
+      ZArith.BinInt.Z.Z0 ofs = d
+    cases d with
+    | right h => simp
+    | left hnonneg =>
+      generalize heq : CompCert4Lean.Lib.Coqlib.zeq
+        (ZArith.BinInt.Z.modulo ofs (typealign ty)) ZArith.BinInt.Z.Z0 = d
+      cases d with
+      | right h => simp
+      | left hmod =>
+        intro _
+        refine ⟨hnonneg, ZArith.Znumtheory.Zmod_divide ofs (typealign ty) ?_ hmod⟩
+        cases ty <;> decide
+  have hset := stackingproof_set_location return_address_offset tprog m j sp
+    (CompCert4Lean.X86.Stacklayout.make_env cfg
+      (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_ofs_local
+    (CompCert4Lean.Backend.Bounds.function_bounds cfg f).bound_local
+    Local ls P ofs ty v v' hlocalP hchecks.1 hwithin hchecks.2 hinj
+  rcases hset with ⟨m', hstore_mem, hstore, hnew⟩
+  refine ⟨m', ?_, ?_⟩
+  · simpa [CompCert4Lean.Backend.Stacking.offset_local] using hstore
+  · have hrangesP := mconj_proj2 _ _ _ m hm
+    have hranges := hrangesP.1
+    have hrange1 := range_preserved m m' sp .Z0
+        (CompCert4Lean.X86.Stacklayout.make_env cfg
+          (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_stack_data hranges.1
+        (by
+          intro i k p hi hp
+          exact Mem.perm_store_1 (chunk_of_type ty) m sp
+            (zAdd (CompCert4Lean.X86.Stacklayout.make_env cfg
+              (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_ofs_local
+              (zMul z4 ofs))
+            v' m' hstore_mem sp i k p hp)
+    have hrange2 := range_preserved m m' sp
+        (ZArith.BinInt.Z.add
+          (CompCert4Lean.X86.Stacklayout.make_env cfg
+            (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_stack_data
+          (CompCert4Lean.Backend.Bounds.function_bounds cfg f).bound_stack_data)
+        (CompCert4Lean.X86.Stacklayout.make_env cfg
+          (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_size hranges.2.1
+        (by
+          intro i k p hi hp
+          exact Mem.perm_store_1 (chunk_of_type ty) m sp
+            (zAdd (CompCert4Lean.X86.Stacklayout.make_env cfg
+              (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_ofs_local
+              (zMul z4 ofs))
+            v' m' hstore_mem sp i k p hp)
+    have hranges' : (sepconj
+        (range sp .Z0
+          (CompCert4Lean.X86.Stacklayout.make_env cfg
+            (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_stack_data)
+        (range sp (ZArith.BinInt.Z.add
+          (CompCert4Lean.X86.Stacklayout.make_env cfg
+            (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_stack_data
+          (CompCert4Lean.Backend.Bounds.function_bounds cfg f).bound_stack_data)
+          (CompCert4Lean.X86.Stacklayout.make_env cfg
+            (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_size)).m_pred m' := by
+      exact ⟨hrange1, hrange2, hranges.2.2⟩
+    let outgoingarea := contains_locations return_address_offset tprog j sp
+      (CompCert4Lean.X86.Stacklayout.fe_ofs_arg cfg)
+      (CompCert4Lean.Backend.Bounds.function_bounds cfg f).bound_outgoing Outgoing ls
+    let rest := sepconj
+      (hasvalue Mptr sp (make_env cfg (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_ofs_link parent)
+      (sepconj
+        (hasvalue Mptr sp (make_env cfg (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_ofs_retaddr retaddr)
+        (contains_callee_saves j sp
+          (make_env cfg (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_ofs_callee_save
+          (CompCert4Lean.Backend.Bounds.function_bounds cfg f).used_callee_save ls0))
+    have hfoot : ∀ i,
+        zLe (zAdd ((make_env cfg (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_ofs_local)
+          (zMul z4 ofs)) i ∧
+        zLt i (zAdd (zAdd ((make_env cfg (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_ofs_local)
+          (zMul z4 ofs)) (size_chunk (chunk_of_type ty))) →
+        (contains_locations return_address_offset tprog j sp
+          (make_env cfg (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_ofs_local
+          (CompCert4Lean.Backend.Bounds.function_bounds cfg f).bound_local Local ls).m_footprint sp i := by
+      intro i hi
+      exact ⟨rfl, locationChunkRange _ _ _ _ _ hchecks.1 hwithin hi⟩
+    have houtgoing_mem : outgoingarea.m_pred m' :=
+      outgoingarea.m_invar m m' hframe.1.2.1.1
+        (stackingproof_store_unchanged_on outgoingarea _ _ _ _ _ _ hstore_mem (by
+          intro i hi hout
+          exact hframe.1.2.2 sp i (hfoot i hi) (Or.inl hout)))
+    have hrest_mem : rest.m_pred m' :=
+      rest.m_invar m m' hframe.1.2.1.2.1
+        (stackingproof_store_unchanged_on rest _ _ _ _ _ _ hstore_mem (by
+          intro i hi hr
+          exact hframe.1.2.2 sp i (hfoot i hi) (Or.inr hr)))
+    have houtgoing_new := (contains_locations_exten return_address_offset tprog ls
+      (Locmap.set (S Local ofs ty) v ls) j sp
+      (fe_ofs_arg cfg)
+      (CompCert4Lean.Backend.Bounds.function_bounds cfg f).bound_outgoing Outgoing (by
+        intro ofs0 ty0
+        rw [Locmap.gso (S Local ofs ty) v ls (S Outgoing ofs0 ty0)
+          (Or.inl (by intro h; cases h))]
+        exact Val.lessdef_refl _)).1 m' houtgoing_mem
+    have hframe1' : (frame_contents_1 return_address_offset tprog cfg f
+        bound_local_pos bound_outgoing_pos bound_stack_data_pos
+        used_callee_save_norepet used_callee_save_prop j sp
+        (Locmap.set (S Local ofs ty) v ls) ls0 parent retaddr).m_pred m' :=
+      ⟨hnew.1, ⟨houtgoing_new, hrest_mem, hframe.1.2.1.2.2⟩, hframe.1.2.2⟩
+    exact frame_mconj _ _ _ _ _ _ hm
+      ⟨hframe1', hnew.2.1, hframe.2.2⟩ hranges'
+
+end CompCert4Lean.Backend.Stackingproof

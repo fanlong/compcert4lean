@@ -4062,3 +4062,113 @@ theorem divls_mul_shift_1 : divls_mul_shift_1Statement := by
   rw [hmrepr]
 
 end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open Lean Elab Tactic
+
+private theorem pg_int64_eqm_signed_unsigned (x : CCInt64) :
+    CompCert4Lean.Lib.Integers.Int64.eqm (int64Signed x) (int64Unsigned x) := by
+  unfold CompCert4Lean.Lib.Integers.Int64.eqm
+    CompCert4Lean.Lib.Integers.WordCore.eqm
+  change CompCert4Lean.Lib.Zbits.eqmod _
+      (CompCert4Lean.Lib.Integers.WordCore.signed x)
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+  unfold CompCert4Lean.Lib.Integers.WordCore.signed
+  run_tac
+    let env ← getEnv
+    for suffix in ["Integers.zltSelect", "Integers.sumboolSelect", "Integers.zTwoPowerNat", "Integers.zSub"] do
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith suffix)
+        | throwError "frozen integer comparison helper not found"
+      evalTactic (← `(tactic| unfold $(Lean.mkIdent n)))
+  cases h : CompCert4Lean.Lib.Coqlib.zlt
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+      CompCert4Lean.Lib.Integers.Int64.half_modulus with
+  | left hlt =>
+      simp only [CompCert4Lean.Lib.Integers.Int64.half_modulus] at h hlt ⊢
+      simp only [h]
+      exact CompCert4Lean.Lib.Zbits.eqmod_refl _ _
+  | right hge =>
+      simp only [CompCert4Lean.Lib.Integers.Int64.half_modulus] at h hge ⊢
+      simp only [h]
+      unfold CompCert4Lean.Lib.Zbits.eqmod
+      refine ⟨zOpp z1, ?_⟩
+      apply intOfZ_injective
+      simp only [int64Unsigned, zOpp, z1, zMul, zAdd, zSub,
+        CompCert4Lean.Lib.Integers.Int64.modulus,
+        ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+        ZArith.BinInt.Z.sub, ZArith.BinInt.Z.opp, intOfZ_zOfInt]
+      have hone : intOfZ (Numbers.BinNums.Z.Zpos .xH) = (1 : Int) := by rfl
+      rw [hone]
+      omega
+
+theorem divls_mul_shift_2 : divls_mul_shift_2Statement := by
+  intro x y m p hparams hge
+  obtain ⟨hm, hp, hgen⟩ := divls_mul_shift_gen x y m p hparams
+  refine ⟨hp, ?_⟩
+  have hmrepr : int64Signed (int64Repr m) =
+      zSub m CompCert4Lean.Lib.Integers.Int64.modulus := by
+    change CompCert4Lean.Lib.Integers.Int64.signed
+      (CompCert4Lean.Lib.Integers.Int64.repr m) = _
+    rw [CompCert4Lean.Lib.Integers.Int64.signed_repr_eq_proof]
+    have hmod : ZArith.BinInt.Z.modulo m
+        CompCert4Lean.Lib.Integers.Int64.modulus = m :=
+      ZArith.BinInt.Z.mod_small _ _ hm
+    run_tac
+      let env ← getEnv
+      for suffix in ["Integers.zMod", "Integers.zltSelect",
+          "Integers.sumboolSelect", "Integers.zSub"] do
+        let some (n, _) := env.constants.toList.find?
+            (fun (n, _) => (toString n).endsWith suffix)
+          | throwError "frozen integer representation helper not found"
+        evalTactic (← `(tactic| unfold $(Lean.mkIdent n)))
+    rw [hmod]
+    unfold zSub
+    cases CompCert4Lean.Lib.Coqlib.zlt m
+        CompCert4Lean.Lib.Integers.Int64.half_modulus with
+    | left hlt =>
+      change intOfZ m < (9223372036854775808 : Int) at hlt
+      change (9223372036854775808 : Int) ≤ intOfZ m at hge
+      omega
+    | right _ => rfl
+  have hquot :
+      zDiv (zMul (int64Signed x) m)
+          CompCert4Lean.Lib.Integers.Int64.modulus =
+      zAdd (zDiv (zMul (int64Signed x)
+        (zSub m CompCert4Lean.Lib.Integers.Int64.modulus))
+        CompCert4Lean.Lib.Integers.Int64.modulus) (int64Signed x) := by
+    rw [zdiv_pos_int_local _ _ (by decide), zdiv_pos_int_local _ _ (by decide)]
+    apply intOfZ_injective
+    simp only [zAdd, zMul, zSub, ZArith.BinInt.Z.add,
+      ZArith.BinInt.Z.mul, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    change (intOfZ (int64Signed x) * intOfZ m) /
+        (18446744073709551616 : Int) =
+      (intOfZ (int64Signed x) *
+        (intOfZ m - 18446744073709551616)) /
+        18446744073709551616 + intOfZ (int64Signed x)
+    rw [Int.mul_sub, Int.sub_mul_ediv_right _ _ (by decide)]
+    omega
+  rw [hgen]
+  apply congrArg (fun t => int64Add (int64Shr' t (intRepr p))
+    (int64Shru' x (intRepr (zSub CompCert4Lean.Lib.Integers.Int64.zwordsize z1))))
+  unfold int64Mulhs
+  rw [zshiftr_div_two_p_local _ _ (by change (0 : Int) ≤ 64; omega)]
+  have hmodulus : CompCert4Lean.Lib.Integers.Int64.modulus =
+      two_p CompCert4Lean.Lib.Integers.Int64.zwordsize := by
+    rfl
+  rw [← hmodulus, hmrepr]
+  change int64Repr (zDiv (zMul (int64Signed x) m)
+      CompCert4Lean.Lib.Integers.Int64.modulus) =
+    int64Repr (zAdd (int64Unsigned (int64Repr (zDiv (zMul (int64Signed x)
+      (zSub m CompCert4Lean.Lib.Integers.Int64.modulus))
+      CompCert4Lean.Lib.Integers.Int64.modulus))) (int64Unsigned x))
+  rw [hquot]
+  apply CompCert4Lean.Lib.Integers.Int64.eqm_samerepr_proof
+  apply CompCert4Lean.Lib.Zbits.eqmod_add
+  · exact CompCert4Lean.Lib.Integers.Int64.eqm_unsigned_repr_r_proof _ _
+      (CompCert4Lean.Lib.Integers.Int64.eqm_refl_proof _)
+  · exact pg_int64_eqm_signed_unsigned x
+
+end CompCert4Lean.Backend.SelectDivproof
