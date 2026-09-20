@@ -6650,3 +6650,1116 @@ theorem succ_le_lt_aux :
   pg_pred_ge_gt_succ_le_lt_aux
 
 end CompCert4Lean.Flocq.Core.Ulp
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+private theorem pg_round_nearest_dn_or_up
+    (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    (beta : radix) (fexp : Z → Z) (choice : Z → Bool) (x : Exact.R ctx) :
+    Exact.round ctx magnitude beta fexp (Exact.Znearest ctx choice) x =
+        Exact.round ctx magnitude beta fexp
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx) x ∨
+      Exact.round ctx magnitude beta fexp (Exact.Znearest ctx choice) x =
+        Exact.round ctx magnitude beta fexp
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx) x := by
+  let s := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa
+      ctx magnitude beta fexp x
+  have hnearest :
+      CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Znearest ctx choice s =
+          CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx s ∨
+        CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Znearest ctx choice s =
+          CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx s := by
+    simp only [CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Znearest]
+    cases hcmp : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rcompare ctx
+      (Exact.Rminus ctx s
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx
+            s)))
+      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rdiv ctx
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rone ctx)
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx)) with
+    | Lt => left; rfl
+    | Gt => right; rfl
+    | Eq =>
+        by_cases hchoice : choice
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx
+            s)
+        · right
+          simp [hchoice]
+        · left
+          simp [hchoice]
+  have hnearest' :
+      CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Znearest ctx choice
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa
+            ctx magnitude beta fexp x) =
+        CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa
+            ctx magnitude beta fexp x) ∨
+      CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Znearest ctx choice
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa
+            ctx magnitude beta fexp x) =
+        CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa
+            ctx magnitude beta fexp x) := by
+    simpa [s] using hnearest
+  unfold Exact.round CompCert4Lean.Flocq.Core.Generic_fmt.Exact.round
+  rcases hnearest' with hnearest | hnearest
+  · left
+    change _ = _
+    rw [show Exact.Znearest ctx choice
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa
+          ctx magnitude beta fexp x) = _ from hnearest]
+
+  · right
+    rw [show Exact.Znearest ctx choice
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa
+          ctx magnitude beta fexp x) = _ from hnearest]
+
+private theorem pg_midpoint_lt_right
+    (ctx : ExactRealContext) (a b : Exact.R ctx)
+    (hab : Exact.Rlt ctx a b) :
+    Exact.Rlt ctx
+      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rdiv ctx
+        (Exact.Rplus ctx a b)
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx)) b := by
+  let two := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx
+  let mid := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rdiv ctx
+    (Exact.Rplus ctx a b) two
+  have h01 : ctx.spec.lt ctx.spec.zero ctx.spec.one := by
+    rw [← ctx.certificate.sourceLaws.ofZ_zero,
+      ← ctx.certificate.sourceLaws.ofZ_one]
+    exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rlt_0_1 ctx
+  have htwo : ctx.spec.lt ctx.spec.zero two := by
+    change ctx.spec.lt ctx.spec.zero
+      (ctx.spec.add ctx.spec.one ctx.spec.one)
+    have h := ctx.certificate.orderedField.add_lt_compat_l
+      ctx.spec.one ctx.spec.zero ctx.spec.one h01
+    rw [ctx.certificate.orderedField.add_zero] at h
+    exact ctx.certificate.orderedField.lt_trans _ _ _ h01 h
+  have htwo_ne : two ≠ ctx.spec.zero := by
+    intro hz
+    apply (ctx.certificate.orderedField.lt_irrefl _)
+    simpa [hz] using htwo
+  have hsum : ctx.spec.lt (Exact.Rplus ctx a b)
+      (ctx.spec.add b b) := by
+    change ctx.spec.lt (ctx.spec.add a b) (ctx.spec.add b b)
+    exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_lt_compat_r
+      ctx b a b hab
+  have hsum' : ctx.spec.lt (Exact.Rplus ctx a b)
+      (ctx.spec.mul two b) := by
+    change ctx.spec.lt (ctx.spec.add a b) (ctx.spec.mul two b)
+    rw [show two = ctx.spec.add ctx.spec.one ctx.spec.one by rfl,
+      ctx.certificate.orderedField.mul_comm,
+      ctx.certificate.orderedField.left_distrib,
+      ctx.certificate.orderedField.mul_one]
+    exact hsum
+  apply CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_lt_reg_l
+    ctx two mid b (by
+      change ctx.spec.lt (ctx.spec.ofZ Z0) two
+      rw [ctx.certificate.sourceLaws.ofZ_zero]
+      exact htwo)
+  change ctx.spec.lt (ctx.spec.mul two mid) (ctx.spec.mul two b)
+  have hcancel : ctx.spec.mul two mid = Exact.Rplus ctx a b := by
+    change ctx.spec.mul two
+      (ctx.spec.div (Exact.Rplus ctx a b) two) = ctx.spec.add a b
+    rw [ctx.certificate.orderedField.div_eq_mul_inv]
+    calc
+      ctx.spec.mul two (ctx.spec.mul (ctx.spec.add a b) (ctx.spec.inv two)) =
+          ctx.spec.mul (ctx.spec.add a b) (ctx.spec.mul two (ctx.spec.inv two)) := by
+        calc
+          ctx.spec.mul two (ctx.spec.mul (ctx.spec.add a b) (ctx.spec.inv two)) =
+              ctx.spec.mul (ctx.spec.mul two (ctx.spec.add a b))
+                (ctx.spec.inv two) :=
+            (ctx.certificate.orderedField.mul_assoc two
+              (ctx.spec.add a b) (ctx.spec.inv two)).symm
+          _ = ctx.spec.mul (ctx.spec.mul (ctx.spec.add a b) two)
+                (ctx.spec.inv two) := by
+            rw [ctx.certificate.orderedField.mul_comm two (ctx.spec.add a b)]
+          _ = ctx.spec.mul (ctx.spec.add a b)
+                (ctx.spec.mul two (ctx.spec.inv two)) :=
+            ctx.certificate.orderedField.mul_assoc _ _ _
+      _ = ctx.spec.add a b := by
+        have hinv : ctx.spec.mul (ctx.spec.inv two) two = ctx.spec.one :=
+          ctx.certificate.orderedField.inv_mul_cancel two htwo_ne
+        rw [ctx.certificate.orderedField.mul_comm two (ctx.spec.inv two), hinv,
+          ctx.certificate.orderedField.mul_one]
+  rw [hcancel]
+  exact hsum'
+
+private theorem pg_two_mul_div
+    (ctx : ExactRealContext) (a : Exact.R ctx) :
+    CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rmult ctx
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx)
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rdiv ctx a
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx)) = a := by
+  let two := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx
+  have h01 : ctx.spec.lt ctx.spec.zero ctx.spec.one := by
+    rw [← ctx.certificate.sourceLaws.ofZ_zero,
+      ← ctx.certificate.sourceLaws.ofZ_one]
+    exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rlt_0_1 ctx
+  have htwo : ctx.spec.lt ctx.spec.zero two := by
+    change ctx.spec.lt ctx.spec.zero
+      (ctx.spec.add ctx.spec.one ctx.spec.one)
+    have h := ctx.certificate.orderedField.add_lt_compat_l
+      ctx.spec.one ctx.spec.zero ctx.spec.one h01
+    rw [ctx.certificate.orderedField.add_zero] at h
+    exact ctx.certificate.orderedField.lt_trans _ _ _ h01 h
+  have htwo_ne : two ≠ ctx.spec.zero := by
+    intro hz
+    apply (ctx.certificate.orderedField.lt_irrefl _)
+    simpa [hz] using htwo
+  change ctx.spec.mul two (ctx.spec.div a two) = a
+  rw [ctx.certificate.orderedField.div_eq_mul_inv]
+  calc
+    ctx.spec.mul two (ctx.spec.mul a (ctx.spec.inv two)) =
+        ctx.spec.mul (ctx.spec.mul two a) (ctx.spec.inv two) := by
+      rw [ctx.certificate.orderedField.mul_assoc]
+    _ = ctx.spec.mul (ctx.spec.mul a two) (ctx.spec.inv two) := by
+      rw [ctx.certificate.orderedField.mul_comm two a]
+    _ = ctx.spec.mul a (ctx.spec.mul two (ctx.spec.inv two)) := by
+      rw [ctx.certificate.orderedField.mul_assoc]
+    _ = a := by
+      have hinv : ctx.spec.mul (ctx.spec.inv two) two = ctx.spec.one :=
+        ctx.certificate.orderedField.inv_mul_cancel two htwo_ne
+      rw [ctx.certificate.orderedField.mul_comm two (ctx.spec.inv two), hinv,
+        ctx.certificate.orderedField.mul_one]
+
+private theorem pg_round_nearest_pt
+    (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    (beta : radix) (fexp : Z → Z) (hvalid : Valid_exp fexp)
+    (choice : Z → Bool) (x : Exact.R ctx) :
+    Exact.Rnd_N_pt ctx (Exact.generic_format ctx magnitude beta fexp)
+      x (Exact.round ctx magnitude beta fexp (Exact.Znearest ctx choice) x) := by
+  let floor := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx
+  let ceil := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx
+  let d := Exact.round ctx magnitude beta fexp floor x
+  let u := Exact.round ctx magnitude beta fexp ceil x
+  have hdformat : Exact.generic_format ctx magnitude beta fexp d :=
+    pg_current_generic_format_round_DN ctx magnitude beta fexp hvalid x
+  have huformat : Exact.generic_format ctx magnitude beta fexp u :=
+    pg_current_generic_format_round_UP ctx magnitude beta fexp hvalid x
+  have hd : Exact.Rnd_DN_pt ctx
+      (Exact.generic_format ctx magnitude beta fexp) x d := by
+    refine ⟨hdformat, pg_current_round_DN_le_id ctx magnitude beta fexp x, ?_⟩
+    intro g hg hgx
+    exact pg_rdu_round_DN_ge_generic ctx magnitude beta fexp hvalid g x hg hgx
+  have hu : Exact.Rnd_UP_pt ctx
+      (Exact.generic_format ctx magnitude beta fexp) x u := by
+    refine ⟨huformat, pg_current_round_UP_ge_id ctx magnitude beta fexp x, ?_⟩
+    intro g hg hxg
+    exact pg_rdu_round_UP_le_generic ctx magnitude beta fexp hvalid x g hg hxg
+  have hdist : Exact.Rle ctx
+      (Exact.Rabs ctx (Exact.Rminus ctx
+        (Exact.round ctx magnitude beta fexp (Exact.Znearest ctx choice) x) x))
+      (CompCert4Lean.Flocq.Core.Raux.Exact.Rmin ctx
+        (Exact.Rminus ctx x d) (Exact.Rminus ctx u x)) := by
+    let mx := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa
+      ctx magnitude beta fexp x
+    let bx := Exact.bpow ctx beta
+      (Exact.cexp ctx magnitude beta fexp x)
+    have hscale : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rmult ctx mx bx = x := by
+      simpa [mx, bx] using
+        (CompCert4Lean.Flocq.Core.Generic_fmt.scaled_mantissa_mult_bpow
+          ctx magnitude beta fexp x)
+    have hleft : Exact.Rminus ctx
+        (Exact.round ctx magnitude beta fexp (Exact.Znearest ctx choice) x) x =
+        Exact.Rminus ctx
+          (Exact.round ctx magnitude beta fexp (Exact.Znearest ctx choice) x)
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rmult ctx mx bx) := by
+      rw [hscale]
+    have hright1 : Exact.Rminus ctx x d =
+        Exact.Rminus ctx
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rmult ctx mx bx) d := by
+      rw [hscale]
+    have hright2 : Exact.Rminus ctx u x =
+        Exact.Rminus ctx u
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rmult ctx mx bx) := by
+      rw [hscale]
+    rw [hleft, hright1, hright2]
+    dsimp [d, u]
+    unfold Exact.round CompCert4Lean.Flocq.Core.Generic_fmt.Exact.round
+    change Exact.Rle ctx
+      (Exact.Rabs ctx
+        (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rminus ctx.spec
+          (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rmult ctx.spec
+            (ctx.spec.ofZ (Exact.Znearest ctx choice mx)) bx)
+          (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rmult ctx.spec mx bx)))
+      (CompCert4Lean.Flocq.Core.Raux.Exact.Rmin ctx
+        (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rminus ctx.spec
+          (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rmult ctx.spec mx bx)
+          (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rmult ctx.spec
+            (ctx.spec.ofZ (floor mx)) bx))
+        (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rminus ctx.spec
+          (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rmult ctx.spec
+            (ctx.spec.ofZ (ceil mx)) bx)
+          (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rmult ctx.spec mx bx)))
+    rw [← CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_minus_distr_r
+      ctx bx (ctx.spec.ofZ (Exact.Znearest ctx choice mx)) mx,
+      ← CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_minus_distr_r
+        ctx bx mx (ctx.spec.ofZ (floor mx)),
+      ← CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_minus_distr_r
+        ctx bx (ctx.spec.ofZ (ceil mx)) mx]
+    change ctx.spec.le
+      (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rabs ctx.spec
+        (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rmult ctx.spec
+          (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rminus ctx.spec
+            (ctx.spec.ofZ (Exact.Znearest ctx choice mx)) mx) bx)) _
+    rw [CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rbasic_fun.Rabs_mult ctx]
+    change ctx.spec.le _
+      (CompCert4Lean.Flocq.Core.Raux.Exact.Rmin ctx
+        (CompCert4Lean.Flocq.Core.Raux.Exact.Rmult ctx
+          (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rminus ctx.spec mx
+            (ctx.spec.ofZ (floor mx))) bx)
+        (CompCert4Lean.Flocq.Core.Raux.Exact.Rmult ctx
+          (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rminus ctx.spec
+            (ctx.spec.ofZ (ceil mx)) mx) bx))
+    have hbx : Exact.Rle ctx (Exact.R0 ctx) bx := by
+      change ctx.spec.le ctx.spec.zero bx
+      have hb := CompCert4Lean.Flocq.Core.Raux.bpow_ge_0 ctx beta
+        (Exact.cexp ctx magnitude beta fexp x)
+      change ctx.spec.le ctx.spec.zero (Exact.bpow ctx beta
+        (Exact.cexp ctx magnitude beta fexp x)) at hb
+      exact hb
+    rw [← CompCert4Lean.Flocq.Core.Raux.Rmult_min_distr_r ctx _ _ _ hbx]
+    change ctx.spec.le _
+      (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rmult ctx.spec
+        (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rmin ctx.spec _ _)
+        bx)
+    have hbx' : CompCert4Lean.Foundation.FlocqReal.ExactReal.Rle ctx.spec
+        (CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR ctx.spec Z0) bx := by
+      change ctx.spec.le (ctx.spec.ofZ Z0) bx
+      rw [ctx.certificate.sourceLaws.ofZ_zero]
+      exact hbx
+    rw [CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rbasic_fun.Rabs_pos_eq
+      ctx bx hbx']
+    apply CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_le_compat_r
+      ctx bx _ _ hbx'
+    change CompCert4Lean.Flocq.Core.Raux.Exact.Rle ctx
+      (CompCert4Lean.Flocq.Core.Raux.Exact.Rabs ctx
+        (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx
+          (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Znearest ctx choice mx)) mx))
+      (CompCert4Lean.Flocq.Core.Raux.Exact.Rmin ctx
+        (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx mx
+          (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx)))
+        (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx
+          (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx)) mx))
+    simp only [CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Znearest]
+    by_cases hM : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx) = mx
+    · rw [hM]
+      have hhalf : CompCert4Lean.Flocq.Core.Raux.Exact.Rlt ctx
+          (CompCert4Lean.Flocq.Core.Raux.Exact.R0 ctx)
+          (CompCert4Lean.Flocq.Core.Raux.Exact.Rdiv ctx
+            (CompCert4Lean.Flocq.Core.Raux.Exact.Rone ctx)
+            (CompCert4Lean.Flocq.Core.Raux.Exact.Rtwo ctx)) := by
+        let two := CompCert4Lean.Flocq.Core.Raux.Exact.Rtwo ctx
+        have h01 : ctx.spec.lt ctx.spec.zero ctx.spec.one := by
+          rw [← ctx.certificate.sourceLaws.ofZ_zero,
+            ← ctx.certificate.sourceLaws.ofZ_one]
+          exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rlt_0_1 ctx
+        have htwo : ctx.spec.lt ctx.spec.zero (ctx.spec.add ctx.spec.one ctx.spec.one) := by
+          have h := ctx.certificate.orderedField.add_lt_compat_l
+            ctx.spec.one ctx.spec.zero ctx.spec.one h01
+          rw [ctx.certificate.orderedField.add_zero] at h
+          exact ctx.certificate.orderedField.lt_trans _ _ _ h01 h
+        have htwo' : CompCert4Lean.Foundation.FlocqReal.ExactReal.Rlt ctx.spec
+            (CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR ctx.spec Z0) two := by
+          change ctx.spec.lt (ctx.spec.ofZ Z0) two
+          rw [ctx.certificate.sourceLaws.ofZ_zero]
+          exact htwo
+        have hinv : CompCert4Lean.Foundation.FlocqReal.ExactReal.Rlt ctx.spec
+            (CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR ctx.spec Z0)
+            (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rinv ctx.spec two) :=
+          CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rinv_0_lt_compat
+            ctx two htwo'
+        have hone' : CompCert4Lean.Foundation.FlocqReal.ExactReal.Rlt ctx.spec
+            (CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR ctx.spec Z0)
+            (CompCert4Lean.Flocq.Core.Raux.Exact.Rone ctx) := by
+          change ctx.spec.lt (ctx.spec.ofZ Z0) ctx.spec.one
+          rw [ctx.certificate.sourceLaws.ofZ_zero]
+          exact h01
+        have hmulpos :=
+          CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_lt_0_compat
+            ctx (CompCert4Lean.Flocq.Core.Raux.Exact.Rone ctx)
+            (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rinv ctx.spec two)
+            hone' hinv
+        change ctx.spec.lt ctx.spec.zero
+          (ctx.spec.div ctx.spec.one (ctx.spec.add ctx.spec.one ctx.spec.one))
+        rw [ctx.certificate.orderedField.div_eq_mul_inv]
+        change ctx.spec.lt ctx.spec.zero
+          (ctx.spec.mul ctx.spec.one
+            (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one)))
+        change ctx.spec.lt (ctx.spec.ofZ Z0)
+          (ctx.spec.mul ctx.spec.one
+            (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one))) at hmulpos
+        rw [ctx.certificate.sourceLaws.ofZ_zero] at hmulpos
+        exact hmulpos
+      have hcmp :
+          CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rcompare ctx
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rminus ctx mx mx)
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rdiv ctx
+              (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rone ctx)
+              (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx)) =
+            Foundation.Logic.Rocq.Coq.Init.Datatypes.comparison.Lt := by
+        apply CompCert4Lean.Flocq.Core.Raux.Rcompare_Lt ctx
+        change ctx.spec.lt (ctx.spec.add mx (ctx.spec.neg mx))
+          (ctx.spec.div ctx.spec.one (ctx.spec.add ctx.spec.one ctx.spec.one))
+        rw [ctx.certificate.orderedField.add_comm,
+          ctx.certificate.orderedField.neg_add_cancel]
+        change ctx.spec.lt ctx.spec.zero
+          (ctx.spec.div ctx.spec.one (ctx.spec.add ctx.spec.one ctx.spec.one))
+        exact hhalf
+      rw [hcmp]
+      have hzero : ctx.spec.add mx (ctx.spec.neg mx) = ctx.spec.zero := by
+        rw [ctx.certificate.orderedField.add_comm,
+          ctx.certificate.orderedField.neg_add_cancel]
+      have hceil_nonneg : CompCert4Lean.Flocq.Core.Raux.Exact.Rle ctx
+          (CompCert4Lean.Flocq.Core.Raux.Exact.R0 ctx)
+          (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx
+            (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+              (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx)) mx) :=
+        CompCert4Lean.Flocq.Core.Raux.Rle_0_minus ctx mx
+          (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+          (CompCert4Lean.Flocq.Core.Raux.Zceil_ub ctx mx)
+      have hceil_nonneg' : ctx.spec.le ctx.spec.zero
+          (ctx.spec.add
+            (ctx.spec.ofZ
+              (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+            (ctx.spec.neg mx)) := by
+        change ctx.spec.le ctx.spec.zero
+          (ctx.spec.add
+            (ctx.spec.ofZ
+              (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+            (ctx.spec.neg mx))
+        exact hceil_nonneg
+      have hmin : ctx.spec.min ctx.spec.zero
+          (ctx.spec.add
+            (ctx.spec.ofZ
+              (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+            (ctx.spec.neg mx)) = ctx.spec.zero :=
+        ctx.certificate.sourceLaws.min_eq_left _ _ hceil_nonneg'
+      have habs0 : ctx.spec.abs ctx.spec.zero = ctx.spec.zero := by
+        exact ctx.certificate.sourceLaws.abs_nonnegative _
+          (ctx.certificate.orderedField.le_refl _)
+      change ctx.spec.le
+        (ctx.spec.abs
+          (ctx.spec.add
+            (ctx.spec.ofZ
+              (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))
+            (ctx.spec.neg mx)))
+        (ctx.spec.min
+          (ctx.spec.add mx
+            (ctx.spec.neg
+              (ctx.spec.ofZ
+                (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))))
+          (ctx.spec.add
+            (ctx.spec.ofZ
+              (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+            (ctx.spec.neg mx)))
+      have hM' : ctx.spec.ofZ
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx) = mx := by
+        exact hM
+      rw [hM', hzero, habs0, hmin]
+      exact ctx.certificate.orderedField.le_refl _
+    · have hmiddle := CompCert4Lean.Flocq.Core.Raux.Rcompare_floor_ceil_middle
+        ctx mx (by exact hM)
+      change CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rcompare ctx
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rminus ctx mx
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx
+              (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx)))
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rdiv ctx
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rone ctx)
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx)) =
+          CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rcompare ctx
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rminus ctx mx
+              (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx
+                (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx)))
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rminus ctx
+              (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx
+                (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx)) mx) at hmiddle
+      cases hcmp : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rcompare ctx
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rminus ctx mx
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx)))
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rdiv ctx
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rone ctx)
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx)) with
+      | Lt =>
+          have hcmpceil := hmiddle
+          rw [hcmp] at hcmpceil
+          have hcmpceil' : CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx mx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx)))
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx)) mx) =
+              Foundation.Logic.Rocq.Coq.Init.Datatypes.comparison.Lt :=
+            hcmpceil.symm
+          have hltceil := CompCert4Lean.Flocq.Core.Raux.Rcompare_Lt_inv ctx _ _ hcmpceil'
+          have hleceil : ctx.spec.le
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx mx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx)))
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx)) mx) := by
+            exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hltceil |>.1
+          have hnonneg : ctx.spec.le ctx.spec.zero
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx mx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))) := by
+            change ctx.spec.le ctx.spec.zero
+              (ctx.spec.add mx (ctx.spec.neg
+                (ctx.spec.ofZ
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))))
+            exact CompCert4Lean.Flocq.Core.Raux.Rle_0_minus ctx _ _
+              (CompCert4Lean.Flocq.Core.Raux.Zfloor_lb ctx mx)
+          have habs : ctx.spec.abs
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx mx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))) =
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx mx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))) :=
+            ctx.certificate.sourceLaws.abs_nonnegative _ hnonneg
+          have hmin : ctx.spec.min
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx mx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx)))
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx)) mx) =
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx mx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))) :=
+            ctx.certificate.sourceLaws.min_eq_left _ _ hleceil
+          simp only [CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Znearest, hcmp]
+          change ctx.spec.le
+            (ctx.spec.abs (ctx.spec.add
+              (ctx.spec.ofZ
+                (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))
+              (ctx.spec.neg mx)))
+            (ctx.spec.min
+              (ctx.spec.add mx
+                (ctx.spec.neg
+                  (ctx.spec.ofZ
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))))
+              (ctx.spec.add
+                (ctx.spec.ofZ
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                (ctx.spec.neg mx)))
+          have habs' : ctx.spec.abs (ctx.spec.add
+                (ctx.spec.ofZ
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))
+                (ctx.spec.neg mx)) =
+              ctx.spec.add mx
+                (ctx.spec.neg
+                  (ctx.spec.ofZ
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))) := by
+            have hs :=
+              CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rbasic_fun.Rabs_minus_sym
+                ctx (ctx.spec.ofZ
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx)) mx
+            change ctx.spec.abs (ctx.spec.add
+                (ctx.spec.ofZ
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))
+                (ctx.spec.neg mx)) = _
+            change ctx.spec.abs (ctx.spec.add
+                (ctx.spec.ofZ
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))
+                (ctx.spec.neg mx)) =
+              ctx.spec.abs (ctx.spec.add mx
+                (ctx.spec.neg
+                  (ctx.spec.ofZ
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx)))) at hs
+            exact hs.trans habs
+          have hmin' : ctx.spec.min
+                (ctx.spec.add mx
+                  (ctx.spec.neg
+                    (ctx.spec.ofZ
+                      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))))
+                (ctx.spec.add
+                  (ctx.spec.ofZ
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                  (ctx.spec.neg mx)) =
+              ctx.spec.add mx
+                (ctx.spec.neg
+                  (ctx.spec.ofZ
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))) := by
+            change ctx.spec.min
+                (ctx.spec.add mx
+                  (ctx.spec.neg
+                    (ctx.spec.ofZ
+                      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))))
+                (ctx.spec.add
+                  (ctx.spec.ofZ
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                  (ctx.spec.neg mx)) = _
+            exact hmin
+          rw [habs', hmin']
+          exact ctx.certificate.orderedField.le_refl _
+      | Eq =>
+          have hcmpceil := hmiddle
+          rw [hcmp] at hcmpceil
+          have hcmpceil' : CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx mx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx)))
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx)) mx) =
+              Foundation.Logic.Rocq.Coq.Init.Datatypes.comparison.Eq :=
+            hcmpceil.symm
+          have hfrcr := CompCert4Lean.Flocq.Core.Raux.Rcompare_Eq_inv ctx _ _ hcmpceil'
+          have hnonneg : ctx.spec.le ctx.spec.zero
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx mx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))) := by
+            change ctx.spec.le ctx.spec.zero
+              (ctx.spec.add mx (ctx.spec.neg
+                (ctx.spec.ofZ
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))))
+            exact CompCert4Lean.Flocq.Core.Raux.Rle_0_minus ctx _ _
+              (CompCert4Lean.Flocq.Core.Raux.Zfloor_lb ctx mx)
+          have habs : ctx.spec.abs
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx mx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))) =
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx mx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))) :=
+            ctx.certificate.sourceLaws.abs_nonnegative _ hnonneg
+          by_cases hc : choice
+              (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx) = true
+          · simp [CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Znearest, hcmp, hc]
+            change ctx.spec.le
+              (ctx.spec.abs (ctx.spec.add
+                (ctx.spec.ofZ
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                (ctx.spec.neg mx)))
+              (ctx.spec.min
+                (ctx.spec.add mx
+                  (ctx.spec.neg
+                    (ctx.spec.ofZ
+                      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))))
+                (ctx.spec.add
+                  (ctx.spec.ofZ
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                  (ctx.spec.neg mx)))
+            have hfrcr' : ctx.spec.add mx
+                  (ctx.spec.neg
+                    (ctx.spec.ofZ
+                      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))) =
+                ctx.spec.add
+                  (ctx.spec.ofZ
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                  (ctx.spec.neg mx) := by
+              exact hfrcr
+            have hceil_nonneg : ctx.spec.le ctx.spec.zero
+                (ctx.spec.add
+                  (ctx.spec.ofZ
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                  (ctx.spec.neg mx)) := by
+              rw [← hfrcr']
+              exact hnonneg
+            have hceil_abs : ctx.spec.abs
+                  (ctx.spec.add
+                    (ctx.spec.ofZ
+                      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                    (ctx.spec.neg mx)) =
+                ctx.spec.add
+                  (ctx.spec.ofZ
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                  (ctx.spec.neg mx) :=
+              ctx.certificate.sourceLaws.abs_nonnegative _ hceil_nonneg
+            have hmin_eq : ctx.spec.min
+                  (ctx.spec.add mx
+                    (ctx.spec.neg
+                      (ctx.spec.ofZ
+                        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))))
+                  (ctx.spec.add
+                    (ctx.spec.ofZ
+                      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                    (ctx.spec.neg mx)) =
+                ctx.spec.add
+                  (ctx.spec.ofZ
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                  (ctx.spec.neg mx) := by
+              apply ctx.certificate.sourceLaws.min_eq_right
+              rw [← hfrcr']
+              exact ctx.certificate.orderedField.le_refl _
+            rw [hceil_abs, hmin_eq]
+            exact ctx.certificate.orderedField.le_refl _
+          · simp [CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Znearest, hcmp, hc]
+            change ctx.spec.le
+              (ctx.spec.abs (ctx.spec.add
+                (ctx.spec.ofZ
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))
+                (ctx.spec.neg mx)))
+              (ctx.spec.min
+                (ctx.spec.add mx
+                  (ctx.spec.neg
+                    (ctx.spec.ofZ
+                      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))))
+                (ctx.spec.add
+                  (ctx.spec.ofZ
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                  (ctx.spec.neg mx)))
+            have habs_floor : ctx.spec.abs (ctx.spec.add
+                  (ctx.spec.ofZ
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))
+                  (ctx.spec.neg mx)) =
+                ctx.spec.add mx
+                  (ctx.spec.neg
+                    (ctx.spec.ofZ
+                      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))) := by
+              have hs :=
+                CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rbasic_fun.Rabs_minus_sym
+                  ctx (ctx.spec.ofZ
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx)) mx
+              change ctx.spec.abs (ctx.spec.add
+                  (ctx.spec.ofZ
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))
+                  (ctx.spec.neg mx)) =
+                ctx.spec.abs (ctx.spec.add mx
+                  (ctx.spec.neg
+                    (ctx.spec.ofZ
+                      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx)))) at hs
+              exact hs.trans habs
+            have hfrcr' : ctx.spec.add mx
+                  (ctx.spec.neg
+                    (ctx.spec.ofZ
+                      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))) =
+                ctx.spec.add
+                  (ctx.spec.ofZ
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                  (ctx.spec.neg mx) := by
+              exact hfrcr
+            have hmin_eq : ctx.spec.min
+                  (ctx.spec.add mx
+                    (ctx.spec.neg
+                      (ctx.spec.ofZ
+                        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))))
+                  (ctx.spec.add
+                    (ctx.spec.ofZ
+                      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                    (ctx.spec.neg mx)) =
+                ctx.spec.add mx
+                  (ctx.spec.neg
+                    (ctx.spec.ofZ
+                      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))) := by
+              apply ctx.certificate.sourceLaws.min_eq_left
+              rw [hfrcr']
+              exact ctx.certificate.orderedField.le_refl _
+            rw [habs_floor, hmin_eq]
+            exact ctx.certificate.orderedField.le_refl _
+      | Gt =>
+          have hcmpceil := hmiddle
+          rw [hcmp] at hcmpceil
+          have hcmpceil' : CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx mx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx)))
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx)) mx) =
+              Foundation.Logic.Rocq.Coq.Init.Datatypes.comparison.Gt :=
+            hcmpceil.symm
+          have hgtceil := CompCert4Lean.Flocq.Core.Raux.Rcompare_Gt_inv ctx _ _ hcmpceil'
+          have hleceil : ctx.spec.le
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx)) mx)
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx mx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))) := by
+            exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hgtceil |>.1
+          have hnonneg : ctx.spec.le ctx.spec.zero
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx)) mx) := by
+            change ctx.spec.le ctx.spec.zero
+              (ctx.spec.add (ctx.spec.ofZ
+                (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                (ctx.spec.neg mx))
+            exact CompCert4Lean.Flocq.Core.Raux.Rle_0_minus ctx _ _
+              (CompCert4Lean.Flocq.Core.Raux.Zceil_ub ctx mx)
+          have habs : ctx.spec.abs
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx)) mx) =
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx)) mx) :=
+            ctx.certificate.sourceLaws.abs_nonnegative _ hnonneg
+          have hmin : ctx.spec.min
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx mx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx)))
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx)) mx) =
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx)) mx) :=
+            ctx.certificate.sourceLaws.min_eq_right _ _ hleceil
+          simp [CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Znearest, hcmp]
+          change ctx.spec.le
+            (ctx.spec.abs (ctx.spec.add
+              (ctx.spec.ofZ
+                (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+              (ctx.spec.neg mx)))
+            (ctx.spec.min
+              (ctx.spec.add mx
+                (ctx.spec.neg
+                  (ctx.spec.ofZ
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))))
+              (ctx.spec.add
+                (ctx.spec.ofZ
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                (ctx.spec.neg mx)))
+          have hceil_abs : ctx.spec.abs (ctx.spec.add
+                (ctx.spec.ofZ
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                (ctx.spec.neg mx)) =
+              ctx.spec.add
+                (ctx.spec.ofZ
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                (ctx.spec.neg mx) := by
+            change ctx.spec.abs
+                (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx
+                  (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx)) mx) = _
+            exact habs
+          have hmin' : ctx.spec.min
+                (ctx.spec.add mx
+                  (ctx.spec.neg
+                    (ctx.spec.ofZ
+                      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))))
+                (ctx.spec.add
+                  (ctx.spec.ofZ
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                  (ctx.spec.neg mx)) =
+              ctx.spec.add
+                (ctx.spec.ofZ
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                (ctx.spec.neg mx) := by
+            change ctx.spec.min
+                (ctx.spec.add mx
+                  (ctx.spec.neg
+                    (ctx.spec.ofZ
+                      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx mx))))
+                (ctx.spec.add
+                  (ctx.spec.ofZ
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx mx))
+                  (ctx.spec.neg mx)) = _
+            exact hmin
+          rw [hceil_abs, hmin']
+          exact ctx.certificate.orderedField.le_refl _
+  have hnearformat : Exact.generic_format ctx magnitude beta fexp
+      (Exact.round ctx magnitude beta fexp (Exact.Znearest ctx choice) x) := by
+    rcases pg_round_nearest_dn_or_up ctx magnitude beta fexp choice x with h | h
+    · rw [h]
+      exact hdformat
+    · rw [h]
+      exact huformat
+  exact CompCert4Lean.Flocq.Core.Round_pred.Rnd_N_pt_DN_UP
+    ctx (Exact.generic_format ctx magnitude beta fexp) x d u
+    (Exact.round ctx magnitude beta fexp (Exact.Znearest ctx choice) x)
+    hnearformat hd hu
+    (ctx.certificate.orderedField.le_trans _ _ _ hdist
+      (CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rbasic_fun.Rmin_l
+        ctx _ _))
+    (ctx.certificate.orderedField.le_trans _ _ _ hdist
+      (CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rbasic_fun.Rmin_r
+        ctx _ _))
+
+theorem round_N_le_midp :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      round_N_le_midpStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid choice u v hu hmid
+  let floor := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx
+  let ceil := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx
+  let d := Exact.round ctx magnitude beta fexp floor v
+  let c := Exact.round ctx magnitude beta fexp ceil v
+  let su := Exact.succ ctx magnitude beta fexp u
+  have hdfmt : Exact.generic_format ctx magnitude beta fexp d := by
+    exact pg_current_generic_format_round_DN ctx magnitude beta fexp hvalid v
+  have hcfmt : Exact.generic_format ctx magnitude beta fexp c := by
+    exact pg_current_generic_format_round_UP ctx magnitude beta fexp hvalid v
+  have hdlv : Exact.Rle ctx d v := by
+    exact pg_current_round_DN_le_id ctx magnitude beta fexp v
+  have hvlc : Exact.Rle ctx v c := by
+    exact pg_current_round_UP_ge_id ctx magnitude beta fexp v
+  have hsufmt : Exact.generic_format ctx magnitude beta fexp su := by
+    exact pg_assignment_generic_format_succ ctx magnitude beta fexp hvalid u hu
+  have hV : (su = Exact.R0 ctx ∧ u = Exact.R0 ctx) ∨ Exact.Rlt ctx u su := by
+    have hle := succ_ge_id ctx magnitude beta fexp u
+    by_cases hu0 : u = Exact.R0 ctx
+    · by_cases hsu0 : su = Exact.R0 ctx
+      · exact Or.inl ⟨hsu0, hu0⟩
+      · right
+        rcases ctx.certificate.total_order u su with h | h
+        · rcases h with hlt | heq
+          · exact hlt
+          · exact False.elim (hsu0 (heq ▸ hu0))
+        · exact False.elim
+            (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h).2 hle)
+    · exact Or.inr (succ_gt_id ctx magnitude beta fexp u hu0)
+  rcases hV with ⟨hsu0, hu0⟩ | hus
+  · have hvlt0 : Exact.Rlt ctx v (Exact.R0 ctx) := by
+      have hsucc0 : Exact.succ ctx magnitude beta fexp (Exact.R0 ctx) = Exact.R0 ctx := by
+        simpa [su, hu0] using hsu0
+      have hmid0 : Exact.Rlt ctx v
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rdiv ctx
+            (Exact.Rplus ctx (Exact.R0 ctx) (Exact.R0 ctx))
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx)) := by
+        simpa [hu0, hsucc0] using hmid
+      have hzero_mid :
+          CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rdiv ctx
+            (Exact.Rplus ctx (Exact.R0 ctx) (Exact.R0 ctx))
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx) = Exact.R0 ctx := by
+        have hadd : Exact.Rplus ctx (Exact.R0 ctx) (Exact.R0 ctx) = Exact.R0 ctx := by
+          change ctx.spec.add ctx.spec.zero ctx.spec.zero = ctx.spec.zero
+          exact ctx.certificate.orderedField.add_zero _
+        rw [hadd]
+        unfold CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rdiv
+        unfold CompCert4Lean.Flocq.Core.Raux.Exact.Rdiv
+        change ctx.spec.div ctx.spec.zero _ = ctx.spec.zero
+        rw [ctx.certificate.orderedField.div_eq_mul_inv,
+          ctx.certificate.orderedField.zero_mul]
+      rw [hzero_mid] at hmid0
+      exact hmid0
+    have hvle0 : Exact.Rle ctx v (Exact.R0 ctx) :=
+      (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hvlt0 |>.1
+    have hround : Exact.round ctx magnitude beta fexp (Exact.Znearest ctx choice) v = d ∨
+        Exact.round ctx magnitude beta fexp (Exact.Znearest ctx choice) v = c := by
+      simpa [d, c, floor, ceil] using
+        pg_round_nearest_dn_or_up ctx magnitude beta fexp choice v
+    rcases hround with hround | hround
+    · rw [hround]
+      rw [hu0]
+      exact ctx.certificate.orderedField.le_trans _ _ _ hdlv hvle0
+    · rw [hround]
+      have hzeroformat : Exact.generic_format ctx magnitude beta fexp (Exact.R0 ctx) := by
+        exact pg_pred_ge_gt_generic_format_zero ctx magnitude beta fexp
+      rw [hu0]
+      exact pg_rdu_round_UP_le_generic ctx magnitude beta fexp hvalid v
+        (Exact.R0 ctx) hzeroformat hvle0
+  · have hmid_su : Exact.Rlt ctx
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rdiv ctx
+          (Exact.Rplus ctx u su)
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx)) su :=
+      pg_midpoint_lt_right ctx u su hus
+    have hvlt_su : Exact.Rlt ctx v su :=
+      ctx.certificate.orderedField.lt_trans _ _ _ hmid hmid_su
+    have hvle_su : Exact.Rle ctx v su :=
+      (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hvlt_su |>.1
+    have hround : Exact.round ctx magnitude beta fexp (Exact.Znearest ctx choice) v = d ∨
+        Exact.round ctx magnitude beta fexp (Exact.Znearest ctx choice) v = c := by
+      simpa [d, c, floor, ceil] using
+        pg_round_nearest_dn_or_up ctx magnitude beta fexp choice v
+    rcases hround with hround | hround
+    · rw [hround]
+      rcases ctx.certificate.total_order u d with hud | hdu
+      · rcases hud with hlt | heq
+        · have hsud := pg_current_succ_le_lt ctx magnitude beta fexp hvalid u d hu hdfmt hlt
+          exact False.elim
+            (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hvlt_su).2
+              (ctx.certificate.orderedField.le_trans _ _ _ hsud hdlv))
+        · exact heq.symm ▸ ctx.certificate.orderedField.le_refl _
+      · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hdu |>.1
+    · rw [hround]
+      by_cases hvu : Exact.Rle ctx v u
+      · exact pg_rdu_round_UP_le_generic ctx magnitude beta fexp hvalid v u hu hvu
+      · have huv : Exact.Rlt ctx u v := by
+          have huv_le : Exact.Rle ctx u v := by
+            rcases ctx.certificate.total_order u v with h | h
+            · rcases h with hlt | heq
+              · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt |>.1
+              · exact heq ▸ ctx.certificate.orderedField.le_refl _
+            · exact False.elim
+                (hvu ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h).1)
+          exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+            ⟨huv_le, hvu⟩
+        have hud : Exact.Rle ctx u d :=
+          pg_rdu_round_DN_ge_generic ctx magnitude beta fexp hvalid u v hu
+            ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp huv |>.1)
+        have hdu : Exact.Rle ctx d u := by
+          rcases ctx.certificate.total_order u d with h | h
+          · rcases h with hlt | heq
+            · have hsud := pg_current_succ_le_lt ctx magnitude beta fexp hvalid u d hu hdfmt hlt
+              exact False.elim
+                (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hvlt_su).2
+                  (ctx.certificate.orderedField.le_trans _ _ _ hsud hdlv))
+            · exact heq.symm ▸ ctx.certificate.orderedField.le_refl _
+          · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h |>.1
+        have hdeq : d = u := ctx.certificate.orderedField.le_antisymm _ _ hdu hud
+        subst d
+        have hcsu : Exact.Rle ctx c su :=
+          pg_rdu_round_UP_le_generic ctx magnitude beta fexp hvalid v su hsufmt hvle_su
+        rcases ctx.certificate.total_order u c with huc | hcu
+        · rcases huc with hlt | heq
+          · have hsuc : Exact.Rle ctx su c :=
+              pg_current_succ_le_lt ctx magnitude beta fexp hvalid u c hu hcfmt hlt
+            have hsuc_eq : c = su :=
+              ctx.certificate.orderedField.le_antisymm _ _ hcsu hsuc
+            have hsum : ctx.spec.lt
+                (ctx.spec.add v v) (ctx.spec.add u su) := by
+              have htwo : ctx.spec.lt ctx.spec.zero
+                  (ctx.spec.add ctx.spec.one ctx.spec.one) := by
+                have h01 : ctx.spec.lt ctx.spec.zero ctx.spec.one := by
+                  rw [← ctx.certificate.sourceLaws.ofZ_zero,
+                    ← ctx.certificate.sourceLaws.ofZ_one]
+                  exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rlt_0_1 ctx
+                have h := ctx.certificate.orderedField.add_lt_compat_l
+                  ctx.spec.one ctx.spec.zero ctx.spec.one h01
+                rw [ctx.certificate.orderedField.add_zero] at h
+                exact ctx.certificate.orderedField.lt_trans _ _ _ h01 h
+              have hmul : ctx.spec.lt
+                  (ctx.spec.mul
+                    (ctx.spec.add ctx.spec.one ctx.spec.one) v)
+                  (ctx.spec.mul
+                    (ctx.spec.add ctx.spec.one ctx.spec.one)
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rdiv ctx
+                      (Exact.Rplus ctx u su)
+                      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx))) := by
+                change ctx.spec.lt
+                  (ctx.spec.mul
+                    (ctx.spec.add ctx.spec.one ctx.spec.one) v)
+                  (ctx.spec.mul
+                    (ctx.spec.add ctx.spec.one ctx.spec.one)
+                    (ctx.spec.div (ctx.spec.add u su)
+                      (ctx.spec.add ctx.spec.one ctx.spec.one)))
+                exact ctx.certificate.orderedField.mul_lt_compat_l _ _ _ htwo hmid
+              have hleft : ctx.spec.mul
+                    (ctx.spec.add ctx.spec.one ctx.spec.one) v =
+                    ctx.spec.add v v := by
+                rw [ctx.certificate.orderedField.mul_comm,
+                  ctx.certificate.orderedField.left_distrib,
+                  ctx.certificate.orderedField.mul_one]
+              have hright : ctx.spec.mul
+                    (ctx.spec.add ctx.spec.one ctx.spec.one)
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rdiv ctx
+                      (Exact.Rplus ctx u su)
+                      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx)) =
+                    ctx.spec.add u su := by
+                exact pg_two_mul_div ctx (Exact.Rplus ctx u su)
+              rw [hleft, hright] at hmul
+              exact hmul
+            have h1 := ctx.certificate.orderedField.add_lt_compat_l
+              (ctx.spec.neg v) (ctx.spec.add v v) (ctx.spec.add u su) hsum
+            have h1left : ctx.spec.add (ctx.spec.neg v)
+                  (ctx.spec.add v v) = v := by
+              calc
+                ctx.spec.add (ctx.spec.neg v) (ctx.spec.add v v) =
+                    ctx.spec.add (ctx.spec.add (ctx.spec.neg v) v) v := by
+                  rw [ctx.certificate.orderedField.add_assoc]
+                _ = ctx.spec.add ctx.spec.zero v := by
+                  rw [ctx.certificate.orderedField.neg_add_cancel]
+                _ = v := ctx.certificate.orderedField.zero_add _
+            have h1right : ctx.spec.add (ctx.spec.neg v)
+                  (ctx.spec.add u su) =
+                    ctx.spec.add u (ctx.spec.add su (ctx.spec.neg v)) := by
+              calc
+                ctx.spec.add (ctx.spec.neg v) (ctx.spec.add u su) =
+                    ctx.spec.add (ctx.spec.add (ctx.spec.neg v) u) su := by
+                  rw [ctx.certificate.orderedField.add_assoc]
+                _ = ctx.spec.add (ctx.spec.add u (ctx.spec.neg v)) su := by
+                  rw [ctx.certificate.orderedField.add_comm (ctx.spec.neg v) u]
+                _ = ctx.spec.add u (ctx.spec.add (ctx.spec.neg v) su) := by
+                  rw [← ctx.certificate.orderedField.add_assoc]
+                _ = ctx.spec.add u (ctx.spec.add su (ctx.spec.neg v)) := by
+                  rw [ctx.certificate.orderedField.add_comm (ctx.spec.neg v) su]
+            rw [h1left, h1right] at h1
+            have h2 := ctx.certificate.orderedField.add_lt_compat_l
+              (ctx.spec.neg u) v
+              (ctx.spec.add u (ctx.spec.add su (ctx.spec.neg v))) h1
+            have h2left : ctx.spec.add (ctx.spec.neg u) v =
+                  ctx.spec.add v (ctx.spec.neg u) := by
+              exact ctx.certificate.orderedField.add_comm _ _
+            have h2right : ctx.spec.add (ctx.spec.neg u)
+                  (ctx.spec.add u (ctx.spec.add su (ctx.spec.neg v))) =
+                    ctx.spec.add su (ctx.spec.neg v) := by
+              calc
+                ctx.spec.add (ctx.spec.neg u)
+                      (ctx.spec.add u (ctx.spec.add su (ctx.spec.neg v))) =
+                    ctx.spec.add (ctx.spec.add (ctx.spec.neg u) u)
+                      (ctx.spec.add su (ctx.spec.neg v)) := by
+                  rw [ctx.certificate.orderedField.add_assoc]
+                _ = ctx.spec.add ctx.spec.zero
+                      (ctx.spec.add su (ctx.spec.neg v)) := by
+                  rw [ctx.certificate.orderedField.neg_add_cancel]
+                _ = ctx.spec.add su (ctx.spec.neg v) :=
+                  ctx.certificate.orderedField.zero_add _
+            rw [h2left, h2right] at h2
+            have hgap : Exact.Rlt ctx
+                (Exact.Rminus ctx v u) (Exact.Rminus ctx su v) := by
+              exact h2
+            have hnear := pg_round_nearest_pt
+              ctx magnitude beta fexp hvalid choice v
+            have hdist := hnear.2 u hu
+            rw [hround, hsuc_eq] at hdist
+            change ctx.spec.le
+              (ctx.spec.abs (Exact.Rminus ctx su v))
+              (ctx.spec.abs (Exact.Rminus ctx u v)) at hdist
+            have hcv : Exact.Rle ctx (Exact.R0 ctx)
+                (Exact.Rminus ctx su v) :=
+              CompCert4Lean.Flocq.Core.Raux.Rle_0_minus ctx v su hvle_su
+            have hcv' : CompCert4Lean.Foundation.FlocqReal.ExactReal.Rle ctx.spec
+                (CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR ctx.spec Z0)
+                (Exact.Rminus ctx su v) := by
+              change ctx.spec.le (ctx.spec.ofZ Z0) (Exact.Rminus ctx su v)
+              rw [ctx.certificate.sourceLaws.ofZ_zero]
+              exact hcv
+            have hcv'' : CompCert4Lean.Foundation.FlocqReal.ExactReal.Rle ctx.spec
+                (CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR ctx.spec Z0)
+                (ctx.spec.add su (ctx.spec.neg v)) := by
+              change ctx.spec.le (ctx.spec.ofZ Z0)
+                (ctx.spec.add su (ctx.spec.neg v))
+              rw [ctx.certificate.sourceLaws.ofZ_zero]
+              exact hcv
+            have hcv_abs : ctx.spec.abs (Exact.Rminus ctx su v) =
+                Exact.Rminus ctx su v :=
+              ctx.certificate.sourceLaws.abs_nonnegative _ hcv
+            rw [hcv_abs] at hdist
+            have hsym : ctx.spec.abs (Exact.Rminus ctx u v) =
+                ctx.spec.abs (Exact.Rminus ctx v u) := by
+              change ctx.spec.abs
+                  (ctx.spec.add u (ctx.spec.neg v)) =
+                ctx.spec.abs (ctx.spec.add v (ctx.spec.neg u))
+              exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rbasic_fun.Rabs_minus_sym
+                ctx u v
+            rw [hsym] at hdist
+            have huv_le : Exact.Rle ctx u v :=
+              (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp huv |>.1
+            have huv' : Exact.Rle ctx (Exact.R0 ctx)
+                (Exact.Rminus ctx v u) :=
+              CompCert4Lean.Flocq.Core.Raux.Rle_0_minus ctx u v huv_le
+            have huv'' : CompCert4Lean.Foundation.FlocqReal.ExactReal.Rle ctx.spec
+                (CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR ctx.spec Z0)
+                (Exact.Rminus ctx v u) := by
+              change ctx.spec.le (ctx.spec.ofZ Z0) (Exact.Rminus ctx v u)
+              rw [ctx.certificate.sourceLaws.ofZ_zero]
+              exact huv'
+            have huv''' : CompCert4Lean.Foundation.FlocqReal.ExactReal.Rle ctx.spec
+                (CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR ctx.spec Z0)
+                (ctx.spec.add v (ctx.spec.neg u)) := by
+              change ctx.spec.le (ctx.spec.ofZ Z0)
+                (ctx.spec.add v (ctx.spec.neg u))
+              rw [ctx.certificate.sourceLaws.ofZ_zero]
+              exact huv'
+            have huv_abs : ctx.spec.abs (Exact.Rminus ctx v u) =
+                Exact.Rminus ctx v u :=
+              ctx.certificate.sourceLaws.abs_nonnegative _ huv'
+            rw [huv_abs] at hdist
+            exact False.elim
+              (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hgap).2 hdist)
+          · exact heq.symm ▸ ctx.certificate.orderedField.le_refl _
+        · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hcu |>.1
+
+end CompCert4Lean.Flocq.Core.Ulp
