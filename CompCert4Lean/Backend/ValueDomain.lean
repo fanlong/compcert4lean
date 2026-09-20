@@ -6192,3 +6192,35 @@ theorem storebytes_sound : storebytes_soundStatement := by
     exact hmm.mmatch_below
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Lib.Coqlib
+
+theorem mmatch_ext : mmatch_extStatement := by
+  intro bc m am m' hmm hload hnext
+  constructor
+  · intro b hstack
+    apply bmatch_ext bc m b am.am_stack m' (hmm.mmatch_stack b hstack)
+    intro ofs n bytes hbytes hn
+    apply hload b ofs n bytes _ hn hbytes
+    simp [hstack]
+  · intro id ab b hglob hab
+    apply bmatch_ext bc m b ab m' (hmm.mmatch_glob id ab b hglob hab)
+    intro ofs n bytes hbytes hn
+    apply hload b ofs n bytes _ hn hbytes
+    simp [hglob]
+  · intro b hstack hinvalid
+    apply smatch_ext bc m b am.am_nonstack m'
+      (hmm.mmatch_nonstack b hstack hinvalid)
+    intro ofs n bytes hbytes hn
+    exact hload b ofs n bytes hinvalid hn hbytes
+  · intro b hinvalid
+    apply smatch_ext bc m b am.am_top m' (hmm.mmatch_top b hinvalid)
+    intro ofs n bytes hbytes hn
+    exact hload b ofs n bytes hinvalid hn hbytes
+  · intro b hinvalid
+    exact Plt_Ple_trans b m.nextblock m'.nextblock
+      (hmm.mmatch_below b hinvalid) hnext
+
+end CompCert4Lean.Backend.ValueDomain
