@@ -5067,3 +5067,111 @@ theorem eval_sel_known_builtin
                   | Econs _ _ => simp [sel_known_builtin, CompCert4Lean.X86.SelectOp.platform_builtin] at hsel
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Cminor
+open CompCert4Lean.Common.Memory
+
+private theorem selection_valid_pointer_extends
+    {m m' : mem} (hext : Mem.extends m m') :
+    ∀ b ofs, Mem.valid_pointer m b ofs = true →
+      Mem.valid_pointer m' b ofs = true := by
+  intro b ofs hp
+  apply (Mem.valid_pointer_nonempty_perm m' b ofs).2
+  have h := hext.mext_inj.mi_perm b b (.Z0) ofs _ _ rfl
+    ((Mem.valid_pointer_nonempty_perm m b ofs).1 hp)
+  have hz : ZArith.BinInt.Z.add ofs .Z0 = ofs := by
+    apply intOfZ_injective
+    change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+    rw [intOfZ_zOfInt]
+    simp
+  simpa only [hz] using h
+
+set_option maxHeartbeats 2000000 in
+theorem eval_binop_lessdef
+    :
+    eval_binop_lessdefStatement := by
+  intro op v1 v1' v2 v2' v m m' hEval hld1 hld2 hMem
+  have hsame : ∃ v', Cminor.eval_binop op v1' v2' m = some v' ∧ Val.lessdef v v' := by
+    cases hld1 with
+    | lessdef_refl =>
+        cases hld2 with
+        | lessdef_refl => exact ⟨v, hEval, Val.lessdef_refl _⟩
+        | lessdef_undef =>
+            cases op <;> cases v1 <;> cases v2' <;>
+              simp [Cminor.eval_binop, Val.add, Val.sub, Val.mul, Val.divs, Val.divu, Val.mods, Val.modu,
+                Val.and, Val.or, Val.xor, Val.shl, Val.shr, Val.shru,
+                Val.addf, Val.subf, Val.mulf, Val.divf, Val.addfs, Val.subfs, Val.mulfs, Val.divfs,
+                Val.addl, Val.subl, Val.mull, Val.divls, Val.divlu, Val.modls, Val.modlu,
+                Val.andl, Val.orl, Val.xorl, Val.shll, Val.shrl, Val.shrlu,
+                Val.cmp, Val.cmpu, Val.cmpf, Val.cmpfs, Val.cmpl, Val.cmplu,
+                Val.cmp_bool, Val.cmpu_bool, Val.cmpf_bool, Val.cmpfs_bool,
+                Val.cmpl_bool, Val.cmplu_bool, Val.of_optbool, Val.cmp_different_blocks] at hEval ⊢ <;>
+              subst v <;> exact Val.lessdef_undef _
+    | lessdef_undef =>
+        cases hld2 with
+        | lessdef_refl =>
+            cases op <;> cases v2 <;> cases v1' <;>
+              simp [Cminor.eval_binop, Val.add, Val.sub, Val.mul, Val.divs, Val.divu, Val.mods, Val.modu,
+                Val.and, Val.or, Val.xor, Val.shl, Val.shr, Val.shru,
+                Val.addf, Val.subf, Val.mulf, Val.divf, Val.addfs, Val.subfs, Val.mulfs, Val.divfs,
+                Val.addl, Val.subl, Val.mull, Val.divls, Val.divlu, Val.modls, Val.modlu,
+                Val.andl, Val.orl, Val.xorl, Val.shll, Val.shrl, Val.shrlu,
+                Val.cmp, Val.cmpu, Val.cmpf, Val.cmpfs, Val.cmpl, Val.cmplu,
+                Val.cmp_bool, Val.cmpu_bool, Val.cmpf_bool, Val.cmpfs_bool,
+                Val.cmpl_bool, Val.cmplu_bool, Val.of_optbool, Val.cmp_different_blocks] at hEval ⊢ <;>
+              subst v <;> exact Val.lessdef_undef _
+        | lessdef_undef =>
+            cases op <;> cases v1' <;> cases v2' <;>
+              simp [Cminor.eval_binop, Val.add, Val.sub, Val.mul, Val.divs, Val.divu, Val.mods, Val.modu,
+                Val.and, Val.or, Val.xor, Val.shl, Val.shr, Val.shru,
+                Val.addf, Val.subf, Val.mulf, Val.divf, Val.addfs, Val.subfs, Val.mulfs, Val.divfs,
+                Val.addl, Val.subl, Val.mull, Val.divls, Val.divlu, Val.modls, Val.modlu,
+                Val.andl, Val.orl, Val.xorl, Val.shll, Val.shrl, Val.shrlu,
+                Val.cmp, Val.cmpu, Val.cmpf, Val.cmpfs, Val.cmpl, Val.cmplu,
+                Val.cmp_bool, Val.cmpu_bool, Val.cmpf_bool, Val.cmpfs_bool,
+                Val.cmpl_bool, Val.cmplu_bool, Val.of_optbool, Val.cmp_different_blocks] at hEval ⊢ <;>
+              subst v <;> exact Val.lessdef_undef _
+  have hcmpu : ∀ c,
+      Cminor.eval_binop (.Ocmpu c) v1 v2 m = some v →
+      ∃ v', Cminor.eval_binop (.Ocmpu c) v1' v2' m' = some v' ∧ Val.lessdef v v' := by
+    intro c h
+    change some (Val.cmpu (Mem.valid_pointer m) c v1 v2) = some v at h
+    change ∃ v', some (Val.cmpu (Mem.valid_pointer m') c v1' v2') = some v' ∧ Val.lessdef v v'
+    have hv : Val.cmpu (Mem.valid_pointer m) c v1 v2 = v := Option.some.inj h
+    subst v
+    refine ⟨Val.cmpu (Mem.valid_pointer m') c v1' v2', rfl, ?_⟩
+    apply Val.of_optbool_lessdef _ _
+    intro b hb
+    exact Val.cmpu_bool_lessdef _ _ c v1 v1' v2 v2' b
+      (selection_valid_pointer_extends hMem) hld1 hld2 hb
+  have hcmplu : ∀ c,
+      Cminor.eval_binop (.Ocmplu c) v1 v2 m = some v →
+      ∃ v', Cminor.eval_binop (.Ocmplu c) v1' v2' m' = some v' ∧ Val.lessdef v v' := by
+    intro c h
+    change Val.cmplu (Mem.valid_pointer m) c v1 v2 = some v at h
+    unfold Val.cmplu at h
+    cases hs : Val.cmplu_bool (Mem.valid_pointer m) c v1 v2 with
+    | none => simp [hs] at h
+    | some b =>
+        simp [hs] at h
+        subst v
+        refine ⟨Val.of_bool b, ?_, Val.lessdef_refl _⟩
+        change Val.cmplu (Mem.valid_pointer m') c v1' v2' = some (Val.of_bool b)
+        unfold Val.cmplu
+        have hb := Val.cmplu_bool_lessdef _ _ c v1 v1' v2 v2' b
+          (selection_valid_pointer_extends hMem) hld1 hld2 hs
+        rw [hb]
+        rfl
+  cases op with
+  | Ocmpu c => exact hcmpu c hEval
+  | Ocmplu c => exact hcmplu c hEval
+  | _ =>
+      obtain ⟨v', hv', hld⟩ := hsame
+      refine ⟨v', ?_, hld⟩
+      simpa [Cminor.eval_binop] using hv'
+
+end CompCert4Lean.Backend.Selectionproof
