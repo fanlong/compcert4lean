@@ -6324,3 +6324,13 @@ theorem transl_arglist_typed
       · exact ih
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+theorem make_neg_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_neg_correctStatement := by
+  exact transl_unop_make_neg_aux
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

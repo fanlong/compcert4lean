@@ -7098,3 +7098,55 @@ theorem deref_loc_inject : deref_loc_injectStatement := by
             Val.inject_int f _⟩
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.SimplLocals
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Driver.Compopts
+open CompCert4Lean.Lib.Maps
+
+theorem step_Sset_debug
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    step_Sset_debugStatement := by
+  intro cfg xi tprog f id ty a k e le m v v' heval hcast
+  by_cases hd : CompCert4Lean.Driver.Compopts.debug cfg = true
+  · simp [CompCert4Lean.Cfrontend.SimplLocals.Sset_debug, hd]
+    refine plus_left
+      (s2 := .State f
+        (.Sset id (CompCert4Lean.Cfrontend.SimplLocals.make_cast a ty))
+        (.Kseq (CompCert4Lean.Cfrontend.SimplLocals.Sdebug_temp id ty) k)
+        e le m) _ E0 ?_ ?_ rfl
+    · exact CompCert4Lean.Cfrontend.Clight.step.step_seq f
+        (.Sset id (CompCert4Lean.Cfrontend.SimplLocals.make_cast a ty))
+        (CompCert4Lean.Cfrontend.SimplLocals.Sdebug_temp id ty) k e le m
+    · apply star_left
+      · apply CompCert4Lean.Cfrontend.Clight.step.step_set
+        exact make_cast_correct tprog e le m a v ty v' heval hcast
+      · apply star_left
+        · exact CompCert4Lean.Cfrontend.Clight.step.step_skip_seq f
+            (CompCert4Lean.Cfrontend.SimplLocals.Sdebug_temp id ty) k e
+            (PTree.set id v' le) m
+        · apply star_one
+          exact step_Sdebug_temp
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            xi tprog f id ty k e (PTree.set id v' le) m v'
+            (PTree.gss id v' le) (CompCert4Lean.Cfrontend.Cop.cast_val_is_casted
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              v (CompCert4Lean.Cfrontend.Clight.typeof a) ty v' m hcast)
+        · rfl
+      · rfl
+  · simp [CompCert4Lean.Cfrontend.SimplLocals.Sset_debug, hd]
+    apply plus_one
+    apply CompCert4Lean.Cfrontend.Clight.step.step_set
+    exact make_cast_correct tprog e le m a v ty v' heval hcast
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

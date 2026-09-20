@@ -4443,3 +4443,47 @@ theorem eval_xorl : eval_xorlStatement := by
   · exact hb
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.X86.Op
+
+theorem eval_longconst
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_longconstStatement := by
+  intro xi prog sp e m le n
+  unfold longconst makelong
+  have hhi : eval_expr xi (Genv.globalenv prog) sp e m le
+      (Eop (Ointconst (int64Hiword n)) Enil)
+      (.Vint (int64Hiword n)) := by
+    exact eval_expr.eval_Eop le (Ointconst (int64Hiword n)) Enil []
+      (.Vint (int64Hiword n)) (eval_exprlist.nil le) rfl
+  have hlo : eval_expr xi (Genv.globalenv prog) sp e m le
+      (Eop (Ointconst (int64Loword n)) Enil)
+      (.Vint (int64Loword n)) := by
+    exact eval_expr.eval_Eop le (Ointconst (int64Loword n)) Enil []
+      (.Vint (int64Loword n)) (eval_exprlist.nil le) rfl
+  apply eval_expr.eval_Eop le Omakelong
+    (Econs (Eop (Ointconst (int64Hiword n)) Enil)
+      (Econs (Eop (Ointconst (int64Loword n)) Enil) Enil))
+    [.Vint (int64Hiword n), .Vint (int64Loword n)] (.Vlong n)
+  · exact eval_exprlist.cons le _ _ _ _ hhi
+      (eval_exprlist.cons le _ _ _ _ hlo (eval_exprlist.nil le))
+  · change some (CompCert4Lean.Common.Values.Val.longofwords
+      (.Vint (int64Hiword n)) (.Vint (int64Loword n))) = some (.Vlong n)
+    change some (CompCert4Lean.Common.Values.val.Vlong
+      (CompCert4Lean.Lib.Integers.Int64.ofwords
+        (int64Hiword n) (int64Loword n))) =
+      some (CompCert4Lean.Common.Values.val.Vlong n)
+    exact congrArg
+      (fun q : CCInt64 =>
+        some (CompCert4Lean.Common.Values.val.Vlong q))
+      (splitlong_recompose_local n)
+
+end CompCert4Lean.Backend.SplitLongproof

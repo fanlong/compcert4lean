@@ -3809,3 +3809,219 @@ theorem eval_divlu_mull
   exact eval_divlu_mull_local xi (Genv.globalenv prog) sp e m hf le x y p M hparams hnth
 
 end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SelectDiv
+open CompCert4Lean.X86.SelectLong
+open CompCert4Lean.X86.Op
+open Lean Elab Tactic Meta
+
+private theorem pg_divls_unsigned_repr_value (z : CCZ) :
+    intOfZ (int64Unsigned (int64Repr z)) = intOfZ z % 18446744073709551616 := by
+  have hu : int64Unsigned (int64Repr z) =
+      ZArith.BinInt.Z.modulo z CompCert4Lean.Lib.Integers.Int64.modulus := by
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "Int64.suffix_int64_unsigned_repr_eq_exact")
+        | throwError "integer representation lemma not found"
+      evalTactic (← `(tactic| exact $(Lean.mkIdent n) $(Lean.mkIdent `z)))
+  rw [hu]
+  change intOfZ (zOfInt (intOfZ z % 18446744073709551616)) = _
+  exact intOfZ_zOfInt _
+
+private theorem pg_divls_signed_value (x : CCInt64) :
+    intOfZ (int64Signed x) =
+      if intOfZ (int64Unsigned x) < 9223372036854775808 then
+        intOfZ (int64Unsigned x) else intOfZ (int64Unsigned x) - 18446744073709551616 := by
+  unfold int64Signed CompCert4Lean.Lib.Integers.Int64.signed
+    CompCert4Lean.Lib.Integers.WordCore.signed
+  run_tac
+    let env ← getEnv
+    for suffix in ["Integers.zltSelect", "Integers.sumboolSelect"] do
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith suffix)
+        | throwError "integer comparison helper not found"
+      evalTactic (← `(tactic| unfold $(Lean.mkIdent n)))
+  dsimp only [CompCert4Lean.Lib.Integers.Int64.half_modulus,
+    CompCert4Lean.Lib.Integers.Int64.modulus]
+  split
+  · rename_i d hproof heq
+    change intOfZ (int64Unsigned x) < 9223372036854775808 at hproof
+    change intOfZ (int64Unsigned x) = _
+    rw [if_pos hproof]
+  · rename_i d hproof heq
+    change 9223372036854775808 ≤ intOfZ (int64Unsigned x) at hproof
+    change intOfZ (zOfInt (intOfZ (int64Unsigned x) - 18446744073709551616)) = _
+    rw [intOfZ_zOfInt, if_neg (by omega)]
+
+private theorem pg_divls_unsigned_range (x : CCInt64) :
+    0 ≤ intOfZ (int64Unsigned x) ∧ intOfZ (int64Unsigned x) < 18446744073709551616 := by
+  have h := x.intrange
+  change (-1 : Int) < intOfZ (int64Unsigned x) ∧
+    intOfZ (int64Unsigned x) < 18446744073709551616 at h
+  omega
+
+private theorem pg_divls_signed_range (x : CCInt64) :
+    zLe CompCert4Lean.Lib.Integers.Int64.min_signed (int64Signed x) ∧
+    zLe (int64Signed x) CompCert4Lean.Lib.Integers.Int64.max_signed := by
+  have hu := pg_divls_unsigned_range x
+  rw [show zLe CompCert4Lean.Lib.Integers.Int64.min_signed (int64Signed x) =
+      (-9223372036854775808 ≤ intOfZ (int64Signed x)) from rfl]
+  change -9223372036854775808 ≤ intOfZ (int64Signed x) ∧
+    intOfZ (int64Signed x) ≤ 9223372036854775807
+  rw [pg_divls_signed_value]
+  split <;> omega
+
+private theorem pg_divls_signed_repr (z : CCZ)
+    (hz : zLe CompCert4Lean.Lib.Integers.Int64.min_signed z ∧
+      zLe z CompCert4Lean.Lib.Integers.Int64.max_signed) :
+    int64Signed (int64Repr z) = z := by
+  apply intOfZ_injective
+  rw [pg_divls_signed_value, pg_divls_unsigned_repr_value]
+  change -9223372036854775808 ≤ intOfZ z ∧ intOfZ z ≤ 9223372036854775807 at hz
+  split <;> omega
+
+private theorem pg_divls_eqm_signed_unsigned (x : CCInt64) :
+    CompCert4Lean.Lib.Integers.Int64.eqm (int64Signed x) (int64Unsigned x) := by
+  unfold CompCert4Lean.Lib.Integers.Int64.eqm CompCert4Lean.Lib.Integers.WordCore.eqm
+    CompCert4Lean.Lib.Zbits.eqmod
+  by_cases h : intOfZ (int64Unsigned x) < 9223372036854775808
+  · refine ⟨z0, ?_⟩
+    apply intOfZ_injective
+    rw [pg_divls_signed_value, if_pos h]
+    change intOfZ (int64Unsigned x) =
+      intOfZ (zOfInt (intOfZ (zOfInt (0 * 18446744073709551616)) + intOfZ (int64Unsigned x)))
+    simp only [intOfZ_zOfInt]
+    omega
+  · refine ⟨zOpp z1, ?_⟩
+    apply intOfZ_injective
+    rw [pg_divls_signed_value, if_neg h]
+    change intOfZ (int64Unsigned x) - 18446744073709551616 =
+      intOfZ (zOfInt (intOfZ (zOfInt (-1 * 18446744073709551616)) +
+        intOfZ (int64Unsigned x)))
+    simp only [intOfZ_zOfInt]
+    omega
+
+private theorem pg_divls_sign (x : CCInt64) :
+    int64Unsigned (int64Shru' x (intRepr (ZArith.BinInt.Z.of_nat 63))) =
+      (if zltBool (int64Signed x) z0 then z1 else z0) := by
+  rw [int64_shru'_div_two_p]
+  have hq : zDiv (int64Unsigned x)
+      (two_p (intUnsigned (intRepr (ZArith.BinInt.Z.of_nat 63)))) =
+      (if zltBool (int64Signed x) z0 then z1 else z0) := by
+    rw [zdiv_pos_int_local _ _ (by decide)]
+    apply intOfZ_injective
+    rw [intOfZ_zOfInt]
+    have hu := pg_divls_unsigned_range x
+    have hs := pg_divls_signed_value x
+    unfold zltBool boolOfSumbool
+    cases h : CompCert4Lean.Lib.Coqlib.zlt (int64Signed x) z0 with
+    | left hlt =>
+        change intOfZ (int64Signed x) < 0 at hlt
+        change intOfZ (int64Unsigned x) / 9223372036854775808 = 1
+        split at hs <;> omega
+    | right hge =>
+        change 0 ≤ intOfZ (int64Signed x) at hge
+        change intOfZ (int64Unsigned x) / 9223372036854775808 = 0
+        split at hs <;> omega
+  rw [hq]
+  cases zltBool (int64Signed x) z0 <;> rfl
+
+private theorem pg_divls_product_range (x : CCInt64) (m : CCZ)
+    (hm : zLe z0 m ∧ zLt m CompCert4Lean.Lib.Integers.Int64.modulus) :
+    zLe CompCert4Lean.Lib.Integers.Int64.min_signed
+      (zDiv (zMul (int64Signed x) m) CompCert4Lean.Lib.Integers.Int64.modulus) ∧
+    zLe (zDiv (zMul (int64Signed x) m) CompCert4Lean.Lib.Integers.Int64.modulus)
+      CompCert4Lean.Lib.Integers.Int64.max_signed := by
+  have hx := pg_divls_signed_range x
+  change (-9223372036854775808 : Int) ≤ intOfZ (int64Signed x) ∧
+    intOfZ (int64Signed x) ≤ 9223372036854775807 at hx
+  change (0 : Int) ≤ intOfZ m ∧ intOfZ m < 18446744073709551616 at hm
+  have hlo := Int.mul_le_mul_of_nonneg_right hx.1 hm.1
+  have hhi := Int.mul_le_mul_of_nonneg_right hx.2 hm.1
+  have hlower : (-9223372036854775808 : Int) * 18446744073709551616 ≤
+      intOfZ (int64Signed x) * intOfZ m := by omega
+  have hupper : intOfZ (int64Signed x) * intOfZ m <
+      (9223372036854775808 : Int) * 18446744073709551616 := by omega
+  rw [zdiv_pos_int_local _ _ (by decide)]
+  change (-9223372036854775808 : Int) ≤ intOfZ (zOfInt _) ∧
+    intOfZ (zOfInt _) ≤ 9223372036854775807
+  simp only [intOfZ_zOfInt, zMul, ZArith.BinInt.Z.mul]
+  change (-9223372036854775808 : Int) ≤
+      (intOfZ (int64Signed x) * intOfZ m) / 18446744073709551616 ∧
+    (intOfZ (int64Signed x) * intOfZ m) / 18446744073709551616 ≤ 9223372036854775807
+  constructor
+  · exact Int.le_ediv_of_mul_le (by decide) hlower
+  · have h := Int.ediv_lt_of_lt_mul (by decide : (0 : Int) < 18446744073709551616) hupper
+    omega
+
+private theorem pg_divls_mul_shift_gen :
+    ∀ (x y : CCInt64) (m p : CCZ),
+      divls_mul_params (int64Signed y) = some (p, m) →
+      (zLe z0 m ∧ zLt m CompCert4Lean.Lib.Integers.Int64.modulus) ∧
+      (zLe z0 p ∧ zLt p z64) ∧
+      int64Divs x y = int64Add
+        (int64Shr' (int64Repr (zDiv (zMul (int64Signed x) m)
+          CompCert4Lean.Lib.Integers.Int64.modulus)) (intRepr p))
+        (int64Shru' x (intRepr (ZArith.BinInt.Z.of_nat 63))) := by
+  intro x y m p hparams
+  obtain ⟨hm, hp, hdiv⟩ := divls_mul_params_sound (int64Signed y) m p hparams
+  refine ⟨hm, hp, ?_⟩
+  have hx := pg_divls_signed_range x
+  have hprepr : intUnsigned (intRepr p) = p := by
+    apply CompCert4Lean.Lib.Integers.Int.unsigned_repr_proof_api
+    refine ⟨hp.1, ?_⟩
+    have h := hp.2
+    change intOfZ p < 64 at h
+    change intOfZ p ≤ 4294967295
+    omega
+  have hqrepr : int64Signed (int64Repr
+      (zDiv (zMul (int64Signed x) m) CompCert4Lean.Lib.Integers.Int64.modulus)) =
+      zDiv (zMul (int64Signed x) m) CompCert4Lean.Lib.Integers.Int64.modulus :=
+    pg_divls_signed_repr _
+      (pg_divls_product_range x m hm)
+  have hshift : int64Shr'
+      (int64Repr (zDiv (zMul (int64Signed x) m) CompCert4Lean.Lib.Integers.Int64.modulus))
+      (intRepr p) =
+      int64Repr (zDiv (zMul m (int64Signed x)) (two_p (zAdd z64 p))) := by
+    rw [int64_shr'_div_two_p]
+    change int64Repr (zDiv (int64Signed (int64Repr _)) (two_p (intUnsigned (intRepr p)))) = _
+    rw [hprepr, hqrepr]
+    rw [zdiv_zdiv_pos_local _ _ _ (by decide) (two_p_pos_local p hp.1)]
+    have hden : zMul CompCert4Lean.Lib.Integers.Int64.modulus (two_p p) =
+        two_p (zAdd z64 p) := by
+      exact (two_p_add_local z64 p (by decide) hp.1).symm
+    have hcomm : zMul (int64Signed x) m = zMul m (int64Signed x) := by
+      apply intOfZ_injective
+      simp only [zMul, ZArith.BinInt.Z.mul, intOfZ_zOfInt, Int.mul_comm]
+    rw [hden, hcomm]
+  have hsign := pg_divls_sign x
+  rw [hshift]
+  change int64Repr (zQuot (int64Signed x) (int64Signed y)) =
+    int64Repr (zAdd
+      (int64Unsigned (int64Repr (zDiv (zMul m (int64Signed x)) (two_p (zAdd z64 p)))))
+      (int64Unsigned (int64Shru' x (intRepr (ZArith.BinInt.Z.of_nat 63)))))
+  rw [hdiv (int64Signed x) hx, hsign]
+  apply CompCert4Lean.Lib.Integers.Int64.eqm_samerepr_proof
+  apply CompCert4Lean.Lib.Zbits.eqmod_add
+  · exact CompCert4Lean.Lib.Integers.Int64.eqm_unsigned_repr_r_proof _ _
+      (CompCert4Lean.Lib.Integers.Int64.eqm_refl_proof _)
+  · exact CompCert4Lean.Lib.Integers.Int64.eqm_refl_proof _
+
+
+end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+theorem divls_mul_shift_gen : divls_mul_shift_genStatement := by
+  exact pg_divls_mul_shift_gen
+
+end CompCert4Lean.Backend.SelectDivproof

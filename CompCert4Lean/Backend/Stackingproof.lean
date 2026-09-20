@@ -5618,3 +5618,10 @@ theorem transl_builtin_arg_correct : transl_builtin_arg_correctStatement := by
       | true => simpa [hp] using Val.addl_inject j _ _ _ _ hinj1 hinj2
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+theorem contains_set_stack : contains_set_stackStatement := by
+  exact stackingproof_contains_set_stack
+
+end CompCert4Lean.Backend.Stackingproof

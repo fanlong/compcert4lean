@@ -8404,3 +8404,9 @@ theorem invert_code : invert_codeStatement := by
               exact wt_instr_at cfg f env pc i hwt hcode
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+theorem pair_instr_block_sound : pair_instr_block_soundStatement := local_pair_instr
+
+end CompCert4Lean.Backend.Allocproof

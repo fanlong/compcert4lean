@@ -709,3 +709,29 @@ theorem combine_addr_sound
     exact combine_addr_32_sound ge sp m get valu get_sound addr args addr' args' h
 
 end CompCert4Lean.X86.CombineOpproof
+
+namespace CompCert4Lean.X86.CombineOpproof
+
+open CompCert4Lean.X86.CombineOp
+open CompCert4Lean.Backend.CSEdomain
+
+theorem combine_cond'_sound : combine_cond'_soundStatement := by
+  intro m valu cond args res res' hcombine heval
+  cases cond <;> simp only [combine_cond'] at hcombine <;> try contradiction
+  all_goals
+    cases args with
+    | nil => cases hcombine
+    | cons x rest =>
+      cases rest with
+      | nil => cases hcombine
+      | cons y rest =>
+        cases rest with
+        | nil =>
+          first
+          | exact combine_comparison_cmp_sound valu _ x y res res' hcombine heval
+          | exact combine_comparison_cmpu_sound valu m _ x y res res' hcombine heval
+          | exact combine_comparison_cmpl_sound valu _ x y res res' hcombine heval
+          | exact combine_comparison_cmplu_sound valu m _ x y res res' hcombine heval
+        | cons z rest => cases hcombine
+
+end CompCert4Lean.X86.CombineOpproof

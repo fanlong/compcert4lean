@@ -1168,3 +1168,23 @@ set_option maxHeartbeats 800000 in
                   exact step.exec_return _ _ _ _ _ _ _ _
 
 end CompCert4Lean.Backend.Renumberproof
+
+namespace CompCert4Lean.Backend.Renumberproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+ theorem transf_program_correct
+    [binary64_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    transf_program_correctStatement := by
+  intro xi prog tprog hprog
+  exact CompCert4Lean.Common.Smallstep.forward_simulation_step _ _
+    (senv_preserved prog tprog hprog).2.1 match_states
+    (transf_initial_states prog tprog hprog)
+    transf_final_states
+    (step_simulation (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi prog tprog hprog)
+
+end CompCert4Lean.Backend.Renumberproof

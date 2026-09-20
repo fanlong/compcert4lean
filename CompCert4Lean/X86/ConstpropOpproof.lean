@@ -4342,3 +4342,12 @@ theorem make_moduimm_correct
         (CompCert4Lean.Backend.Registers.Regmap.get r1 e) n logn v hpow hmodn)
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+theorem addr_strength_reduction_64_generic_correct :
+    addr_strength_reduction_64_generic_correctStatement := by
+  exact cp64_generic
+
+end CompCert4Lean.X86.ConstpropOpproof

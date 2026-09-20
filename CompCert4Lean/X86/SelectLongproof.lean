@@ -4002,3 +4002,15 @@ theorem eval_subl
         subl_eval_op_aux xi (Genv.globalenv prog) sp e m le a b x y ha hb
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+theorem eval_shllimm
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_shllimmStatement binary64_certificate binary32_certificate := by
+  exact shll_immediate_sound_aux
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+
+end CompCert4Lean.X86.SelectLongproof

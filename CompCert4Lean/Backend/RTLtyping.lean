@@ -2712,3 +2712,20 @@ theorem subject_reduction : subject_reductionStatement := by
 
 end
 end CompCert4Lean.Backend.RTLtyping
+
+namespace CompCert4Lean.Backend.RTLtyping
+
+/-- Type preservation for operation instructions. -/
+theorem wt_exec_Iop
+    [binary64_certificate :
+      BinaryNormalizeCertificate
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 53)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      BinaryNormalizeCertificate
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 128)] :
+    wt_exec_IopStatement := by
+  exact subject_exec_op_aux
+
+end CompCert4Lean.Backend.RTLtyping

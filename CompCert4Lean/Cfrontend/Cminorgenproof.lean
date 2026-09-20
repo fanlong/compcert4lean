@@ -6241,3 +6241,10 @@ theorem transl_find_label_body : transl_find_label_bodyStatement := by
       exact ⟨ts', tk', xenv', hfind', htr', hmatch'⟩
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem match_callstack_alloc_variables_rec : match_callstack_alloc_variables_recStatement := by
+  exact alloc_vars_rec_aux
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

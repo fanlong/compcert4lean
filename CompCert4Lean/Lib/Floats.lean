@@ -4020,3 +4020,12 @@ theorem float32_sqrt_correct_proof : float32_sqrt_correctStatement := by
       simp only [hr, hrx, Bool.false_eq_true, ↓reduceIte]
 
 end CompCert4Lean.Lib.Floats.Sqrt
+
+namespace CompCert4Lean.Lib.Floats
+
+theorem integer_representable_n :
+    integer_representable_nStatement :=
+  CompCert4Lean.Lib.IEEE754_extra.integer_representable_n
+    (prec := z53) (emax := z1024)
+
+end CompCert4Lean.Lib.Floats

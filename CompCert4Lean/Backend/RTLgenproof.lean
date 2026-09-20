@@ -5862,3 +5862,13 @@ theorem invert_eval_builtin_arg
   exact invert_eval_builtin_arg_aux
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+theorem transl_expr_Ebuiltin_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_expr_Ebuiltin_correctStatement := by
+  exact rtlgen_expr_builtin_case
+
+end CompCert4Lean.Backend.RTLgenproof

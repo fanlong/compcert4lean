@@ -2598,3 +2598,1866 @@ theorem record_gotos_correct : record_gotos_correctStatement := by
   exact H
 
 end CompCert4Lean.Backend.Tunnelingproof
+
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.X86.Machregs
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Flocq.IEEE754.Binary (BinaryNormalizeCertificate)
+
+private theorem pgts_add_zero (x : Z) : zOfInt (intOfZ x + 0) = x := by
+  simp [zOfInt_intOfZ]
+
+private theorem pgts_id_no_overlap (m : mem) :
+    Mem.meminj_no_overlap inject_id m := by
+  intro b1 b1' d1 b2 b2' d2 ofs1 ofs2 hne h1 h2 _ _
+  have h1' : (b1, (.Z0 : Z)) = (b1', d1) := Option.some.inj h1
+  have h2' : (b2, (.Z0 : Z)) = (b2', d2) := Option.some.inj h2
+  cases h1'
+  cases h2'
+  exact Or.inl hne
+
+private theorem pgts_store_extends : Mem.store_within_extendsStatement := by
+  intro chunk m1 m2 b ofs v1 n1 v2 hext hs hv
+  obtain ⟨n2, hs2, hi⟩ := Mem.store_mapped_inj inject_id chunk m1 b ofs v1 n1
+    m2 b .Z0 v2 hext.mext_inj hs (pgts_id_no_overlap m1) rfl
+    ((val_inject_id v1 v2).mpr hv)
+  change Mem.store chunk m2 b (zOfInt (intOfZ ofs + 0)) v2 = some n2 at hs2
+  rw [pgts_add_zero] at hs2
+  refine ⟨n2, hs2, ?_⟩
+  constructor
+  · rw [Mem.nextblock_store _ _ _ _ _ _ hs, Mem.nextblock_store _ _ _ _ _ _ hs2]
+    exact hext.mext_next
+  · exact hi
+  · intro b' ofs' k p hp
+    obtain hp | hn := hext.mext_perm_inv b' ofs' k p
+      (Mem.perm_store_2 _ _ _ _ _ _ hs2 _ _ _ _ hp)
+    · exact Or.inl (Mem.perm_store_1 _ _ _ _ _ _ hs _ _ _ _ hp)
+    · exact Or.inr (fun h => hn (Mem.perm_store_2 _ _ _ _ _ _ hs _ _ _ _ h))
+
+private theorem pgts_storebytes_extends : Mem.storebytes_within_extendsStatement := by
+  intro m1 m2 b ofs bytes1 n1 bytes2 hext hs hv
+  obtain ⟨n2, hs2, hi⟩ := Mem.storebytes_mapped_inj inject_id m1 b ofs bytes1 n1
+    m2 b .Z0 bytes2 hext.mext_inj hs (pgts_id_no_overlap m1) rfl hv
+  change Mem.storebytes m2 b (zOfInt (intOfZ ofs + 0)) bytes2 = some n2 at hs2
+  rw [pgts_add_zero] at hs2
+  refine ⟨n2, hs2, ?_⟩
+  constructor
+  · rw [Mem.nextblock_storebytes _ _ _ _ _ hs, Mem.nextblock_storebytes _ _ _ _ _ hs2]
+    exact hext.mext_next
+  · exact hi
+  · intro b' ofs' k p hp
+    obtain hp | hn := hext.mext_perm_inv b' ofs' k p
+      (Mem.perm_storebytes_2 _ _ _ _ _ hs2 _ _ _ _ hp)
+    · exact Or.inl (Mem.perm_storebytes_1 _ _ _ _ _ hs _ _ _ _ hp)
+    · exact Or.inr (fun h => hn (Mem.perm_storebytes_2 _ _ _ _ _ hs _ _ _ _ h))
+
+private theorem pgts_free_extends : Mem.free_parallel_extendsStatement := by
+  intro m1 m2 b lo hi n1 hext hf
+  have hr := Mem.range_perm_inj inject_id m1 m2 b lo hi Cur Freeable b .Z0
+    hext.mext_inj (Mem.free_range_perm _ _ _ _ _ hf) rfl
+  change Mem.range_perm m2 b (zOfInt (intOfZ lo + 0))
+    (zOfInt (intOfZ hi + 0)) Cur Freeable at hr
+  rw [pgts_add_zero, pgts_add_zero] at hr
+  obtain ⟨n2, hf2⟩ := Mem.range_perm_free m2 b lo hi hr
+  refine ⟨n2, hf2, ?_⟩
+  constructor
+  · rw [Mem.nextblock_free _ _ _ _ _ hf, Mem.nextblock_free _ _ _ _ _ hf2]
+    exact hext.mext_next
+  · apply Mem.free_right_inj inject_id n1 m2 b lo hi n2
+      (Mem.free_left_inj inject_id m1 m2 b lo hi n1 hext.mext_inj hf) hf2
+    intro b' delta ofs k p hmap hp hb
+    have heq : (b', (.Z0 : Z)) = (b, delta) := Option.some.inj hmap
+    cases heq
+    change intOfZ lo ≤ intOfZ (zOfInt (intOfZ ofs + 0)) ∧
+      intOfZ (zOfInt (intOfZ ofs + 0)) < intOfZ hi at hb
+    rw [pgts_add_zero] at hb
+    exact Mem.perm_free_2 _ _ _ _ _ hf _ _ _ hb hp
+  · intro b' ofs k p hp
+    obtain hp1 | hn := hext.mext_perm_inv b' ofs k p
+      (Mem.perm_free_3 _ _ _ _ _ hf2 _ _ _ _ hp)
+    · obtain ⟨hb, hlo, hhi⟩ | hp1' := Mem.perm_free_inv _ _ _ _ _ hf _ _ _ _ hp1
+      · subst b'
+        exact False.elim (Mem.perm_free_2 _ _ _ _ _ hf2 _ _ _ ⟨hlo, hhi⟩ hp)
+      · exact Or.inl hp1'
+    · exact Or.inr (fun h => hn (Mem.perm_free_3 _ _ _ _ _ hf _ _ _ _ h))
+
+private theorem pgts_alloc_extends
+    (m1 m2 : mem) (lo hi : Z) (n1 : mem) (b : block)
+    (hext : Mem.extends m1 m2) (ha : Mem.alloc m1 lo hi = (n1, b)) :
+    ∃ n2, Mem.alloc m2 lo hi = (n2, b) ∧ Mem.extends n1 n2 := by
+  cases ha2 : Mem.alloc m2 lo hi with
+  | mk n2 b2 =>
+    have hb : b2 = b := by
+      rw [Mem.alloc_result _ _ _ _ _ ha2, Mem.alloc_result _ _ _ _ _ ha]
+      exact hext.mext_next.symm
+    subst b2
+    have hperm : ∀ ofs k p, intOfZ lo ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ hi → Mem.perm n2 b ofs k p := by
+      intro ofs k p hr
+      exact Mem.perm_implies _ _ _ _ _ _
+        (Mem.perm_alloc_2 _ _ _ _ _ ha2 _ _ hr) (perm_F_any p)
+    refine ⟨n2, rfl, ?_⟩
+    constructor
+    · rw [Mem.nextblock_alloc _ _ _ _ _ ha, Mem.nextblock_alloc _ _ _ _ _ ha2,
+        hext.mext_next]
+    · apply Mem.alloc_left_mapped_inj inject_id m1 n2 lo hi n1 b b .Z0
+        (Mem.alloc_right_inj inject_id m1 m2 lo hi b n2 hext.mext_inj ha2) ha
+        (Mem.valid_new_block _ _ _ _ _ ha2)
+      · intro chunk _
+        refine ⟨.Z0, ?_⟩
+        apply intOfZ_injective
+        change 0 = intOfZ (zOfInt (intOfZ (align_chunk chunk) * 0))
+        rw [intOfZ_zOfInt]
+        simp
+      · intro ofs k p hr
+        change Mem.perm n2 b (zOfInt (intOfZ ofs + 0)) k p
+        rw [pgts_add_zero]
+        exact hperm ofs k p hr
+      · rfl
+    · intro b' ofs k p hp
+      by_cases hb : b' = b
+      · subst b'
+        apply Or.inl
+        exact Mem.perm_implies _ _ _ _ _ _
+          (Mem.perm_alloc_2 _ _ _ _ _ ha _ _
+            (Mem.perm_alloc_3 _ _ _ _ _ ha2 _ _ _ hp)) (perm_F_any p)
+      · obtain hp1 | hn := hext.mext_perm_inv b' ofs k p
+          (Mem.perm_alloc_4 _ _ _ _ _ ha2 _ _ _ _ hp hb)
+        · exact Or.inl (Mem.perm_alloc_1 _ _ _ _ _ ha _ _ _ _ hp1)
+        · exact Or.inr (fun h => hn (Mem.perm_alloc_4 _ _ _ _ _ ha _ _ _ _ h hb))
+
+
+private theorem pgts_lessdef_one {v : val} {vs : List val}
+    (h : Val.lessdef_list [v] vs) :
+    ∃ v', vs = [v'] ∧ Val.lessdef v v' := by
+  cases h with
+  | lessdef_list_cons v1 v2 vl1 vl2 hv ht =>
+    cases ht
+    exact ⟨v2, rfl, hv⟩
+
+private theorem pgts_lessdef_two {v w : val} {vs : List val}
+    (h : Val.lessdef_list [v, w] vs) :
+    ∃ v' w', vs = [v', w'] ∧ Val.lessdef v v' ∧ Val.lessdef w w' := by
+  cases h with
+  | lessdef_list_cons v1 v2 vl1 vl2 hv ht =>
+    obtain ⟨w', hw, hl⟩ := pgts_lessdef_one ht
+    subst vl2
+    exact ⟨v2, w', rfl, hv, hl⟩
+
+private theorem pgts_call_extends
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (ef : external_function) (ge : Senv.t)
+    (vargs : List val) (m1 : mem) (t : trace) (vres : val) (m2 m1' : mem)
+    (vargs' : List val)
+    (hc : external_call xi ef ge vargs m1 t vres m2)
+    (hext : Mem.extends m1 m1') (hargs : Val.lessdef_list vargs vargs') :
+    ∃ vres' m2', external_call xi ef ge vargs' m1' t vres' m2' ∧
+      Val.lessdef vres vres' ∧ Mem.extends m2 m2' := by
+  cases ef with
+  | EF_external name sg =>
+    obtain ⟨v', m', hcall, hval, hmem, _⟩ :=
+      (external_functions_properties xi name sg).ec_mem_extends
+        ge vargs m1 t vres m2 m1' vargs' hc hext hargs
+    exact ⟨v', m', hcall, hval, hmem⟩
+  | EF_inline_asm text sg clobbers =>
+    obtain ⟨v', m', hcall, hval, hmem, _⟩ :=
+      (inline_assembly_properties xi text sg).ec_mem_extends
+        ge vargs m1 t vres m2 m1' vargs' hc hext hargs
+    exact ⟨v', m', hcall, hval, hmem⟩
+  | EF_builtin name sg | EF_runtime name sg =>
+    change builtin_or_external_sem xi name sg ge vargs m1 t vres m2 at hc
+    change ∃ vres' m2', builtin_or_external_sem xi name sg ge vargs' m1' t vres' m2' ∧
+      Val.lessdef vres vres' ∧ Mem.extends m2 m2'
+    unfold builtin_or_external_sem at hc ⊢
+    cases hlookup : CompCert4Lean.Common.Builtins.lookup_builtin_function name sg with
+    | some bf =>
+      rw [hlookup] at hc
+      obtain ⟨v', hcall, hval⟩ := known_builtin_sem_lessdef bf ge vargs m1 t vres m2
+        ge vargs' m1' hc hargs
+      cases hc
+      exact ⟨v', m1', hcall, hval, hext⟩
+    | none =>
+      rw [hlookup] at hc
+      obtain ⟨v', m', hcall, hval, hmem, _⟩ :=
+        (external_functions_properties xi name sg).ec_mem_extends
+          ge vargs m1 t vres m2 m1' vargs' hc hext hargs
+      exact ⟨v', m', hcall, hval, hmem⟩
+  | EF_vload chunk =>
+    cases hc with
+    | volatile_load_sem_intro b ofs m t v hl =>
+      obtain ⟨vptr, rfl, hp⟩ := pgts_lessdef_one hargs
+      cases hp
+      obtain ⟨v', hload, hval⟩ := volatile_load_extends ge chunk m1 b ofs t vres m1' hl hext
+      exact ⟨v', m1', volatile_load_sem_intro b ofs m1' t v' hload, hval, hext⟩
+  | EF_vstore chunk =>
+    cases hc with
+    | volatile_store_sem_intro b ofs m v t n hs =>
+      obtain ⟨vptr, v', rfl, hp, hv⟩ := pgts_lessdef_two hargs
+      cases hp
+      cases hs with
+      | volatile_store_vol id ev v hvol hfind hmatch =>
+        refine ⟨Vundef, m1', volatile_store_sem_intro b ofs m1' v' _ m1' ?_,
+          Val.lessdef_refl _, hext⟩
+        exact volatile_store_vol chunk m1' b ofs id ev v' hvol hfind
+          (eventval_match_lessdef ge ev (type_of_chunk chunk) _ _ hmatch
+            (Val.load_result_lessdef chunk v v' hv))
+      | volatile_store_nonvol =>
+        rename_i hvol hstore
+        obtain ⟨n', hstore', hext'⟩ := pgts_store_extends chunk m1 m1' b
+          (Ptrofs.unsigned ofs) v m2 v' hext hstore hv
+        exact ⟨Vundef, n', volatile_store_sem_intro b ofs m1' v' _ n'
+          (volatile_store_nonvol chunk m1' b ofs v' n' hvol hstore'),
+          Val.lessdef_refl _, hext'⟩
+  | EF_malloc =>
+    cases hc with
+    | extcall_malloc_sem_intro sz m n b n' ha hs =>
+      obtain ⟨v', rfl, hv⟩ := pgts_lessdef_one hargs
+      change Val.lessdef (.Vlong _) v' at hv
+      cases hv
+      obtain ⟨n2, ha2, hext2⟩ := pgts_alloc_extends m1 m1' _ _ n b hext ha
+      obtain ⟨n2', hs2, hext2'⟩ := pgts_store_extends _ n n2 b _ _ m2 _
+        hext2 hs (Val.lessdef_refl _)
+      exact ⟨Vptr b Ptrofs.zero, n2', extcall_malloc_sem_intro sz m1' n2 b n2' ha2 hs2,
+        Val.lessdef_refl _, hext2'⟩
+  | EF_free =>
+    cases hc with
+    | extcall_free_sem_ptr b lo sz m n hl hf =>
+      obtain ⟨v', rfl, hv⟩ := pgts_lessdef_one hargs
+      cases hv
+      obtain ⟨sz', hl', hsz⟩ := Mem.load_extends _ m1 m1' b _ _ hext hl
+      change Val.lessdef (.Vlong _) sz' at hsz
+      cases hsz
+      obtain ⟨n', hf', hext'⟩ := pgts_free_extends m1 m1' b _ _ m2 hext hf
+      exact ⟨Vundef, n', extcall_free_sem_ptr b lo sz m1' n' hl' hf',
+        Val.lessdef_refl _, hext'⟩
+    | extcall_free_sem_null m =>
+      obtain ⟨v', rfl, hv⟩ := pgts_lessdef_one hargs
+      change Val.lessdef (.Vlong _) v' at hv
+      cases hv
+      exact ⟨Vundef, m1', extcall_free_sem_null m1', Val.lessdef_refl _, hext⟩
+  | EF_memcpy sz al =>
+    cases hc with
+    | extcall_memcpy_sem_intro bd od bs os m bytes n hal hsz hsa hsrc hdst hno hl hs =>
+      obtain ⟨v1, v2, rfl, hv1, hv2⟩ := pgts_lessdef_two hargs
+      cases hv1
+      cases hv2
+      obtain ⟨bytes', hl', hbytes⟩ := Mem.loadbytes_inj inject_id m1 m1' sz bs
+        (Ptrofs.unsigned os) bs .Z0 bytes hext.mext_inj hl rfl
+      change Mem.loadbytes m1' bs (zOfInt (intOfZ (Ptrofs.unsigned os) + 0)) sz =
+        some bytes' at hl'
+      rw [pgts_add_zero] at hl'
+      obtain ⟨n', hs', hext'⟩ := pgts_storebytes_extends m1 m1' bd
+        (Ptrofs.unsigned od) bytes m2 bytes' hext hs hbytes
+      exact ⟨Vundef, n', extcall_memcpy_sem_intro bd od bs os m1' bytes' n'
+        hal hsz hsa hsrc hdst hno hl' hs', Val.lessdef_refl _, hext'⟩
+  | EF_annot kind text targs =>
+    cases hc with
+    | extcall_annot_sem_intro evs hm =>
+      exact ⟨Vundef, m1', extcall_annot_sem_intro vargs' m1' evs
+        (eventval_list_match_lessdef ge evs targs vargs hm vargs' hargs),
+        Val.lessdef_refl _, hext⟩
+  | EF_annot_val kind text targ =>
+    cases hc with
+    | extcall_annot_val_sem_intro v m ev hm =>
+      obtain ⟨v', rfl, hv⟩ := pgts_lessdef_one hargs
+      exact ⟨v', m1', extcall_annot_val_sem_intro v' m1' ev
+        (eventval_match_lessdef ge ev targ vres v' hm hv), hv, hext⟩
+  | EF_debug kind text targs =>
+    cases hc
+    exact ⟨Vundef, m1', extcall_debug_sem_intro vargs' m1', Val.lessdef_refl _, hext⟩
+
+
+private theorem pgts_unary_total_aux (f : val → val)
+    (hundef : f .Vundef = .Vundef) {a b : val} (h : Val.lessdef a b) :
+    Val.lessdef (f a) (f b) := by
+  cases h with
+  | lessdef_refl => exact Val.lessdef_refl _
+  | lessdef_undef => rw [hundef]; exact Val.lessdef_undef _
+
+private theorem pgts_binary_total_aux (f : val → val → val)
+    (hleft : ∀ v, f .Vundef v = .Vundef)
+    (hright : ∀ v, f v .Vundef = .Vundef)
+    {a a' b b' : val} (ha : Val.lessdef a a') (hb : Val.lessdef b b') :
+    Val.lessdef (f a b) (f a' b') := by
+  cases ha with
+  | lessdef_undef => rw [hleft]; exact Val.lessdef_undef _
+  | lessdef_refl =>
+      cases hb with
+      | lessdef_undef => rw [hright]; exact Val.lessdef_undef _
+      | lessdef_refl => exact Val.lessdef_refl _
+
+private theorem pgts_unary_partial_aux {α : Type} (f : val → Option α)
+    (hundef : f .Vundef = none) {a b : val} {v : α}
+    (h : Val.lessdef a b) (heval : f a = some v) : f b = some v := by
+  cases h with
+  | lessdef_refl => exact heval
+  | lessdef_undef => rw [hundef] at heval; contradiction
+
+private theorem pgts_binary_partial_aux {α : Type} (f : val → val → Option α)
+    (hleft : ∀ v, f .Vundef v = none)
+    (hright : ∀ v, f v .Vundef = none)
+    {a a' b b' : val} {v : α}
+    (ha : Val.lessdef a a') (hb : Val.lessdef b b')
+    (heval : f a b = some v) : f a' b' = some v := by
+  cases ha with
+  | lessdef_undef => rw [hleft] at heval; contradiction
+  | lessdef_refl =>
+      cases hb with
+      | lessdef_undef => rw [hright] at heval; contradiction
+      | lessdef_refl => exact heval
+
+
+private theorem pgts_condition_aux (cond : condition) (vl1 vl2 : List val)
+    (b : Bool) (m1 m2 : mem) (hl : Val.lessdef_list vl1 vl2)
+    (hext : Mem.extends m1 m2) (heval : eval_condition cond vl1 m1 = some b) :
+    eval_condition cond vl2 m2 = some b :=
+  eval_condition_lessdef cond vl1 vl2 b m1 m2 hl hext heval
+
+private theorem pgts_addressing32_aux {F V : Type} (ge : Genv.t F V)
+    (sp : val) (addr : addressing) (vl1 vl2 : List val) (v : val)
+    (hl : Val.lessdef_list vl1 vl2) (heval : eval_addressing32 ge sp addr vl1 = some v) :
+    ∃ v', eval_addressing32 ge sp addr vl2 = some v' ∧ Val.lessdef v v' := by
+  obtain ⟨v', hev, hi⟩ := eval_addressing32_inj F F V V ge ge inject_id addr
+    sp vl1 sp vl2 v
+    (fun _ _ _ => (val_inject_id _ _).mpr (Val.lessdef_refl _))
+    ((val_inject_id _ _).mpr (Val.lessdef_refl _))
+    ((val_inject_list_lessdef _ _).mp hl) heval
+  exact ⟨v', hev, (val_inject_id _ _).mp hi⟩
+
+private theorem pgts_addressing64_aux {F V : Type} (ge : Genv.t F V)
+    (sp : val) (addr : addressing) (vl1 vl2 : List val) (v : val)
+    (hl : Val.lessdef_list vl1 vl2) (heval : eval_addressing64 ge sp addr vl1 = some v) :
+    ∃ v', eval_addressing64 ge sp addr vl2 = some v' ∧ Val.lessdef v v' := by
+  obtain ⟨v', hev, hi⟩ := eval_addressing64_inj F F V V ge ge inject_id addr
+    sp vl1 sp vl2 v
+    (fun _ _ _ => (val_inject_id _ _).mpr (Val.lessdef_refl _))
+    ((val_inject_id _ _).mpr (Val.lessdef_refl _))
+    ((val_inject_list_lessdef _ _).mp hl) heval
+  exact ⟨v', hev, (val_inject_id _ _).mp hi⟩
+
+set_option maxHeartbeats 2000000 in
+private theorem pgts_operation_aux
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    {F V : Type} (ge : Genv.t F V) (sp : val) (op : operation)
+    (vl1 vl2 : List val) (v : val) (m1 m2 : mem)
+    (hl : Val.lessdef_list vl1 vl2) (hext : Mem.extends m1 m2)
+    (heval : eval_operation ge sp op vl1 m1 = some v) :
+    ∃ v', eval_operation ge sp op vl2 m2 = some v' ∧ Val.lessdef v v' := by
+  cases op with
+  | Omove =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : v1 = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => v1) rfl h1
+  | Ointconst n =>
+      cases hl with
+      | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_nil =>
+          have hv : (.Vint n) = v := Option.some.inj heval
+          subst v
+          exact ⟨_, rfl, Val.lessdef_refl _⟩
+  | Olongconst n =>
+      cases hl with
+      | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_nil =>
+          have hv : (.Vlong n) = v := Option.some.inj heval
+          subst v
+          exact ⟨_, rfl, Val.lessdef_refl _⟩
+  | Ofloatconst n =>
+      cases hl with
+      | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_nil =>
+          have hv : (.Vfloat n) = v := Option.some.inj heval
+          subst v
+          exact ⟨_, rfl, Val.lessdef_refl _⟩
+  | Osingleconst n =>
+      cases hl with
+      | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_nil =>
+          have hv : (.Vsingle n) = v := Option.some.inj heval
+          subst v
+          exact ⟨_, rfl, Val.lessdef_refl _⟩
+  | Oindirectsymbol id =>
+      cases hl with
+      | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_nil =>
+          have hv : (Genv.symbol_address ge id Ptrofs.zero) = v := Option.some.inj heval
+          subst v
+          exact ⟨_, rfl, Val.lessdef_refl _⟩
+  | Ocast8signed =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.sign_ext (ZArith.BinInt.Z.of_nat 8) v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.sign_ext (ZArith.BinInt.Z.of_nat 8) v1)) rfl h1
+  | Ocast8unsigned =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.zero_ext (ZArith.BinInt.Z.of_nat 8) v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.zero_ext (ZArith.BinInt.Z.of_nat 8) v1)) rfl h1
+  | Ocast16signed =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.sign_ext (ZArith.BinInt.Z.of_nat 16) v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.sign_ext (ZArith.BinInt.Z.of_nat 16) v1)) rfl h1
+  | Ocast16unsigned =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.zero_ext (ZArith.BinInt.Z.of_nat 16) v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.zero_ext (ZArith.BinInt.Z.of_nat 16) v1)) rfl h1
+  | Oneg =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.neg v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.neg v1)) rfl h1
+  | Osub =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.sub v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.sub v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Omul =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.mul v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.mul v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Omulimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.mul v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.mul v1 (.Vint n))) rfl h1
+  | Omulhs =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.mulhs v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.mulhs v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Omulhu =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.mulhu v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.mulhu v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Odiv =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  refine ⟨v, ?_, Val.lessdef_refl _⟩
+                  exact pgts_binary_partial_aux (fun v1 v2 => Val.divs v1 v2)
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2 heval
+  | Odivu =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  refine ⟨v, ?_, Val.lessdef_refl _⟩
+                  exact pgts_binary_partial_aux (fun v1 v2 => Val.divu v1 v2)
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2 heval
+  | Omod =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  refine ⟨v, ?_, Val.lessdef_refl _⟩
+                  exact pgts_binary_partial_aux (fun v1 v2 => Val.mods v1 v2)
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2 heval
+  | Omodu =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  refine ⟨v, ?_, Val.lessdef_refl _⟩
+                  exact pgts_binary_partial_aux (fun v1 v2 => Val.modu v1 v2)
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2 heval
+  | Oand =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.and v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.and v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oandimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.and v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.and v1 (.Vint n))) rfl h1
+  | Oor =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.or v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.or v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oorimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.or v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.or v1 (.Vint n))) rfl h1
+  | Oxor =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.xor v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.xor v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oxorimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.xor v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.xor v1 (.Vint n))) rfl h1
+  | Onot =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.notint v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.notint v1)) rfl h1
+  | Oshl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.shl v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.shl v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oshlimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.shl v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.shl v1 (.Vint n))) rfl h1
+  | Oshr =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.shr v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.shr v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oshrimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.shr v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.shr v1 (.Vint n))) rfl h1
+  | Oshrximm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact pgts_unary_partial_aux (fun v1 => Val.shrx v1 (.Vint n)) rfl h1 heval
+  | Oshru =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.shru v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.shru v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oshruimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.shru v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.shru v1 (.Vint n))) rfl h1
+  | Ororimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.ror v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.ror v1 (.Vint n))) rfl h1
+  | Oshldimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.or (Val.shl v1 (.Vint n)) (Val.shru v2 (.Vint (CompCert4Lean.Lib.Integers.Int.sub CompCert4Lean.Lib.Integers.Int.iwordsize n)))) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.or (Val.shl v1 (.Vint n)) (Val.shru v2 (.Vint (CompCert4Lean.Lib.Integers.Int.sub CompCert4Lean.Lib.Integers.Int.iwordsize n)))))
+                    (by intro x; cases x <;> rfl)
+                    (by intro x; cases x <;> simp [Val.shl, Val.shru, Val.or] <;> split <;> rfl) h1 h2
+  | Olea addr =>
+      exact pgts_addressing32_aux ge sp addr vl1 vl2 v hl heval
+  | Omakelong =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.longofwords v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.longofwords v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Olowlong =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.loword v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.loword v1)) rfl h1
+  | Ohighlong =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.hiword v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.hiword v1)) rfl h1
+  | Ocast32signed =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.longofint v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.longofint v1)) rfl h1
+  | Ocast32unsigned =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.longofintu v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.longofintu v1)) rfl h1
+  | Onegl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.negl v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.negl v1)) rfl h1
+  | Oaddlimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.addl v1 (.Vlong n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.addl v1 (.Vlong n))) rfl h1
+  | Osubl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.subl v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.subl v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Omull =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.mull v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.mull v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Omullimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.mull v1 (.Vlong n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.mull v1 (.Vlong n))) rfl h1
+  | Omullhs =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.mullhs v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.mullhs v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Omullhu =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.mullhu v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.mullhu v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Odivl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  refine ⟨v, ?_, Val.lessdef_refl _⟩
+                  exact pgts_binary_partial_aux (fun v1 v2 => Val.divls v1 v2)
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2 heval
+  | Odivlu =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  refine ⟨v, ?_, Val.lessdef_refl _⟩
+                  exact pgts_binary_partial_aux (fun v1 v2 => Val.divlu v1 v2)
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2 heval
+  | Omodl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  refine ⟨v, ?_, Val.lessdef_refl _⟩
+                  exact pgts_binary_partial_aux (fun v1 v2 => Val.modls v1 v2)
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2 heval
+  | Omodlu =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  refine ⟨v, ?_, Val.lessdef_refl _⟩
+                  exact pgts_binary_partial_aux (fun v1 v2 => Val.modlu v1 v2)
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2 heval
+  | Oandl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.andl v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.andl v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oandlimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.andl v1 (.Vlong n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.andl v1 (.Vlong n))) rfl h1
+  | Oorl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.orl v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.orl v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oorlimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.orl v1 (.Vlong n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.orl v1 (.Vlong n))) rfl h1
+  | Oxorl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.xorl v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.xorl v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oxorlimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.xorl v1 (.Vlong n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.xorl v1 (.Vlong n))) rfl h1
+  | Onotl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.notl v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.notl v1)) rfl h1
+  | Oshll =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.shll v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.shll v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oshllimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.shll v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.shll v1 (.Vint n))) rfl h1
+  | Oshrl =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.shrl v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.shrl v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oshrlimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.shrl v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.shrl v1 (.Vint n))) rfl h1
+  | Oshrxlimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact pgts_unary_partial_aux (fun v1 => Val.shrxl v1 (.Vint n)) rfl h1 heval
+  | Oshrlu =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.shrlu v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.shrlu v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Oshrluimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.shrlu v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.shrlu v1 (.Vint n))) rfl h1
+  | Ororlimm n =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.rorl v1 (.Vint n)) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.rorl v1 (.Vint n))) rfl h1
+  | Oleal addr =>
+      exact pgts_addressing64_aux ge sp addr vl1 vl2 v hl heval
+  | Onegf =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.negf v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.negf v1)) rfl h1
+  | Oabsf =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.absf v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.absf v1)) rfl h1
+  | Oaddf =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.addf v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.addf v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Osubf =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.subf v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.subf v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Omulf =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.mulf v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.mulf v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Odivf =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.divf v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.divf v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Omaxf =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (maxf v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (maxf v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Ominf =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (minf v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (minf v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Onegfs =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.negfs v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.negfs v1)) rfl h1
+  | Oabsfs =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.absfs v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.absfs v1)) rfl h1
+  | Oaddfs =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.addfs v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.addfs v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Osubfs =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.subfs v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.subfs v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Omulfs =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.mulfs v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.mulfs v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Odivfs =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+              | lessdef_list_nil =>
+                  have hv : (Val.divfs v1 v2) = v := Option.some.inj heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact pgts_binary_total_aux (fun v1 v2 => (Val.divfs v1 v2))
+                    (by intro x; cases x <;> rfl) (by intro x; cases x <;> rfl) h1 h2
+  | Osingleoffloat =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.singleoffloat v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.singleoffloat v1)) rfl h1
+  | Ofloatofsingle =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              have hv : (Val.floatofsingle v1) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact pgts_unary_total_aux (fun v1 => (Val.floatofsingle v1)) rfl h1
+  | Ointoffloat =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact pgts_unary_partial_aux (fun v1 => Val.intoffloat v1) rfl h1 heval
+  | Ofloatofint =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact pgts_unary_partial_aux (fun v1 => Val.floatofint (binary64_certificate := binary64_certificate) v1) rfl h1 heval
+  | Ointofsingle =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact pgts_unary_partial_aux (fun v1 => Val.intofsingle v1) rfl h1 heval
+  | Osingleofint =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact pgts_unary_partial_aux (fun v1 => Val.singleofint (binary32_certificate := binary32_certificate) v1) rfl h1 heval
+  | Olongoffloat =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact pgts_unary_partial_aux (fun v1 => Val.longoffloat v1) rfl h1 heval
+  | Ofloatoflong =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact pgts_unary_partial_aux (fun v1 => Val.floatoflong (binary64_certificate := binary64_certificate) v1) rfl h1 heval
+  | Olongofsingle =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact pgts_unary_partial_aux (fun v1 => Val.longofsingle v1) rfl h1 heval
+  | Osingleoflong =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_nil =>
+              refine ⟨v, ?_, Val.lessdef_refl _⟩
+              exact pgts_unary_partial_aux (fun v1 => Val.singleoflong (binary32_certificate := binary32_certificate) v1) rfl h1 heval
+  | Ocmp c =>
+      have hv : (Val.of_optbool (eval_condition c vl1 m1)) = v := Option.some.inj heval
+      subst v
+      refine ⟨_, rfl, ?_⟩
+      exact Val.of_optbool_lessdef _ _ (fun b hb =>
+        pgts_condition_aux c vl1 vl2 b m1 m2 hl hext hb)
+  | Osel c ty =>
+      cases hl with
+      | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => have hn : (none : Option val) = some v := heval; cases hn
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              have hv : (Val.select (eval_condition c l2 m1) v1 v2 ty) = v := Option.some.inj heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              cases hc : eval_condition c l2 m1 with
+              | none => simp only [Val.select, hc]; exact Val.lessdef_undef _
+              | some b =>
+                  have hc' := pgts_condition_aux c l2 l2' b m1 m2 ht2 hext hc
+                  simp only [Val.select, hc, hc']
+                  apply Val.normalize_lessdef
+                  cases b
+                  · exact h2
+                  · exact h1
+
+private theorem pgts_loadv_extends : Mem.loadv_extendsStatement := by
+  intro chunk m1 m2 addr1 addr2 v hext hl ha
+  cases ha with
+  | lessdef_undef => cases hl
+  | lessdef_refl =>
+      cases addr1 <;> try cases hl
+      exact Mem.load_extends _ _ _ _ _ _ hext hl
+
+private theorem pgts_storev_extends : Mem.storev_extendsStatement := by
+  intro chunk m1 m2 addr1 v1 n1 addr2 v2 hext hs ha hv
+  cases ha with
+  | lessdef_undef => cases hs
+  | lessdef_refl =>
+      cases addr1 <;> try cases hs
+      exact pgts_store_extends _ _ _ _ _ _ _ _ hext hs hv
+
+private theorem pgts_eval_builtin_arg : eval_builtin_arg_lessdefStatement := by
+  intro A ge e1 e2 sp m1 m2 he hext a v h
+  induction h with
+  | eval_BA x => exact ⟨e2 x, eval_BA x, he x⟩
+  | eval_BA_int n => exact ⟨Vint n, eval_BA_int n, Val.lessdef_refl _⟩
+  | eval_BA_long n => exact ⟨Vlong n, eval_BA_long n, Val.lessdef_refl _⟩
+  | eval_BA_float n => exact ⟨Vfloat n, eval_BA_float n, Val.lessdef_refl _⟩
+  | eval_BA_single n => exact ⟨Vsingle n, eval_BA_single n, Val.lessdef_refl _⟩
+  | eval_BA_loadstack chunk ofs v hl =>
+      obtain ⟨v', hl', hv⟩ := pgts_loadv_extends _ _ _ _ _ _ hext hl (Val.lessdef_refl _)
+      exact ⟨v', eval_BA_loadstack _ _ _ hl', hv⟩
+  | eval_BA_addrstack ofs => exact ⟨_, eval_BA_addrstack _, Val.lessdef_refl _⟩
+  | eval_BA_loadglobal chunk id ofs v hl =>
+      obtain ⟨v', hl', hv⟩ := pgts_loadv_extends _ _ _ _ _ _ hext hl (Val.lessdef_refl _)
+      exact ⟨v', eval_BA_loadglobal _ _ _ _ hl', hv⟩
+  | eval_BA_addrglobal id ofs => exact ⟨_, eval_BA_addrglobal _ _, Val.lessdef_refl _⟩
+  | eval_BA_splitlong hi lo vhi vlo hhi hlo ihi ihlo =>
+      obtain ⟨vhi', hhi', hdhi⟩ := ihi
+      obtain ⟨vlo', hlo', hdlo⟩ := ihlo
+      exact ⟨_, eval_BA_splitlong _ _ _ _ hhi' hlo',
+        Val.longofwords_lessdef _ _ _ _ hdhi hdlo⟩
+  | eval_BA_addptr a1 a2 v1 v2 h1 h2 ih1 ih2 =>
+      obtain ⟨v1', h1', hd1⟩ := ih1
+      obtain ⟨v2', h2', hd2⟩ := ih2
+      exact ⟨_, eval_BA_addptr _ _ _ _ h1' h2', Val.addl_lessdef _ _ _ _ hd1 hd2⟩
+
+private theorem pgts_eval_builtin_args : eval_builtin_args_lessdefStatement := by
+  intro A ge e1 e2 sp m1 m2 he hext al vl h
+  induction h with
+  | nil => exact ⟨[], .nil _, Val.lessdef_list_nil⟩
+  | cons a v hhead htail ih =>
+      obtain ⟨v', hv', hd⟩ := pgts_eval_builtin_arg A ge e1 e2 sp m1 m2 he hext a v hhead
+      obtain ⟨vl', hvl', hdl⟩ := ih
+      exact ⟨v' :: vl', .cons _ _ hv' hvl', Val.lessdef_list_cons _ _ _ _ hd hdl⟩
+
+private theorem pgts_call_symbols
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (ef : external_function) : external_call_symbols_preserved xi ef := by
+  intro ge1 ge2 args m t v n heq hc
+  cases ef with
+  | EF_external name sg =>
+      exact (external_functions_properties xi name sg).ec_symbols_preserved _ _ _ _ _ _ _ heq hc
+  | EF_inline_asm text sg clobbers =>
+      exact (inline_assembly_properties xi text sg).ec_symbols_preserved _ _ _ _ _ _ _ heq hc
+  | EF_builtin name sg | EF_runtime name sg =>
+      change builtin_or_external_sem xi name sg ge1 args m t v n at hc
+      change builtin_or_external_sem xi name sg ge2 args m t v n
+      unfold builtin_or_external_sem at hc ⊢
+      cases hl : CompCert4Lean.Common.Builtins.lookup_builtin_function name sg with
+      | none =>
+          rw [hl] at hc
+          exact (external_functions_properties xi name sg).ec_symbols_preserved _ _ _ _ _ _ _ heq hc
+      | some bf =>
+          rw [hl] at hc
+          cases hc
+          constructor
+          assumption
+  | EF_vload chunk =>
+      cases hc with
+      | volatile_load_sem_intro b ofs m t v hl =>
+          exact volatile_load_sem_intro _ _ _ _ _
+            (volatile_load_preserved _ _ _ _ _ _ _ _ heq hl)
+  | EF_vstore chunk =>
+      cases hc with
+      | volatile_store_sem_intro b ofs m v t n hs =>
+          exact volatile_store_sem_intro _ _ _ _ _ _
+            (volatile_store_preserved _ _ _ _ _ _ _ _ _ heq hs)
+  | EF_malloc => cases hc; constructor <;> assumption
+  | EF_free => cases hc <;> constructor <;> assumption
+  | EF_memcpy sz al => cases hc; constructor <;> assumption
+  | EF_annot kind text targs =>
+      cases hc with
+      | extcall_annot_sem_intro evs hm =>
+          exact extcall_annot_sem_intro _ _ _
+            (eventval_list_match_preserved _ _ heq.2.1 heq.1 _ _ _ hm)
+  | EF_annot_val kind text targ =>
+      cases hc with
+      | extcall_annot_val_sem_intro v m ev hm =>
+          exact extcall_annot_val_sem_intro _ _ _
+            (eventval_match_preserved _ _ heq.2.1 heq.1 _ _ _ hm)
+  | EF_debug kind text targs => cases hc; constructor
+
+set_option maxHeartbeats 1000000 in
+theorem tunnel_step_correct
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    tunnel_step_correctStatement := by
+  intro cfg xi prog tprog TRANSL st1 t st2 STEP st1' MS
+  cases STEP with
+  | exec_start_block s f sp pc rs m bb CODE =>
+      cases MS with
+      | intro _ _ _ _ _ _ ts tls tm STK LS MEM =>
+          have DEFAULT : branch_target f pc = pc →
+              ∃ st2', step cfg xi (Genv.globalenv tprog)
+                (State ts (tunnel_function f) sp (branch_target f pc) tls tm) E0 st2' ∧
+                match_states (Block s f sp bb rs m) st2' := by
+            intro SAME
+            refine ⟨_, ?_, match_states.block s f sp bb rs m ts tls tm STK LS MEM⟩
+            apply step.exec_start_block
+            change PTree.get (branch_target f pc)
+              (PTree.map1 (tunnel_block (record_gotos f)) f.fn_code) = _
+            rw [SAME]
+            exact (PTree.gmap1 (tunnel_block (record_gotos f)) pc f.fn_code).trans
+              (by rw [CODE]; rfl)
+          have G := record_gotos_correct f pc
+          rw [CODE] at G
+          cases bb with
+          | nil => exact Or.inl (DEFAULT G)
+          | cons i bb =>
+              cases i with
+              | Lbranch succ =>
+                  rcases G with SAME | ⟨TARGET, LT⟩
+                  · exact Or.inl (DEFAULT SAME)
+                  · apply Or.inr
+                    refine ⟨?_, rfl, ?_⟩
+                    · change count_gotos f succ * 2 + 1 < count_gotos f pc * 2
+                      omega
+                    · rw [TARGET]
+                      exact match_states.interm_branch s f sp succ bb rs m ts tls tm STK LS MEM
+              | Lcond cond args pc1 pc2 =>
+                  rcases G with SAME | ⟨T1, T2, LT1, LT2⟩
+                  · exact Or.inl (DEFAULT SAME)
+                  · apply Or.inr
+                    refine ⟨?_, rfl, ?_⟩
+                    · change Nat.max (count_gotos f pc1) (count_gotos f pc2) * 2 + 1 <
+                        count_gotos f pc * 2
+                      simp only [Nat.max_def]
+                      split <;> omega
+                    · rw [T1]
+                      exact match_states.interm_cond s f sp cond args pc1 pc2 bb rs m
+                        ts tls tm STK LS MEM (T1.symm.trans T2)
+              | _ => exact Or.inl (DEFAULT G)
+  | exec_Lgetstack s f sp sl ofs ty dst bb rs m rs' RS =>
+      subst rs'
+      cases MS with
+      | block _ _ _ _ _ _ ts tls tm STK LS MEM =>
+          exact Or.inl ⟨_, step.exec_Lgetstack ts (tunnel_function f) sp sl ofs ty dst
+            (tunneled_block f bb) tls tm _ rfl,
+            match_states.block _ _ _ _ _ _ _ _ _ STK
+              (locmap_set_lessdef _ _ _ _ _
+                (locmap_undef_regs_lessdef _ _ _ LS) (LS _)) MEM⟩
+  | exec_Lsetstack s f sp src sl ofs ty bb rs m rs' RS =>
+      subst rs'
+      cases MS with
+      | block _ _ _ _ _ _ ts tls tm STK LS MEM =>
+          exact Or.inl ⟨_, step.exec_Lsetstack ts (tunnel_function f) sp src sl ofs ty
+            (tunneled_block f bb) tls tm _ rfl,
+            match_states.block _ _ _ _ _ _ _ _ _ STK
+              (locmap_set_lessdef _ _ _ _ _
+                (locmap_undef_regs_lessdef _ _ _ LS) (LS _)) MEM⟩
+  | exec_Lop s f sp op args res bb rs m v rs' EV RS =>
+      subst rs'
+      cases MS with
+      | block _ _ _ _ _ _ ts tls tm STK LS MEM =>
+          obtain ⟨tv, TEV, LD⟩ := pgts_operation_aux (Genv.globalenv prog) sp op
+            (reglist rs args) (reglist tls args) v m tm (reglist_lessdef _ _ _ LS) MEM EV
+          have TEV' : eval_operation (Genv.globalenv tprog) sp op (reglist tls args) tm = some tv := by
+            rw [eval_operation_preserved _ _ _ _ (Genv.globalenv prog) (Genv.globalenv tprog)
+              (symbols_preserved prog tprog TRANSL)]
+            exact TEV
+          exact Or.inl ⟨_, step.exec_Lop ts (tunnel_function f) sp op args res
+            (tunneled_block f bb) tls tm tv _ TEV' rfl,
+            match_states.block _ _ _ _ _ _ _ _ _ STK
+              (locmap_set_lessdef _ _ _ _ _ (locmap_undef_regs_lessdef _ _ _ LS) LD) MEM⟩
+  | exec_Lload s f sp chunk addr args dst bb rs m a v rs' EA LOAD RS =>
+      subst rs'
+      cases MS with
+      | block _ _ _ _ _ _ ts tls tm STK LS MEM =>
+          obtain ⟨ta, TEA, LDA⟩ := eval_addressing_lessdef _ _ (Genv.globalenv prog)
+            sp addr _ _ a (reglist_lessdef _ _ _ LS) EA
+          obtain ⟨tv, TLOAD, LDV⟩ := pgts_loadv_extends _ _ _ _ _ _ MEM LOAD LDA
+          have TEA' : eval_addressing (Genv.globalenv tprog) sp addr (reglist tls args) = some ta := by
+            rw [eval_addressing_preserved _ _ _ _ (Genv.globalenv prog) (Genv.globalenv tprog)
+              (symbols_preserved prog tprog TRANSL)]
+            exact TEA
+          exact Or.inl ⟨_, step.exec_Lload ts (tunnel_function f) sp chunk addr args dst
+            (tunneled_block f bb) tls tm ta tv _ TEA' TLOAD rfl,
+            match_states.block _ _ _ _ _ _ _ _ _ STK
+              (locmap_set_lessdef _ _ _ _ _ (locmap_undef_regs_lessdef _ _ _ LS) LDV) MEM⟩
+  | exec_Lstore s f sp chunk addr args src bb rs m a rs' m' EA STORE RS =>
+      subst rs'
+      cases MS with
+      | block _ _ _ _ _ _ ts tls tm STK LS MEM =>
+          obtain ⟨ta, TEA, LDA⟩ := eval_addressing_lessdef _ _ (Genv.globalenv prog)
+            sp addr _ _ a (reglist_lessdef _ _ _ LS) EA
+          obtain ⟨tm', TSTORE, MEM'⟩ := pgts_storev_extends _ _ _ _ _ _ _ _ MEM STORE LDA (LS _)
+          have TEA' : eval_addressing (Genv.globalenv tprog) sp addr (reglist tls args) = some ta := by
+            rw [eval_addressing_preserved _ _ _ _ (Genv.globalenv prog) (Genv.globalenv tprog)
+              (symbols_preserved prog tprog TRANSL)]
+            exact TEA
+          exact Or.inl ⟨_, step.exec_Lstore ts (tunnel_function f) sp chunk addr args src
+            (tunneled_block f bb) tls tm ta _ tm' TEA' TSTORE rfl,
+            match_states.block _ _ _ _ _ _ _ _ _ STK
+              (locmap_undef_regs_lessdef _ _ _ LS) MEM'⟩
+  | exec_Lcall s f sp sg ros bb rs m fd FIND SIG =>
+      cases MS with
+      | block _ _ _ _ _ _ ts tls tm STK LS MEM =>
+          exact Or.inl ⟨_, step.exec_Lcall ts (tunnel_function f) sp sg ros
+            (tunneled_block f bb) tls tm (tunnel_fundef fd)
+            (find_function_translated prog tprog TRANSL ros rs tls fd LS FIND)
+            ((sig_preserved fd).trans SIG),
+            match_states.call _ _ _ _ _ _ _
+              (.cons _ _ (match_stackframes.intro f sp rs bb tls LS) STK) LS MEM⟩
+  | exec_Ltailcall s f stk sg ros bb rs m fd rs' m' RS FIND SIG FREE =>
+      subst rs'
+      cases MS with
+      | block _ _ _ _ _ _ ts tls tm STK LS MEM =>
+          obtain ⟨tm', TFREE, MEM'⟩ := pgts_free_extends _ _ _ _ _ _ MEM FREE
+          have LSR := return_regs_lessdef cfg _ _ _ _ (match_parent_locset _ _ STK) LS
+          exact Or.inl ⟨_, step.exec_Ltailcall ts (tunnel_function f) stk sg ros
+            (tunneled_block f bb) tls tm (tunnel_fundef fd) _ tm' rfl
+            (find_function_translated prog tprog TRANSL ros _ _ fd LSR FIND)
+            ((sig_preserved fd).trans SIG) TFREE,
+            match_states.call _ _ _ _ _ _ _ STK LSR MEM'⟩
+  | exec_Lbuiltin s f sp ef args res bb rs m vargs t vres rs' m' ARGS CALL RS =>
+      subst rs'
+      cases MS with
+      | block _ _ _ _ _ _ ts tls tm STK LS MEM =>
+          obtain ⟨tvargs, TARGS, LDA⟩ := pgts_eval_builtin_args _ _ _ _ _ _ _ LS MEM _ _ ARGS
+          obtain ⟨tvres, tm', TCALL, LDV, MEM'⟩ :=
+            pgts_call_extends xi ef _ _ _ _ _ _ _ _ CALL MEM LDA
+          have TARGS' := eval_builtin_args_preserved _ _ _ _ _ (Genv.globalenv prog)
+            (Genv.globalenv tprog) tls sp tm (symbols_preserved prog tprog TRANSL) _ _ TARGS
+          have TCALL' := pgts_call_symbols xi ef _ _ _ _ _ _ _
+            (senv_preserved prog tprog TRANSL) TCALL
+          exact Or.inl ⟨_, step.exec_Lbuiltin ts (tunnel_function f) sp ef args res
+            (tunneled_block f bb) tls tm tvargs t tvres _ tm' TARGS' TCALL' rfl,
+            match_states.block _ _ _ _ _ _ _ _ _ STK
+              (locmap_setres_lessdef _ _ _ _ _ (locmap_undef_regs_lessdef _ _ _ LS) LDV) MEM'⟩
+  | exec_Lbranch s f sp pc bb rs m =>
+      cases MS with
+      | block _ _ _ _ _ _ ts tls tm STK LS MEM =>
+          exact Or.inl ⟨_, step.exec_Lbranch ts (tunnel_function f) sp (branch_target f pc)
+            (tunneled_block f bb) tls tm,
+            match_states.intro _ _ _ _ _ _ _ _ _ STK LS MEM⟩
+      | interm_branch _ _ _ _ _ _ _ ts tls tm STK LS MEM =>
+          exact Or.inr ⟨by simp only [measure]; omega, rfl,
+            match_states.intro _ _ _ _ _ _ _ _ _ STK LS MEM⟩
+  | exec_Lcond s f sp cond args pc1 pc2 bb rs b pc rs' m EV PC RS =>
+      subst pc rs'
+      cases MS with
+      | block _ _ _ _ _ _ ts tls tm STK LS MEM =>
+          have TB : tunneled_block f (Lcond cond args pc1 pc2 :: bb) =
+              (match peq (branch_target f pc1) (branch_target f pc2) with
+                | .left _ => Lbranch (branch_target f pc1)
+                | .right _ => Lcond cond args (branch_target f pc1) (branch_target f pc2)) ::
+              tunneled_block f bb := by
+            simp [tunneled_block, tunnel_block, List.map, tunnel_instr, branch_target]
+            cases h : peq (U.repr (record_gotos f) pc1) (U.repr (record_gotos f) pc2) <;> rfl
+          rw [TB]
+          cases EQ : peq (branch_target f pc1) (branch_target f pc2) with
+          | left SAME =>
+              apply Or.inl
+              refine ⟨_, step.exec_Lbranch ts (tunnel_function f) sp (branch_target f pc1)
+                (tunneled_block f bb) tls tm, ?_⟩
+              have TARGET : branch_target f pc1 = branch_target f (if b then pc1 else pc2) := by
+                cases b <;> simp [SAME]
+              rw [TARGET]
+              exact match_states.intro _ _ _ _ _ _ _ _ _ STK
+                (locmap_undef_regs_lessdef_1 _ _ _ LS) MEM
+          | right DIFF =>
+              have TEV := eval_condition_lessdef cond _ _ b m tm
+                (reglist_lessdef _ _ _ LS) MEM EV
+              apply Or.inl
+              refine ⟨_, step.exec_Lcond ts (tunnel_function f) sp cond args
+                (branch_target f pc1) (branch_target f pc2) (tunneled_block f bb) tls b
+                (if b then branch_target f pc1 else branch_target f pc2) _ tm TEV rfl rfl, ?_⟩
+              cases b <;> exact match_states.intro _ _ _ _ _ _ _ _ _ STK
+                (locmap_undef_regs_lessdef _ _ _ LS) MEM
+      | interm_cond _ _ _ _ _ _ _ _ _ _ ts tls tm STK LS MEM SAME =>
+          apply Or.inr
+          refine ⟨?_, rfl, ?_⟩
+          · change count_gotos f (if b then pc1 else pc2) * 2 <
+              _root_.Nat.max (count_gotos f pc1) (count_gotos f pc2) * 2 + 1
+            have LE1 := _root_.Nat.le_max_left (count_gotos f pc1) (count_gotos f pc2)
+            have LE2 := _root_.Nat.le_max_right (count_gotos f pc1) (count_gotos f pc2)
+            cases b with
+            | false =>
+                have h := Nat.le_max_right (count_gotos f pc1) (count_gotos f pc2)
+                have h2 := Nat.mul_le_mul_right 2 h
+                exact Nat.lt_succ_of_le h2
+            | true =>
+                have h := Nat.le_max_left (count_gotos f pc1) (count_gotos f pc2)
+                have h2 := Nat.mul_le_mul_right 2 h
+                exact Nat.lt_succ_of_le h2
+          · have TARGET : branch_target f pc1 = branch_target f (if b then pc1 else pc2) := by
+              cases b <;> simp [SAME]
+            rw [TARGET]
+            exact match_states.intro _ _ _ _ _ _ _ _ _ STK
+              (locmap_undef_regs_lessdef_1 _ _ _ LS) MEM
+  | exec_Ljumptable s f sp arg tbl bb rs m n pc rs' ARG NTH RS =>
+      subst rs'
+      cases MS with
+      | block _ _ _ _ _ _ ts tls tm STK LS MEM =>
+          have TARG : tls (R arg) = Vint n := by
+            have LD := LS (R arg)
+            rw [ARG] at LD
+            generalize TV : tls (R arg) = v at LD
+            cases LD
+            rfl
+          have TNTH : list_nth_z (tbl.map (branch_target f)) (Int.unsigned n) = some (branch_target f pc) := by
+            rw [list_nth_z_map, NTH]
+            rfl
+          exact Or.inl ⟨_, step.exec_Ljumptable ts (tunnel_function f) sp arg
+            (tbl.map (branch_target f)) (tunneled_block f bb) tls tm n
+            (branch_target f pc) _ TARG TNTH rfl,
+            match_states.intro _ _ _ _ _ _ _ _ _ STK (locmap_undef_regs_lessdef _ _ _ LS) MEM⟩
+  | exec_Lreturn s f stk bb rs m m' FREE =>
+      cases MS with
+      | block _ _ _ _ _ _ ts tls tm STK LS MEM =>
+          obtain ⟨tm', TFREE, MEM'⟩ := pgts_free_extends _ _ _ _ _ _ MEM FREE
+          exact Or.inl ⟨_, step.exec_Lreturn ts (tunnel_function f) stk (tunneled_block f bb)
+            tls tm tm' TFREE,
+            match_states.return _ _ _ _ _ _ STK
+              (return_regs_lessdef cfg _ _ _ _ (match_parent_locset _ _ STK) LS) MEM'⟩
+  | exec_function_internal s f rs m m' stk rs' ALLOC RS =>
+      subst rs'
+      cases MS with
+      | call _ _ _ _ ts tls tm STK LS MEM =>
+          obtain ⟨tm', TALLOC, MEM'⟩ := pgts_alloc_extends m tm _ _ m' stk MEM ALLOC
+          exact Or.inl ⟨_, step.exec_function_internal ts (tunnel_function f) tls tm tm' stk _ TALLOC rfl,
+            match_states.intro _ _ _ _ _ _ _ _ _ STK
+              (locmap_undef_regs_lessdef _ _ _ (call_regs_lessdef _ _ LS)) MEM'⟩
+  | exec_function_external s ef t args res rs m rs' m' ARGS CALL RS =>
+      subst args rs'
+      cases MS with
+      | call _ _ _ _ ts tls tm STK LS MEM =>
+          obtain ⟨tvres, tm', TCALL, LDV, MEM'⟩ :=
+            pgts_call_extends xi ef _ _ _ _ _ _ _ _ CALL MEM
+              (locmap_getpairs_lessdef _ _ _ LS)
+          have TCALL' := pgts_call_symbols xi ef _ _ _ _ _ _ _
+            (senv_preserved prog tprog TRANSL) TCALL
+          exact Or.inl ⟨_, step.exec_function_external ts ef t _ tvres tls tm _ tm' rfl TCALL' rfl,
+            match_states.return _ _ _ _ _ _ STK
+              (locmap_setpair_lessdef _ _ _ _ _ (locmap_undef_caller_save_regs_lessdef _ _ _ LS) LDV) MEM'⟩
+  | exec_return f sp rs1 bb s rs m =>
+      cases MS with
+      | «return» _ _ _ ts tls tm STK LS MEM =>
+          cases STK with
+          | cons sf tsf HSF STK =>
+              cases HSF with
+              | intro _ _ _ _ tls1 LS1 =>
+                  exact Or.inl ⟨_, step.exec_return (tunnel_function f) sp tls1
+                    (tunneled_block f bb) _ tls tm,
+                    match_states.block _ _ _ _ _ _ _ _ _ STK LS MEM⟩
+
+end CompCert4Lean.Backend.Tunnelingproof

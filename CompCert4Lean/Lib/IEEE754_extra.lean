@@ -3702,3 +3702,132 @@ theorem ZofB_range_correct :
   | true => simp [hfin]
 
 end CompCert4Lean.Lib.IEEE754_extra
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq (intOfZ intOfZ_injective intOfZ_zOfInt)
+
+theorem integer_representable_n2p :
+    ∀ {prec emax : Z} [pgt : Prec_gt_0 prec]
+      [ple : Prec_lt_emax prec emax],
+      integer_representable_n2pStatement (prec := prec) (emax := emax) := by
+  intro prec emax pgt ple ctx magnitude n p hn hp hpmax
+  have hprec : 0 < intOfZ prec := pgt
+  have hpe : intOfZ prec < intOfZ emax := ple.prec_lt_emax
+  have hsub (a b : Z) : intOfZ (Zsub a b) = intOfZ a - intOfZ b := by
+    simp [Zsub, Zaux.Zsub,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+  have hadd (a b : Z) : intOfZ (Zadd a b) = intOfZ a + intOfZ b := by
+    simp [Zadd, Zaux.Zadd,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  have hmul (a b : Z) : intOfZ (Zmul a b) = intOfZ a * intOfZ b := by
+    simp [Zmul, Zaux.Zmul,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  have hopp (a : Z) : intOfZ (Zopp a) = -intOfZ a := by
+    simp [Zopp, Zaux.Zopp,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp, intOfZ_zOfInt]
+  have habseq (a : Z) (ha : Zle Z0 a) : Zabs a = a :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs_eq a ha
+  have habsneg (a : Z) (ha : Zle a Z0) : Zabs a = Zopp a :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs_neq a ha
+  have habsmul (a b : Z) : Zabs (Zmul a b) = Zmul (Zabs a) (Zabs b) :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs_mul a b
+  have hp0 : 0 ≤ intOfZ p := hp
+  have hpmax' : intOfZ p ≤ intOfZ emax - intOfZ prec := by
+    change intOfZ p ≤ intOfZ (Zsub emax prec) at hpmax
+    simpa only [hsub] using hpmax
+  have hdiff_nonneg : Zle Z0 (Zsub emax prec) := by
+    change (0 : Int) ≤ intOfZ (Zsub emax prec)
+    rw [hsub]
+    omega
+  have hsum : Zadd (Zsub emax prec) prec = emax := by
+    apply intOfZ_injective
+    rw [hadd, hsub]
+    omega
+  have hpow :
+      Zpower Ztwo emax =
+        Zmul (Zpower Ztwo (Zsub emax prec)) (Zpower Ztwo prec) := by
+    have h := Zaux.Zpower_plus Ztwo (Zsub emax prec) prec
+      hdiff_nonneg (Int.le_of_lt hprec)
+    change Zpower Ztwo (Zadd (Zsub emax prec) prec) =
+      Zmul (Zpower Ztwo (Zsub emax prec)) (Zpower Ztwo prec) at h
+    rw [hsum] at h
+    exact h
+  have hpow_le : Zle (Zpower Ztwo p) (Zpower Ztwo (Zsub emax prec)) :=
+    Zaux.Zpower_le Zaux.radix2 p (Zsub emax prec) hpmax
+  have hpowp_nonneg : Zle Z0 (Zpower Ztwo p) :=
+    Zaux.Zpower_ge_0 Zaux.radix2 p
+  have hpowprec_nonneg : Zle Z0 (Zpower Ztwo prec) :=
+    Zaux.Zpower_ge_0 Zaux.radix2 prec
+  have hpowprec_gt_one : Zlt Zone (Zpower Ztwo prec) :=
+    Zaux.Zpower_gt_1 Zaux.radix2 prec (show Zlt Z0 prec from pgt)
+  have hA_lt : intOfZ (Zabs n) < intOfZ (Zpower Ztwo prec) := by
+    have hnlo : -intOfZ (Zpower Ztwo prec) < intOfZ n := by
+      have h := hn.1
+      change intOfZ (Zopp (Zpower Ztwo prec)) < intOfZ n at h
+      rw [hopp] at h
+      omega
+    have hnhi : intOfZ n < intOfZ (Zpower Ztwo prec) := by
+      have h := hn.2
+      change intOfZ n < intOfZ (Zpower Ztwo prec) at h
+      omega
+    by_cases hsign : 0 ≤ intOfZ n
+    · rw [habseq n hsign]
+      exact hnhi
+    · rw [habsneg n (show intOfZ n ≤ 0 by omega), hopp]
+      omega
+  have hA_le : intOfZ (Zabs n) ≤ intOfZ (Zsub (Zpower Ztwo prec) Zone) := by
+    rw [hsub]
+    have hone : intOfZ Zone = 1 := rfl
+    rw [hone]
+    omega
+  have hCminus_nonneg : (0 : Int) ≤ intOfZ (Zsub (Zpower Ztwo prec) Zone) := by
+    rw [hsub]
+    have hone : intOfZ Zone = 1 := rfl
+    rw [hone]
+    have hpowgt : (1 : Int) < intOfZ (Zpower Ztwo prec) := hpowprec_gt_one
+    omega
+  have hupper :
+      intOfZ (Zsub (Zpower Ztwo prec) Zone) * intOfZ (Zpower Ztwo (Zsub emax prec)) =
+        intOfZ (Zsub (Zpower Ztwo emax) (Zpower Ztwo (Zsub emax prec))) := by
+    rw [hsub, hsub, hpow, hmul]
+    have hone : intOfZ Zone = 1 := rfl
+    rw [hone]
+    rw [Int.sub_mul]
+    simp only [Int.one_mul]
+    rw [Int.mul_comm]
+  constructor
+  · rw [habsmul, habseq _ hpowp_nonneg]
+    change intOfZ (Zmul (Zabs n) (Zpower Ztwo p)) ≤
+      intOfZ (Zsub (Zpower Ztwo emax) (Zpower Ztwo (Zsub emax prec)))
+    rw [hmul, hsub]
+    have hstep1 :=
+      Int.mul_le_mul_of_nonneg_right hA_le
+        (show (0 : Int) ≤ intOfZ (Zpower Ztwo p) from hpowp_nonneg)
+    have hstep2 :=
+      Int.mul_le_mul_of_nonneg_left hpow_le hCminus_nonneg
+    have hchain : intOfZ (Zabs n) * intOfZ (Zpower Ztwo p) ≤
+        intOfZ (Zsub (Zpower Ztwo prec) Zone) *
+          intOfZ (Zpower Ztwo (Zsub emax prec)) :=
+      Int.le_trans hstep1 hstep2
+    rw [hupper] at hchain
+    simpa only [hsub] using hchain
+  · change Generic_fmt.Exact.generic_format ctx magnitude Zaux.radix2
+      (FLT.FLT_exp (emin prec emax) prec) (Exact.IZR ctx (Zmul n (Zpower Ztwo p)))
+    apply FLT.generic_format_FLT ctx magnitude
+    apply FLT.FLT_spec _ _ _ _ (Defs.Float Zaux.radix2 n p)
+    · change Exact.IZR ctx (Zmul n (Zpower Ztwo p)) =
+        Exact.Rmult ctx (Exact.IZR ctx n) (Exact.bpow ctx Zaux.radix2 p)
+      have hizr : Exact.IZR ctx (Zpower Ztwo p) = Exact.bpow ctx Zaux.radix2 p :=
+        Raux.IZR_Zpower ctx Zaux.radix2 p hp
+      rw [← hizr]
+      exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.mult_IZR ctx n _
+    · exact hA_lt
+    · change intOfZ (Zsub (Zsub (Zpos (.xI .xH)) emax) prec) ≤ intOfZ p
+      rw [hsub, hsub]
+      have hthree : intOfZ (Zpos (.xI .xH)) = 3 := rfl
+      rw [hthree]
+      omega
+
+end CompCert4Lean.Lib.IEEE754_extra
+

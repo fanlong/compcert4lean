@@ -3207,3 +3207,14 @@ theorem store_zeros_same : store_zeros_sameStatement := by
   exact hs p hmatch
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis.DS
+
+theorem fixpoint_entry_proof {cfg : CompCert4Lean.Config.CompilerConfig}
+    (laws : law_obligation cfg) : fixpoint_entry laws := by
+  intro A code successors transf ep ev res hfix
+  exact CompCert4Lean.Backend.Kildall.Dataflow_Solver.fixpoint_entry
+    (L cfg) CompCert4Lean.Backend.Kildall.NodeSetForward laws.1 laws.2
+    code successors transf ep ev res hfix
+
+end CompCert4Lean.Backend.ValueAnalysis.DS

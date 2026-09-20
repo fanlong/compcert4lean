@@ -1433,3 +1433,19 @@ theorem transf_program_correct
     (cleanup_correct_step cfg xi prog tprog hprog)
 
 end CompCert4Lean.Backend.CleanupLabelsproof
+
+namespace CompCert4Lean.Backend.CleanupLabelsproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem transf_step_correct
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    transf_step_correctStatement := by
+  exact cleanup_correct_step
+
+end CompCert4Lean.Backend.CleanupLabelsproof

@@ -5506,3 +5506,146 @@ theorem eval_intuoffloat
           · rw [intu_loword_repr]
             exact Val.lessdef_refl _
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+open Lean Elab Tactic Meta
+private theorem local_word_val_repr2 (bits : Nat) (i : Int) :
+    (CompCert4Lean.Lib.Integers.WordCore.repr bits
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)).val =
+      Int.toNat (i % ((2 ^ bits : Nat) : Int)) := by
+  run_tac
+    let lctx ← getLCtx
+    let bitsF := (lctx.findFromUserName? `bits).get!
+    let iF := (lctx.findFromUserName? `i).get!
+    let env ← getEnv
+    let some (n, _) := env.constants.toList.find?
+        (fun (n, _) => (toString n).endsWith "WordCore.val_repr")
+      | throwError "WordCore.val_repr not found"
+    let e ← mkAppM n #[mkFVar bitsF.fvarId, mkFVar iF.fvarId]
+    closeMainGoal Name.anonymous e
+private theorem local_int64_repr_unsigned2 (x : CompCert4Lean.Lib.Integers.Int64.int) :
+    CompCert4Lean.Lib.Integers.Int64.repr
+        (CompCert4Lean.Lib.Integers.Int64.unsigned x) = x := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  have hx0 : ZArith.BinInt.Z.le .Z0
+      (CompCert4Lean.Lib.Integers.Int64.unsigned x) := by
+    have h := x.intrange.1
+    change (-1 : Int) < intOfZ x.intval at h
+    change 0 ≤ intOfZ x.intval
+    omega
+  have hxlt : ZArith.BinInt.Z.lt
+      (CompCert4Lean.Lib.Integers.Int64.unsigned x)
+      CompCert4Lean.Lib.Integers.Int64.modulus := x.intrange.2
+  have hxrepr : x.intval = ZArith.BinInt.Z.of_nat x.val :=
+    (ZArith.Znat.Z2Nat.id x.intval hx0).symm
+  unfold CompCert4Lean.Lib.Integers.Int64.repr
+  rw [show CompCert4Lean.Lib.Integers.Int64.unsigned x =
+      ZArith.BinInt.Z.of_nat x.val by exact hxrepr]
+  rw [show ZArith.BinInt.Z.of_nat x.val = zOfInt (Int.ofNat x.val) by rfl,
+    local_word_val_repr2]
+  have hvalLt : Int.ofNat x.val < (2 ^ 64 : Int) := by
+    change Int.ofNat x.val < Int.ofNat (2 ^ 64)
+    exact Int.ofNat_lt.mpr x.toFin.isLt
+  have hmod := Int.emod_eq_of_lt (Int.natCast_nonneg _) hvalLt
+  exact (congrArg Int.toNat hmod).trans (by simp)
+private theorem local_ptrofs_of_int64_repr (x : CompCert4Lean.Lib.Integers.ptrofs) :
+    CompCert4Lean.Lib.Integers.Ptrofs.of_int64
+      (CompCert4Lean.Lib.Integers.Int64.repr
+        (CompCert4Lean.Lib.Integers.Ptrofs.unsigned x)) = x := by
+  unfold CompCert4Lean.Lib.Integers.Ptrofs.of_int64
+  have hx : CompCert4Lean.Lib.Integers.Int64.repr
+      (CompCert4Lean.Lib.Integers.Ptrofs.unsigned x) = x := by
+    change CompCert4Lean.Lib.Integers.Int64.repr
+      (CompCert4Lean.Lib.Integers.Int64.unsigned x) = x
+    exact local_int64_repr_unsigned2 x
+  rw [hx]
+  change CompCert4Lean.Lib.Integers.Int64.repr
+      (CompCert4Lean.Lib.Integers.Int64.unsigned x) = x
+  exact local_int64_repr_unsigned2 x
+private theorem local_ptrofs_eq_of_eq_true {x y : CompCert4Lean.Lib.Integers.ptrofs}
+    (h : CompCert4Lean.Lib.Integers.Ptrofs.eq x y = true) : x = y := by
+  unfold CompCert4Lean.Lib.Integers.Ptrofs.eq
+    CompCert4Lean.Lib.Integers.WordCore.eq at h
+  apply CompCert4Lean.Lib.Integers.WordCore.ext
+  exact of_decide_eq_true h
+
+private theorem local_ptrofs_add_zero_left
+    (x : CompCert4Lean.Lib.Integers.Ptrofs.int) :
+    CompCert4Lean.Lib.Integers.Ptrofs.add CompCert4Lean.Lib.Integers.Ptrofs.zero x = x := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  have hadd :
+      (CompCert4Lean.Lib.Integers.Ptrofs.add
+        CompCert4Lean.Lib.Integers.Ptrofs.zero x).val =
+        (CompCert4Lean.Lib.Integers.Ptrofs.zero.val + x.val) %
+          (2 ^ CompCert4Lean.Lib.Integers.Ptrofs.wordsize) := by
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "WordCore.add_val")
+        | throwError "WordCore.add_val not found"
+      let ident := Lean.mkIdent n
+      evalTactic (← `(tactic| exact $ident _ _))
+  rw [hadd]
+  change (0 + x.val) % (2 ^ CompCert4Lean.Lib.Integers.Ptrofs.wordsize) = x.val
+  rw [Nat.zero_add, Nat.mod_eq_of_lt]
+  exact x.toFin.isLt
+
+theorem eval_addrsymbol
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 53) (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24) (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 128)] :
+    eval_addrsymbolStatement := by
+  intro xi ge sp e m ctx le id ofs
+  unfold addrsymbol
+  by_cases hrel : symbol_is_relocatable ctx id = true
+  · by_cases hzero : Ptrofs.eq ofs Ptrofs.zero = true
+    · simp [hrel, hzero]
+      have hofs : ofs = Ptrofs.zero := local_ptrofs_eq_of_eq_true hzero
+      subst ofs
+      refine ⟨Genv.symbol_address ge id Ptrofs.zero, ?_, Val.lessdef_refl _⟩
+      apply eval_Eop le (Oindirectsymbol id) Enil []
+        (Genv.symbol_address ge id Ptrofs.zero)
+      · exact eval_exprlist.nil le
+      · rfl
+    · simp [hrel, hzero]
+      refine ⟨Val.addl (Genv.symbol_address ge id Ptrofs.zero)
+          (.Vlong (Int64.repr (Ptrofs.unsigned ofs))), ?_, ?_⟩
+      · apply eval_Eop le (Olea_ptr (Aindexed (Ptrofs.unsigned ofs)))
+          (Econs (Eop (Oindirectsymbol id) Enil) Enil)
+          [Genv.symbol_address ge id Ptrofs.zero]
+          (Val.addl (Genv.symbol_address ge id Ptrofs.zero)
+            (.Vlong (Int64.repr (Ptrofs.unsigned ofs))))
+        · apply eval_exprlist.cons le (Eop (Oindirectsymbol id) Enil) Enil
+            (Genv.symbol_address ge id Ptrofs.zero) []
+          · apply eval_Eop le (Oindirectsymbol id) Enil []
+              (Genv.symbol_address ge id Ptrofs.zero)
+            · exact eval_exprlist.nil le
+            · rfl
+          · exact eval_exprlist.nil le
+        · change eval_addressing64 ge sp
+            (.Aindexed (Ptrofs.unsigned ofs))
+            [Genv.symbol_address ge id Ptrofs.zero] = some _
+          rfl
+      · have hshift := Genv.shift_symbol_address_64 _ _ ge id Ptrofs.zero
+          (Int64.repr (Ptrofs.unsigned ofs)) rfl
+        rw [local_ptrofs_of_int64_repr ofs] at hshift
+        rw [local_ptrofs_add_zero_left] at hshift
+        rw [hshift]
+        exact Val.lessdef_refl _
+  · simp [hrel]
+    refine ⟨Genv.symbol_address ge id ofs, ?_, Val.lessdef_refl _⟩
+    apply eval_Eop le (Olea_ptr (Aglobal id ofs)) Enil []
+      (Genv.symbol_address ge id ofs)
+    · exact eval_exprlist.nil le
+    · change eval_addressing64 ge sp (.Aglobal id ofs) [] = some _
+      exact CompCert4Lean.X86.Op.eval_addressing_Aglobal _ _ ge sp id ofs
+end CompCert4Lean.X86.SelectOpproof

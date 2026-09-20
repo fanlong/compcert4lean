@@ -5216,3 +5216,15 @@ open CompCert4Lean.Lib.Maps
       exact PTree.elements_keys_norepet
         (PTree.combine link_prog_merge (prog_defmap tp1) (prog_defmap tp2))
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+open CompCert4Lean.Common.Linking
+
+theorem transfSelectionLink_certificate_proof : TransfSelectionLink_Certificate := by
+  constructor
+  exact @CompCert4Lean.Common.Linking.TransfLink.mk RTL.program RTL.program
+    (@Linker_prog RTL.fundef Unit (@Linker_fundef RTL.function) Linker_unit)
+    (@Linker_prog RTL.fundef Unit (@Linker_fundef RTL.function) Linker_unit)
+    match_prog link_match_program_proof
+
+end CompCert4Lean.Backend.Unusedglobproof

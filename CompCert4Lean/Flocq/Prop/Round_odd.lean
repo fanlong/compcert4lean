@@ -4681,3 +4681,60 @@ theorem fexp_m_eq_0 : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude c
   omega
 
 end CompCert4Lean.Flocq.Prop.Round_odd
+
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+
+private theorem round_odd_pt_neg_neg_suffix (ctx : ExactRealContext) (x : R ctx) :
+    Ropp ctx (Ropp ctx x) = x := by
+  exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_involutive ctx x
+
+theorem Rnd_odd_pt_opp_inv : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
+    Rnd_odd_pt_opp_invStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x f h
+  rcases h with ⟨hfmt, hcases⟩
+  constructor
+  · have h' := CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_opp
+      ctx magnitude beta fexp (Ropp ctx f) hfmt
+    simpa [round_odd_pt_neg_neg_suffix ctx f] using h'
+  · rcases hcases with h_eq | ⟨hround, ⟨g, hg, hcanon, hodd⟩⟩
+    · left
+      have h' := congrArg (Ropp ctx) h_eq
+      simpa [round_odd_pt_neg_neg_suffix ctx x,
+        round_odd_pt_neg_neg_suffix ctx f] using h'
+    · right
+      refine ⟨?_, ?_⟩
+      · rcases hround with hdn | hup
+        · right
+          have h' := CompCert4Lean.Flocq.Core.Round_pred.Rnd_UP_pt_opp
+            ctx (generic_format ctx magnitude beta fexp)
+            (fun y hy => CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_opp
+              ctx magnitude beta fexp y hy)
+            (Ropp ctx x) (Ropp ctx f) hdn
+          simpa [round_odd_pt_neg_neg_suffix ctx x,
+            round_odd_pt_neg_neg_suffix ctx f] using h'
+        · left
+          have h' := CompCert4Lean.Flocq.Core.Round_pred.Rnd_DN_pt_opp
+            ctx (generic_format ctx magnitude beta fexp)
+            (fun y hy => CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_opp
+              ctx magnitude beta fexp y hy)
+            (Ropp ctx x) (Ropp ctx f) hup
+          simpa [round_odd_pt_neg_neg_suffix ctx x,
+            round_odd_pt_neg_neg_suffix ctx f] using h'
+      · refine ⟨Float beta (CompCert4Lean.Flocq.Core.Zaux.Zopp (Fnum g)) (Fexp g), ?_, ?_, ?_⟩
+        · have hf2r := CompCert4Lean.Flocq.Core.Float_prop.F2R_Zopp
+            ctx beta (Fnum g) (Fexp g)
+          change F2R ctx (Float beta (CompCert4Lean.Flocq.Core.Zaux.Zopp (Fnum g)) (Fexp g)) =
+            Ropp ctx (F2R ctx g) at hf2r
+          rw [hf2r, ← hg]
+          exact (round_odd_pt_neg_neg_suffix ctx f).symm
+        · exact CompCert4Lean.Flocq.Core.Generic_fmt.canonical_opp
+            ctx magnitude beta fexp (Fnum g) (Fexp g) hcanon
+        · change Zeven (CompCert4Lean.Flocq.Core.Zaux.Zopp (Fnum g)) = false
+          have heven : Zeven (CompCert4Lean.Flocq.Core.Zaux.Zopp (Fnum g)) =
+              Zeven (Fnum g) :=
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even_opp
+              (Fnum g)
+          rw [heven]
+          exact hodd
+
+end CompCert4Lean.Flocq.Prop.Round_odd

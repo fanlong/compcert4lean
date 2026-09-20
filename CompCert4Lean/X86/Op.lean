@@ -5505,3 +5505,1379 @@ open CompCert4Lean.Lib.Integers
     hsp' hvl heval
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Integers
+
+set_option maxHeartbeats 8000000
+
+private theorem suffix_operation_type_or (a b : val) :
+    Val.has_type (Val.or a b) Tint := by
+  cases a <;> cases b <;> trivial
+
+theorem type_of_operation_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @type_of_operation_soundStatement binary64_certificate binary32_certificate := by
+  intro A V genv op vl sp v m hmove heval
+  cases op with
+  | Omove =>
+      exact False.elim (hmove rfl)
+  | Ointconst n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | cons => contradiction
+      | nil =>
+          change some (.Vint n) = some v at heval
+          cases heval
+          trivial
+  | Olongconst n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | cons => contradiction
+      | nil =>
+          change some (.Vlong n) = some v at heval
+          cases heval
+          trivial
+  | Ofloatconst n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | cons => contradiction
+      | nil =>
+          change some (.Vfloat n) = some v at heval
+          cases heval
+          trivial
+  | Osingleconst n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | cons => contradiction
+      | nil =>
+          change some (.Vsingle n) = some v at heval
+          cases heval
+          trivial
+  | Oindirectsymbol id =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | cons => contradiction
+      | nil =>
+          change some (Genv.symbol_address genv id Ptrofs.zero) = some v at heval
+          cases heval
+          unfold Genv.symbol_address
+          split <;> trivial
+  | Ocast8signed =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.sign_ext (zOfNat 8) v1) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.sign_ext, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Ocast8unsigned =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.zero_ext (zOfNat 8) v1) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.zero_ext, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Ocast16signed =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.sign_ext (zOfNat 16) v1) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.sign_ext, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Ocast16unsigned =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.zero_ext (zOfNat 16) v1) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.zero_ext, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Oneg =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.neg v1) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.neg, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Osub =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.sub v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.sub, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Omul =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.mul v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.mul, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Omulimm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.mul v1 (.Vint n)) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.mul, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Omulhs =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.mulhs v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.mulhs, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Omulhu =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.mulhu v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.mulhu, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Odiv =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change Val.divs v1 v2 = some v at heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.divs] at heval <;> try contradiction
+                  split at heval <;> cases heval <;> trivial
+  | Odivu =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change Val.divu v1 v2 = some v at heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.divu] at heval <;> try contradiction
+                  split at heval <;> cases heval <;> trivial
+  | Omod =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change Val.mods v1 v2 = some v at heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.mods] at heval <;> try contradiction
+                  split at heval <;> cases heval <;> trivial
+  | Omodu =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change Val.modu v1 v2 = some v at heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.modu] at heval <;> try contradiction
+                  split at heval <;> cases heval <;> trivial
+  | Oand =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.and v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.and, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Oandimm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.and v1 (.Vint n)) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.and, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Oor =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.or v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.or, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Oorimm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.or v1 (.Vint n)) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.or, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Oxor =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.xor v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.xor, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Oxorimm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.xor v1 (.Vint n)) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.xor, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Onot =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.notint v1) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.notint, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Oshl =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.shl v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.shl, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Oshlimm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.shl v1 (.Vint n)) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.shl, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Oshr =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.shr v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.shr, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Oshrimm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.shr v1 (.Vint n)) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.shr, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Oshrximm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change Val.shrx v1 (.Vint n) = some v at heval
+              cases v1 <;>
+                simp only [Val.shrx] at heval <;> try contradiction
+              split at heval <;> cases heval <;> trivial
+  | Oshru =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.shru v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.shru, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Oshruimm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.shru v1 (.Vint n)) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.shru, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Ororimm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.ror v1 (.Vint n)) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.ror, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Oshldimm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.or (Val.shl v1 (.Vint n)) (Val.shru v2 (.Vint (CompCert4Lean.Lib.Integers.Int.sub CompCert4Lean.Lib.Integers.Int.iwordsize n)))) = some v at heval
+                  cases heval
+                  exact suffix_operation_type_or _ _
+  | Olea addr =>
+      simp only [type_of_operation] at ⊢
+      exact type_of_addressing32_sound A V genv addr vl sp v heval
+  | Omakelong =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.longofwords v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.longofwords, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Olowlong =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.loword v1) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.loword, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Ohighlong =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.hiword v1) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.hiword, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Ocast32signed =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.longofint v1) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.longofint, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Ocast32unsigned =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.longofintu v1) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.longofintu, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Onegl =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.negl v1) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.negl, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Oaddlimm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.addl v1 (.Vlong n)) = some v at heval
+              cases heval
+              exact type_addl _ _
+  | Osubl =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.subl v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.subl, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Omull =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.mull v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.mull, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Omullimm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.mull v1 (.Vlong n)) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.mull, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Omullhs =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.mullhs v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.mullhs, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Omullhu =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.mullhu v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.mullhu, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Odivl =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change Val.divls v1 v2 = some v at heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.divls] at heval <;> try contradiction
+                  split at heval <;> cases heval <;> trivial
+  | Odivlu =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change Val.divlu v1 v2 = some v at heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.divlu] at heval <;> try contradiction
+                  split at heval <;> cases heval <;> trivial
+  | Omodl =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change Val.modls v1 v2 = some v at heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.modls] at heval <;> try contradiction
+                  split at heval <;> cases heval <;> trivial
+  | Omodlu =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change Val.modlu v1 v2 = some v at heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.modlu] at heval <;> try contradiction
+                  split at heval <;> cases heval <;> trivial
+  | Oandl =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.andl v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.andl, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Oandlimm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.andl v1 (.Vlong n)) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.andl, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Oorl =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.orl v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.orl, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Oorlimm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.orl v1 (.Vlong n)) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.orl, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Oxorl =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.xorl v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.xorl, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Oxorlimm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.xorl v1 (.Vlong n)) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.xorl, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Onotl =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.notl v1) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.notl, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Oshll =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.shll v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.shll, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Oshllimm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.shll v1 (.Vint n)) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.shll, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Oshrl =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.shrl v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.shrl, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Oshrlimm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.shrl v1 (.Vint n)) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.shrl, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Oshrxlimm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change Val.shrxl v1 (.Vint n) = some v at heval
+              cases v1 <;>
+                simp only [Val.shrxl] at heval <;> try contradiction
+              split at heval <;> cases heval <;> trivial
+  | Oshrlu =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.shrlu v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.shrlu, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Oshrluimm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.shrlu v1 (.Vint n)) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.shrlu, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Ororlimm n =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.rorl v1 (.Vint n)) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.rorl, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Oleal addr =>
+      simp only [type_of_operation] at ⊢
+      exact type_of_addressing64_sound A V genv addr vl sp v heval
+  | Onegf =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.negf v1) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.negf, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Oabsf =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.absf v1) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.absf, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Oaddf =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.addf v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.addf, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Osubf =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.subf v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.subf, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Omulf =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.mulf v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.mulf, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Odivf =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.divf v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.divf, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Omaxf =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (maxf v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [maxf, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Ominf =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (minf v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [minf, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Onegfs =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.negfs v1) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.negfs, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Oabsfs =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.absfs v1) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.absfs, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Oaddfs =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.addfs v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.addfs, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Osubfs =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.subfs v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.subfs, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Omulfs =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.mulfs v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.mulfs, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Odivfs =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | nil => contradiction
+          | cons v2 rest2 =>
+              cases rest2 with
+              | cons => contradiction
+              | nil =>
+                  change some (Val.divfs v1 v2) = some v at heval
+                  cases heval
+                  cases v1 <;> cases v2 <;>
+                    simp only [Val.divfs, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                      Bool.not_true, Bool.false_eq_true, if_false] <;>
+                    first | trivial | (split <;> trivial)
+  | Osingleoffloat =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.singleoffloat v1) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.singleoffloat, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Ofloatofsingle =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change some (Val.floatofsingle v1) = some v at heval
+              cases heval
+              cases v1 <;>
+                simp only [Val.floatofsingle, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+                  Bool.not_true, Bool.false_eq_true, if_false] <;>
+                first | trivial | (split <;> trivial)
+  | Ointoffloat =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change Val.intoffloat v1 = some v at heval
+              cases v1 <;>
+                simp only [Val.intoffloat] at heval <;> try contradiction
+              simp only [Option.map_eq_some_iff] at heval
+              obtain ⟨_, _, h⟩ := heval
+              cases h
+              trivial
+  | Ofloatofint =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change Val.floatofint (binary64_certificate := binary64_certificate) v1 = some v at heval
+              cases v1 <;>
+                simp only [Val.floatofint] at heval <;> try contradiction
+              cases heval
+              trivial
+  | Ointofsingle =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change Val.intofsingle v1 = some v at heval
+              cases v1 <;>
+                simp only [Val.intofsingle] at heval <;> try contradiction
+              simp only [Option.map_eq_some_iff] at heval
+              obtain ⟨_, _, h⟩ := heval
+              cases h
+              trivial
+  | Osingleofint =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change Val.singleofint (binary32_certificate := binary32_certificate) v1 = some v at heval
+              cases v1 <;>
+                simp only [Val.singleofint] at heval <;> try contradiction
+              cases heval
+              trivial
+  | Olongoffloat =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change Val.longoffloat v1 = some v at heval
+              cases v1 <;>
+                simp only [Val.longoffloat] at heval <;> try contradiction
+              simp only [Option.map_eq_some_iff] at heval
+              obtain ⟨_, _, h⟩ := heval
+              cases h
+              trivial
+  | Ofloatoflong =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change Val.floatoflong (binary64_certificate := binary64_certificate) v1 = some v at heval
+              cases v1 <;>
+                simp only [Val.floatoflong] at heval <;> try contradiction
+              cases heval
+              trivial
+  | Olongofsingle =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change Val.longofsingle v1 = some v at heval
+              cases v1 <;>
+                simp only [Val.longofsingle] at heval <;> try contradiction
+              simp only [Option.map_eq_some_iff] at heval
+              obtain ⟨_, _, h⟩ := heval
+              cases h
+              trivial
+  | Osingleoflong =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest1 =>
+          cases rest1 with
+          | cons => contradiction
+          | nil =>
+              change Val.singleoflong (binary32_certificate := binary32_certificate) v1 = some v at heval
+              cases v1 <;>
+                simp only [Val.singleoflong] at heval <;> try contradiction
+              cases heval
+              trivial
+  | Ocmp c =>
+      simp only [type_of_operation] at ⊢
+      change some (Val.of_optbool (eval_condition c vl m)) = some v at heval
+      cases heval
+      cases eval_condition c vl m with
+      | none => trivial
+      | some b => cases b <;> trivial
+  | Osel c ty =>
+      simp only [type_of_operation] at ⊢
+      cases vl with
+      | nil => contradiction
+      | cons v1 rest =>
+          cases rest with
+          | nil => contradiction
+          | cons v2 rest =>
+              change some (Val.select (eval_condition c rest m) v1 v2 ty) = some v at heval
+              cases heval
+              unfold Val.select
+              split
+              · exact Val.normalize_type _ _
+              · trivial
+
+end CompCert4Lean.X86.Op
