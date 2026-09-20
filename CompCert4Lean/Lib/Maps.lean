@@ -3984,3 +3984,10 @@ theorem extensionality : extensionalityStatement := by
 
 end PTree
 end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps.PTree
+
+theorem prev_involutive_proof : CompCert4Lean.Lib.Maps.PTree.prev_involutiveStatement :=
+  prev_involutive
+
+end CompCert4Lean.Lib.Maps.PTree

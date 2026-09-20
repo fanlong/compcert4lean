@@ -7150,3 +7150,10 @@ theorem step_Sset_debug
     exact make_cast_correct tprog e le m a v ty v' heval hcast
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem simpl_seq_of_labeled_statement_proof : CompCert4Lean.Cfrontend.SimplLocalsproof.simpl_seq_of_labeled_statementStatement :=
+  simpl_seq_of_labeled_statement
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
