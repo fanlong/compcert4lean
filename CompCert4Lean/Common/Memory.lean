@@ -8530,3 +8530,193 @@ theorem store_mapped_inject : store_mapped_injectStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem store_unmapped_inject : store_unmapped_injectStatement := by
+  intro f chunk m1 b1 ofs v1 n1 m2 hinj hstore hf
+  have hp1 := perm_store_1 chunk m1 b1 ofs v1 n1 hstore
+  have hp2 := perm_store_2 chunk m1 b1 ofs v1 n1 hstore
+  constructor
+  · exact store_unmapped_inj f chunk m1 b1 ofs v1 n1 m2 hinj.mi_inj hstore hf
+  · intro b hb
+    apply hinj.mi_freeblocks b
+    intro hv
+    exact hb (store_valid_block_1 chunk m1 b1 ofs v1 n1 hstore b hv)
+  · intro b b' delta hmap
+    exact hinj.mi_mappedblocks b b' delta hmap
+  · intro b b' delta c c' delta' ofs' ofs'' hne hmap hmap' hp hq
+    exact hinj.mi_no_overlap b b' delta c c' delta' ofs' ofs'' hne hmap hmap'
+      (hp2 b ofs' Max Nonempty hp) (hp2 c ofs'' Max Nonempty hq)
+  · intro b b' delta ofs' hmap hp
+    apply hinj.mi_representable b b' delta ofs' hmap
+    exact hp.elim (fun h => Or.inl (hp2 _ _ _ _ h))
+      (fun h => Or.inr (hp2 _ _ _ _ h))
+  · intro b ofs' b' delta k p hmap hp
+    obtain hp' | hn := hinj.mi_perm_inv b ofs' b' delta k p hmap hp
+    · exact Or.inl (hp1 _ _ _ _ hp')
+    · exact Or.inr (fun h => hn (hp2 _ _ _ _ h))
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem storebytes_empty_inject : storebytes_empty_injectStatement := by
+  intro f m1 b1 ofs1 m1' m2 b2 ofs2 m2' hinj hstore1 hstore2
+  have hp1 := perm_storebytes_1 m1 b1 ofs1 [] m1' hstore1
+  have hp2 := perm_storebytes_2 m1 b1 ofs1 [] m1' hstore1
+  have hq2 := perm_storebytes_2 m2 b2 ofs2 [] m2' hstore2
+  constructor
+  · exact storebytes_empty_inj f m1 b1 ofs1 m1' m2 b2 ofs2 m2'
+      hinj.mi_inj hstore1 hstore2
+  · intro b hb
+    apply hinj.mi_freeblocks b
+    intro hv
+    exact hb (storebytes_valid_block_1 m1 b1 ofs1 [] m1' hstore1 b hv)
+  · intro b b' delta hmap
+    exact storebytes_valid_block_1 m2 b2 ofs2 [] m2' hstore2 b'
+      (hinj.mi_mappedblocks b b' delta hmap)
+  · intro b b' delta c c' delta' ofs ofs' hne hmap hmap' hp hq
+    exact hinj.mi_no_overlap b b' delta c c' delta' ofs ofs' hne hmap hmap'
+      (hp2 b ofs Max Nonempty hp) (hp2 c ofs' Max Nonempty hq)
+  · intro b b' delta ofs hmap hp
+    apply hinj.mi_representable b b' delta ofs hmap
+    exact hp.elim (fun h => Or.inl (hp2 _ _ _ _ h))
+      (fun h => Or.inr (hp2 _ _ _ _ h))
+  · intro b ofs b' delta k p hmap hp
+    obtain hp' | hn := hinj.mi_perm_inv b ofs b' delta k p hmap (hq2 _ _ _ _ hp)
+    · exact Or.inl (hp1 _ _ _ _ hp')
+    · exact Or.inr (fun h => hn (hp2 _ _ _ _ h))
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem storev_mapped_inject : storev_mapped_injectStatement := by
+  intro f chunk m1 a1 v1 n1 m2 a2 v2 hinj hstore haddr hv
+  cases a1 with
+  | Vptr b1 ofs1 =>
+      cases a2 with
+      | Vptr b2 ofs2 =>
+          unfold storev at hstore ⊢
+          cases haddr with
+          | inject_ptr _ _ _ _ delta hmap hofs =>
+              have hvalid : valid_access m1 chunk b1 (Ptrofs.unsigned ofs1) Writable :=
+                store_valid_access_3 chunk m1 b1 (Ptrofs.unsigned ofs1) v1 n1 hstore
+              have hvalidN : valid_access m1 chunk b1 (Ptrofs.unsigned ofs1) Nonempty :=
+                valid_access_implies m1 chunk b1 (Ptrofs.unsigned ofs1) Writable Nonempty
+                  hvalid (perm_any_N Writable)
+              have hadd : Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta)) =
+                  zAdd (Ptrofs.unsigned ofs1) delta :=
+                address_inject' f m1 m2 chunk b1 ofs1 b2 delta hinj hvalidN hmap
+              rcases store_mapped_inject f chunk m1 b1 (Ptrofs.unsigned ofs1) v1 n1
+                  m2 b2 delta v2 hinj hstore hmap hv with ⟨n2, hstore2, hinj2⟩
+              refine ⟨n2, ?_, hinj2⟩
+              simpa only [hofs, hadd] using hstore2
+      | Vundef => cases haddr
+      | Vint i => cases haddr
+      | Vlong i => cases haddr
+      | Vfloat x => cases haddr
+      | Vsingle x => cases haddr
+  | Vundef => cases haddr <;> simp [storev] at hstore
+  | Vint i => cases haddr <;> simp [storev] at hstore
+  | Vlong i => cases haddr <;> simp [storev] at hstore
+  | Vfloat x => cases haddr <;> simp [storev] at hstore
+  | Vsingle x => cases haddr <;> simp [storev] at hstore
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+private theorem storebytes_mapped_inject_transport
+    (f : meminj) (m1 m2 n1 n2 : mem)
+    (b1 b2 : block) (ofs1 ofs2 : Z) (bytes1 bytes2 : List memval)
+    (hinj : inject f m1 m2)
+    (hstore1 : storebytes m1 b1 ofs1 bytes1 = some n1)
+    (hstore2 : storebytes m2 b2 ofs2 bytes2 = some n2)
+    (hmem : mem_inj f n1 n2) : inject f n1 n2 := by
+  have hp1 := perm_storebytes_1 m1 b1 ofs1 bytes1 n1 hstore1
+  have hp2 := perm_storebytes_2 m1 b1 ofs1 bytes1 n1 hstore1
+  have hq2 := perm_storebytes_2 m2 b2 ofs2 bytes2 n2 hstore2
+  constructor
+  · exact hmem
+  · intro b hb
+    apply hinj.mi_freeblocks b
+    intro hv
+    exact hb (storebytes_valid_block_1 m1 b1 ofs1 bytes1 n1 hstore1 b hv)
+  · intro b b' delta hmap
+    exact storebytes_valid_block_1 m2 b2 ofs2 bytes2 n2 hstore2 b'
+      (hinj.mi_mappedblocks b b' delta hmap)
+  · intro b b' delta c c' delta' ofs ofs' hne hmap hmap' hp hq
+    exact hinj.mi_no_overlap b b' delta c c' delta' ofs ofs' hne hmap hmap'
+      (hp2 b ofs Max Nonempty hp) (hp2 c ofs' Max Nonempty hq)
+  · intro b b' delta ofs hmap hp
+    apply hinj.mi_representable b b' delta ofs hmap
+    exact hp.elim (fun h => Or.inl (hp2 _ _ _ _ h))
+      (fun h => Or.inr (hp2 _ _ _ _ h))
+  · intro b ofs b' delta k p hmap hp
+    obtain hp' | hn := hinj.mi_perm_inv b ofs b' delta k p hmap (hq2 _ _ _ _ hp)
+    · exact Or.inl (hp1 _ _ _ _ hp')
+    · exact Or.inr (fun h => hn (hp2 _ _ _ _ h))
+
+theorem storebytes_mapped_inject : storebytes_mapped_injectStatement := by
+  intro f m1 b1 ofs bytes1 n1 m2 b2 delta bytes2 hinj hstore hf hlist
+  rcases storebytes_mapped_inj f m1 b1 ofs bytes1 n1 m2 b2 delta bytes2
+      hinj.mi_inj hstore hinj.mi_no_overlap hf hlist with ⟨n2, hstore2, hmem⟩
+  refine ⟨n2, hstore2, ?_⟩
+  exact storebytes_mapped_inject_transport f m1 m2 n1 n2 b1 b2 ofs
+    (zAdd ofs delta) bytes1 bytes2 hinj hstore hstore2 hmem
+
+end Mem
+
+end CompCert4Lean.Common.Memory
