@@ -6239,3 +6239,30 @@ theorem mmatch_free : mmatch_freeStatement := by
     exact Ple_refl m.nextblock
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Lib.Maps
+
+theorem mmatch_top' : mmatch_top'Statement := by
+  intro bc m am hmm
+  constructor
+  · intro b hstack
+    apply ablock_init_sound bc m b Ptop
+    apply smatch_ge bc m b am.am_stack.ab_summary Ptop
+      (hmm.mmatch_stack b hstack).1
+    constructor
+  · intro id ab b _ hab
+    change PTree.get id (PTree.empty ablock) = some ab at hab
+    erw [PTree.gempty] at hab
+    cases hab
+  · intro b hstack hinvalid
+    apply smatch_ge bc m b am.am_nonstack Ptop
+      (hmm.mmatch_nonstack b hstack hinvalid)
+    constructor
+  · intro b hinvalid
+    apply smatch_ge bc m b am.am_top Ptop (hmm.mmatch_top b hinvalid)
+    constructor
+  · exact hmm.mmatch_below
+
+end CompCert4Lean.Backend.ValueDomain
