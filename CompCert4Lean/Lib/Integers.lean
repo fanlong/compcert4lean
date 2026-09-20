@@ -9981,3 +9981,23 @@ theorem sub_add_l_proof : sub_add_l := by
   omega
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem ltu_inv_proof : ltu_inv := by
+  intro x y h
+  change zltSelect (unsigned x) (unsigned y) true false = true at h
+  cases hlt : CompCert4Lean.Lib.Coqlib.zlt (unsigned x) (unsigned y) with
+  | left hxy =>
+      constructor
+      · have hx := x.intrange.1
+        change (-1 : Int) < intOfZ (unsigned x) at hx
+        change 0 ≤ intOfZ (unsigned x)
+        omega
+      · exact hxy
+  | right hxy =>
+      simp [zltSelect, sumboolSelect, hlt] at h
+
+end CompCert4Lean.Lib.Integers.Int64

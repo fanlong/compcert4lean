@@ -8954,3 +8954,41 @@ theorem free_right_inject : free_right_injectStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem perm_free_list : perm_free_listStatement := by
+  intro l
+  induction l with
+  | nil =>
+      intro m m' b ofs k p hfree hp
+      simp [free_list] at hfree
+      cases hfree
+      exact ⟨hp, by simp⟩
+  | cons a l ih =>
+      intro m m' b ofs k p hfree hp
+      rcases a with ⟨b1, ⟨lo1, hi1⟩⟩
+      simp only [free_list] at hfree
+      cases hstep : free m b1 lo1 hi1 with
+      | none => simp [hstep] at hfree
+      | some m1 =>
+          simp [hstep] at hfree
+          have hi := ih m1 m' b ofs k p hfree hp
+          refine ⟨perm_free_3 m b1 lo1 hi1 m1 hstep b ofs k p hi.1, ?_⟩
+          intro lo hi' hmem hinside
+          rcases List.mem_cons.mp hmem with heq | hrest
+          · cases heq
+            exact (perm_free_2 m _ _ _ m1 hstep ofs k p hinside hi.1)
+          · exact hi.2 lo hi' hrest hinside
+
+end Mem
+
+end CompCert4Lean.Common.Memory

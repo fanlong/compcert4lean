@@ -6224,3 +6224,18 @@ theorem mmatch_ext : mmatch_extStatement := by
       (hmm.mmatch_below b hinvalid) hnext
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Coqlib
+
+theorem mmatch_free : mmatch_freeStatement := by
+  intro bc m b lo hi m' am hfree hmm
+  apply mmatch_ext bc m am m' hmm
+  · intro b' ofs n bytes _ _ hload
+    exact Mem.loadbytes_free_2 m b lo hi m' hfree b' ofs n bytes hload
+  · rw [Mem.nextblock_free m b lo hi m' hfree]
+    exact Ple_refl m.nextblock
+
+end CompCert4Lean.Backend.ValueDomain
