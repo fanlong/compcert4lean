@@ -9771,3 +9771,71 @@ theorem nlive_contains : nlive_containsStatement := by
                       exact (hg id iv hsym hx hmem).elim
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+private theorem pg_ne_set_get
+    (p q : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+    (v : NVal.t) (x : NE.t) :
+    NE.get q (NE.set p v x) =
+      match CompCert4Lean.Lib.Coqlib.peq q p with
+      | .left _ => v
+      | .right _ => NE.get q x := by
+  by_cases hv : NVal.beq v NVal.bot = true
+  · have hv' : v = NVal.bot :=
+      CompCert4Lean.Lib.Coqlib.proj_sumbool_true _ _ (eq_nval v NVal.bot) hv
+    have hset : NE.set p v x =
+        (CompCert4Lean.Lib.Maps.PTree.remove p
+          (show CompCert4Lean.Lib.Maps.PTree.tree NVal.t from x) : NE.t) := by
+      unfold NE.set
+      simp [hv]
+      rfl
+    rw [hset]
+    unfold NE.get
+    cases h : CompCert4Lean.Lib.Coqlib.peq q p with
+    | left hqp =>
+        subst p
+        rw [CompCert4Lean.Lib.Maps.PTree.getRemove_equation]
+        simp [h, hv']
+    | right hqp =>
+        rw [CompCert4Lean.Lib.Maps.PTree.getRemove_equation]
+        simp [h, hqp]
+  · have hset : NE.set p v x =
+        (CompCert4Lean.Lib.Maps.PTree.set p v
+          (show CompCert4Lean.Lib.Maps.PTree.tree NVal.t from x) : NE.t) := by
+      unfold NE.set
+      simp [hv]
+      rfl
+    rw [hset]
+    unfold NE.get
+    cases h : CompCert4Lean.Lib.Coqlib.peq q p with
+    | left hqp =>
+        subst p
+        rw [CompCert4Lean.Lib.Maps.PTree.getSet_equation]
+        simp [h]
+    | right hqp =>
+        rw [CompCert4Lean.Lib.Maps.PTree.getSet_equation]
+        simp [h, hqp]
+
+theorem eagree_update : eagree_updateStatement := by
+  intro e1 e2 ne v1 v2 r hv henv r0
+  unfold CompCert4Lean.Backend.RTL.regset at e1 e2
+  have henv0 := henv r0
+  change vagree _ _
+      (NE.get (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from r0)
+        (NE.set (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from r) Nothing ne)) at henv0
+  have hne := pg_ne_set_get
+    (p := (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from r))
+    (q := (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from r0))
+    (v := (Nothing : NVal.t)) (x := ne)
+  rw [hne] at henv0
+  rw [CompCert4Lean.Backend.Registers.Regmap.gsspec_proof,
+      CompCert4Lean.Backend.Registers.Regmap.gsspec_proof]
+  cases h : CompCert4Lean.Lib.Coqlib.peq r0 r with
+  | left hrr =>
+      subst r0
+      simpa [h, nreg] using hv
+  | right hrr =>
+      simpa [h] using henv0
+
+end CompCert4Lean.Backend.NeedDomain

@@ -10083,3 +10083,56 @@ theorem sub_add_r_proof : sub_add_r := by
   omega
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem suffix_int64_xor_val (x y : int) :
+    (xor x y).val = Nat.xor x.val y.val := by
+  change (WordCore.xor x y).val = Nat.xor x.val y.val
+  unfold WordCore.xor
+  have hz : zOfNat (Nat.xor x.val y.val) =
+      zOfInt (Int.ofNat (Nat.xor x.val y.val)) := by rfl
+  rw [hz, WordCore.val_repr_residue, WordCore.residue_zOfNat]
+  exact Nat.mod_eq_of_lt
+    (Nat.xor_lt_two_pow (WordCore.val_lt x) (WordCore.val_lt y))
+
+private theorem suffix_int64_testbit_nat (x : int) (n : Nat) :
+    testbit x (zOfNat n) = x.val.testBit n := by
+  cases n with
+  | zero => rfl
+  | succ n =>
+      have hp :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat (n + 1)) = n + 1 :=
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat (Nat.succ_pos n)
+      have hz : zOfNat (Nat.succ n) =
+          .Zpos (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat (n + 1)) := by
+        rfl
+      rw [hz]
+      simp only [testbit, WordCore.testbit,
+        WordCore.positiveToNat_eq_posToNat, hp]
+
+private theorem suffix_int64_bits_xor_nat (x y : int) (n : Nat) :
+    testbit (xor x y) (zOfNat n) =
+      Bool.xor (testbit x (zOfNat n)) (testbit y (zOfNat n)) := by
+  rw [suffix_int64_testbit_nat, suffix_int64_testbit_nat,
+    suffix_int64_testbit_nat]
+  rw [suffix_int64_xor_val, Nat.xor_eq, Nat.testBit_xor]
+
+theorem bits_xor_proof : bits_xor := by
+  intro x y i hi
+  cases i with
+  | Zneg _ => rfl
+  | Z0 =>
+      exact suffix_int64_bits_xor_nat x y 0
+  | Zpos p =>
+      have hz : zOfNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) = .Zpos p := by
+        exact ZArith.Znat.positive_nat_Z p
+      rw [← hz] at hi ⊢
+      exact suffix_int64_bits_xor_nat x y
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)
+
+end CompCert4Lean.Lib.Integers.Int64
