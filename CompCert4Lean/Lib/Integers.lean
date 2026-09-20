@@ -10012,3 +10012,28 @@ theorem xor_commut_proof : xor_commut := by
     (Nat.xor_comm x.val y.val)
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem or_zero_proof : or_zero := by
+  intro x
+  apply WordCore.ext_of_val_eq
+  change (WordCore.or x (WordCore.zero wordsize)).val = x.val
+  unfold WordCore.or
+  rw [WordCore.val_repr_residue]
+  have hzero : (WordCore.zero wordsize).val = 0 := by
+    unfold WordCore.zero
+    rw [WordCore.val_repr_residue]
+    rfl
+  change WordCore.residue wordsize
+      (zOfNat (Nat.lor x.val (WordCore.zero wordsize).val)) = x.val
+  rw [hzero]
+  have hz : zOfNat (Nat.lor x.val 0) =
+      zOfInt (Int.ofNat (Nat.lor x.val 0)) := by rfl
+  rw [hz, WordCore.residue_zOfNat]
+  exact (Nat.mod_eq_of_lt (Nat.or_lt_two_pow (WordCore.val_lt x)
+    (WordCore.val_lt (WordCore.zero wordsize)))).trans (Nat.or_zero _)
+
+end CompCert4Lean.Lib.Integers.Int64
