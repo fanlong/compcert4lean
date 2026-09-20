@@ -10001,3 +10001,14 @@ theorem ltu_inv_proof : ltu_inv := by
       simp [zltSelect, sumboolSelect, hlt] at h
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+theorem xor_commut_proof : xor_commut := by
+  intro x y
+  change WordCore.repr wordsize (zOfNat (Nat.xor x.val y.val)) =
+    WordCore.repr wordsize (zOfNat (Nat.xor y.val x.val))
+  exact congrArg (fun n : Nat => WordCore.repr wordsize (zOfNat n))
+    (Nat.xor_comm x.val y.val)
+
+end CompCert4Lean.Lib.Integers.Int64

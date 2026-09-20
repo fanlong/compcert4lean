@@ -8992,3 +8992,103 @@ theorem perm_free_list : perm_free_listStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+private theorem scc083_free_left_inject (f : meminj) (m1 m2 : mem)
+    (b : positive) (lo hi : Z) (m1' : mem)
+    (hinj : inject f m1 m2)
+    (hfree : free m1 b lo hi = some m1') :
+    inject f m1' m2 := by
+  have hnext := nextblock_free m1 b lo hi m1' hfree
+  refine {
+    mi_inj := free_left_inj f m1 m2 b lo hi m1' hinj.mi_inj hfree,
+    mi_freeblocks := ?_,
+    mi_mappedblocks := hinj.mi_mappedblocks,
+    mi_no_overlap := ?_,
+    mi_representable := ?_,
+    mi_perm_inv := ?_ }
+  · intro b' hvalid
+    apply hinj.mi_freeblocks b'
+    intro hvalid0
+    apply hvalid
+    change Plt b' m1'.nextblock
+    rw [hnext]
+    exact hvalid0
+  · intro b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 hne hmap1 hmap2 hp1 hp2
+    apply hinj.mi_no_overlap b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 hne hmap1 hmap2
+    · exact perm_free_3 m1 b lo hi m1' hfree b1 ofs1 Max Nonempty hp1
+    · exact perm_free_3 m1 b lo hi m1' hfree b2 ofs2 Max Nonempty hp2
+  · intro b1 b2 delta ofs hmap hperm
+    apply hinj.mi_representable b1 b2 delta ofs hmap
+    rcases hperm with h | h
+    · left
+      exact perm_free_3 m1 b lo hi m1' hfree b1
+        (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) Max Nonempty h
+    · right
+      exact perm_free_3 m1 b lo hi m1' hfree b1
+        (zSub (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) z1) Max Nonempty h
+  · intro b1 ofs b2 delta k p hmap hp2
+    rcases hinj.mi_perm_inv b1 ofs b2 delta k p hmap hp2 with hp1 | hnone
+    · by_cases hb : b1 = b
+      · subst b1
+        by_cases hinside : zLe lo ofs ∧ zLt ofs hi
+        · right
+          intro hp1'
+          exact (perm_free_2 m1 b lo hi m1' hfree ofs Max Nonempty hinside) hp1'
+        · left
+          apply perm_free_1 m1 b lo hi m1' hfree b ofs k p
+          · rcases scc085_outside_interval ofs lo hi hinside with hlt | hge
+            · exact Or.inr (Or.inl hlt)
+            · exact Or.inr (Or.inr hge)
+          · exact hp1
+      · left
+        apply perm_free_1 m1 b lo hi m1' hfree b1 ofs k p
+        · exact Or.inl hb
+        · exact hp1
+    · right
+      intro hp1'
+      exact hnone (perm_free_3 m1 b lo hi m1' hfree b1 ofs Max Nonempty hp1')
+
+private theorem scc083_free_list_left_inject (f : meminj) (m2 : mem)
+    (l : List (positive × (Z × Z))) (m1 m1' : mem)
+    (hinj : inject f m1 m2)
+    (hfree : free_list m1 l = some m1') :
+    inject f m1' m2 := by
+  induction l generalizing m1 with
+  | nil =>
+      simp [free_list] at hfree
+      cases hfree
+      exact hinj
+  | cons a l ih =>
+      rcases a with ⟨b1, ⟨lo1, hi1⟩⟩
+      simp only [free_list] at hfree
+      cases hstep : free m1 b1 lo1 hi1 with
+      | none => simp [hstep] at hfree
+      | some m11 =>
+          simp [hstep] at hfree
+          exact ih m11 (scc083_free_left_inject f m1 m2 b1 lo1 hi1 m11 hinj hstep) hfree
+
+theorem free_inject : free_injectStatement := by
+  intro f m1 l m1' m2 b lo hi m2' hinj hlist hfree hside
+  apply free_right_inject f m1' m2 b lo hi m2'
+  · exact scc083_free_list_left_inject f m2 l m1 m1' hinj hlist
+  · exact hfree
+  · intro b1 delta ofs k p hmap hp hinside
+    have hperm := perm_free_list l m1 m1' b1 ofs k p hlist hp
+    rcases hperm with ⟨hp1, houtside⟩
+    rcases hside b1 delta ofs k p hmap hp1 hinside with
+      ⟨lo1, hi1, hmem, hlo1, hhi1⟩
+    exact houtside lo1 hi1 hmem ⟨hlo1, hhi1⟩
+
+end Mem
+
+end CompCert4Lean.Common.Memory
