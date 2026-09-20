@@ -9306,3 +9306,41 @@ end Mem
 
 end CompCert4Lean.Common.Memory
 
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+
+namespace Mem
+
+private theorem scc083_store_compatible
+    (chunk chunk' : memory_chunk) (m1 : mem) (b : block) (ofs : Z) (v : val) (m2 : mem)
+    (hsize : size_chunk chunk' = size_chunk chunk)
+    (htype : type_of_chunk chunk' = type_of_chunk chunk)
+    (halign : zLe (align_chunk chunk') (align_chunk chunk))
+    (hstore : store chunk m1 b ofs v = some m2) :
+    store chunk' m1 b ofs v = some m2 := by
+  cases chunk <;> cases chunk' <;>
+    simp [type_of_chunk, size_chunk, align_chunk,
+      ZArith.BinInt.Z.of_nat, intOfZ, zLe,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le] at hsize htype halign ⊢
+  all_goals
+    try (have hh := congrArg intOfZ hsize; simp only [intOfZ_zOfInt] at hh; omega)
+  all_goals
+    first
+    | exact hstore
+    | simpa only [store_bool_unsigned_8 m1 b ofs v, store_signed_unsigned_8 m1 b ofs v] using hstore
+    | simpa only [store_signed_unsigned_16 m1 b ofs v] using hstore
+
+theorem load_store_similar_2 : load_store_similar_2Statement := by
+  intro chunk m1 b ofs v m2 hstore chunk' hsize halign htype
+  have hstore' := scc083_store_compatible chunk chunk' m1 b ofs v m2 hsize htype halign hstore
+  exact load_store_same chunk' m1 b ofs v m2 hstore'
+
+end Mem
+
+end CompCert4Lean.Common.Memory

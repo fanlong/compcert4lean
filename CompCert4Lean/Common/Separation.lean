@@ -4179,3 +4179,36 @@ theorem external_call_parallel_rule
     b ofs p hcall hb hp
 
 end ExternalCallParallelProof
+
+
+private theorem scc085_store_rule_helper : store_ruleStatement := by
+  intro chunk m b ofs v spec1 spec P hpred hspec
+  rcases hpred with ⟨hc, hP, hdisj⟩
+  rcases hc with ⟨hbounds, hvalid, v0, hload, hspec1⟩
+  have hvalidW : Mem.valid_access m chunk b ofs Writable :=
+    Mem.valid_access_implies m chunk b ofs Freeable Writable hvalid
+      (perm_F_any Writable)
+  rcases Mem.valid_access_store m chunk b ofs v hvalidW with ⟨m', hstore⟩
+  refine ⟨m', hstore, ?_⟩
+  have hc' : (contains chunk b ofs spec).m_pred m' := by
+    refine ⟨hbounds, Mem.store_valid_access_1 chunk m b ofs v m' hstore
+      chunk b ofs Freeable hvalid, ?_⟩
+    exact ⟨CompCert4Lean.Common.Values.Val.load_result chunk v,
+      Mem.load_store_same chunk m b ofs v m' hstore, hspec⟩
+  have hunch : Mem.unchanged_on P.m_footprint m m' :=
+    scc085_store_unchanged_on P chunk m b ofs v m' hstore (by
+      intro i hi hPi
+      exact hdisj b i ⟨rfl, hi.1, hi.2⟩ hPi)
+  refine ⟨hc', P.m_invar m m' hP hunch, ?_⟩
+  intro b' ofs' hfoot hPfoot
+  exact hdisj b' ofs' hfoot hPfoot
+
+theorem storev_rule : storev_ruleStatement := by
+  intro chunk m b ofs v spec1 spec P hpred hspec
+  have hbounds := contains_no_overflow spec1 m chunk b ofs hpred.1
+  have hrepr := scc085_ptrofs_unsigned_repr ofs hbounds
+  obtain ⟨m', hstore, htarget⟩ :=
+    scc085_store_rule_helper chunk m b ofs v spec1 spec P hpred hspec
+  refine ⟨m', ?_, htarget⟩
+  rw [Mem.storev, hrepr]
+  exact hstore

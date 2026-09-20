@@ -6596,3 +6596,49 @@ theorem error_lt_ulp :
         (Exact.ulp ctx magnitude beta fexp x)
       rw [habs]
       exact hmain
+
+
+theorem round_DN_plus_eps_pos :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      round_DN_plus_eps_posStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x hxle hformat eps heps
+  by_cases hxzero : x = Exact.R0 ctx
+  · subst x
+    by_cases hepszero : eps = Exact.R0 ctx
+    · subst eps
+      have hround0 := CompCert4Lean.Flocq.Core.Generic_fmt.round_0
+        ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx)
+        (pg_sllt_valid_rnd_DN ctx)
+      change Exact.round ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx)
+        (Exact.Rplus ctx (Exact.R0 ctx) (Exact.R0 ctx)) = Exact.R0 ctx
+      have hzeroadd : Exact.Rplus ctx (Exact.R0 ctx) (Exact.R0 ctx) =
+          Exact.R0 ctx := by
+        change ctx.spec.add ctx.spec.zero ctx.spec.zero = ctx.spec.zero
+        exact ctx.certificate.orderedField.zero_add _
+      rw [hzeroadd]
+      exact hround0
+    · have hepspos : Exact.Rlt ctx (Exact.R0 ctx) eps := by
+        rcases ctx.certificate.total_order (Exact.R0 ctx) eps with h | h
+        · exact h.resolve_right (fun heq => hepszero heq.symm)
+        · exact False.elim
+            (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h).2
+              heps.1)
+      have hsmall := pg_sllt_round_DN_zero_small ctx magnitude beta fexp
+        hvalid eps hepspos heps.2
+      change Exact.round ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx)
+        (Exact.Rplus ctx (Exact.R0 ctx) eps) = Exact.R0 ctx
+      have hzeroadd : Exact.Rplus ctx (Exact.R0 ctx) eps = eps := by
+        change ctx.spec.add ctx.spec.zero eps = eps
+        exact ctx.certificate.orderedField.zero_add _
+      rw [hzeroadd]
+      exact hsmall
+  · have hxpos : Exact.Rlt ctx (Exact.R0 ctx) x := by
+      rcases ctx.certificate.total_order (Exact.R0 ctx) x with h | h
+      · exact h.resolve_right (fun heq => hxzero heq.symm)
+      · exact False.elim
+          (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h).2 hxle)
+    exact pg_sllt_round_DN_plus_eps_strict ctx magnitude beta fexp x hxpos
+      hformat eps heps

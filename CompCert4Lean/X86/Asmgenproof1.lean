@@ -4466,3 +4466,113 @@ theorem testcond_for_float_comparison_correct :
         CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Asmgenproof0
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Asm
+open CompCert4Lean.X86.Asmgen
+open CompCert4Lean.X86.Op
+
+private theorem addressing32_scale_aux (v : val) (sc : Z) :
+    Val.lessdef (Val.mul v (.Vint (CompCert4Lean.Lib.Integers.Int.repr sc)))
+      (match CompCert4Lean.Lib.Coqlib.zeq sc (zOfNat 1) with
+       | .left _ => v
+       | .right _ => Val.mul v (.Vint (CompCert4Lean.Lib.Integers.Int.repr sc))) := by
+  cases CompCert4Lean.Lib.Coqlib.zeq sc (zOfNat 1) with
+  | left h =>
+      subst sc
+      cases v with
+      | Vint n =>
+          change Val.lessdef (.Vint (CompCert4Lean.Lib.Integers.Int.mul n
+            CompCert4Lean.Lib.Integers.Int.one)) (.Vint n)
+          rw [CompCert4Lean.Lib.Integers.Int.mul_one_proof]
+          exact Val.lessdef_refl _
+      | _ => exact Val.lessdef_undef _
+  | right _ => exact Val.lessdef_refl _
+
+theorem transl_addressing_mode_32_correct : transl_addressing_mode_32_correctStatement := by
+  intro ge addr args am rs v htrans heval
+  cases addr with
+  | Aindexed ofs =>
+      rcases args with _ | ⟨a, _ | ⟨b, tail⟩⟩ <;>
+        simp [eval_addressing32] at heval
+      obtain ⟨r, hr, hm⟩ := bind_inversion _ _ _ _ _ htrans
+      have hreg := ireg_of_eq a r hr
+      change res.OK (.Addrmode (some r) none (.inl ofs)) = .OK am at hm
+      cases hm
+      rw [hreg] at heval
+      subst v
+      change Val.lessdef _ (Val.add (rs (.IR r))
+        (.Vint (CompCert4Lean.Lib.Integers.Int.add
+          CompCert4Lean.Lib.Integers.Int.zero
+          (CompCert4Lean.Lib.Integers.Int.repr ofs))))
+      rw [CompCert4Lean.Lib.Integers.Int.add_zero_l_proof]
+      exact Val.lessdef_refl _
+  | Aindexed2 ofs =>
+      rcases args with _ | ⟨a, _ | ⟨b, _ | ⟨c, tail⟩⟩⟩ <;>
+        simp [eval_addressing32] at heval
+      obtain ⟨r1, hr1, hm⟩ := bind_inversion _ _ _ _ _ htrans
+      obtain ⟨r2, hr2, hm⟩ := bind_inversion _ _ _ _ _ hm
+      have hreg1 := ireg_of_eq a r1 hr1
+      have hreg2 := ireg_of_eq b r2 hr2
+      change res.OK (.Addrmode (some r1) (some (r2, zOfNat 1)) (.inl ofs)) = .OK am at hm
+      cases hm
+      rw [hreg1, hreg2] at heval
+      subst v
+      change Val.lessdef (Val.add (Val.add (rs (.IR r1)) (rs (.IR r2)))
+          (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs)))
+        (Val.add (rs (.IR r1)) (Val.add (rs (.IR r2))
+          (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs))))
+      rw [Val.add_assoc]
+      exact Val.lessdef_refl _
+  | Ascaled sc ofs =>
+      rcases args with _ | ⟨a, _ | ⟨b, tail⟩⟩ <;>
+        simp [eval_addressing32] at heval
+      obtain ⟨r, hr, hm⟩ := bind_inversion _ _ _ _ _ htrans
+      have hreg := ireg_of_eq a r hr
+      change res.OK (.Addrmode none (some (r, sc)) (.inl ofs)) = .OK am at hm
+      cases hm
+      rw [hreg] at heval
+      subst v
+      change Val.lessdef _ (Val.add (.Vint CompCert4Lean.Lib.Integers.Int.zero)
+        (Val.add
+          (match CompCert4Lean.Lib.Coqlib.zeq sc (zOfNat 1) with
+           | .left _ => rs (.IR r)
+           | .right _ => Val.mul (rs (.IR r)) (.Vint (CompCert4Lean.Lib.Integers.Int.repr sc)))
+          (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs))))
+      rw [Val.add_permut]
+      change Val.lessdef _ (Val.add _ (.Vint
+        (CompCert4Lean.Lib.Integers.Int.add CompCert4Lean.Lib.Integers.Int.zero
+          (CompCert4Lean.Lib.Integers.Int.repr ofs))))
+      rw [CompCert4Lean.Lib.Integers.Int.add_zero_l_proof]
+      exact Val.add_lessdef _ _ _ _ (addressing32_scale_aux _ _) (Val.lessdef_refl _)
+  | Aindexed2scaled sc ofs =>
+      rcases args with _ | ⟨a, _ | ⟨b, _ | ⟨c, tail⟩⟩⟩ <;>
+        simp [eval_addressing32] at heval
+      obtain ⟨r1, hr1, hm⟩ := bind_inversion _ _ _ _ _ htrans
+      obtain ⟨r2, hr2, hm⟩ := bind_inversion _ _ _ _ _ hm
+      have hreg1 := ireg_of_eq a r1 hr1
+      have hreg2 := ireg_of_eq b r2 hr2
+      change res.OK (.Addrmode (some r1) (some (r2, sc)) (.inl ofs)) = .OK am at hm
+      cases hm
+      rw [hreg1, hreg2] at heval
+      subst v
+      apply Val.add_lessdef _ _ _ _ (Val.lessdef_refl _)
+      exact Val.add_lessdef _ _ _ _ (addressing32_scale_aux _ _) (Val.lessdef_refl _)
+  | Aglobal id ofs =>
+      cases args <;> simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+  | Abased id ofs =>
+      rcases args with _ | ⟨a, _ | ⟨b, tail⟩⟩ <;>
+        simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+  | Abasedscaled sc id ofs =>
+      rcases args with _ | ⟨a, _ | ⟨b, tail⟩⟩ <;>
+        simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+  | Ainstack ofs =>
+      cases args <;> simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+
+end CompCert4Lean.X86.Asmgenproof1

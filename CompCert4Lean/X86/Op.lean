@@ -6881,3 +6881,10 @@ theorem type_of_operation_sound
               · trivial
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+theorem eval_condition_inj : eval_condition_injStatement :=
+  suffix_operation_condition_inj
+
+end CompCert4Lean.X86.Op

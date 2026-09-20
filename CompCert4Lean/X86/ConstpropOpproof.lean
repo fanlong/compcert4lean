@@ -4351,3 +4351,264 @@ theorem addr_strength_reduction_64_generic_correct :
   exact cp64_generic
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+open CompCert4Lean.Lib.Integers
+
+private theorem worker_int_eq_true
+    (x y : CompCert4Lean.Lib.Integers.Int.int)
+    (h : CompCert4Lean.Lib.Integers.Int.eq x y = true) : x = y := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext
+  have hd : decide (x.intval = y.intval) = true := by
+    simpa [CompCert4Lean.Lib.Integers.Int.eq,
+      CompCert4Lean.Lib.Integers.WordCore.eq] using h
+  exact of_decide_eq_true hd
+
+private theorem worker_cmp_value
+    (bc : block_classification) (ae : AE.t) (e : regset)
+    (hem : ematch bc e ae) (r : reg)
+    (h : vincl (AE.get r ae) (Uns Ptop (zOfNat 1)) = true) :
+    Regmap.get r e = .Vundef ∨
+      Regmap.get r e = .Vint Int.zero ∨
+      Regmap.get r e = .Vint Int.one := by
+  have hmv := vmatch_ge bc (Regmap.get r e) (Uns Ptop (zOfNat 1))
+    (AE.get r ae) (vincl_ge _ _ h) (hem r)
+  exact vmatch_Uns_1 bc Ptop _ hmv
+
+private theorem worker_cmp_eq_move
+    (u : Bool) (w : val) (m : mem)
+    (hw : w = .Vundef ∨ w = .Vint Int.zero ∨ w = .Vint Int.one) :
+    Val.lessdef
+      (Val.of_optbool
+        (eval_condition
+          (if u then .Ccompuimm .Ceq Int.one else .Ccompimm .Ceq Int.one)
+          [w] m)) w := by
+  have hc01 : Int.cmp .Ceq Int.zero Int.one = false := by decide
+  have hc11 : Int.cmp .Ceq Int.one Int.one = true := by decide
+  have hcu01 : Int.cmpu .Ceq Int.zero Int.one = false := by decide
+  have hcu11 : Int.cmpu .Ceq Int.one Int.one = true := by decide
+  rcases hw with h | h | h
+  · subst w
+    cases u <;>
+      simpa [eval_condition, Val.cmp_bool, Val.cmpu_bool, Val.of_optbool] using
+        (Val.lessdef_refl (.Vundef))
+  · subst w
+    cases u <;>
+      simpa [eval_condition, Val.cmp_bool, Val.cmpu_bool, Val.of_optbool,
+        Vfalse, hc01, hcu01] using (Val.lessdef_refl (.Vint Int.zero))
+  · subst w
+    cases u <;>
+      simpa [eval_condition, Val.cmp_bool, Val.cmpu_bool, Val.of_optbool,
+        Vtrue, hc11, hcu11] using (Val.lessdef_refl (.Vint Int.one))
+
+private theorem worker_cmp_ne_move
+    (u : Bool) (w : val) (m : mem)
+    (hw : w = .Vundef ∨ w = .Vint Int.zero ∨ w = .Vint Int.one) :
+    Val.lessdef
+      (Val.of_optbool
+        (eval_condition
+          (if u then .Ccompuimm .Cne Int.zero else .Ccompimm .Cne Int.zero)
+          [w] m)) w := by
+  have hc00 : Int.cmp .Cne Int.zero Int.zero = false := by decide
+  have hc10 : Int.cmp .Cne Int.one Int.zero = true := by decide
+  have hcu00 : Int.cmpu .Cne Int.zero Int.zero = false := by decide
+  have hcu10 : Int.cmpu .Cne Int.one Int.zero = true := by decide
+  rcases hw with h | h | h
+  · subst w
+    cases u <;>
+      simpa [eval_condition, Val.cmp_bool, Val.cmpu_bool, Val.of_optbool] using
+        (Val.lessdef_refl (.Vundef))
+  · subst w
+    cases u <;>
+      simpa [eval_condition, Val.cmp_bool, Val.cmpu_bool, Val.of_optbool,
+        Vfalse, hc00, hcu00] using (Val.lessdef_refl (.Vint Int.zero))
+  · subst w
+    cases u <;>
+      simpa [eval_condition, Val.cmp_bool, Val.cmpu_bool, Val.of_optbool,
+        Vtrue, hc10, hcu10] using (Val.lessdef_refl (.Vint Int.one))
+
+private theorem worker_cmp_eq_xor
+    (u : Bool) (w : val) (m : mem)
+    (hw : w = .Vundef ∨ w = .Vint Int.zero ∨ w = .Vint Int.one) :
+    Val.lessdef
+      (Val.of_optbool
+        (eval_condition
+          (if u then .Ccompuimm .Ceq Int.zero else .Ccompimm .Ceq Int.zero)
+          [w] m)) (Val.xor w (.Vint Int.one)) := by
+  have hc00 : Int.cmp .Ceq Int.zero Int.zero = true := by decide
+  have hc10 : Int.cmp .Ceq Int.one Int.zero = false := by decide
+  have hcu00 : Int.cmpu .Ceq Int.zero Int.zero = true := by decide
+  have hcu10 : Int.cmpu .Ceq Int.one Int.zero = false := by decide
+  have hx01 : Int.xor Int.zero Int.one = Int.one := by decide
+  have hx11 : Int.xor Int.one Int.one = Int.zero := by decide
+  rcases hw with h | h | h
+  · subst w
+    cases u <;>
+      simpa [eval_condition, Val.cmp_bool, Val.cmpu_bool, Val.of_optbool, Val.xor] using
+        (Val.lessdef_refl (.Vundef))
+  · subst w
+    cases u <;>
+      simpa [eval_condition, Val.cmp_bool, Val.cmpu_bool, Val.of_optbool,
+        Vtrue, Vfalse, Val.xor, hc00, hcu00, hx01] using
+        (Val.lessdef_refl (.Vint Int.one))
+  · subst w
+    cases u <;>
+      simpa [eval_condition, Val.cmp_bool, Val.cmpu_bool, Val.of_optbool,
+        Vfalse, Val.xor, hc10, hcu10, hx11] using
+        (Val.lessdef_refl (.Vint Int.zero))
+
+private theorem worker_cmp_ne_xor
+    (u : Bool) (w : val) (m : mem)
+    (hw : w = .Vundef ∨ w = .Vint Int.zero ∨ w = .Vint Int.one) :
+    Val.lessdef
+      (Val.of_optbool
+        (eval_condition
+          (if u then .Ccompuimm .Cne Int.one else .Ccompimm .Cne Int.one)
+          [w] m)) (Val.xor w (.Vint Int.one)) := by
+  have hc01 : Int.cmp .Cne Int.zero Int.one = true := by decide
+  have hc11 : Int.cmp .Cne Int.one Int.one = false := by decide
+  have hcu01 : Int.cmpu .Cne Int.zero Int.one = true := by decide
+  have hcu11 : Int.cmpu .Cne Int.one Int.one = false := by decide
+  have hx01 : Int.xor Int.zero Int.one = Int.one := by decide
+  have hx11 : Int.xor Int.one Int.one = Int.zero := by decide
+  rcases hw with h | h | h
+  · subst w
+    cases u <;>
+      simpa [eval_condition, Val.cmp_bool, Val.cmpu_bool, Val.of_optbool, Val.xor] using
+        (Val.lessdef_refl (.Vundef))
+  · subst w
+    cases u <;>
+      simpa [eval_condition, Val.cmp_bool, Val.cmpu_bool, Val.of_optbool,
+        Vtrue, Val.xor, hc01, hcu01, hx01] using
+        (Val.lessdef_refl (.Vint Int.one))
+  · subst w
+    cases u <;>
+      simpa [eval_condition, Val.cmp_bool, Val.cmpu_bool, Val.of_optbool,
+        Vfalse, Val.xor, hc11, hcu11, hx11] using
+        (Val.lessdef_refl (.Vint Int.zero))
+
+end CompCert4Lean.X86.ConstpropOpproof
+
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.X86.ConstpropOp
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Lib.Integers
+
+ theorem make_cmp_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @make_cmp_correctStatement binary64_certificate binary32_certificate := by
+  intro bc ge sp ae e m hem c args vl hvl
+  unfold make_cmp
+  cases hmatch : make_cmp_match c args vl with
+  | make_cmp_case1 n r1 v1 =>
+      unfold make_cmp_imm_eq
+      simp only [make_cmp_match, make_cmp_case1]
+      split
+      · rename_i h1
+        have hp := Bool.and_eq_true_iff.mp h1
+        have hn : n = Int.one := worker_int_eq_true n Int.one hp.1
+        subst n
+        have hv1 : v1 = AE.get r1 ae := (List.cons.inj hvl).1
+        have hy := worker_cmp_value bc ae e hem r1 (by simpa [hv1] using hp.2)
+        refine ⟨Regmap.get r1 e, rfl, ?_⟩
+        simpa [reg_values] using (worker_cmp_eq_move false (Regmap.get r1 e) m hy)
+      · rename_i h1
+        split
+        · rename_i h0
+          have hp := Bool.and_eq_true_iff.mp h0
+          have hn : n = Int.zero := worker_int_eq_true n Int.zero hp.1
+          subst n
+          have hv1 : v1 = AE.get r1 ae := (List.cons.inj hvl).1
+          have hy := worker_cmp_value bc ae e hem r1 (by simpa [hv1] using hp.2)
+          refine ⟨Val.xor (Regmap.get r1 e) (.Vint Int.one), rfl, ?_⟩
+          simpa [reg_values] using (worker_cmp_eq_xor false (Regmap.get r1 e) m hy)
+        · exact make_cmp_base_correct bc ge sp ae e m hem (.Ccompimm .Ceq n) [r1] [v1] hvl
+  | make_cmp_case2 n r1 v1 =>
+      unfold make_cmp_imm_ne
+      simp only [make_cmp_match, make_cmp_case2]
+      split
+      · rename_i h1
+        have hp := Bool.and_eq_true_iff.mp h1
+        have hn : n = Int.zero := worker_int_eq_true n Int.zero hp.1
+        subst n
+        have hv1 : v1 = AE.get r1 ae := (List.cons.inj hvl).1
+        have hy := worker_cmp_value bc ae e hem r1 (by simpa [hv1] using hp.2)
+        refine ⟨Regmap.get r1 e, rfl, ?_⟩
+        simpa [reg_values] using (worker_cmp_ne_move false (Regmap.get r1 e) m hy)
+      · rename_i h1
+        split
+        · rename_i h0
+          have hp := Bool.and_eq_true_iff.mp h0
+          have hn : n = Int.one := worker_int_eq_true n Int.one hp.1
+          subst n
+          have hv1 : v1 = AE.get r1 ae := (List.cons.inj hvl).1
+          have hy := worker_cmp_value bc ae e hem r1 (by simpa [hv1] using hp.2)
+          refine ⟨Val.xor (Regmap.get r1 e) (.Vint Int.one), rfl, ?_⟩
+          simpa [reg_values] using (worker_cmp_ne_xor false (Regmap.get r1 e) m hy)
+        · exact make_cmp_base_correct bc ge sp ae e m hem (.Ccompimm .Cne n) [r1] [v1] hvl
+  | make_cmp_case3 n r1 v1 =>
+      unfold make_cmp_imm_eq
+      simp only [make_cmp_match, make_cmp_case3]
+      split
+      · rename_i h1
+        have hp := Bool.and_eq_true_iff.mp h1
+        have hn : n = Int.one := worker_int_eq_true n Int.one hp.1
+        subst n
+        have hv1 : v1 = AE.get r1 ae := (List.cons.inj hvl).1
+        have hy := worker_cmp_value bc ae e hem r1 (by simpa [hv1] using hp.2)
+        refine ⟨Regmap.get r1 e, rfl, ?_⟩
+        simpa [reg_values] using (worker_cmp_eq_move true (Regmap.get r1 e) m hy)
+      · rename_i h1
+        split
+        · rename_i h0
+          have hp := Bool.and_eq_true_iff.mp h0
+          have hn : n = Int.zero := worker_int_eq_true n Int.zero hp.1
+          subst n
+          have hv1 : v1 = AE.get r1 ae := (List.cons.inj hvl).1
+          have hy := worker_cmp_value bc ae e hem r1 (by simpa [hv1] using hp.2)
+          refine ⟨Val.xor (Regmap.get r1 e) (.Vint Int.one), rfl, ?_⟩
+          simpa [reg_values] using (worker_cmp_eq_xor true (Regmap.get r1 e) m hy)
+        · exact make_cmp_base_correct bc ge sp ae e m hem (.Ccompuimm .Ceq n) [r1] [v1] hvl
+  | make_cmp_case4 n r1 v1 =>
+      unfold make_cmp_imm_ne
+      simp only [make_cmp_match, make_cmp_case4]
+      split
+      · rename_i h1
+        have hp := Bool.and_eq_true_iff.mp h1
+        have hn : n = Int.zero := worker_int_eq_true n Int.zero hp.1
+        subst n
+        have hv1 : v1 = AE.get r1 ae := (List.cons.inj hvl).1
+        have hy := worker_cmp_value bc ae e hem r1 (by simpa [hv1] using hp.2)
+        refine ⟨Regmap.get r1 e, rfl, ?_⟩
+        simpa [reg_values] using (worker_cmp_ne_move true (Regmap.get r1 e) m hy)
+      · rename_i h1
+        split
+        · rename_i h0
+          have hp := Bool.and_eq_true_iff.mp h0
+          have hn : n = Int.one := worker_int_eq_true n Int.one hp.1
+          subst n
+          have hv1 : v1 = AE.get r1 ae := (List.cons.inj hvl).1
+          have hy := worker_cmp_value bc ae e hem r1 (by simpa [hv1] using hp.2)
+          refine ⟨Val.xor (Regmap.get r1 e) (.Vint Int.one), rfl, ?_⟩
+          simpa [reg_values] using (worker_cmp_ne_xor true (Regmap.get r1 e) m hy)
+        · exact make_cmp_base_correct bc ge sp ae e m hem (.Ccompuimm .Cne n) [r1] [v1] hvl
+  | make_cmp_default c args vl =>
+      exact make_cmp_base_correct bc ge sp ae e m hem c args vl hvl
+
+end CompCert4Lean.X86.ConstpropOpproof

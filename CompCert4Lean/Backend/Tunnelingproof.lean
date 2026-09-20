@@ -4461,3 +4461,34 @@ theorem tunnel_step_correct
                     match_states.block _ _ _ _ _ _ _ _ _ STK LS MEM⟩
 
 end CompCert4Lean.Backend.Tunnelingproof
+
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Flocq.IEEE754.Binary (BinaryNormalizeCertificate)
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Common.Smallstep
+
+theorem transf_program_correct
+    [binary64_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    transf_program_correctStatement := by
+  intro cfg xi prog tprog TRANSL
+  refine CompCert4Lean.Common.Smallstep.forward_simulation_opt
+    (L1 := semantics (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg xi prog)
+    (L2 := semantics (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg xi tprog)
+    ?_ match_states ?_ ?_ measure ?_
+  · intro id
+    exact (senv_preserved prog tprog TRANSL).2.1 id
+  · intro s1 hinit
+    exact transf_initial_states prog tprog TRANSL s1 hinit
+  · intro s1 s2 r hmatch hfinal
+    exact transf_final_states s1 s2 r hmatch hfinal
+  · exact tunnel_step_correct cfg xi prog tprog TRANSL
+
+end CompCert4Lean.Backend.Tunnelingproof
