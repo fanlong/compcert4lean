@@ -10423,3 +10423,10 @@ theorem ror_rol_neg_proof : ror_rol_neg := by
           exact (pg_suffix_rol_testbit_nat x (WordCore.neg y) n hk).symm
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+theorem modulus_power_proof : modulus_power := by
+  rfl
+
+end CompCert4Lean.Lib.Integers.Int64

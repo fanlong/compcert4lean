@@ -9506,3 +9506,243 @@ theorem alloc_left_unmapped_inject : alloc_left_unmapped_injectStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+
+namespace Mem
+
+theorem alloc_left_mapped_inject : alloc_left_mapped_injectStatement := by
+  intro f m1 m2 lo hi m1' b1 b2 delta hinj halloc hvalid hdelta hperm htarget haligned hno
+  have hf : f b1 = none := hinj.mi_freeblocks b1
+    (fresh_block_alloc m1 lo hi m1' b1 halloc)
+  let f' : meminj := fun b =>
+    match eq_block b b1 with
+    | .left _ => some (b2, delta)
+    | .right _ => f b
+  have hf'new : f' b1 = some (b2, delta) := by
+    dsimp [f']
+    cases heq : eq_block b1 b1 with
+    | left _ => rfl
+    | right hne => exact False.elim (hne rfl)
+  have hf'neq : ∀ b, b ≠ b1 → f' b = f b := by
+    intro b hb
+    dsimp [f']
+    cases heq : eq_block b b1 with
+    | left heq' => exact False.elim (hb heq')
+    | right _ => rfl
+  have hincr : inject_incr f f' := by
+    intro b b' d hmap
+    by_cases hb : b = b1
+    · subst b
+      rw [hf] at hmap
+      cases hmap
+    · rw [hf'neq b hb]
+      exact hmap
+  have hmap_old : ∀ b b' d, b ≠ b1 →
+      f' b = some (b', d) → f b = some (b', d) := by
+    intro b b' d hb hmap
+    rw [hf'neq b hb] at hmap
+    exact hmap
+  have hmem : mem_inj f' m1 m2 := by
+    refine { mi_perm := ?_, mi_align := ?_, mi_memval := ?_ }
+    · intro b b' d ofs k p hmap hp
+      cases heq : eq_block b b1 with
+      | left hbeq =>
+          have hvb := perm_valid_block m1 b ofs k p hp
+          exact (fresh_block_alloc m1 lo hi m1' b1 halloc
+            (by simpa [hbeq] using hvb)).elim
+      | right hneq =>
+          apply hinj.mi_inj.mi_perm b b' d ofs k p (hmap_old b b' d hneq hmap)
+          exact hp
+    · intro b b' d chunk ofs p hmap hrange
+      cases heq : eq_block b b1 with
+      | left hbeq =>
+          have hvb := perm_valid_block m1 b ofs Max p (hrange ofs
+            ⟨by change intOfZ ofs ≤ intOfZ ofs; omega, by
+              have hs := size_chunk_pos chunk
+              change intOfZ ofs < intOfZ (zAdd ofs (size_chunk chunk))
+              rw [intOfZ_zadd_mem]
+              change (0 : Int) < intOfZ (size_chunk chunk) at hs
+              omega⟩)
+          exact (fresh_block_alloc m1 lo hi m1' b1 halloc
+            (by simpa [hbeq] using hvb)).elim
+      | right hneq =>
+          apply hinj.mi_inj.mi_align b b' d chunk ofs p (hmap_old b b' d hneq hmap)
+          exact hrange
+    · intro b ofs b' d hmap hp
+      cases heq : eq_block b b1 with
+      | left hbeq =>
+          have hvb := perm_valid_block m1 b ofs Cur Readable hp
+          exact (fresh_block_alloc m1 lo hi m1' b1 halloc
+            (by simpa [hbeq] using hvb)).elim
+      | right hneq =>
+          exact memval_inject_incr f f' _ _
+            (hinj.mi_inj.mi_memval b ofs b' d (hmap_old b b' d hneq hmap) hp) hincr
+  have hinj' : inject f' m1' m2 := by
+    refine {
+      mi_inj := alloc_left_mapped_inj f' m1 m2 lo hi m1' b1 b2 delta
+        hmem halloc hvalid haligned htarget hf'new
+      mi_freeblocks := ?_
+      mi_mappedblocks := ?_
+      mi_no_overlap := ?_
+      mi_representable := ?_
+      mi_perm_inv := ?_ }
+    · intro b hnot
+      by_cases hb : b = b1
+      · subst b
+        apply False.elim
+        apply hnot
+        exact valid_new_block m1 lo hi m1' b1 halloc
+      · rw [hf'neq b hb]
+        apply hinj.mi_freeblocks b
+        intro hvb
+        apply hnot
+        exact valid_block_alloc m1 lo hi m1' b1 halloc b hvb
+    · intro b b' d hmap
+      cases heq : eq_block b b1 with
+      | left hbeq =>
+          subst b
+          have hp : (b', d) = (b2, delta) :=
+            Option.some.inj (hmap.symm.trans hf'new)
+          cases hp
+          exact hvalid
+      | right hneq => exact hinj.mi_mappedblocks b b' d (hmap_old b b' d hneq hmap)
+    · intro x x' d y y' d' ofs ofs' hne hmapx hmapy hpx hpy
+      by_cases hx : x = b1
+      · subst x
+        have hp : (x', d) = (b2, delta) := Option.some.inj (hmapx.symm.trans hf'new)
+        cases hp
+        by_cases hy : y = b1
+        · subst y
+          have hp' : (y', d') = (b2, delta) := Option.some.inj (hmapy.symm.trans hf'new)
+          cases hp'
+          exact False.elim (hne rfl)
+        · have hpy0 := perm_alloc_4 m1 lo hi m1' b1 halloc y ofs' Max Memtype.Nonempty hpy hy
+          have hofs := perm_alloc_3 m1 lo hi m1' b1 halloc ofs Max Memtype.Nonempty hpx
+          have hm := hmap_old y y' d' hy hmapy
+          by_cases hdst : y' = b2
+          · subst y'
+            apply Or.inr
+            intro heq
+            apply hno y d' ofs' Max Memtype.Nonempty hm hpy0
+            constructor
+            · change intOfZ (zAdd lo delta) ≤ intOfZ (zAdd ofs' d')
+              have hh := congrArg intOfZ heq
+              simp only [intOfZ_zadd_mem] at hh
+              change intOfZ lo ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ hi at hofs
+              simp only [intOfZ_zadd_mem]
+              omega
+            · change intOfZ (zAdd ofs' d') < intOfZ (zAdd hi delta)
+              have hh := congrArg intOfZ heq
+              simp only [intOfZ_zadd_mem] at hh
+              change intOfZ lo ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ hi at hofs
+              simp only [intOfZ_zadd_mem]
+              omega
+          · exact Or.inl (fun h => hdst h.symm)
+      · have hpx0 := perm_alloc_4 m1 lo hi m1' b1 halloc x ofs Max Memtype.Nonempty hpx hx
+        by_cases hy : y = b1
+        · subst y
+          have hp : (y', d') = (b2, delta) := Option.some.inj (hmapy.symm.trans hf'new)
+          cases hp
+          have hofs := perm_alloc_3 m1 lo hi m1' b1 halloc ofs' Max Memtype.Nonempty hpy
+          have hm := hmap_old x x' d hx hmapx
+          by_cases hdst : x' = b2
+          · subst x'
+            apply Or.inr
+            intro heq
+            apply hno x d ofs Max Memtype.Nonempty hm hpx0
+            constructor
+            · change intOfZ (zAdd lo delta) ≤ intOfZ (zAdd ofs d)
+              have hh := congrArg intOfZ heq
+              simp only [intOfZ_zadd_mem] at hh
+              change intOfZ lo ≤ intOfZ ofs' ∧ intOfZ ofs' < intOfZ hi at hofs
+              simp only [intOfZ_zadd_mem]
+              omega
+            · change intOfZ (zAdd ofs d) < intOfZ (zAdd hi delta)
+              have hh := congrArg intOfZ heq
+              simp only [intOfZ_zadd_mem] at hh
+              change intOfZ lo ≤ intOfZ ofs' ∧ intOfZ ofs' < intOfZ hi at hofs
+              simp only [intOfZ_zadd_mem]
+              omega
+          · exact Or.inl hdst
+        · exact hinj.mi_no_overlap x x' d y y' d' ofs ofs' hne
+            (hmap_old x x' d hx hmapx) (hmap_old y y' d' hy hmapy) hpx0
+            (perm_alloc_4 m1 lo hi m1' b1 halloc y ofs' Max Memtype.Nonempty hpy hy)
+    · intro b b' d ofs hmap hp
+      by_cases hb : b = b1
+      · subst b
+        have hpair : (b', d) = (b2, delta) := Option.some.inj (hmap.symm.trans hf'new)
+        cases hpair
+        have hu := scc083_ptrofs_unsigned_range ofs
+        refine ⟨hdelta.1, ?_, ?_⟩
+        · have hu0 := hu.1
+          have hd0 := hdelta.1
+          change (0 : Int) ≤ intOfZ (Ptrofs.unsigned ofs) at hu0
+          change (0 : Int) ≤ intOfZ delta at hd0
+          change (0 : Int) ≤ intOfZ (zAdd (Ptrofs.unsigned ofs) delta)
+          rw [intOfZ_zadd_mem]
+          omega
+        · by_cases hd : delta = z0
+          · have huMax := hu.2
+            change intOfZ (Ptrofs.unsigned ofs) ≤ intOfZ Ptrofs.max_unsigned at huMax
+            change intOfZ (zAdd (Ptrofs.unsigned ofs) delta) ≤ intOfZ Ptrofs.max_unsigned
+            rw [hd, intOfZ_zadd_mem]
+            change intOfZ (Ptrofs.unsigned ofs) + 0 ≤ intOfZ Ptrofs.max_unsigned
+            omega
+          · rcases hp with hp | hp
+            · have hr := perm_alloc_3 m1 lo hi m1' b1 halloc
+                (Ptrofs.unsigned ofs) Max Memtype.Nonempty hp
+              have ht := htarget (Ptrofs.unsigned ofs) Max Memtype.Nonempty hr
+              have hbounds := ((hperm _ Max Memtype.Nonempty ht).resolve_left hd).2
+              change intOfZ (zAdd (Ptrofs.unsigned ofs) delta) ≤ intOfZ Ptrofs.max_unsigned
+              change intOfZ (zAdd (Ptrofs.unsigned ofs) delta) < intOfZ Ptrofs.max_unsigned at hbounds
+              omega
+            · have hr := perm_alloc_3 m1 lo hi m1' b1 halloc
+                (zSub (Ptrofs.unsigned ofs) z1) Max Memtype.Nonempty hp
+              have ht := htarget (zSub (Ptrofs.unsigned ofs) z1) Max Memtype.Nonempty hr
+              have hbounds := ((hperm _ Max Memtype.Nonempty ht).resolve_left hd).2
+              change intOfZ (zAdd (Ptrofs.unsigned ofs) delta) ≤ intOfZ Ptrofs.max_unsigned
+              change intOfZ (zAdd (zSub (Ptrofs.unsigned ofs) z1) delta) <
+                intOfZ Ptrofs.max_unsigned at hbounds
+              simp only [intOfZ_zadd_mem, ZArith.BinInt.Z.sub, intOfZ_zOfInt] at hbounds ⊢
+              change intOfZ (Ptrofs.unsigned ofs) - 1 + intOfZ delta <
+                intOfZ Ptrofs.max_unsigned at hbounds
+              omega
+      · apply hinj.mi_representable b b' d ofs (hmap_old b b' d hb hmap)
+        rcases hp with hp | hp
+        · exact Or.inl (perm_alloc_4 m1 lo hi m1' b1 halloc b
+            (Ptrofs.unsigned ofs) Max Memtype.Nonempty hp hb)
+        · exact Or.inr (perm_alloc_4 m1 lo hi m1' b1 halloc b
+            (zSub (Ptrofs.unsigned ofs) z1) Max Memtype.Nonempty hp hb)
+    · intro b ofs b' d k p hmap hp
+      by_cases hb : b = b1
+      · subst b
+        have hpair : (b', d) = (b2, delta) := Option.some.inj (hmap.symm.trans hf'new)
+        cases hpair
+        by_cases hr : zLe lo ofs ∧ zLt ofs hi
+        · exact Or.inl (perm_implies m1' b1 ofs k Freeable p
+            (perm_alloc_2 m1 lo hi m1' b1 halloc ofs k hr) (perm_F_any p))
+        · right
+          intro hs
+          apply hr
+          exact perm_alloc_3 m1 lo hi m1' b1 halloc ofs Max Memtype.Nonempty hs
+      · rcases hinj.mi_perm_inv b ofs b' d k p
+          (hmap_old b b' d hb hmap) hp with hp | hp
+        · exact Or.inl (perm_alloc_1 m1 lo hi m1' b1 halloc b ofs k p hp)
+        · exact Or.inr (fun hs => hp (perm_alloc_4 m1 lo hi m1' b1 halloc
+            b ofs Max Memtype.Nonempty hs hb))
+  refine ⟨f', hinj', hincr, hf'new, ?_⟩
+  intro b hb
+  exact hf'neq b hb
+
+end Mem
+
+end CompCert4Lean.Common.Memory
