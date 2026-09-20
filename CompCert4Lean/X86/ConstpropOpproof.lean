@@ -4612,3 +4612,68 @@ open CompCert4Lean.Lib.Integers
       exact make_cmp_base_correct bc ge sp ae e m hem c args vl hvl
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+
+set_option maxHeartbeats 1000000 in
+theorem make_shrimm_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @make_shrimm_correctStatement binary64_certificate binary32_certificate := by
+  intro ge sp e m n r1 r2 h
+  dsimp [CompCert4Lean.X86.ConstpropOp.make_shrimm]
+  split <;> rename_i hzero
+  · have hn : n = CompCert4Lean.Lib.Integers.Int.zero := by
+      apply CompCert4Lean.Lib.Integers.WordCore.ext
+      have hd : decide (n.intval =
+          CompCert4Lean.Lib.Integers.Int.zero.intval) = true := by
+        simpa [CompCert4Lean.Lib.Integers.Int.eq,
+          CompCert4Lean.Lib.Integers.WordCore.eq] using hzero
+      exact of_decide_eq_true hd
+    subst n
+    refine ⟨CompCert4Lean.Backend.Registers.Regmap.get r1 e, ?_, ?_⟩
+    · rfl
+    · cases hr : CompCert4Lean.Backend.Registers.Regmap.get r1 e with
+      | Vundef =>
+          simp [CompCert4Lean.Common.Values.Val.shr]
+          exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+      | Vint i =>
+          change CompCert4Lean.Common.Values.Val.lessdef
+            (.Vint (CompCert4Lean.Lib.Integers.Int.shr i
+              CompCert4Lean.Lib.Integers.Int.zero)) (.Vint i)
+          rw [CompCert4Lean.Lib.Integers.Int.shr_zero_proof]
+          exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+      | Vlong i =>
+          simp [CompCert4Lean.Common.Values.Val.shr]
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vfloat f =>
+          simp [CompCert4Lean.Common.Values.Val.shr]
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vsingle f =>
+          simp [CompCert4Lean.Common.Values.Val.shr]
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vptr b ofs =>
+          simp [CompCert4Lean.Common.Values.Val.shr]
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+  · split <;> rename_i hlt
+    · refine ⟨CompCert4Lean.Common.Values.Val.shr
+        (CompCert4Lean.Backend.Registers.Regmap.get r1 e) (.Vint n), ?_⟩
+      constructor
+      · rfl
+      · exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+    · refine ⟨CompCert4Lean.Common.Values.Val.shr
+        (CompCert4Lean.Backend.Registers.Regmap.get r1 e)
+        (CompCert4Lean.Backend.Registers.Regmap.get r2 e), ?_⟩
+      constructor
+      · rfl
+      · rw [h]
+        exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+
+end CompCert4Lean.X86.ConstpropOpproof

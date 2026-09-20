@@ -5872,3 +5872,313 @@ theorem transl_expr_Ebuiltin_correct
   exact rtlgen_expr_builtin_case
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Backend.RTLgenspec
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+
+set_option maxHeartbeats 800000 in
+theorem transl_step_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_step_correctStatement := by
+  intro xi prog tprog hprog S1 t S2 hstep R1 hmatch
+  cases hmatch with
+  | match_state f s k sp e m tm cs tf ns rs map ncont nexits ngoto nret rret hw ts hf hk hm he =>
+    cases hstep with
+    | skipSequence f s k sp e m =>
+      cases ts
+      cases hk with
+      | tr_Kseq _ _ _ _ _ _ _ _ _ _ n hs hk =>
+        refine ⟨_, Or.inr ⟨star_refl _ _ _, ?_⟩, ?_⟩
+        · apply lt_state_intro; simp [size_stmt, size_cont]
+        · exact match_state f s k sp e m tm cs tf ns rs map n nexits ngoto nret rret hw hs hf hk hm he
+    | skipBlock f k sp e m =>
+      cases ts
+      cases hk with
+      | tr_Kblock _ _ _ _ nx _ _ _ _ hk =>
+        refine ⟨_, Or.inr ⟨star_refl _ _ _, ?_⟩, ?_⟩
+        · apply lt_state_intro; simp [size_stmt, size_cont]
+        · exact match_state f .Sskip k sp e m tm cs tf ns rs map ns nx ngoto nret rret hw (tr_stmt.tr_Sskip ..) hf hk hm he
+    | skipCall f k sp e m m' hcall hfree =>
+      cases ts
+      have hstack : tf.fn_stacksize = f.fn_stackspace := by cases hf; assumption
+      obtain ⟨tm', hfree', he'⟩ := Mem.free_parallel_extends m tm sp _ _ m' he hfree
+      have hc : PTree.get ns tf.fn_code = some (.Ireturn rret) ∧ match_stacks k cs := by
+        cases hk <;> simp_all [CminorSel.is_call_cont]
+      refine ⟨_, Or.inl (plus_one _ _ _ _ _ _ _ (RTL.step.exec_Ireturn cs tf sp ns rs tm rret tm' hc.1 ?_)), ?_⟩
+      · simpa [hstack] using hfree'
+      · exact match_returnstate _ _ _ _ _ _ hc.2 (Val.lessdef_undef _) he'
+    | assign f id a k sp e m v hev =>
+      cases ts with
+      | tr_Sassign _ _ _ _ _ _ _ _ r hr ha =>
+        obtain ⟨rs', tm', hs, hm', hv, hp, he'⟩ :=
+          transl_expr_correct xi prog tprog hprog sp e m [] a v hev
+            tm cs tf map [] ns ncont r rs (some id) hw ha hm he
+        refine ⟨_, Or.inr ⟨hs, ?_⟩, ?_⟩
+        · apply lt_state_intro; simp [size_stmt, size_cont]
+        · exact match_state f .Sskip k sp _ m tm' cs tf ncont rs' map ncont nexits ngoto nret rret hw (tr_stmt.tr_Sskip ..) hf hk hm' he'
+    | step_store f chunk addr al b k sp e m vl v va m' hal hb ha hstore =>
+      cases ts with
+      | tr_Sstore _ _ _ _ _ _ _ _ _ _ rd n1 rl n2 hargs hvalue hcode =>
+        obtain ⟨rs1, tm1, hs1, hm1, hv1, hp1, he1⟩ :=
+          transl_exprlist_correct xi prog tprog hprog sp e m [] al vl hal
+            tm cs tf map [] ns n1 rl rs hw hargs hm he
+        obtain ⟨rs2, tm2, hs2, hm2, hv2, hp2, he2⟩ :=
+          transl_expr_correct xi prog tprog hprog sp e m [] b v hb
+            tm1 cs tf map rl n1 n2 rd rs1 none hw hvalue hm1 he1
+        have hl : Val.lessdef_list vl (rl.map (fun r => Regmap.get r rs2)) := by
+          have heq : rl.map (fun r => Regmap.get r rs2) = rl.map (fun r => Regmap.get r rs1) := List.map_congr_left hp2
+          rw [heq]; exact hv1
+        obtain ⟨va', ha', hva⟩ := rtlgen_eval_addressing_lessdef (Genv.globalenv prog) sp addr vl _ va hl ha
+        obtain ⟨tm3, hstore', he3⟩ := Mem.storev_extends chunk m tm2 va v m' va' (Regmap.get rd rs2) he2 hstore hva hv2
+        have hat : eval_addressing (Genv.globalenv tprog) sp addr (rl.map (fun r => Regmap.get r rs2)) = some va' := by
+          rw [eval_addressing_preserved _ _ _ _ (Genv.globalenv prog) (Genv.globalenv tprog) (symbols_preserved prog tprog hprog)]
+          exact ha'
+        refine ⟨_, Or.inl (plus_right _ _ _ _ _ _ _ _ _ _ (star_trans _ _ _ _ _ _ _ hs1 _ _ _ hs2 rfl)
+          (RTL.step.exec_Istore cs tf sp n2 rs2 tm2 chunk addr rl rd ncont va' tm3 hcode hat hstore') rfl), ?_⟩
+        exact match_state f .Sskip k sp e m' tm3 cs tf ncont rs2 map ncont nexits ngoto nret rret hw (tr_stmt.tr_Sskip ..) hf hk hm2 he3
+    | call f optid sig a bl k sp e m vf vargs fd hcallee hargs hfind hsig =>
+      obtain ⟨tfd, hfindt, htrans⟩ := functions_translated prog tprog hprog vf fd hfind
+      have hsigt : RTL.funsig tfd = sig := (sig_transl_function fd tfd htrans).trans hsig
+      cases ts with
+      | tr_Scall _ _ b _ _ _ _ _ _ _ rd n1 rf n2 rl hb hal hc hr =>
+        cases hcallee with
+        | eval_eos_e _ _ hev =>
+          obtain ⟨rs1, tm1, hs1, hm1, hv1, hp1, he1⟩ := transl_expr_correct xi prog tprog hprog sp e m [] b vf hev
+            tm cs tf map [] ns n1 rf rs none hw hb hm he
+          obtain ⟨rs2, tm2, hs2, hm2, hv2, hp2, he2⟩ := transl_exprlist_correct xi prog tprog hprog sp e m [] bl vargs hargs
+            tm1 cs tf map [rf] n1 n2 rl rs1 hw hal hm1 he1
+          have hft : RTL.find_function (Genv.globalenv tprog) (.inl rf) rs2 = some tfd := by
+            change Genv.find_funct _ (Regmap.get rf rs2) = _
+            rw [hp2 rf (by simp)]
+            cases hv1
+            · exact hfindt
+            · simp [Genv.find_funct] at hfind
+          refine ⟨_, Or.inl (plus_right _ _ _ _ _ _ _ _ _ _ (star_trans _ _ _ _ _ _ _ hs1 _ _ _ hs2 rfl)
+            (RTL.step.exec_Icall cs tf sp n2 rs2 tm2 sig (.inl rf) rl rd ncont tfd hc hft hsigt) rfl), ?_⟩
+          exact match_callstate fd vargs _ _ m tm2 _ tfd htrans
+            (match_stacks_call optid f sp e k rd tf ncont rs2 cs map nexits ngoto nret rret hw hf hm2 hr hk) hv2 he2
+      | tr_Scall_imm _ _ id _ _ _ _ _ _ _ rd n2 rl hal hc hr =>
+        cases hcallee with
+        | eval_eos_s _ b hsym =>
+          obtain ⟨rs2, tm2, hs2, hm2, hv2, hp2, he2⟩ := transl_exprlist_correct xi prog tprog hprog sp e m [] bl vargs hargs
+            tm cs tf map [] ns n2 rl rs hw hal hm he
+          have hft : RTL.find_function (Genv.globalenv tprog) (.inr id) rs2 = some tfd := by
+            change (match Genv.find_symbol (Genv.globalenv tprog) id with | none => none | some b => Genv.find_funct_ptr _ b) = _
+            rw [symbols_preserved prog tprog hprog id, hsym]
+            exact hfindt
+          refine ⟨_, Or.inl (plus_right _ _ _ _ _ _ _ _ _ _ hs2
+            (RTL.step.exec_Icall cs tf sp n2 rs2 tm2 sig (.inr id) rl rd ncont tfd hc hft hsigt) rfl), ?_⟩
+          exact match_callstate fd vargs _ _ m tm2 _ tfd htrans
+            (match_stacks_call optid f sp e k rd tf ncont rs2 cs map nexits ngoto nret rret hw hf hm2 hr hk) hv2 he2
+    | tailcall f sig a bl k sp e m vf vargs fd m' hcallee hargs hfind hsig hfree =>
+      obtain ⟨tfd, hfindt, htrans⟩ := functions_translated prog tprog hprog vf fd hfind
+      have hsigt : RTL.funsig tfd = sig := (sig_transl_function fd tfd htrans).trans hsig
+      obtain ⟨hstk, hret⟩ := match_stacks_call_cont _ _ _ _ _ _ _ _ _ hk
+      have hstack : tf.fn_stacksize = f.fn_stackspace := by cases hf; assumption
+      cases ts with
+      | tr_Stailcall _ b _ _ _ _ _ _ _ n1 rf n2 rl hb hal hc =>
+        cases hcallee with
+        | eval_eos_e _ _ hev =>
+          obtain ⟨rs1, tm1, hs1, hm1, hv1, hp1, he1⟩ := transl_expr_correct xi prog tprog hprog _ e m [] b vf hev
+            tm cs tf map [] ns n1 rf rs none hw hb hm he
+          obtain ⟨rs2, tm2, hs2, hm2, hv2, hp2, he2⟩ := transl_exprlist_correct xi prog tprog hprog _ e m [] bl vargs hargs
+            tm1 cs tf map [rf] n1 n2 rl rs1 hw hal hm1 he1
+          have hft : RTL.find_function (Genv.globalenv tprog) (.inl rf) rs2 = some tfd := by
+            change Genv.find_funct _ (Regmap.get rf rs2) = _
+            rw [hp2 rf (by simp)]
+            cases hv1
+            · exact hfindt
+            · simp [Genv.find_funct] at hfind
+          obtain ⟨tm3, hfree', he3⟩ := Mem.free_parallel_extends m tm2 sp _ _ m' he2 hfree
+          refine ⟨_, Or.inl (plus_right _ _ _ _ _ _ _ _ _ _ (star_trans _ _ _ _ _ _ _ hs1 _ _ _ hs2 rfl)
+            (RTL.step.exec_Itailcall cs tf sp n2 rs2 tm2 sig (.inl rf) rl tfd tm3 hc hft hsigt ?_) rfl), ?_⟩
+          · simpa [hstack] using hfree'
+          · exact match_callstate fd vargs _ _ m' tm3 cs tfd htrans hstk hv2 he3
+      | tr_Stailcall_imm _ id _ _ _ _ _ _ _ n2 rl hal hc =>
+        cases hcallee with
+        | eval_eos_s _ b hsym =>
+          obtain ⟨rs2, tm2, hs2, hm2, hv2, hp2, he2⟩ := transl_exprlist_correct xi prog tprog hprog _ e m [] bl vargs hargs
+            tm cs tf map [] ns n2 rl rs hw hal hm he
+          have hft : RTL.find_function (Genv.globalenv tprog) (.inr id) rs2 = some tfd := by
+            change (match Genv.find_symbol (Genv.globalenv tprog) id with | none => none | some b => Genv.find_funct_ptr _ b) = _
+            rw [symbols_preserved prog tprog hprog id, hsym]
+            exact hfindt
+          obtain ⟨tm3, hfree', he3⟩ := Mem.free_parallel_extends m tm2 sp _ _ m' he2 hfree
+          refine ⟨_, Or.inl (plus_right _ _ _ _ _ _ _ _ _ _ hs2
+            (RTL.step.exec_Itailcall cs tf sp n2 rs2 tm2 sig (.inr id) rl tfd tm3 hc hft hsigt ?_) rfl), ?_⟩
+          · simpa [hstack] using hfree'
+          · exact match_callstate fd vargs _ _ m' tm3 cs tfd htrans hstk hv2 he3
+    | builtinCall f res ef al k sp e m vl t v m' hal hc =>
+      cases ts with
+      | tr_Sbuiltin _ _ _ _ _ _ _ _ _ tres n1 rl hargs hcode hres =>
+        obtain ⟨vparams, hp, hb⟩ := invert_eval_builtin_args xi prog sp e m al vl hal
+        obtain ⟨rs1, tm1, hs1, hm1, hv1, hstable, he1⟩ := transl_exprlist_correct xi prog tprog hprog sp e m [] _ vparams hp
+          tm cs tf map [] ns n1 rl rs hw hargs hm he
+        obtain ⟨vargs', hb', hv'⟩ := transl_eval_builtin_args prog sp m rs1 al vparams rl vl hv1 hb
+        obtain ⟨vargs'', hb'', hv''⟩ := eval_builtin_args_lessdef reg _ (fun r => Regmap.get r rs1) (fun r => Regmap.get r rs1)
+          sp m tm1 (fun _ => Val.lessdef_refl _) he1 _ _ hb'
+        have hvargs : Val.lessdef_list vl vargs'' := Val.lessdef_list_trans _ _ hv' _ hv''
+        obtain ⟨v', tm2, hc', hv, he2⟩ := rtlgen_expr_call_call_extends xi ef _ vl m t v m' tm1 vargs'' hc he1 hvargs
+        have hct := rtlgen_expr_call_symbols xi ef _ _ _ _ _ _ _ (senv_preserved prog tprog hprog) hc'
+        have hbt := eval_builtin_args_preserved reg _ _ _ _ (Genv.globalenv prog) (Genv.globalenv tprog)
+          (fun r => Regmap.get r rs1) sp tm1 (symbols_preserved prog tprog hprog) _ _ hb''
+        refine ⟨_, Or.inl (plus_right _ _ _ _ _ _ _ _ _ _ hs1
+          (RTL.step.exec_Ibuiltin cs tf sp n1 rs1 tm1 ef _ tres ncont vargs'' t v' tm2 hcode hbt hct) rfl), ?_⟩
+        exact match_state f .Sskip k sp _ m' tm2 cs tf ncont _ map ncont nexits ngoto nret rret hw (tr_stmt.tr_Sskip ..) hf hk
+          (match_env_update_res map res v e [] tres v' rs1 hv hw hres hm1) he2
+    | sequence f s1 s2 k sp e m =>
+      cases ts with
+      | tr_Sseq _ _ _ _ _ _ _ _ n h2 h1 =>
+        refine ⟨_, Or.inr ⟨star_refl _ _ _, ?_⟩, ?_⟩
+        · apply lt_state_intro; simp only [size_stmt, size_cont]; omega
+        · exact match_state f s1 (.Kseq s2 k) sp e m tm cs tf ns rs map n nexits ngoto nret rret hw h1 hf (tr_Kseq _ _ _ _ _ _ _ _ _ _ _ h2 hk) hm he
+    | conditional f c s1 s2 k sp e m b hev =>
+      cases ts with
+      | tr_Sifthenelse _ _ _ _ _ _ _ _ _ nt nf ht hfalse hc =>
+        obtain ⟨rs', tm', hs, hm', hp, he'⟩ := transl_condexpr_correct xi prog tprog hprog sp e m [] c b hev
+          tm cs tf map [] ns nt nf rs hw hc hm he
+        refine ⟨_, Or.inl hs, ?_⟩
+        cases b
+        · exact match_state f s2 k sp e m tm' cs tf nf rs' map ncont nexits ngoto nret rret hw hfalse hf hk hm' he'
+        · exact match_state f s1 k sp e m tm' cs tf nt rs' map ncont nexits ngoto nret rret hw ht hf hk hm' he'
+    | loop f s k sp e m =>
+      cases ts with
+      | tr_Sloop _ _ _ _ _ _ _ nl ne hb hstart hend =>
+        refine ⟨_, Or.inl (plus_one _ _ _ _ _ _ _ (RTL.step.exec_Inop cs tf sp ns rs tm nl hstart)), ?_⟩
+        exact match_state f s (.Kseq (.Sloop s) k) sp e m tm cs tf nl rs map ne nexits ngoto nret rret hw hb hf
+          (tr_Kseq _ _ _ _ _ _ _ _ _ _ _ (tr_stmt.tr_Sloop _ _ _ _ _ _ _ _ _ hb hend hend) hk) hm he
+    | blockStep f s k sp e m =>
+      cases ts with
+      | tr_Sblock _ _ _ _ _ _ _ hb =>
+        refine ⟨_, Or.inr ⟨star_refl _ _ _, ?_⟩, ?_⟩
+        · apply lt_state_intro; simp only [size_stmt, size_cont]; omega
+        · exact match_state f s (.Kblock k) sp e m tm cs tf ns rs map ncont (ncont :: nexits) ngoto nret rret hw hb hf (tr_Kblock _ _ _ _ _ _ _ _ _ hk) hm he
+    | exitSequence f n s k sp e m =>
+      cases ts with
+      | tr_Sexit _ _ _ _ _ _ _ hn =>
+        cases hk with
+        | tr_Kseq _ _ _ _ _ _ _ _ _ _ nd hs hk =>
+          refine ⟨_, Or.inr ⟨star_refl _ _ _, ?_⟩, ?_⟩
+          · apply lt_state_intro; simp only [size_stmt, size_cont]; omega
+          · exact match_state f (.Sexit n) k sp e m tm cs tf ns rs map nd nexits ngoto nret rret hw (tr_stmt.tr_Sexit _ _ _ _ _ _ _ hn) hf hk hm he
+    | exitBlockZero f k sp e m =>
+      cases ts with
+      | tr_Sexit _ _ _ _ _ _ _ hn =>
+        cases hk with
+        | tr_Kblock _ _ _ _ nx _ _ _ _ hk =>
+          have heq : ncont = ns := Option.some.inj hn
+          subst ns
+          refine ⟨_, Or.inr ⟨star_refl _ _ _, ?_⟩, ?_⟩
+          · apply lt_state_intro; simp [size_stmt, size_cont]
+          · exact match_state f .Sskip k sp e m tm cs tf ncont rs map ncont nx ngoto nret rret hw (tr_stmt.tr_Sskip ..) hf hk hm he
+    | exitBlockSucc f n k sp e m =>
+      cases ts with
+      | tr_Sexit _ _ _ _ _ _ _ hn =>
+        cases hk with
+        | tr_Kblock _ _ _ _ nx _ _ _ _ hk =>
+          refine ⟨_, Or.inr ⟨star_refl _ _ _, ?_⟩, ?_⟩
+          · apply lt_state_intro; simp [size_stmt, size_cont]
+          · exact match_state f (.Sexit n) k sp e m tm cs tf ns rs map ncont nx ngoto nret rret hw (tr_stmt.tr_Sexit _ _ _ _ _ _ _ hn) hf hk hm he
+    | switch f a k sp e m n hev =>
+      cases ts with
+      | tr_Sswitch _ _ _ _ _ _ _ ha =>
+        obtain ⟨nd, rs', tm', hs, hn, hm', he'⟩ := transl_exitexpr_correct xi prog tprog hprog sp e m [] a n hev
+          tm cs tf map ns nexits rs hw ha hm he
+        refine ⟨_, Or.inr ⟨hs, ?_⟩, ?_⟩
+        · apply lt_state_intro; simp [size_stmt, size_cont]
+        · exact match_state f (.Sexit n) k sp e m tm' cs tf nd rs' map ncont nexits ngoto nret rret hw (tr_stmt.tr_Sexit _ _ _ _ _ _ _ hn) hf hk hm' he'
+    | returnNone f k sp e m m' hfree =>
+      cases ts
+      obtain ⟨hstk, hc⟩ := match_stacks_call_cont _ _ _ _ _ _ _ _ _ hk
+      have hstack : tf.fn_stacksize = f.fn_stackspace := by cases hf; assumption
+      obtain ⟨tm', hfree', he'⟩ := Mem.free_parallel_extends m tm sp _ _ m' he hfree
+      refine ⟨_, Or.inl (plus_one _ _ _ _ _ _ _ (RTL.step.exec_Ireturn cs tf sp ns rs tm rret tm' hc ?_)), ?_⟩
+      · simpa [hstack] using hfree'
+      · exact match_returnstate _ _ _ _ _ _ hstk (Val.lessdef_undef _) he'
+    | returnSome f a k sp e m v m' hev hfree =>
+      cases ts with
+      | tr_Sreturn_some _ _ _ _ _ _ r ha =>
+        obtain ⟨rs', tm', hs, hm', hv, hp, he'⟩ := transl_expr_correct xi prog tprog hprog _ e m [] a v hev
+          tm cs tf map [] ns nret r rs none hw ha hm he
+        obtain ⟨hstk, hc⟩ := match_stacks_call_cont _ _ _ _ _ _ _ _ _ hk
+        have hstack : tf.fn_stacksize = f.fn_stackspace := by cases hf; assumption
+        obtain ⟨tm'', hfree', he''⟩ := Mem.free_parallel_extends m tm' sp _ _ m' he' hfree
+        refine ⟨_, Or.inl (plus_right _ _ _ _ _ _ _ _ _ _ hs (RTL.step.exec_Ireturn cs tf sp nret rs' tm' (some r) tm'' hc ?_) rfl), ?_⟩
+        · simpa [hstack] using hfree'
+        · exact match_returnstate _ _ _ _ _ _ hstk hv he''
+    | label f lbl s k sp e m =>
+      cases ts with
+      | tr_Slabel _ _ _ _ _ _ _ _ n hl hc hb =>
+        refine ⟨_, Or.inr ⟨star_refl _ _ _, ?_⟩, ?_⟩
+        · apply lt_state_intro; simp [size_stmt, size_cont]
+        · exact match_state f s k sp e m tm cs tf ns rs map ncont nexits ngoto nret rret hw hb hf hk hm he
+    | gotoLabel f lbl k sp e m s' k' hfind =>
+      cases ts with
+      | tr_Sgoto _ _ _ _ _ _ _ hgoto =>
+        cases hf with
+        | tr_fun_intro entry r hr hb hstack =>
+          obtain ⟨ns2, nd2, nx2, hc, hb2, hk2⟩ := tr_find_label _ _ lbl ns ngoto nret rret s' k' cs hgoto
+            f.fn_body (CminorSel.call_cont k) entry nret [] hfind hb (tr_cont_call_cont _ _ _ _ _ _ _ _ _ hk)
+          refine ⟨_, Or.inl (plus_one _ _ _ _ _ _ _ (RTL.step.exec_Inop cs tf sp ns rs tm ns2 hc)), ?_⟩
+          exact match_state f s' k' sp e m tm cs tf ns2 rs map nd2 nx2 ngoto nret rret hw hb2
+            (tr_fun_intro entry r hr hb hstack) hk2 hm he
+  | match_callstate f args targs k m tm cs tf htrans hs hl he =>
+    cases hstep with
+    | internalFunction f args k m m' sp e htypes halloc henv =>
+      unfold RTLgen.transl_fundef CompCert4Lean.Common.AST.transf_partial_fundef at htrans
+      cases htf : RTLgen.transl_function f with
+      | Error msg => simp [htf] at htrans
+      | OK tf' =>
+        simp [htf] at htrans
+        have htfeq := CompCert4Lean.Common.Errors.res.OK.inj htrans
+        subst tf
+        have ht := transl_function_charact f tf' htf
+        cases ht with
+        | tr_function_intro c rp map1 s0 s1 i1 rv map2 s2 i2 entry ng nr rr orr hparams hvars hr hb hc =>
+          obtain ⟨tm', halloc', he'⟩ := rtlgen_expr_call_alloc_extends m tm _ _ m' sp he halloc
+          have hm := match_init_env_init_reg _ _ _ _ _ i1 _ _ _ _ i2 args targs hparams hvars hl
+          have hw1 := rtlgenproof_add_vars_wf_valid _ _ _ _ _ _ i1 hparams init_mapping_wf (init_mapping_valid s0)
+          have hw2 := add_vars_wf _ _ _ _ _ _ i2 hvars hw1.1 hw1.2
+          subst e
+          refine ⟨_, Or.inl (plus_one _ _ _ _ _ _ _ (RTL.step.exec_function_internal cs _ targs tm tm' sp
+            (Val.has_argtype_list_lessdef _ _ _ htypes hl) halloc')), ?_⟩
+          apply match_state f f.fn_body k _ _ m' tm' cs _ entry _ map2 nr [] ng nr orr hw2 hb
+            (tr_fun_intro entry rr hr hb rfl) _ hm he'
+          have hkeep := hs
+          cases hs with
+          | match_stacks_stop => exact tr_Kstop _ _ _ _ _ _ hc match_stacks_stop
+          | match_stacks_call => exact tr_Kcall _ _ _ _ _ _ _ _ _ _ _ hc hkeep
+    | externalFunction ef args k m t v m' hc =>
+      have heq : tf = .External ef := (CompCert4Lean.Common.Errors.res.OK.inj htrans).symm
+      subst tf
+      obtain ⟨v', tm', hc', hv, he'⟩ := rtlgen_expr_call_call_extends xi ef (Genv.to_senv (Genv.globalenv prog)) args m t v m' tm targs hc he hl
+      have hct := rtlgen_expr_call_symbols xi ef _ _ _ _ _ _ _ (senv_preserved prog tprog hprog) hc'
+      refine ⟨_, Or.inl (plus_one _ _ _ _ _ _ _ (RTL.step.exec_function_external cs ef targs v' t tm tm' hct)), ?_⟩
+      exact match_returnstate _ _ _ _ _ _ hs hv he'
+  | match_returnstate v tv k m tm cs hs hl he =>
+    cases hstep with
+    | returnToCaller v optid f sp e k m =>
+      cases hs with
+      | match_stacks_call _ _ _ _ _ r tf n rs cs map nx ng nr rr hw hf hm hr hk =>
+        refine ⟨_, Or.inl (plus_one _ _ _ _ _ _ _ (RTL.step.exec_return r tf sp n rs cs tv tm)), ?_⟩
+        exact match_state f .Sskip k sp _ m tm cs tf n _ map n nx ng nr rr hw (tr_stmt.tr_Sskip ..) hf hk
+          (match_env_update_dest map e [] rs optid r v tv hl hw hr hm) he
+
+end CompCert4Lean.Backend.RTLgenproof

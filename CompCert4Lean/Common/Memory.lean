@@ -9370,3 +9370,139 @@ theorem alloc_right_inject : alloc_right_injectStatement := by
       (perm_alloc_4 m2 lo hi m2' b2 halloc b' _ k p hperm hne)
 
 end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem alloc_left_unmapped_inject : alloc_left_unmapped_injectStatement := by
+  intro f m1 m2 lo hi m1' b1 hinj halloc
+  have hf : f b1 = none := hinj.mi_freeblocks b1
+    (fresh_block_alloc m1 lo hi m1' b1 halloc)
+  let f' : meminj := fun b =>
+    match eq_block b b1 with
+    | .left _ => none
+    | .right _ => f b
+  have hf'eq : ∀ b, b = b1 → f' b = none := by
+    intro b hb
+    subst b
+    dsimp [f']
+    cases heq : eq_block b1 b1 with
+    | left _ => rfl
+    | right hne => exact False.elim (hne rfl)
+  have hf'neq : ∀ b, b ≠ b1 → f' b = f b := by
+    intro b hb
+    dsimp [f']
+    cases heq : eq_block b b1 with
+    | left heq' => exact False.elim (hb heq')
+    | right _ => rfl
+  have hf'none : f' b1 = none := hf'eq b1 rfl
+  have hincr : inject_incr f f' := by
+    intro b b' delta hmap
+    by_cases hb : b = b1
+    · subst b
+      rw [hf] at hmap
+      cases hmap
+    · rw [hf'neq b hb]
+      exact hmap
+  have hmap_old : ∀ b b' delta,
+      f' b = some (b', delta) → f b = some (b', delta) := by
+    intro b b' delta hmap
+    by_cases hb : b = b1
+    · subst b
+      rw [hf'none] at hmap
+      cases hmap
+    · rw [hf'neq b hb] at hmap
+      exact hmap
+  have hmem : mem_inj f' m1 m2 := by
+    refine { mi_perm := ?_, mi_align := ?_, mi_memval := ?_ }
+    · intro b b' delta ofs k p hmap hperm
+      exact hinj.mi_inj.mi_perm b b' delta ofs k p
+        (hmap_old b b' delta hmap) hperm
+    · intro b b' delta chunk ofs p hmap hrange
+      exact hinj.mi_inj.mi_align b b' delta chunk ofs p
+        (hmap_old b b' delta hmap) hrange
+    · intro b ofs b' delta hmap hperm
+      have hmv := hinj.mi_inj.mi_memval b ofs b' delta
+        (hmap_old b b' delta hmap) hperm
+      exact memval_inject_incr f f' _ _ hmv hincr
+  have hinj' : inject f' m1' m2 := by
+    refine {
+      mi_inj := alloc_left_unmapped_inj f' m1 m2 lo hi m1' b1 hmem halloc hf'none
+      mi_freeblocks := ?_
+      mi_mappedblocks := ?_
+      mi_no_overlap := ?_
+      mi_representable := ?_
+      mi_perm_inv := ?_ }
+    · intro b hvalid
+      by_cases hb : b = b1
+      · subst b
+        exact hf'none
+      · have hbad : ¬ valid_block m1 b := by
+          intro hold
+          exact hvalid (valid_block_alloc m1 lo hi m1' b1 halloc b hold)
+        rw [hf'neq b hb]
+        exact hinj.mi_freeblocks b hbad
+    · intro b b' delta hmap
+      exact hinj.mi_mappedblocks b b' delta (hmap_old b b' delta hmap)
+    · intro b1' b1'' delta1 b2 b2' delta2 ofs1 ofs2 hne hmap1 hmap2 hp1 hp2
+      have hb1 : b1' ≠ b1 := by
+        intro heq
+        subst b1'
+        rw [hf'none] at hmap1
+        cases hmap1
+      have hb2 : b2 ≠ b1 := by
+        intro heq
+        subst b2
+        rw [hf'none] at hmap2
+        cases hmap2
+      exact hinj.mi_no_overlap b1' b1'' delta1 b2 b2' delta2 ofs1 ofs2 hne
+        (hmap_old b1' b1'' delta1 hmap1) (hmap_old b2 b2' delta2 hmap2)
+        (perm_alloc_4 m1 lo hi m1' b1 halloc b1' ofs1 Max Memtype.Nonempty hp1 hb1)
+        (perm_alloc_4 m1 lo hi m1' b1 halloc b2 ofs2 Max Memtype.Nonempty hp2 hb2)
+    · intro b b' delta ofs hmap hperm
+      have hb : b ≠ b1 := by
+        intro heq
+        subst b
+        rw [hf'none] at hmap
+        cases hmap
+      apply hinj.mi_representable b b' delta ofs (hmap_old b b' delta hmap)
+      rcases hperm with h | h
+      · left
+        exact perm_alloc_4 m1 lo hi m1' b1 halloc b
+          (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)
+          Max Memtype.Nonempty h hb
+      · right
+        exact perm_alloc_4 m1 lo hi m1' b1 halloc b
+          (zSub (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) z1)
+          Max Memtype.Nonempty h hb
+    · intro b ofs b' delta k p hmap hperm
+      have hmap0 := hmap_old b b' delta hmap
+      have hb : b ≠ b1 := by
+        intro heq
+        subst b
+        rw [hf'none] at hmap
+        cases hmap
+      rcases hinj.mi_perm_inv b ofs b' delta k p hmap0 hperm with h | h
+      · exact Or.inl (perm_alloc_1 m1 lo hi m1' b1 halloc b ofs k p h)
+      · right
+        intro hnew
+        apply h
+        exact perm_alloc_4 m1 lo hi m1' b1 halloc b ofs Max Memtype.Nonempty hnew hb
+  refine ⟨f', hinj', hincr, hf'none, ?_⟩
+  intro b hb
+  by_cases h : b = b1
+  · exact False.elim (hb h)
+  · rw [hf'neq b h]
+
+end Mem
+
+end CompCert4Lean.Common.Memory

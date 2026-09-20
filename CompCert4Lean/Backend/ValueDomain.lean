@@ -6459,3 +6459,126 @@ theorem ablock_store_anywhere_sound : ablock_store_anywhere_soundStatement := by
     (smatch_store bc chunk m b ofs v m' b' ab.ab_summary av hstore hbm.1 hvm)
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Maps
+
+set_option maxHeartbeats 1000000 in
+private theorem ablock_store_normalize_aux
+    (bc : block_classification) (chunk : memory_chunk) (hnobool : chunk ≠ .Mbool)
+    (v : val) (av : aval) (h : vmatch bc v av) :
+    vmatch bc (Val.load_result chunk v) (vnormalize chunk av) := by
+  cases chunk <;> try contradiction
+  all_goals cases h <;>
+    simp only [vnormalize, Val.load_result, provenance,
+      CompCert4Lean.X86_64.Archi.ptr64, ↓reduceIte]
+  all_goals try (solve | constructor | constructor <;> assumption)
+  all_goals try simp only [mmatch_lub_r_zlt_aux, ZArith.BinInt.Z.min]
+  all_goals repeat' split
+  all_goals try (solve | constructor | constructor <;> assumption)
+  all_goals constructor
+  all_goals first
+    | assumption
+    | (change intOfZ _ ≤ intOfZ _; simp only [ZArith.BinInt.Z.le,
+        ZArith.BinInt.Z.lt, mmatch_lub_r_eight_aux, mmatch_lub_r_sixteen_aux,
+        show intOfZ z0 = 0 from rfl] at *; omega)
+    | (change intOfZ _ < intOfZ _; simp only [ZArith.BinInt.Z.le,
+        ZArith.BinInt.Z.lt, mmatch_lub_r_eight_aux, mmatch_lub_r_sixteen_aux,
+        show intOfZ z0 = 0 from rfl] at *; omega)
+    | (run_tac do
+         let t ← Lean.Elab.Tactic.getMainTarget
+         unless t.isAppOfArity ``is_uns 2 do throwError "not unsigned"
+         let n := t.getAppArgs[1]!.getAppFn.constName!.toString
+         unless n.endsWith "zero_ext" || n.endsWith "intZeroExt" do throwError "not zero extension"
+       apply is_zero_ext_uns; first
+        | exact Or.inl (by assumption)
+        | (apply Or.inr; change intOfZ _ ≤ intOfZ _;
+           simp only [mmatch_lub_r_eight_aux, mmatch_lub_r_sixteen_aux] at *; omega))
+    | (run_tac do
+         let t ← Lean.Elab.Tactic.getMainTarget
+         unless t.isAppOfArity ``is_uns 2 do throwError "not unsigned"
+         let n := t.getAppArgs[1]!.getAppFn.constName!.toString
+         unless n.endsWith "sign_ext" || n.endsWith "intSignExt" do throwError "not sign extension"
+       apply is_sign_ext_uns
+       · constructor <;> (first | change intOfZ _ ≤ intOfZ _ | change intOfZ _ < intOfZ _) <;>
+           simp only [ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt,
+             mmatch_lub_r_eight_aux, mmatch_lub_r_sixteen_aux,
+             show intOfZ z0 = 0 from rfl] at * <;> omega
+       · assumption)
+    | (run_tac do
+         let t ← Lean.Elab.Tactic.getMainTarget
+         unless t.isAppOfArity ``is_sgn 2 do throwError "not signed"
+       apply is_sign_ext_sgn
+       · change intOfZ _ < intOfZ _; decide
+       · change intOfZ _ < intOfZ _
+         simp only [ZArith.BinInt.Z.lt, mmatch_lub_r_eight_aux,
+           mmatch_lub_r_sixteen_aux, show intOfZ z0 = 0 from rfl] at *
+         omega
+       · first
+         | exact Or.inl (by assumption)
+         | (apply Or.inr; change intOfZ _ ≤ intOfZ _;
+            simp only [mmatch_lub_r_eight_aux, mmatch_lub_r_sixteen_aux] at *; omega))
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+
+theorem ablock_store_sound : ablock_store_soundStatement := by
+  intro bc chunk m b ofs v m' ab av hstore hbm hvm
+  rcases hbm with ⟨hsm, hloads⟩
+  have hsm' := smatch_store bc chunk m b ofs v m' b ab.ab_summary av hstore hsm hvm
+  constructor
+  · exact hsm'
+  · intro chunk' ofs' v' hload
+    have hsummary : vmatch bc v' (vnormalize chunk' (Ifptr (vplub av ab.ab_summary))) :=
+      vnormalize_cast bc chunk' m' b ofs' v' (vplub av ab.ab_summary)
+        hload (hsm'.1 chunk' ofs' v' hload)
+    change vmatch bc v' (match ZTree.get ofs' (ablock_store chunk ab ofs av).ab_contents with
+      | none => vnormalize chunk' (Ifptr (vplub av ab.ab_summary))
+      | some (ACval chunk1 av1) =>
+          if chunk_compat chunk' chunk1 = true then vnormalize chunk' av1
+          else vnormalize chunk' (Ifptr (vplub av ab.ab_summary)))
+    cases hget : ZTree.get ofs' (ablock_store chunk ab ofs av).ab_contents with
+    | none => exact hsummary
+    | some c =>
+      cases c with
+      | ACval chunk1 av1 =>
+        by_cases hcompat : chunk_compat chunk' chunk1 = true
+        · simp only [if_pos hcompat]
+          obtain ⟨hsize, halign, htype⟩ := chunk_compat_true chunk' chunk1 hcompat
+          rcases ablock_store_contents chunk ab ofs av ofs' chunk1 av1 hget with
+            ⟨rfl, rfl, rfl⟩ | ⟨hcont, hbound⟩
+          · have hres := Mem.load_store_similar_2 chunk1 m b ofs v m' hstore
+              chunk' hsize halign htype
+            rw [hload] at hres
+            rw [Option.some.inj hres]
+            apply ablock_store_normalize_aux bc chunk' _ v av1 hvm
+            intro heq
+            subst chunk'
+            simp [chunk_compat] at hcompat
+          · have hold : Mem.load chunk' m b ofs' = some v' := by
+              rw [← hload]
+              symm
+              apply Mem.load_store_other chunk m b ofs v m' hstore chunk' b ofs'
+              right
+              rcases hbound with hl | hr
+              · left
+                simpa only [hsize] using hl
+              · exact Or.inr hr
+            have hmatch := hloads chunk' ofs' v' hold
+            unfold ablock_load at hmatch
+            rw [hcont] at hmatch
+            simpa only [if_pos hcompat] using hmatch
+        · simpa only [if_neg hcompat] using hsummary
+
+end CompCert4Lean.Backend.ValueDomain
