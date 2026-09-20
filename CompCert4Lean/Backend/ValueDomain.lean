@@ -6055,3 +6055,140 @@ theorem ablock_storebytes_sound : ablock_storebytes_soundStatement := by
           exact hsummary
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+
+theorem storebytes_sound : storebytes_soundStatement := by
+  intro bc m b ofs bytes m' am p sz q hstore hmm hpmatch hlength hbytes
+  have hother : ∀ b', b' ≠ b → ∀ ofs' n, zLe z0 n →
+      Mem.loadbytes m' b' ofs' n = Mem.loadbytes m b' ofs' n := by
+    intro b' hne ofs' n hn
+    exact Mem.loadbytes_storebytes_other m b (Ptrofs.unsigned ofs) bytes m'
+      hstore b' ofs' n hn (Or.inl hne)
+  constructor
+  · intro b0 hbc0
+    have hDFL : bc b ≠ BCstack → bmatch bc m' b0 am.am_stack := by
+      intro hnot
+      apply bmatch_inv bc m b0 am.am_stack m' (hmm.mmatch_stack b0 hbc0)
+      apply hother b0
+      intro heq
+      exact hnot (heq ▸ hbc0)
+    cases hpmatch with
+    | gl id hgl => exact hDFL (by simp [hgl])
+    | glo id hgl => exact hDFL (by simp [hgl])
+    | glob id hgl => exact hDFL (by simp [hgl])
+    | stk hstk =>
+        have hbeq : b0 = b := bc.bc_stack b0 b hbc0 hstk
+        subst b0
+        exact ablock_storebytes_sound bc m b (Ptrofs.unsigned ofs) bytes m' q
+          am.am_stack sz hstore hlength hbytes (hmm.mmatch_stack b hstk)
+    | stack hstk =>
+        exact ablock_storebytes_anywhere_sound bc m b (Ptrofs.unsigned ofs) bytes q m' b0
+          am.am_stack hstore hbytes (hmm.mmatch_stack b0 hbc0)
+    | nonstack hns _ => exact hDFL hns
+    | top _ =>
+        exact ablock_storebytes_anywhere_sound bc m b (Ptrofs.unsigned ofs) bytes q m' b0
+          am.am_stack hstore hbytes (hmm.mmatch_stack b0 hbc0)
+  · intro id ab b' hbc' hab
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at id
+    have hDFL : bc b ≠ BCglob id →
+        PTree.get id am.am_glob = some ab → bmatch bc m' b' ab := by
+      intro hnot hab0
+      apply bmatch_inv bc m b' ab m' (hmm.mmatch_glob id ab b' hbc' hab0)
+      apply hother b'
+      intro heq
+      exact hnot (heq ▸ hbc')
+    have hinit : ∀ id0, bc b = BCglob id0 →
+        bmatch bc m b ((PTree.get id0 am.am_glob).getD (ablock_init am.am_nonstack)) := by
+      intro id0 hgl
+      cases hget : PTree.get id0 am.am_glob with
+      | some ab0 => exact hmm.mmatch_glob id0 ab0 b hgl hget
+      | none =>
+          exact ablock_init_sound bc m b am.am_nonstack
+            (hmm.mmatch_nonstack b (by simp [hgl]) (by simp [hgl]))
+    cases hpmatch with
+    | gl id0 hgl =>
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at id0
+        change PTree.get id (PTree.set id0
+          (ablock_storebytes ((PTree.get id0 am.am_glob).getD (ablock_init am.am_nonstack))
+            q (Ptrofs.unsigned ofs) sz) am.am_glob) = some ab at hab
+        erw [PTree.getSet_equation] at hab
+        by_cases hid : id = id0
+        · subst id0
+          erw [dif_pos rfl] at hab
+          have habEq := Option.some.inj hab
+          rw [← habEq]
+          have heq : b' = b := bc.bc_glob b' b id hbc' hgl
+          rw [heq]
+          exact ablock_storebytes_sound bc m b (Ptrofs.unsigned ofs) bytes m' q
+            _ sz hstore hlength hbytes (hinit id hgl)
+        · erw [dif_neg hid] at hab
+          apply hDFL _ hab
+          intro h
+          have heq : id0 = id := block_class.BCglob.inj (hgl.symm.trans h)
+          exact hid heq.symm
+    | glo id0 hgl =>
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at id0
+        change PTree.get id (PTree.set id0
+          (ablock_storebytes_anywhere
+            ((PTree.get id0 am.am_glob).getD (ablock_init am.am_nonstack)) q)
+          am.am_glob) = some ab at hab
+        erw [PTree.getSet_equation] at hab
+        by_cases hid : id = id0
+        · subst id0
+          erw [dif_pos rfl] at hab
+          have habEq := Option.some.inj hab
+          rw [← habEq]
+          have heq : b' = b := bc.bc_glob b' b id hbc' hgl
+          rw [heq]
+          exact ablock_storebytes_anywhere_sound bc m b (Ptrofs.unsigned ofs) bytes q m' b
+            _ hstore hbytes (hinit id hgl)
+        · erw [dif_neg hid] at hab
+          apply hDFL _ hab
+          intro h
+          have heq : id0 = id := block_class.BCglob.inj (hgl.symm.trans h)
+          exact hid heq.symm
+    | glob id0 hgl =>
+        change PTree.get id (PTree.empty ablock) = some ab at hab
+        rw [PTree.gempty] at hab
+        cases hab
+    | stk hstk => exact hDFL (by simp [hstk]) hab
+    | stack hstk => exact hDFL (by simp [hstk]) hab
+    | nonstack _ _ =>
+        change PTree.get id (PTree.empty ablock) = some ab at hab
+        rw [PTree.gempty] at hab
+        cases hab
+    | top _ =>
+        change PTree.get id (PTree.empty ablock) = some ab at hab
+        rw [PTree.gempty] at hab
+        cases hab
+  · intro b' hns hni
+    have hDFL : smatch bc m' b' (plub q am.am_nonstack) :=
+      smatch_storebytes bc m b (Ptrofs.unsigned ofs) bytes m' b' am.am_nonstack q
+        hstore (hmm.mmatch_nonstack b' hns hni) hbytes
+    have hSTK : bc b = BCstack → smatch bc m' b' am.am_nonstack := by
+      intro hstk
+      apply smatch_inv bc m b' am.am_nonstack m' (hmm.mmatch_nonstack b' hns hni)
+      apply hother b'
+      intro heq
+      exact hns (heq.symm ▸ hstk)
+    cases hpmatch with
+    | gl _ _ => exact hDFL
+    | glo _ _ => exact hDFL
+    | glob _ _ => exact hDFL
+    | stk hstk => exact hSTK hstk
+    | stack hstk => exact hSTK hstk
+    | nonstack _ _ => exact hDFL
+    | top _ => exact hDFL
+  · intro b' hni
+    exact smatch_storebytes bc m b (Ptrofs.unsigned ofs) bytes m' b' am.am_top q
+      hstore (hmm.mmatch_top b' hni) hbytes
+  · rw [Mem.nextblock_storebytes m b (Ptrofs.unsigned ofs) bytes m' hstore]
+    exact hmm.mmatch_below
+
+end CompCert4Lean.Backend.ValueDomain

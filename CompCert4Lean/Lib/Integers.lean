@@ -9964,3 +9964,20 @@ theorem lt_sub_overflow_proof : lt_sub_overflow := by
     CompCert4Lean.X86.Asmgenproof1.CompCert4Lean.X86.Asmgenproof1.int64_lt_sub_overflow_aux x y
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+theorem sub_add_l_proof : sub_add_l := by
+  intro x y z
+  change WordCore.sub (WordCore.add x y) z =
+    WordCore.add (WordCore.sub x z) y
+  apply WordCore.ext_of_val_eq
+  apply Int.ofNat.inj
+  rw [WordCore.sub_val_int, WordCore.add_val_int, WordCore.add_val_int,
+    WordCore.sub_val_int]
+  simp only [Int.emod_sub_emod, Int.sub_emod_emod, Int.emod_add_emod,
+    Int.add_emod_emod]
+  congr 1
+  omega
+
+end CompCert4Lean.Lib.Integers.Int64

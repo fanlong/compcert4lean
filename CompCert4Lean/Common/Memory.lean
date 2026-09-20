@@ -8720,3 +8720,237 @@ theorem storebytes_mapped_inject : storebytes_mapped_injectStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+private theorem scc085_pmap_get_set_same {A : Type} (i : positive) (x : A)
+    (m : PMap.t A) : PMap.get i (PMap.set i x m) = x := by
+  change (match PTree.get i (PTree.set i x m.2) with
+    | some y => y | none => m.1) = x
+  rw [PTree.gsspec_proof]
+  cases hpeq : peq i i with
+  | left h => simp [hpeq]
+  | right h => exact False.elim (h rfl)
+
+private theorem scc085_pmap_get_set_other {A : Type} (i j : positive) (x : A)
+    (m : PMap.t A) (h : i ≠ j) : PMap.get i (PMap.set j x m) = PMap.get i m := by
+  change (match PTree.get i (PTree.set j x m.2) with
+    | some y => y | none => m.1) =
+    (match PTree.get i m.2 with | some y => y | none => m.1)
+  rw [PTree.gsspec_proof]
+  cases hpeq : peq i j with
+  | left hij => exact False.elim (h hij)
+  | right hne => simp [hpeq]
+
+private theorem scc085_free_range_perm (m : mem) (b : positive) (lo hi : Z)
+    (m' : mem) (hfree : Mem.free m b lo hi = some m') :
+    Mem.range_perm m b lo hi Cur Freeable := by
+  unfold Mem.free at hfree
+  cases hr : Mem.range_perm_dec m b lo hi Cur Freeable with
+  | left hp =>
+      simp [hr] at hfree
+      cases hfree
+      exact hp
+  | right hn =>
+      simp [hr] at hfree
+      cases hfree.1
+
+private theorem scc085_perm_of_free (m m' : mem) (b : positive) (lo hi : Z)
+    (hfree : Mem.free m b lo hi = some m') :
+    ∀ b' ofs (k : perm_kind) (p : permission),
+      Mem.perm m' b' ofs k p → Mem.perm m b' ofs k p := by
+  intro b' ofs k p hp
+  unfold Mem.free at hfree
+  split at hfree
+  next hcond =>
+    injection hfree with hm'
+    subst m'
+    unfold Mem.perm at hp ⊢
+    by_cases hb : b' = b
+    · subst b'
+      change Mem.perm_order' ((PMap.get b (PMap.set b
+        (fun (ofs : Z) (k : perm_kind) => _) m.mem_access)) ofs k) p at hp
+      rw [scc085_pmap_get_set_same] at hp
+      split at hp
+      · change False at hp
+        exact False.elim hp
+      · exact hp
+    · dsimp [Mem.unchecked_free] at hp
+      change Mem.perm_order' ((PMap.get b' (PMap.set b
+        (fun (ofs : Z) (k : perm_kind) => _) m.mem_access)) ofs k) p at hp
+      rw [scc085_pmap_get_set_other _ _ _ _ hb] at hp
+      exact hp
+  next hcond => cases hfree
+
+private theorem scc085_perm_free_1 (m m' : mem) (b : positive) (lo hi : Z)
+    (hfree : Mem.free m b lo hi = some m') :
+    ∀ b' ofs (k : perm_kind) (p : permission),
+      (b' ≠ b ∨ zLt ofs lo ∨ zLe hi ofs) →
+      Mem.perm m b' ofs k p → Mem.perm m' b' ofs k p := by
+  intro b' ofs k p hout hp
+  unfold Mem.free at hfree
+  split at hfree
+  next hcond =>
+    injection hfree with hm'
+    rw [← hm']
+    unfold Mem.perm at hp ⊢
+    dsimp [Mem.unchecked_free] at ⊢
+    by_cases hb : b' = b
+    · subst b'
+      change Mem.perm_order' ((PMap.get b m.mem_access) ofs k) p at hp
+      change Mem.perm_order'
+        ((PMap.get b (PMap.set b
+          (fun (ofs : Z) (k : perm_kind) => _) m.mem_access)) ofs k) p
+      rw [scc085_pmap_get_set_same]
+      split
+      · rename_i hin
+        exfalso
+        rcases hout with hne | hlt | hge
+        · exact hne rfl
+        · change (ZArith.BinInt.Z.leb lo ofs && ZArith.BinInt.Z.ltb ofs hi) = true at hin
+          have hin' := Bool.and_eq_true_iff.mp hin
+          have hlo' : intOfZ lo ≤ intOfZ ofs := by
+            simpa [ZArith.BinInt.Z.leb] using hin'.1
+          change intOfZ ofs < intOfZ lo at hlt
+          omega
+        · change (ZArith.BinInt.Z.leb lo ofs && ZArith.BinInt.Z.ltb ofs hi) = true at hin
+          have hin' := Bool.and_eq_true_iff.mp hin
+          have hhi' : intOfZ ofs < intOfZ hi := by
+            simpa [ZArith.BinInt.Z.ltb] using hin'.2
+          change intOfZ hi ≤ intOfZ ofs at hge
+          omega
+      · exact hp
+    · change Mem.perm_order' (PMap.get b' m.mem_access ofs k) p at hp
+      change Mem.perm_order'
+        ((PMap.get b' (PMap.set b
+          (fun (ofs : Z) (k : perm_kind) => _) m.mem_access)) ofs k) p
+      rw [scc085_pmap_get_set_other _ _ _ _ hb]
+      exact hp
+  next hcond => cases hfree
+
+private theorem scc085_perm_free_2 (m m' : mem) (b : positive) (lo hi : Z)
+    (hfree : Mem.free m b lo hi = some m') :
+    ∀ ofs (k : perm_kind) (p : permission),
+      zLe lo ofs → zLt ofs hi → ¬ Mem.perm m' b ofs k p := by
+  intro ofs k p hlo hhi hp
+  unfold Mem.free at hfree
+  split at hfree
+  next hcond =>
+    injection hfree with hm'
+    rw [← hm'] at hp
+    unfold Mem.perm at hp
+    dsimp [Mem.unchecked_free] at hp
+    change Mem.perm_order'
+      ((PMap.get b (PMap.set b
+        (fun (ofs : Z) (k : perm_kind) => _) m.mem_access)) ofs k) p at hp
+    rw [scc085_pmap_get_set_same] at hp
+    split at hp
+    · exact hp
+    · rename_i hnot
+      exfalso
+      apply hnot
+      change (ZArith.BinInt.Z.leb lo ofs && ZArith.BinInt.Z.ltb ofs hi) = true
+      have hlo' : intOfZ lo ≤ intOfZ ofs := by exact hlo
+      have hhi' : intOfZ ofs < intOfZ hi := by exact hhi
+      simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.ltb, hlo', hhi']
+  next hcond => cases hfree
+
+private theorem scc085_outside_interval (x lo hi : Z) :
+    ¬ (zLe lo x ∧ zLt x hi) → zLt x lo ∨ zLe hi x := by
+  intro h
+  by_cases hlt : zLt x lo
+  · exact Or.inl hlt
+  by_cases hge : zLe hi x
+  · exact Or.inr hge
+  exfalso
+  apply h
+  constructor
+  · change intOfZ lo ≤ intOfZ x
+    change ¬ intOfZ x < intOfZ lo at hlt
+    change ¬ intOfZ hi ≤ intOfZ x at hge
+    omega
+  · change intOfZ x < intOfZ hi
+    change ¬ intOfZ hi ≤ intOfZ x at hge
+    omega
+
+private theorem scc085_nextblock_free (m : mem) (b : positive) (lo hi : Z)
+    (m' : mem) (hfree : Mem.free m b lo hi = some m') :
+    m'.nextblock = m.nextblock := by
+  unfold Mem.free at hfree
+  split at hfree
+  next hcond =>
+    injection hfree with hm'
+    subst m'
+    rfl
+  next hcond => cases hfree
+
+private theorem scc085_free_contents (m m' : mem) (b : positive) (lo hi : Z)
+    (hfree : Mem.free m b lo hi = some m') :
+    m'.mem_contents = m.mem_contents := by
+  unfold Mem.free at hfree
+  split at hfree
+  next hcond =>
+    injection hfree with hm'
+    subst m'
+    rfl
+  next hcond => cases hfree
+private theorem scc085_free_right_inject (f : meminj) (m tm tm' : mem)
+    (b : positive) (lo hi : Z)
+    (hinj : Mem.inject f m tm)
+    (hfree : Mem.free tm b lo hi = some tm')
+    (hside : ∀ b1 delta ofs (k : perm_kind) (p : permission),
+      f b1 = some (b, delta) →
+      Mem.perm m b1 ofs k p →
+      zLe lo (zAdd ofs delta) ∧ zLt (zAdd ofs delta) hi → False) :
+    Mem.inject f m tm' := by
+  have hnext := scc085_nextblock_free tm b lo hi tm' hfree
+  have hcont := scc085_free_contents tm tm' b lo hi hfree
+  refine {
+    mi_inj := ?_,
+    mi_freeblocks := hinj.mi_freeblocks,
+    mi_mappedblocks := ?_,
+    mi_no_overlap := hinj.mi_no_overlap,
+    mi_representable := hinj.mi_representable,
+    mi_perm_inv := ?_ }
+  · refine { mi_perm := ?_, mi_align := hinj.mi_inj.mi_align, mi_memval := ?_ }
+    · intro b1 b2 delta ofs k p hmap hp
+      apply scc085_perm_free_1 tm tm' b lo hi hfree b2
+        (zAdd ofs delta) k p
+      · by_cases hb : b2 = b
+        · subst b2
+          by_cases hinside : zLe lo (zAdd ofs delta) ∧ zLt (zAdd ofs delta) hi
+          · exact False.elim (hside b1 delta ofs k p hmap hp hinside)
+          · rcases scc085_outside_interval (zAdd ofs delta) lo hi hinside with hlt | hge
+            · exact Or.inr (Or.inl hlt)
+            · exact Or.inr (Or.inr hge)
+        · exact Or.inl hb
+      · exact hinj.mi_inj.mi_perm b1 b2 delta ofs k p hmap hp
+    · intro b1 ofs b2 delta hmap hp
+      have hmv := hinj.mi_inj.mi_memval b1 ofs b2 delta hmap hp
+      simpa [hcont] using hmv
+  · intro b1 b2 delta hmap
+    have hv := hinj.mi_mappedblocks b1 b2 delta hmap
+    change Plt b2 tm'.nextblock
+    rw [hnext]
+    exact hv
+  · intro b1 ofs b2 delta k p hmap hp2
+    exact hinj.mi_perm_inv b1 ofs b2 delta k p hmap
+      (scc085_perm_of_free tm tm' b lo hi hfree b2 (zAdd ofs delta) k p hp2)
+theorem free_right_inject : free_right_injectStatement := by
+  intro f m1 m2 b lo hi m2' hinj hfree hside
+  exact scc085_free_right_inject f m1 m2 m2' b lo hi hinj hfree hside
+
+end Mem
+
+end CompCert4Lean.Common.Memory
