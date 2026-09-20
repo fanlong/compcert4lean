@@ -10049,3 +10049,37 @@ theorem add_zero_l_proof : add_zero_l := by
   rw [Nat.zero_add, Nat.mod_eq_of_lt (WordCore.val_lt x)]
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem pg_int64_neg_val_int (x : int) :
+    Int.ofNat (WordCore.neg x).val =
+      (-Int.ofNat x.val) % Int.ofNat (2 ^ wordsize) := by
+  unfold WordCore.neg
+  have hrepr : zOpp (WordCore.unsigned x) =
+      zOfInt (-Int.ofNat x.val) := by
+    change zOfInt (-intOfZ x.intval) = zOfInt (-Int.ofNat x.val)
+    rw [WordCore.intval_eq_zOfNat_val x]
+    simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  rw [hrepr, WordCore.val_repr]
+  exact Int.toNat_of_nonneg
+    (Int.emod_nonneg _ (Int.ne_of_gt
+      (Int.natCast_pos.mpr (Nat.two_pow_pos wordsize))))
+
+theorem sub_add_r_proof : sub_add_r := by
+  intro x y z
+  change WordCore.sub x (WordCore.add y z) =
+    WordCore.add (WordCore.sub x z) (WordCore.neg y)
+  apply WordCore.ext_of_val_eq
+  apply Int.ofNat.inj
+  rw [WordCore.sub_val_int, WordCore.add_val_int,
+    WordCore.add_val_int, pg_int64_neg_val_int,
+    WordCore.sub_val_int]
+  simp only [Int.emod_sub_emod, Int.sub_emod_emod,
+    Int.emod_add_emod, Int.add_emod_emod]
+  congr 1
+  omega
+
+end CompCert4Lean.Lib.Integers.Int64

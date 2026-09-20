@@ -9211,3 +9211,98 @@ theorem flat_inj_no_overlap : flat_inj_no_overlapStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+
+namespace Mem
+
+private theorem scc083_flat_inj_some
+    (thr b b' : positive) (delta : Z)
+    (hmap : flat_inj thr b = some (b', delta)) :
+    b = b' ∧ (.Z0 : Z) = delta ∧ Plt b thr := by
+  unfold flat_inj at hmap
+  cases hplt : plt b thr with
+  | left hb =>
+      rw [hplt] at hmap
+      have hpairs : (b, (.Z0 : Z)) = (b', delta) := Option.some.inj hmap
+      exact ⟨congrArg Prod.fst hpairs, congrArg Prod.snd hpairs, hb⟩
+  | right hn => simp [hplt] at hmap
+
+private theorem scc083_zadd_zero (a : Z) :
+    ZArith.BinInt.Z.add a (.Z0 : Z) = a := by
+  exact ZArith.BinInt.Z.add_0_r a
+
+private theorem scc083_ptrofs_unsigned_range (ofs : Ptrofs.int) :
+    ZArith.BinInt.Z.le (.Z0 : Z) (Ptrofs.unsigned ofs) ∧
+      ZArith.BinInt.Z.le (Ptrofs.unsigned ofs) Ptrofs.max_unsigned := by
+  constructor
+  · have h := ofs.intrange.1
+    change (-1 : Int) < intOfZ ofs.intval at h
+    change (0 : Int) ≤ intOfZ ofs.intval
+    omega
+  · have h := ofs.intrange.2
+    change intOfZ ofs.intval < intOfZ Ptrofs.modulus at h
+    change intOfZ ofs.intval ≤
+      intOfZ (ZArith.BinInt.Z.sub Ptrofs.modulus (.Zpos .xH))
+    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    change intOfZ ofs.intval ≤ intOfZ Ptrofs.modulus - 1
+    omega
+
+theorem neutral_inject : neutral_injectStatement := by
+  intro m hneutral
+  refine {
+    mi_inj := hneutral
+    mi_freeblocks := ?_
+    mi_mappedblocks := ?_
+    mi_no_overlap := ?_
+    mi_representable := ?_
+    mi_perm_inv := ?_ }
+  · intro b hinvalid
+    unfold flat_inj
+    cases hplt : plt b m.nextblock with
+    | left hb => exact False.elim (hinvalid hb)
+    | right _ => rfl
+  · intro b b' delta hmap
+    rcases scc083_flat_inj_some m.nextblock b b' delta hmap with
+      ⟨rfl, rfl, hb⟩
+    exact hb
+  · intro b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 hne hmap1 hmap2 _ _
+    rcases scc083_flat_inj_some m.nextblock b1 b1' delta1 hmap1 with
+      ⟨rfl, rfl, _⟩
+    rcases scc083_flat_inj_some m.nextblock b2 b2' delta2 hmap2 with
+      ⟨rfl, rfl, _⟩
+    exact Or.inl hne
+  · intro b b' delta ofs hmap _
+    rcases scc083_flat_inj_some m.nextblock b b' delta hmap with
+      ⟨rfl, rfl, _⟩
+    have hzero : ZArith.BinInt.Z.le (.Z0 : Z) .Z0 := by
+      change (0 : Int) ≤ 0
+      omega
+    change ZArith.BinInt.Z.le (.Z0 : Z) .Z0 ∧
+      ZArith.BinInt.Z.le (.Z0 : Z)
+        (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) (.Z0 : Z)) ∧
+      ZArith.BinInt.Z.le
+        (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) (.Z0 : Z))
+        Ptrofs.max_unsigned
+    rw [scc083_zadd_zero]
+    exact And.intro hzero (scc083_ptrofs_unsigned_range ofs)
+  · intro b ofs b' delta k p hmap hperm
+    rcases scc083_flat_inj_some m.nextblock b b' delta hmap with
+      ⟨rfl, rfl, _⟩
+    left
+    change Mem.perm m b ofs k p
+    change Mem.perm m b (ZArith.BinInt.Z.add ofs (.Z0 : Z)) k p at hperm
+    rw [scc083_zadd_zero] at hperm
+    exact hperm
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+

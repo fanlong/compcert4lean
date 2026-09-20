@@ -6413,3 +6413,40 @@ theorem mmatch_lub_r : mmatch_lub_rStatement := by
   · exact hmm.mmatch_below
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem pdisjoint_sound_strong : pdisjoint_sound_strongStatement := by
+  intro sz1 b1 ofs1 bc1 p1 sz2 b2 ofs2 bc2 p2 ge sp hd hm1 hm2 hg1 hs1 hg2 hs2
+  by_cases hb : b1 = b2
+  · subst b2
+    have hglob : ∀ id, bc1 b1 = BCglob id ↔ bc2 b1 = BCglob id := by
+      intro id
+      exact (hg1.1 id b1).symm.trans (hg2.1 id b1)
+    have hstack : bc1 b1 = BCstack ↔ bc2 b1 = BCstack := by
+      constructor
+      · intro h
+        have heq := bc1.bc_stack b1 sp h hs1
+        simpa only [heq] using hs2
+      · intro h
+        have heq := bc2.bc_stack b1 sp h hs2
+        simpa only [heq] using hs1
+    have hpeq : ∀ id1 id2, peqBool id1 id2 = false → id1 ≠ id2 := by
+      intro id1 id2 h heq
+      subst id2
+      unfold peqBool at h
+      cases he : CompCert4Lean.Lib.Coqlib.peq id1 id1 with
+      | left heq => simp [he, boolOfSumbool] at h
+      | right hne => exact hne rfl
+    apply Or.inr
+    cases hm1 <;> cases hm2 <;>
+      simp_all [pdisjoint]
+    all_goals try
+      exact False.elim (hpeq _ _ hd ((hglob _).mpr rfl))
+    all_goals
+      rcases hd with h | h
+      · exact Or.inl (zle_true_prop_for_inval h)
+      · exact Or.inr (zle_true_prop_for_inval h)
+  · exact Or.inl hb
+
+end CompCert4Lean.Backend.ValueDomain
