@@ -9839,3 +9839,19 @@ theorem eagree_update : eagree_updateStatement := by
       simpa [h] using henv0
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem eagree_update_dead : eagree_update_deadStatement := by
+  intro e1 e2 ne v1 r hdead henv r0
+  unfold CompCert4Lean.Backend.RTL.regset at e1 e2
+  rw [CompCert4Lean.Backend.Registers.Regmap.gsspec_proof]
+  cases h : CompCert4Lean.Lib.Coqlib.peq r0 r with
+  | left hrr =>
+      subst r0
+      change NE.get r ne = Nothing at hdead
+      simp [h, hdead, vagree]
+  | right hrr =>
+      simpa [h] using henv r0
+
+end CompCert4Lean.Backend.NeedDomain

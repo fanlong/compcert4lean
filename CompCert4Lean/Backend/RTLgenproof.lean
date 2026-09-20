@@ -6182,3 +6182,29 @@ theorem transl_step_correct
           (match_env_update_dest map e [] rs optid r v tv hl hw hr hm) he
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Common.Smallstep
+
+ theorem transf_program_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transf_program_correctStatement := by
+  intro xi prog tprog hprog
+  exact CompCert4Lean.Common.Smallstep.forward_simulation_star_wf
+    (CminorSel.semantics
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi prog)
+    (RTL.semantics
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi tprog)
+    (senv_preserved prog tprog hprog).2.1
+    match_states
+    (transl_initial_states prog tprog hprog)
+    transl_final_states
+    lt_state
+    lt_state_wf
+    (transl_step_correct xi prog tprog hprog)
+
+end CompCert4Lean.Backend.RTLgenproof

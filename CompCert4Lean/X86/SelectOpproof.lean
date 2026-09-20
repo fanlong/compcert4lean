@@ -5649,3 +5649,71 @@ theorem eval_addrsymbol
     · change eval_addressing64 ge sp (.Aglobal id ofs) [] = some _
       exact CompCert4Lean.X86.Op.eval_addressing_Aglobal _ _ ge sp id ofs
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+private theorem eval_addressing_indexed_zero_local
+    (ge : genv) (sp : val) (b : block) (ofs : Ptrofs) :
+    CompCert4Lean.X86.Op.eval_addressing ge sp (Aindexed (.Z0))
+      [.Vptr b ofs] = some (.Vptr b ofs) := by
+  simp [CompCert4Lean.X86.Op.eval_addressing,
+    CompCert4Lean.X86.Op.eval_addressing64,
+    CompCert4Lean.X86_64.Archi.ptr64]
+  have hz : CompCert4Lean.Lib.Integers.Int64.repr .Z0 =
+      CompCert4Lean.Lib.Integers.Int64.zero := by rfl
+  rw [hz]
+  simp [Val.addl, CompCert4Lean.Lib.Integers.Ptrofs.of_int64,
+    CompCert4Lean.Lib.Integers.Int64.zero,
+    CompCert4Lean.X86_64.Archi.ptr64]
+  have hz' : CompCert4Lean.Lib.Integers.Ptrofs.repr
+      (CompCert4Lean.Lib.Integers.Int64.unsigned
+        (CompCert4Lean.Lib.Integers.WordCore.zero
+          CompCert4Lean.Lib.Integers.Int64.wordsize)) =
+      CompCert4Lean.Lib.Integers.Ptrofs.zero := by rfl
+  rw [hz']
+  rw [CompCert4Lean.Lib.Integers.Ptrofs.add_commut_proof_api]
+  exact local_ptrofs_add_zero_left _
+
+theorem eval_addressing
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_addressingStatement := by
+  intro xi ge sp e m le chunk a v b ofs h heq
+  have hdefault : ∀ (a : expr),
+      eval_expr xi ge sp e m le a v → v = .Vptr b ofs →
+      ∃ vl, eval_exprlist xi ge sp e m le (Econs a Enil) vl ∧
+        CompCert4Lean.X86.Op.eval_addressing ge sp (Aindexed (.Z0)) vl = some v := by
+    intro a ha hv
+    subst v
+    refine ⟨[.Vptr b ofs], ?_, ?_⟩
+    · exact eval_exprlist.cons le a Enil (.Vptr b ofs) [] ha (eval_exprlist.nil le)
+    · exact eval_addressing_indexed_zero_local ge sp b ofs
+  cases hmatch : addressing_match a with
+  | addressing_case1 addr args =>
+      simp [CompCert4Lean.X86.SelectOp.addressing, hmatch,
+        CompCert4Lean.X86_64.Archi.ptr64]
+      exact hdefault (.Eop (.Olea addr) args) h heq
+  | addressing_case2 addr args =>
+      by_cases hv : addressing_valid addr
+      · simp [CompCert4Lean.X86.SelectOp.addressing, hmatch,
+          CompCert4Lean.X86_64.Archi.ptr64, hv]
+        cases h with
+        | eval_Eop le' op al vl v' hargs hop =>
+            change eval_addressing64 ge sp addr vl = some v at hop
+            exact ⟨vl, hargs, by simpa [CompCert4Lean.X86.Op.eval_addressing, CompCert4Lean.X86_64.Archi.ptr64] using hop⟩
+      · simp [CompCert4Lean.X86.SelectOp.addressing, hmatch,
+          CompCert4Lean.X86_64.Archi.ptr64, hv]
+        exact hdefault (.Eop (.Oleal addr) args) h heq
+  | addressing_default a' =>
+      simp [CompCert4Lean.X86.SelectOp.addressing, hmatch,
+        CompCert4Lean.X86_64.Archi.ptr64]
+      exact hdefault a h heq
+
+end CompCert4Lean.X86.SelectOpproof

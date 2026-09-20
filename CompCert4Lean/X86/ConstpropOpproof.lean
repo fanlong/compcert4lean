@@ -4677,3 +4677,184 @@ theorem make_shrimm_correct
         exact CompCert4Lean.Common.Values.Val.lessdef_refl _
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+open Lean Elab Tactic Meta
+
+private theorem worker_and_redundant
+    (i n : CompCert4Lean.Lib.Integers.int)
+    (hred : CompCert4Lean.Lib.Integers.Int.and i
+      (CompCert4Lean.Lib.Integers.Int.not n) =
+      CompCert4Lean.Lib.Integers.Int.zero) :
+    CompCert4Lean.Lib.Integers.Int.and i n = i := by
+  apply CompCert4Lean.Lib.Integers.Int.same_bits_eq_proof
+  intro j hj
+  have hj' :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le (.Z0) j ∧
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt j
+        CompCert4Lean.Lib.Integers.Int.zwordsize := by
+    exact hj
+  rw [CompCert4Lean.Lib.Integers.Int.bits_and_proof i n j hj']
+  have hz := congrArg
+    (fun z => CompCert4Lean.Lib.Integers.Int.testbit z j) hred
+  rw [CompCert4Lean.Lib.Integers.Int.bits_and_proof i
+      (CompCert4Lean.Lib.Integers.Int.not n) j hj',
+    CompCert4Lean.Lib.Integers.Int.bits_zero_proof] at hz
+  rw [CompCert4Lean.Lib.Integers.Int.bits_not_proof n j hj'] at hz
+  cases hji : CompCert4Lean.Lib.Integers.Int.testbit i j with
+  | false => simp [hji]
+  | true =>
+      have hn : CompCert4Lean.Lib.Integers.Int.testbit n j = true := by
+        cases hnj : CompCert4Lean.Lib.Integers.Int.testbit n j with
+        | false => simp [hji, hnj] at hz
+        | true => rfl
+      simp [hji, hn]
+
+private theorem worker_and_uns
+    (k : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (i n : CompCert4Lean.Lib.Integers.int)
+    (hk : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+      (.Z0) k)
+    (hi : is_uns k i)
+    (hred : CompCert4Lean.Lib.Integers.Int.zero_ext k
+      (CompCert4Lean.Lib.Integers.Int.not n) = CompCert4Lean.Lib.Integers.Int.zero) :
+    CompCert4Lean.Lib.Integers.Int.and i n = i := by
+  have hi_ext : CompCert4Lean.Lib.Integers.Int.zero_ext k i = i :=
+    (is_uns_zero_ext k i).mp hi
+  let mask := CompCert4Lean.Lib.Integers.Int.repr
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpower.two_p k) (.Zpos .xH))
+  have hmask_not : CompCert4Lean.Lib.Integers.Int.and
+      (CompCert4Lean.Lib.Integers.Int.not n) mask =
+      CompCert4Lean.Lib.Integers.Int.zero := by
+    rw [← CompCert4Lean.Lib.Integers.Int.zero_ext_and_proof k
+      (CompCert4Lean.Lib.Integers.Int.not n) hk]
+    simpa [mask] using hred
+  have hi_mask : CompCert4Lean.Lib.Integers.Int.zero_ext k i =
+      CompCert4Lean.Lib.Integers.Int.and i mask := by
+    exact CompCert4Lean.Lib.Integers.Int.zero_ext_and_proof k i hk
+  have hred' : CompCert4Lean.Lib.Integers.Int.and i
+      (CompCert4Lean.Lib.Integers.Int.not n) =
+      CompCert4Lean.Lib.Integers.Int.zero := by
+    calc
+      CompCert4Lean.Lib.Integers.Int.and i
+          (CompCert4Lean.Lib.Integers.Int.not n) =
+          CompCert4Lean.Lib.Integers.Int.and
+            (CompCert4Lean.Lib.Integers.Int.and i mask)
+            (CompCert4Lean.Lib.Integers.Int.not n) := by rw [← hi_mask, hi_ext]
+      _ = CompCert4Lean.Lib.Integers.Int.and i
+          (CompCert4Lean.Lib.Integers.Int.and mask
+            (CompCert4Lean.Lib.Integers.Int.not n)) := by
+            exact CompCert4Lean.Lib.Integers.Int.and_assoc_proof i mask
+              (CompCert4Lean.Lib.Integers.Int.not n)
+      _ = CompCert4Lean.Lib.Integers.Int.and i
+          (CompCert4Lean.Lib.Integers.Int.and
+            (CompCert4Lean.Lib.Integers.Int.not n) mask) := by
+            exact congrArg (CompCert4Lean.Lib.Integers.Int.and i)
+              (CompCert4Lean.Lib.Integers.Int.and_commut_proof mask
+                (CompCert4Lean.Lib.Integers.Int.not n))
+      _ = CompCert4Lean.Lib.Integers.Int.and i
+          CompCert4Lean.Lib.Integers.Int.zero := by rw [hmask_not]
+      _ = CompCert4Lean.Lib.Integers.Int.zero :=
+        CompCert4Lean.Lib.Integers.Int.and_zero_proof i
+  exact worker_and_redundant i n hred'
+
+end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.X86.ConstpropOp
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Lib.Integers
+
+set_option maxHeartbeats 1000000 in
+theorem make_andimm_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @make_andimm_correctStatement binary64_certificate binary32_certificate := by
+  intro bc ge sp e m n r x hmatch
+  dsimp [CompCert4Lean.X86.ConstpropOp.make_andimm]
+  split <;> rename_i hzero
+  · have hn : n = CompCert4Lean.Lib.Integers.Int.zero :=
+      worker_int_eq_true n CompCert4Lean.Lib.Integers.Int.zero hzero
+    subst n
+    refine ⟨.Vint CompCert4Lean.Lib.Integers.Int.zero, ?_, ?_⟩
+    · rfl
+    · cases hr : CompCert4Lean.Backend.Registers.Regmap.get r e with
+      | Vint i =>
+          change CompCert4Lean.Common.Values.Val.lessdef
+            (.Vint (CompCert4Lean.Lib.Integers.Int.and i
+              CompCert4Lean.Lib.Integers.Int.zero))
+            (.Vint CompCert4Lean.Lib.Integers.Int.zero)
+          rw [CompCert4Lean.Lib.Integers.Int.and_zero_proof]
+          exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+      | _ => exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+  · split <;> rename_i hmone
+    · have hn : n = CompCert4Lean.Lib.Integers.Int.mone :=
+        worker_int_eq_true n CompCert4Lean.Lib.Integers.Int.mone hmone
+      subst n
+      refine ⟨CompCert4Lean.Backend.Registers.Regmap.get r e, ?_, ?_⟩
+      · rfl
+      · cases hr : CompCert4Lean.Backend.Registers.Regmap.get r e with
+        | Vint i =>
+            change CompCert4Lean.Common.Values.Val.lessdef
+              (.Vint (CompCert4Lean.Lib.Integers.Int.and i
+                CompCert4Lean.Lib.Integers.Int.mone)) (.Vint i)
+            rw [CompCert4Lean.Lib.Integers.Int.and_mone_proof]
+            exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+        | _ => exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+    · split <;> rename_i hredBool
+      · split <;> rename_i hEq
+        · have hred : CompCert4Lean.Lib.Integers.Int.zero_ext hredBool
+              (CompCert4Lean.Lib.Integers.Int.not n) =
+              CompCert4Lean.Lib.Integers.Int.zero :=
+            worker_int_eq_true _ _ hEq
+          generalize hr : CompCert4Lean.Backend.Registers.Regmap.get r e = w at hmatch ⊢
+          cases hmatch with
+          | uns p i k hk hi =>
+              refine ⟨.Vint i, ?_, ?_⟩
+              · change CompCert4Lean.X86.Op.eval_operation ge
+                    (.Vptr sp Ptrofs.zero) .Omove
+                    [CompCert4Lean.Backend.Registers.Regmap.get r e] m =
+                    some (.Vint i)
+                rw [hr]
+                rfl
+              · change CompCert4Lean.Common.Values.Val.lessdef
+                    (.Vint (CompCert4Lean.Lib.Integers.Int.and i n)) (.Vint i)
+                rw [worker_and_uns hredBool i n hk hi hred]
+                exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+          | vmatch_Uns_undef =>
+              refine ⟨.Vundef, ?_, ?_⟩
+              · change CompCert4Lean.X86.Op.eval_operation ge
+                    (.Vptr sp Ptrofs.zero) .Omove
+                    [CompCert4Lean.Backend.Registers.Regmap.get r e] m =
+                    some .Vundef
+                rw [hr]
+                rfl
+              · change CompCert4Lean.Common.Values.Val.lessdef
+                    (.Vundef) (.Vundef)
+                exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+        · refine ⟨CompCert4Lean.Common.Values.Val.and
+              (CompCert4Lean.Backend.Registers.Regmap.get r e) (.Vint n), ?_,
+            CompCert4Lean.Common.Values.Val.lessdef_refl _⟩
+          rfl
+      · refine ⟨CompCert4Lean.Common.Values.Val.and
+            (CompCert4Lean.Backend.Registers.Regmap.get r e) (.Vint n), ?_,
+          CompCert4Lean.Common.Values.Val.lessdef_refl _⟩
+        rfl
+
+end CompCert4Lean.X86.ConstpropOpproof

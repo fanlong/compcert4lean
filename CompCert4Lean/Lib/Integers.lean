@@ -10136,3 +10136,290 @@ theorem bits_xor_proof : bits_xor := by
         (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)
 
 end CompCert4Lean.Lib.Integers.Int64
+
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem pg_suffix_same_bits_eq {x y : int}
+    (h : ∀ i : Z, zLe zZero i ∧ zLt i zwordsize →
+      testbit x i = testbit y i) : x = y := by
+  apply WordCore.ext_of_val_eq
+  apply Nat.eq_of_testBit_eq
+  intro i
+  by_cases hi : i < wordsize
+  · have hi0 : zLe zZero (zOfNat i) := by
+      change 0 ≤ intOfZ (zOfNat i)
+      simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+      exact Int.natCast_nonneg _
+    have hil : zLt (zOfNat i) zwordsize := by
+      change intOfZ (zOfNat i) < intOfZ (zOfNat wordsize)
+      simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+      exact Int.ofNat_lt.mpr (by simpa [wordsize] using hi)
+    have hh := h (zOfNat i) ⟨hi0, hil⟩
+    rw [suffix_int64_testbit_nat, suffix_int64_testbit_nat] at hh
+    exact hh
+  · have hle : wordsize ≤ i := Nat.le_of_not_gt hi
+    have hpow : 2 ^ wordsize ≤ 2 ^ i :=
+      Nat.pow_le_pow_right Nat.zero_lt_two hle
+    have hxlt : x.val < 2 ^ i :=
+      Nat.lt_of_lt_of_le (WordCore.val_lt x) hpow
+    have hylt : y.val < 2 ^ i :=
+      Nat.lt_of_lt_of_le (WordCore.val_lt y) hpow
+    rw [Nat.testBit_lt_two_pow hxlt, Nat.testBit_lt_two_pow hylt]
+
+private theorem pg_suffix_ror_val (x y : int) :
+    (WordCore.ror x y).val =
+      Nat.lor (x.val >>> (y.val % wordsize))
+        (x.val <<< (wordsize - (y.val % wordsize))) % (2 ^ wordsize) := by
+  unfold WordCore.ror
+  dsimp
+  rw [WordCore.val_repr_residue]
+  exact WordCore.residue_zOfNat _ _
+
+private theorem pg_suffix_ror_bit (x y : int) (i : Nat)
+    (hi : i < wordsize) :
+    ((WordCore.ror x y).val).testBit i =
+      x.val.testBit ((i + y.val) % wordsize) := by
+  rw [pg_suffix_ror_val]
+  rw [Nat.lor_eq]
+  rw [Nat.testBit_mod_two_pow]
+  simp only [hi, Bool.true_and]
+  let a := y.val % wordsize
+  have ha : a < wordsize := Nat.mod_lt _ (by omega)
+  have htarget : (i + y.val) % wordsize = (i + a) % wordsize := by
+    dsimp [a]
+    exact (Nat.add_mod_mod i y.val wordsize).symm
+  rw [htarget]
+  simp only [decide_true, Bool.true_and]
+  dsimp [a] at ⊢
+  by_cases hsum : i + a < wordsize
+  · have hright : (x.val >>> a).testBit i = x.val.testBit (i + a) := by
+      simpa [Nat.add_comm] using
+        (Nat.testBit_shiftRight x.val a i)
+    have hleft : (x.val <<< (wordsize - a)).testBit i = false := by
+      rw [Nat.testBit_shiftLeft]
+      simp [show ¬ wordsize - a ≤ i by omega]
+    dsimp [a] at hright hleft
+    simp only [Nat.testBit_or, hright, hleft, Bool.or_false, decide_true,
+      Bool.true_and]
+    rw [Nat.mod_eq_of_lt hsum]
+  · have hsum' : wordsize ≤ i + a := Nat.le_of_not_gt hsum
+    have hright : (x.val >>> a).testBit i = false := by
+      rw [Nat.testBit_shiftRight]
+      apply Nat.testBit_lt_two_pow
+      have hpow : 2 ^ wordsize ≤ 2 ^ (a + i) :=
+        Nat.pow_le_pow_right Nat.zero_lt_two (by omega)
+      exact Nat.lt_of_lt_of_le (WordCore.val_lt x) hpow
+    have hleft : (x.val <<< (wordsize - a)).testBit i =
+        x.val.testBit (i + a - wordsize) := by
+      rw [Nat.testBit_shiftLeft]
+      simp [show wordsize - a ≤ i by omega]
+      congr 1 <;> omega
+    dsimp [a] at hright hleft
+    simp only [Nat.testBit_or, hright, Bool.false_or, hleft, decide_true,
+      Bool.true_and]
+    rw [Nat.mod_eq_sub_mod hsum']
+    have hidx : i + a - wordsize < wordsize := by omega
+    rw [Nat.mod_eq_of_lt hidx]
+
+private theorem pg_suffix_ror_testbit_nat (x y : int) (n : Nat)
+    (hn : n < wordsize) :
+    testbit (ror x y) (zOfNat n) =
+      testbit x (zOfNat ((n + y.val) % wordsize)) := by
+  change testbit (WordCore.ror x y) (zOfNat n) =
+    testbit x (zOfNat ((n + y.val) % wordsize))
+  rw [suffix_int64_testbit_nat (WordCore.ror x y) n]
+  change (WordCore.ror x y).val.testBit n =
+    testbit x (zOfNat ((n + y.val) % wordsize))
+  rw [pg_suffix_ror_bit x y n hn, suffix_int64_testbit_nat]
+
+private theorem pg_suffix_zmod_add_nat (i : Nat) (y : int) :
+    zMod (zAdd (zOfNat i) (unsigned y)) zwordsize =
+      zOfNat ((i + y.val) % wordsize) := by
+  have hy : unsigned y = zOfNat y.val := by
+    change y.intval = zOfNat y.val
+    exact WordCore.intval_eq_zOfNat_val y
+  rw [hy]
+  apply intOfZ_injective
+  simp only [zMod, zAdd, zwordsize, zOfNat,
+    ZArith.BinInt.Z.modulo, ZArith.BinInt.Z.add,
+    ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  change (if (Int.ofNat wordsize) = 0 then
+      Int.ofNat i + Int.ofNat y.val
+    else if 0 < Int.ofNat wordsize then
+      (Int.ofNat i + Int.ofNat y.val) % Int.ofNat wordsize
+    else _) = Int.ofNat ((i + y.val) % wordsize)
+  simp [wordsize, Int.natCast_add, Int.natCast_emod]
+
+private theorem pg_suffix_rol_val (x y : int) :
+    (WordCore.rol x y).val =
+      Nat.lor (x.val <<< (y.val % wordsize))
+        (x.val >>> (wordsize - (y.val % wordsize))) % (2 ^ wordsize) := by
+  unfold WordCore.rol
+  dsimp
+  rw [WordCore.val_repr_residue]
+  exact WordCore.residue_zOfNat _ _
+
+private theorem pg_suffix_rol_bit (x y : int) (i : Nat)
+    (hi : i < wordsize) :
+    ((WordCore.rol x y).val).testBit i =
+      x.val.testBit ((i + wordsize - (y.val % wordsize)) % wordsize) := by
+  rw [pg_suffix_rol_val]
+  rw [Nat.lor_eq]
+  rw [Nat.testBit_mod_two_pow]
+  simp only [hi, Bool.true_and]
+  let a := y.val % wordsize
+  have ha : a < wordsize := Nat.mod_lt _ (by omega)
+  by_cases hia : a ≤ i
+  · have hleft : (x.val <<< a).testBit i = x.val.testBit (i - a) := by
+      rw [Nat.testBit_shiftLeft]
+      simp [hia]
+    have hright : (x.val >>> (wordsize - a)).testBit i = false := by
+      rw [Nat.testBit_shiftRight]
+      apply Nat.testBit_lt_two_pow
+      have hpow : 2 ^ wordsize ≤ 2 ^ (wordsize - a + i) :=
+        Nat.pow_le_pow_right Nat.zero_lt_two (by omega)
+      exact Nat.lt_of_lt_of_le (WordCore.val_lt x) hpow
+    dsimp [a] at hleft hright
+    simp only [Nat.testBit_or, hleft, hright, Bool.false_or, decide_true,
+      Bool.true_and]
+    rw [Bool.or_false]
+    change x.val.testBit (i - a) =
+      x.val.testBit ((i + wordsize - a) % wordsize)
+    rw [Nat.mod_eq_sub_mod (by omega : wordsize ≤ i + wordsize - a)]
+    have hidx : i + wordsize - a - wordsize = i - a := by omega
+    rw [hidx, Nat.mod_eq_of_lt (by omega : i - a < wordsize)]
+  · have hia' : i < a := Nat.lt_of_not_ge hia
+    have hleft : (x.val <<< a).testBit i = false := by
+      rw [Nat.testBit_shiftLeft]
+      simp [show ¬ a ≤ i by omega]
+    have hright : (x.val >>> (wordsize - a)).testBit i =
+        x.val.testBit (i + (wordsize - a)) := by
+      rw [Nat.testBit_shiftRight]
+      congr 1 <;> omega
+    dsimp [a] at hleft hright
+    simp only [Nat.testBit_or, hleft, Bool.false_or, hright, decide_true,
+      Bool.true_and]
+    change x.val.testBit (i + (wordsize - a)) =
+      x.val.testBit ((i + wordsize - a) % wordsize)
+    rw [Nat.mod_eq_of_lt (by omega : i + wordsize - a < wordsize)]
+    congr 1 <;> omega
+
+private theorem pg_suffix_neg_mod_wordsize (y : int) :
+    (WordCore.neg y).val % wordsize =
+      (wordsize - (y.val % wordsize)) % wordsize := by
+  have hdvd : (Int.ofNat wordsize : Int) ∣ Int.ofNat (2 ^ wordsize) := by
+    decide
+  have hrem : y.val % wordsize ≤ wordsize := by
+    exact Nat.le_of_lt (Nat.mod_lt _ (by decide))
+  have hInt :
+      (Int.ofNat ((WordCore.neg y).val % wordsize) : Int) =
+        Int.ofNat ((wordsize - (y.val % wordsize)) % wordsize) := by
+    calc
+      (Int.ofNat ((WordCore.neg y).val % wordsize) : Int) =
+          (Int.ofNat (WordCore.neg y).val : Int) % Int.ofNat wordsize := by
+        exact (Int.natCast_emod _ _).symm
+      _ = ((-Int.ofNat y.val) % Int.ofNat (2 ^ wordsize)) %
+          Int.ofNat wordsize := by
+        rw [pg_int64_neg_val_int]
+      _ = (-Int.ofNat y.val) % Int.ofNat wordsize := by
+        rw [Int.emod_emod_of_dvd _ hdvd]
+      _ = (Int.ofNat wordsize -
+          (Int.ofNat y.val % Int.ofNat wordsize)) % Int.ofNat wordsize := by
+        rw [Int.neg_emod_eq_sub_emod]
+        rw [Int.sub_emod, Int.emod_self, Int.zero_sub,
+          Int.neg_emod_eq_sub_emod]
+      _ = Int.ofNat ((wordsize - (y.val % wordsize)) % wordsize) := by
+        simp only [Int.ofNat_eq_natCast, Int.natCast_emod]
+        rw [← Int.natCast_emod y.val wordsize, ← Int.ofNat_sub hrem]
+  exact Int.ofNat.inj hInt
+
+private theorem pg_suffix_rol_testbit_nat (x y : int) (n : Nat)
+    (hn : n < wordsize) :
+    testbit (rol x y) (zOfNat n) =
+      testbit x (zOfNat ((n + wordsize - (y.val % wordsize)) % wordsize)) := by
+  change testbit (WordCore.rol x y) (zOfNat n) =
+    testbit x (zOfNat ((n + wordsize - (y.val % wordsize)) % wordsize))
+  rw [suffix_int64_testbit_nat (WordCore.rol x y) n]
+  change (WordCore.rol x y).val.testBit n =
+    testbit x (zOfNat ((n + wordsize - (y.val % wordsize)) % wordsize))
+  rw [pg_suffix_rol_bit x y n hn, suffix_int64_testbit_nat]
+
+private theorem pg_suffix_rol_neg_index (y : int) (n : Nat) :
+    (n + wordsize - ((WordCore.neg y).val % wordsize)) % wordsize =
+      (n + y.val) % wordsize := by
+  rw [pg_suffix_neg_mod_wordsize]
+  let r := y.val % wordsize
+  have hr : r < wordsize := Nat.mod_lt _ (by decide)
+  have hright : (n + wordsize - ((wordsize - r) % wordsize)) % wordsize =
+      (n + r) % wordsize := by
+    by_cases hr0 : r = 0
+    · simp [hr0]
+    · have hsublt : wordsize - r < wordsize := by omega
+      rw [Nat.mod_eq_of_lt hsublt]
+      congr 1 <;> omega
+  calc
+    (n + wordsize - ((wordsize - (y.val % wordsize)) % wordsize)) % wordsize =
+        (n + r) % wordsize := by simpa [r] using hright
+    _ = (n + y.val) % wordsize := by
+      simpa [r] using (Nat.add_mod_mod n y.val wordsize).symm
+
+theorem ror_rol_neg_proof : ror_rol_neg := by
+  intro x y _
+  apply pg_suffix_same_bits_eq
+  intro i hi
+  cases i with
+  | Zneg p =>
+      have hi0 := hi.1
+      change (0 : Int) ≤ -Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at hi0
+      have hp : (0 : Int) < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+        Int.natCast_pos.mpr
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p)
+      omega
+  | Z0 =>
+      have hmod := pg_suffix_zmod_add_nat 0 y
+      have hmod' := hmod
+      change zMod (zAdd (.Z0 : Z) (unsigned y)) zwordsize =
+        zOfNat ((0 + y.val) % wordsize) at hmod'
+      have hidx := pg_suffix_rol_neg_index y 0
+      calc
+        testbit (ror x y) (.Z0 : Z) =
+            testbit x (zOfNat ((0 + y.val) % wordsize)) :=
+          pg_suffix_ror_testbit_nat x y 0 (by decide)
+        _ = testbit x
+            (zOfNat ((0 + wordsize - ((WordCore.neg y).val % wordsize)) %
+              wordsize)) := by
+          rw [hidx]
+        _ = testbit (rol x (neg y)) (.Z0 : Z) := by
+          exact (pg_suffix_rol_testbit_nat x (WordCore.neg y) 0 (by decide)).symm
+  | Zpos p =>
+      have hkZ := hi.2
+      change (Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) : Int) <
+        Int.ofNat wordsize at hkZ
+      have hk :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p < wordsize :=
+        Int.ofNat_lt.mp hkZ
+      have hz : zOfNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) = .Zpos p := by
+        exact ZArith.Znat.positive_nat_Z p
+      rw [← hz] at hi ⊢
+      let n := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p
+      have hmod := pg_suffix_zmod_add_nat n y
+      have hidx := pg_suffix_rol_neg_index y n
+      calc
+        testbit (ror x y) (zOfNat n) =
+            testbit x (zOfNat ((n + y.val) % wordsize)) :=
+          pg_suffix_ror_testbit_nat x y n hk
+        _ = testbit x
+            (zOfNat ((n + wordsize - ((WordCore.neg y).val % wordsize)) %
+              wordsize)) := by
+          rw [hidx]
+        _ = testbit (rol x (neg y)) (zOfNat n) := by
+          exact (pg_suffix_rol_testbit_nat x (WordCore.neg y) n hk).symm
+
+end CompCert4Lean.Lib.Integers.Int64

@@ -6582,3 +6582,51 @@ theorem ablock_store_sound : ablock_store_soundStatement := by
         · simpa only [if_neg hcompat] using hsummary
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Lib.Maps
+
+private theorem bmatch_lub_l_block_aux
+    (cfg : CompilerConfig) (bc : block_classification) (m : mem) (b : block)
+    (x y : ablock) (h : bmatch bc m b x) : bmatch bc m b (blub cfg x y) := by
+  have hs := smatch_lub_l bc m b x.ab_summary y.ab_summary h.1
+  constructor
+  · exact hs
+  · intro chunk ofs v hload
+    have hsummary := vnormalize_cast bc chunk m b ofs v
+      (plub x.ab_summary y.ab_summary) hload (hs.1 chunk ofs v hload)
+    have hold := h.2 chunk ofs v hload
+    unfold ablock_load
+    simp only [blub]
+    erw [ZTree.gcombine_proof acontent acontent acontent (combine_acontents cfg) rfl]
+    cases hx : ZTree.get ofs x.ab_contents with
+    | none => simpa only [combine_acontents] using hsummary
+    | some cx =>
+        cases cx with
+        | ACval chunkx avx =>
+            cases hy : ZTree.get ofs y.ab_contents with
+            | none => simpa only [combine_acontents] using hsummary
+            | some cy =>
+                cases cy with
+                | ACval chunky avy =>
+                    by_cases hchunks : chunkx = chunky
+                    · subst chunky
+                      simp only [combine_acontents, ↓reduceIte]
+                      by_cases hcompat : chunk_compat chunk chunkx = true
+                      · rw [if_pos hcompat]
+                        have hnobool : chunk ≠ .Mbool := by
+                          intro heq
+                          subst chunk
+                          simp [chunk_compat] at hcompat
+                        apply vmatch_ge bc v _ (vnormalize chunk avx)
+                        · exact mmatch_lub_r_normalize_aux chunk hnobool
+                            (vlub cfg avx avy) avx (vge_lub_l cfg avx avy)
+                        · simpa only [ablock_load, hx, hcompat, ↓reduceIte] using hold
+                      · simpa only [if_neg hcompat] using hsummary
+                    · simpa only [combine_acontents, if_neg hchunks] using hsummary
+
+theorem bmatch_lub_l : bmatch_lub_lStatement := by
+  exact bmatch_lub_l_block_aux
+
+end CompCert4Lean.Backend.ValueDomain

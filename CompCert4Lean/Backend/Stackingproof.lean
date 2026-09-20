@@ -5780,3 +5780,392 @@ theorem frame_set_local : frame_set_localStatement := by
       ⟨hframe1', hnew.2.1, hframe.2.2⟩ hranges'
 
 end CompCert4Lean.Backend.Stackingproof
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.Backend.Conventions
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Separation
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Conventions1
+open CompCert4Lean.X86.Machregs
+open CompCert4Lean.X86.Stacklayout
+
+private theorem functionPrologueDropTail5 {A B C D E U : massert} {m : mem}
+    (h : (sepconj A (sepconj B (sepconj C (sepconj D (sepconj E U))))).m_pred m) :
+    (sepconj A (sepconj B (sepconj C (sepconj D E)))).m_pred m := by
+  have hA := h.1
+  have hB := h.2.1.1
+  have hC := h.2.1.2.1.1
+  have hD := h.2.1.2.1.2.1.1
+  have hE := h.2.1.2.1.2.1.2.1.1
+  have hinclE : ∀ b o, E.m_footprint b o →
+      (sepconj E U).m_footprint b o := by intro b o he; exact Or.inl he
+  have hinclDE : ∀ b o, (sepconj D E).m_footprint b o →
+      (sepconj D (sepconj E U)).m_footprint b o := by
+    intro b o hh
+    cases hh with
+    | inl hd => exact Or.inl hd
+    | inr he => exact Or.inr (Or.inl he)
+  have hinclCDE : ∀ b o, (sepconj C (sepconj D E)).m_footprint b o →
+      (sepconj C (sepconj D (sepconj E U))).m_footprint b o := by
+    intro b o hh
+    cases hh with
+    | inl hc => exact Or.inl hc
+    | inr hde => exact Or.inr (hinclDE b o hde)
+  have hinclBCDE : ∀ b o, (sepconj B (sepconj C (sepconj D E))).m_footprint b o →
+      (sepconj B (sepconj C (sepconj D (sepconj E U)))).m_footprint b o := by
+    intro b o hh
+    cases hh with
+    | inl hb => exact Or.inl hb
+    | inr hcde => exact Or.inr (hinclCDE b o hcde)
+  have hinclABCDE : ∀ b o, (sepconj B (sepconj C (sepconj D E))).m_footprint b o →
+      (sepconj B (sepconj C (sepconj D (sepconj E U)))).m_footprint b o := hinclBCDE
+  refine ⟨hA, ⟨hB, ⟨hC, ⟨hD, hE, ?_⟩, ?_⟩, ?_⟩, ?_⟩
+  · intro b o hD' hE'
+    exact h.2.1.2.1.2.1.2.2 b o hD' (hinclE b o hE')
+  · intro b o hC' hDE'
+    exact h.2.1.2.1.2.2 b o hC' (hinclDE b o hDE')
+  · intro b o hB' hCDE'
+    exact h.2.1.2.2 b o hB' (hinclCDE b o hCDE')
+  · intro b o hA' hBCDE'
+    exact h.2.2 b o hA' (hinclBCDE b o hBCDE')
+
+private theorem functionPrologueReassoc5 {A B C D E U : massert} {m : mem}
+    (h : (sepconj A (sepconj B (sepconj C (sepconj D (sepconj E U))))).m_pred m) :
+    (sepconj (sepconj A (sepconj B (sepconj C (sepconj D E)))) U).m_pred m := by
+  have hA := h.1
+  have hB := h.2.1.1
+  have hC := h.2.1.2.1.1
+  have hD := h.2.1.2.1.2.1.1
+  have hE := h.2.1.2.1.2.1.2.1.1
+  have hU := h.2.1.2.1.2.1.2.1.2.1
+  have hinclE : ∀ b o, E.m_footprint b o →
+      (sepconj E U).m_footprint b o := by intro b o he; exact Or.inl he
+  have hinclDE : ∀ b o, (sepconj D E).m_footprint b o →
+      (sepconj D (sepconj E U)).m_footprint b o := by
+    intro b o hh
+    cases hh with
+    | inl hd => exact Or.inl hd
+    | inr he => exact Or.inr (Or.inl he)
+  have hinclCDE : ∀ b o, (sepconj C (sepconj D E)).m_footprint b o →
+      (sepconj C (sepconj D (sepconj E U))).m_footprint b o := by
+    intro b o hh
+    cases hh with
+    | inl hc => exact Or.inl hc
+    | inr hde => exact Or.inr (hinclDE b o hde)
+  have hinclBCDE : ∀ b o, (sepconj B (sepconj C (sepconj D E))).m_footprint b o →
+      (sepconj B (sepconj C (sepconj D (sepconj E U)))).m_footprint b o := by
+    intro b o hh
+    cases hh with
+    | inl hb => exact Or.inl hb
+    | inr hcde => exact Or.inr (hinclCDE b o hcde)
+  have hinclABCDE : ∀ b o,
+      (sepconj A (sepconj B (sepconj C (sepconj D E)))).m_footprint b o →
+      (sepconj A (sepconj B (sepconj C (sepconj D (sepconj E U))))).m_footprint b o := by
+    intro b o hh
+    cases hh with
+    | inl ha => exact Or.inl ha
+    | inr hbcde => exact Or.inr (hinclBCDE b o hbcde)
+  refine ⟨⟨hA, ⟨hB, ⟨hC, ⟨hD, hE, ?_⟩, ?_⟩, ?_⟩, ?_⟩, hU, ?_⟩
+  · intro b o hD' hE'
+    exact h.2.1.2.1.2.1.2.2 b o hD' (hinclE b o hE')
+  · intro b o hC' hDE'
+    exact h.2.1.2.1.2.2 b o hC' (hinclDE b o hDE')
+  · intro b o hB' hCDE'
+    exact h.2.1.2.2 b o hB' (hinclCDE b o hCDE')
+  · intro b o hA' hBCDE'
+    exact h.2.2 b o hA' (hinclBCDE b o hBCDE')
+  · intro b o hABCDE' hU'
+    cases hABCDE' with
+    | inl hA' =>
+        exact h.2.2 b o hA' (Or.inr (Or.inr (Or.inr (Or.inr hU'))))
+    | inr hBCDE' =>
+        cases hBCDE' with
+        | inl hB' =>
+            exact h.2.1.2.2 b o hB' (Or.inr (Or.inr (Or.inr hU')))
+        | inr hCDE' =>
+            cases hCDE' with
+            | inl hC' =>
+                exact h.2.1.2.1.2.2 b o hC' (Or.inr (Or.inr hU'))
+            | inr hDE' =>
+                cases hDE' with
+                | inl hD' =>
+                    exact h.2.1.2.1.2.1.2.2 b o hD' (Or.inr hU')
+                | inr hE' =>
+                    exact h.2.1.2.1.2.1.2.1.2.2 b o hE' hU'
+
+theorem function_prologue_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    function_prologue_correctStatement := by
+  intro cfg xi return_address_offset prog tprog f
+    bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop tf htf
+    j ls ls0 ls1 rs rs1 m1 m1' m2 sp parent ra cs fb k P
+    hagree hcallee hout htype hls1 hrs1 halloc hparent hra hsep
+  have htf_eq := unfold_transf_function cfg f tf htf
+  subst tf
+  let b := function_bounds cfg f
+  let fe := make_env cfg b
+  have hsize : zLe fe.fe_size Ptrofs.max_unsigned := by
+    dsimp [fe, b]
+    exact size_no_overflow cfg f _ (by exact htf)
+  have hrange := frame_env_range cfg b bound_local_pos bound_outgoing_pos
+    bound_stack_data_pos used_callee_save_norepet used_callee_save_prop
+  have halign := frame_env_aligned cfg b bound_local_pos bound_outgoing_pos
+    bound_stack_data_pos used_callee_save_norepet used_callee_save_prop
+  have hstack_eq : b.bound_stack_data = ZArith.BinInt.Z.max z0 f.fn_stacksize := by
+    dsimp [b, function_bounds]
+    rw [ZArith.BinInt.Z.max_comm]
+  let a2 := Mem.alloc m1' z0 fe.fe_size
+  cases ha2 : a2 with
+  | mk m2' sp' =>
+    have halloc' : Mem.alloc m1' z0 fe.fe_size = (m2', sp') := ha2
+    have hhi : zAdd fe.fe_stack_data b.bound_stack_data =
+        zAdd fe.fe_stack_data (ZArith.BinInt.Z.max z0 f.fn_stacksize) := by rw [hstack_eq]
+    have hfe_nonneg : zLe z0 fe.fe_size := by
+      change intOfZ z0 ≤ intOfZ fe.fe_size
+      have h0 := hrange.1
+      have h1 := hrange.2
+      have hs := bound_stack_data_pos
+      change intOfZ z0 ≤ intOfZ fe.fe_stack_data at h0
+      change intOfZ (zAdd fe.fe_stack_data b.bound_stack_data) ≤ intOfZ fe.fe_size at h1
+      change intOfZ z0 ≤ intOfZ b.bound_stack_data at hs
+      change intOfZ z0 ≤ intOfZ fe.fe_size
+      simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at h0 h1 hs ⊢
+      have hz0 : intOfZ z0 = 0 := rfl
+      rw [hz0] at h0 hs ⊢
+      omega
+    have hsep_alloc := alloc_parallel_rule_2
+      (F := Linear.fundef) (V := Unit) (Genv.globalenv prog)
+      m1 f.fn_stacksize m2 sp m1' fe.fe_size m2' sp' P j
+      fe.fe_stack_data (zAdd fe.fe_stack_data b.bound_stack_data)
+      (fe.fe_stack_data) hsep halloc halloc' halign.2.2.1 rfl hhi
+      ⟨hfe_nonneg, hsize⟩ hrange.1 hrange.2
+    rcases hsep_alloc with ⟨j', halloc_frame, hjinc, hjsp⟩
+    have hframe_layout := frame_env_separated cfg b bound_local_pos bound_outgoing_pos
+      bound_stack_data_pos used_callee_save_norepet used_callee_save_prop sp' m2'
+      (sepconj (minjection j' m2)
+        (sepconj (globalenv_inject (Genv.globalenv prog) j') P)) halloc_frame
+    let localR := range sp' fe.fe_ofs_local (zAdd fe.fe_ofs_local (zMul z4 b.bound_local))
+    let outR := range sp' (fe_ofs_arg cfg) (zAdd (fe_ofs_arg cfg) (zMul z4 b.bound_outgoing))
+    let linkR := range sp' fe.fe_ofs_link (zAdd fe.fe_ofs_link (size_chunk Mptr))
+    let retR := range sp' fe.fe_ofs_retaddr (zAdd fe.fe_ofs_retaddr (size_chunk Mptr))
+    let calleeR := range sp' fe.fe_ofs_callee_save
+      (size_callee_save_area cfg b fe.fe_ofs_callee_save)
+    let tail := sepconj calleeR
+      (sepconj (minjection j' m2) (sepconj (globalenv_inject (Genv.globalenv prog) j') P))
+    have hframe_layout' : (sepconj localR (sepconj outR (sepconj linkR (sepconj retR tail)))).m_pred m2' := by
+      simpa [localR, outR, linkR, retR, calleeR, tail, fe, b] using hframe_layout
+    have hlink_first : (sepconj linkR (sepconj outR (sepconj localR (sepconj retR tail)))).m_pred m2' := by
+      exact (sep_swap3 localR outR linkR (sepconj retR tail)).1.1 m2' hframe_layout'
+    have hlink_range := range_contains Mptr sp' fe.fe_ofs_link
+      (sepconj outR (sepconj localR (sepconj retR tail))) m2'
+      hlink_first halign.2.2.2.1
+    have hlink_set := stackingproof_contains_set_stack
+      (fun v => v = parent) parent (fun _ => True) m2' Tptr sp'
+      fe.fe_ofs_link (sepconj outR (sepconj localR (sepconj retR tail)))
+      hlink_range (by simpa [chunk_of_Tptr] using Val.load_result_same parent Tptr hparent)
+    rcases hlink_set with ⟨m3', hstore_parent, hafter_parent⟩
+    let linkC := contains (chunk_of_type Tptr) sp' fe.fe_ofs_link (fun v => v = parent)
+    have hframe_after_parent :
+        (sepconj localR (sepconj outR (sepconj linkC (sepconj retR tail)))).m_pred m3' := by
+      exact (sep_swap3 linkC outR localR (sepconj retR tail)).1.1 m3' hafter_parent
+    have hret_first : (sepconj retR (sepconj outR (sepconj linkC (sepconj localR tail)))).m_pred m3' := by
+      exact (sep_swap4 localR outR linkC retR tail).1.1 m3' hframe_after_parent
+    have hret_range := range_contains Mptr sp' fe.fe_ofs_retaddr
+      (sepconj outR (sepconj linkC (sepconj localR tail))) m3'
+      hret_first halign.2.2.2.2
+    have hret_set := stackingproof_contains_set_stack
+      (fun v => v = ra) ra (fun _ => True) m3' Tptr sp'
+      fe.fe_ofs_retaddr (sepconj outR (sepconj linkC (sepconj localR tail)))
+      hret_range (by simpa [chunk_of_Tptr] using Val.load_result_same ra Tptr hra)
+    rcases hret_set with ⟨m4', hstore_retaddr, hafter_retaddr⟩
+    let retC := contains (chunk_of_type Tptr) sp' fe.fe_ofs_retaddr (fun v => v = ra)
+    have hframe_after_retaddr :
+        (sepconj localR (sepconj outR (sepconj linkC (sepconj retC tail)))).m_pred m4' := by
+      exact (sep_swap4 retC outR linkC localR tail).1.1 m4' hafter_retaddr
+    let P0 := sepconj (minjection j' m2)
+      (sepconj (globalenv_inject (Genv.globalenv prog) j') P)
+    let Psave := sepconj outR (sepconj linkC (sepconj retC (sepconj localR P0)))
+    have hsave_in : (sepconj calleeR Psave).m_pred m4' := by
+      exact (sep_swap5 localR outR linkC retC calleeR P0).1.1 m4' hframe_after_retaddr
+    have hagree_j' : agree_regs j' ls rs := agree_regs_inject_incr j ls rs j' hagree hjinc
+    have hsave := save_callee_save_correct
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      cfg xi return_address_offset tprog f
+      bound_local_pos bound_outgoing_pos bound_stack_data_pos
+      used_callee_save_norepet used_callee_save_prop j' ls ls0 rs sp' cs fb k m4' Psave
+      hsave_in htype hcallee hagree_j'
+    rcases hsave with ⟨rs', m5', hstar, hcs, hperm, hagree'⟩
+    let csA := contains_callee_saves j' sp' fe.fe_ofs_callee_save b.used_callee_save ls0
+    have hcs' :
+        (sepconj csA (sepconj outR (sepconj linkC (sepconj retC (sepconj localR P0))))).m_pred m5' := by
+      simpa [Psave, csA] using hcs
+    have hframe_order :
+        (sepconj localR (sepconj outR (sepconj linkC (sepconj retC (sepconj csA P0))))).m_pred m5' := by
+      exact (sep_swap5 localR outR linkC retC csA P0).2.1 m5' hcs'
+    let Ptail := sepconj outR (sepconj linkC (sepconj retC (sepconj csA P0)))
+    have hlocal_init := initial_locations return_address_offset tprog j' sp'
+      fe.fe_ofs_local b.bound_local Ptail Local ls1 m5'
+      (by simpa [Ptail] using hframe_order) halign.2.1 (by
+        intro ofs ty
+        rw [hls1, LTL_undef_regs_slot]
+        simp [LTL.call_regs])
+    let localC := contains_locations return_address_offset tprog j' sp'
+      fe.fe_ofs_local b.bound_local Local ls1
+    have hlocal_init' :
+        (sepconj localC (sepconj outR (sepconj linkC (sepconj retC (sepconj csA P0))))).m_pred m5' := by
+      simpa [localC] using hlocal_init
+    let remOut := sepconj linkC (sepconj retC (sepconj csA P0))
+    have hout_first : (sepconj outR (sepconj localC remOut)).m_pred m5' := by
+      exact (sep_swap localC outR remOut).1.1 m5' hlocal_init'
+    have hout_init := initial_locations return_address_offset tprog j' sp'
+      (fe_ofs_arg cfg) b.bound_outgoing (sepconj localC remOut) Outgoing ls1 m5'
+      (by simpa [remOut] using hout_first) halign.1 (by
+        intro ofs ty
+        rw [hls1, LTL_undef_regs_slot]
+        simp [LTL.call_regs])
+    let outC := contains_locations return_address_offset tprog j' sp'
+      (fe_ofs_arg cfg) b.bound_outgoing Outgoing ls1
+    have hframe_final :
+        (sepconj localC (sepconj outC (sepconj linkC (sepconj retC (sepconj csA P0))))).m_pred m5' := by
+      have hout_init' : (sepconj outC (sepconj localC remOut)).m_pred m5' := by
+        simpa [outC, remOut] using hout_init
+      exact (sep_swap outC localC remOut).1.1 m5' hout_init'
+    have hframe1 : (frame_contents_1 return_address_offset tprog cfg f
+        bound_local_pos bound_outgoing_pos bound_stack_data_pos
+        used_callee_save_norepet used_callee_save_prop j' sp' ls1 ls0 parent ra).m_pred m5' := by
+      apply functionPrologueDropTail5 (A := localC) (B := outC) (C := linkC)
+        (D := retC) (E := csA) (U := P0)
+      simpa [frame_contents_1, localC, outC, linkC, retC, csA, P0, b, fe,
+        hasvalue, chunk_of_Tptr] using hframe_final
+    have hframe1P : (sepconj (frame_contents_1 return_address_offset tprog cfg f
+        bound_local_pos bound_outgoing_pos bound_stack_data_pos
+        used_callee_save_norepet used_callee_save_prop j' sp' ls1 ls0 parent ra) P0).m_pred m5' := by
+      have h4 := functionPrologueReassoc5 (A := localC) (B := outC)
+        (C := linkC) (D := retC) (E := csA) (U := P0) hframe_final
+      dsimp [localC, outC, linkC, retC, csA, P0] at h4
+      rw [CompCert4Lean.Common.AST.chunk_of_Tptr] at h4
+      simpa [frame_contents_1, b, fe, hasvalue] using h4
+    have hparent_mem : Mem.store (chunk_of_type Tptr) m2' sp'
+        (Ptrofs.unsigned (Ptrofs.add Ptrofs.zero (Ptrofs.repr fe.fe_ofs_link))) parent = some m3' := by
+      unfold Mach.store_stack Mem.storev at hstore_parent
+      simpa only [Val.offset_ptr] using hstore_parent
+    have haddZero : ∀ x : Ptrofs.int,
+        Ptrofs.add Ptrofs.zero x = x := by
+      intro x
+      change WordCore.add (WordCore.zero Ptrofs.wordsize) x = x
+      apply WordCore.ext_of_val_eq
+      rw [stackingproof_wordcore_add_val]
+      have hz : (WordCore.zero Ptrofs.wordsize).val = 0 := by rfl
+      rw [hz, Nat.zero_add, Nat.mod_eq_of_lt (stackingproof_wordcore_val_lt _)]
+    have hadd_link := haddZero (Ptrofs.repr fe.fe_ofs_link)
+    have hrepr_link : Ptrofs.unsigned (Ptrofs.repr fe.fe_ofs_link) = fe.fe_ofs_link := by
+      apply stackingproof_ptrofs_unsigned_repr
+      exact hlink_range.1.1
+    have hparent_mem' : Mem.store (chunk_of_type Tptr) m2' sp' fe.fe_ofs_link parent = some m3' := by
+      simpa [chunk_of_Tptr, hadd_link, hrepr_link] using hparent_mem
+    have hret_mem : Mem.store (chunk_of_type Tptr) m3' sp'
+        (Ptrofs.unsigned (Ptrofs.add Ptrofs.zero (Ptrofs.repr fe.fe_ofs_retaddr))) ra = some m4' := by
+      unfold Mach.store_stack Mem.storev at hstore_retaddr
+      simpa only [Val.offset_ptr] using hstore_retaddr
+    have hadd_ret := haddZero (Ptrofs.repr fe.fe_ofs_retaddr)
+    have hrepr_ret : Ptrofs.unsigned (Ptrofs.repr fe.fe_ofs_retaddr) = fe.fe_ofs_retaddr := by
+      apply stackingproof_ptrofs_unsigned_repr
+      exact hret_range.1.1
+    have hret_mem' : Mem.store (chunk_of_type Tptr) m3' sp' fe.fe_ofs_retaddr ra = some m4' := by
+      simpa [chunk_of_Tptr, hadd_ret, hrepr_ret] using hret_mem
+    have hperm_all : ∀ i k0 p0, Mem.perm m2' sp' i k0 p0 → Mem.perm m5' sp' i k0 p0 := by
+      intro i k0 p0 hp0
+      apply hperm i k0 p0
+      apply Mem.perm_store_1 (chunk_of_type Tptr) m3' sp' fe.fe_ofs_retaddr ra m4' hret_mem'
+      apply Mem.perm_store_1 (chunk_of_type Tptr) m2' sp' fe.fe_ofs_link parent m3' hparent_mem'
+      exact hp0
+    let rangeA := range sp' z0 fe.fe_stack_data
+    let rangeB := range sp' (zAdd fe.fe_stack_data b.bound_stack_data) fe.fe_size
+    let Qranges := sepconj rangeA rangeB
+    have hQranges0 : Qranges.m_pred m2' := by
+      refine ⟨halloc_frame.1, halloc_frame.2.1.1, ?_⟩
+      intro bb oo ha hb
+      exact halloc_frame.2.2 bb oo ha (Or.inl hb)
+    have hQranges5 : Qranges.m_pred m5' := by
+      have hra' := range_preserved m2' m5' sp' z0 fe.fe_stack_data halloc_frame.1
+        (by intro i k0 p0 hi hp0; exact hperm_all i k0 p0 hp0)
+      have hrb' := range_preserved m2' m5' sp'
+        (zAdd fe.fe_stack_data b.bound_stack_data) fe.fe_size halloc_frame.2.1.1
+        (by intro i k0 p0 hi hp0; exact hperm_all i k0 p0 hp0)
+      refine ⟨hra', hrb', ?_⟩
+      intro bb oo ha hb
+      exact halloc_frame.2.2 bb oo ha (Or.inl hb)
+    have hQ_P0 : (sepconj Qranges P0).m_pred m2' := by
+      refine ⟨hQranges0, halloc_frame.2.1.2.1, ?_⟩
+      intro bb oo hq hp
+      cases hq with
+      | inl ha => exact halloc_frame.2.2 bb oo ha (Or.inr hp)
+      | inr hb => exact halloc_frame.2.1.2.2 bb oo hb hp
+    have hRP0 : (sepconj rangeA P0).m_pred m2' := by
+      refine ⟨halloc_frame.1, halloc_frame.2.1.2.1, ?_⟩
+      intro bb oo ha hp
+      exact halloc_frame.2.2 bb oo ha (Or.inr hp)
+    have hSEPCONJ : (sepconj (mconj rangeA Qranges) P0).m_pred m2' := by
+      exact mconj_intro rangeA Qranges P0 m2' hRP0 hQ_P0
+    have hfinal := frame_mconj
+      (rangeA) (frame_contents_1 return_address_offset tprog cfg f
+        bound_local_pos bound_outgoing_pos bound_stack_data_pos
+        used_callee_save_norepet used_callee_save_prop j' sp' ls1 ls0 parent ra)
+      Qranges P0 m2' m5' hSEPCONJ hframe1P hQranges5
+    refine ⟨j', rs', m2', sp', m3', m4', m5', ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · simpa [b, fe] using halloc'
+    · simpa [b, fe] using hstore_parent
+    · simpa [b, fe] using hstore_retaddr
+    · simpa [b, fe, hrs1] using hstar
+    · simpa [hls1] using hagree'
+    · refine ⟨?_, ?_⟩
+      · intro r hnot
+        have hsave : is_callee_save cfg r = true := by
+          unfold mreg_within_bounds at hnot
+          cases h : is_callee_save cfg r with
+          | false =>
+              exfalso
+              apply hnot
+              intro hsave'
+              rw [h] at hsave'
+              cases hsave'
+          | true => rfl
+        have hnotdestroy : r ∉ destroyed_at_function_entry := by
+          intro hmem
+          have hnone := destroyed_at_function_entry_caller_save cfg
+          have hn : ¬ is_callee_save cfg r = true :=
+            (List.any_eq_false.mp hnone) r hmem
+          exact hn hsave
+        have hls1' : ls1 (R r) = ls (R r) := by
+          rw [hls1, LTL_undef_regs_others return_address_offset tprog r
+            destroyed_at_function_entry (LTL.call_regs ls) hnotdestroy]
+          simp [LTL.call_regs]
+        exact hls1'.trans (hcallee (R r) (by
+          simp [CompCert4Lean.Backend.Conventions.callee_save_loc, hsave]))
+      · intro ofs ty hofs
+        rw [hls1, LTL_undef_regs_slot]
+        change ls (S Outgoing ofs ty) = ls0 (S Outgoing ofs ty)
+        exact hout ty ofs (incoming_slot_in_parameters cfg ofs ty f.fn_sig hofs)
+    · simpa [frame_contents, frame_contents_1, b, fe, P0] using hfinal
+    · simpa [b, fe] using hjsp
+    · exact hjinc
+
+end CompCert4Lean.Backend.Stackingproof
