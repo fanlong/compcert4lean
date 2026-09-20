@@ -9179,3 +9179,35 @@ theorem free_parallel_inject : free_parallel_injectStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem flat_inj_no_overlap : flat_inj_no_overlapStatement := by
+  intro thr m b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 hneq hmap1 hmap2 hp1 hp2
+  unfold flat_inj at hmap1 hmap2
+  cases hplt1 : plt b1 thr with
+  | right hn1 =>
+      simp [hplt1] at hmap1
+  | left hb1 =>
+      simp [hplt1] at hmap1
+      cases hplt2 : plt b2 thr with
+      | right hn2 =>
+          simp [hplt2] at hmap2
+      | left hb2 =>
+          simp [hplt2] at hmap2
+          rcases hmap1 with ⟨rfl, rfl⟩
+          rcases hmap2 with ⟨rfl, rfl⟩
+          exact Or.inl hneq
+
+end Mem
+
+end CompCert4Lean.Common.Memory
