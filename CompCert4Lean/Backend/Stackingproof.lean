@@ -5447,3 +5447,42 @@ theorem transl_external_argument_2 : transl_external_argument_2Statement := by
       exact Val.longofwords_inject j _ _ _ _ hinj_hi hinj_lo
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Conventions1
+
+private theorem transl_external_arguments_rec_aux : transl_external_arguments_recStatement := by
+  intro cfg return_address_offset tprog j cs cs' sg
+    bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop hstacks ls rs hregs hcs ho m' hmem locs hlocs
+  induction locs with
+  | nil =>
+      exact ⟨[], CompCert4Lean.Lib.Coqlib.list_forall2.nil _, Val.inject_list.inject_list_nil⟩
+  | cons p locs ih =>
+      obtain ⟨v, harg, hinj⟩ :=
+        transl_external_argument_2 cfg return_address_offset tprog j cs cs' sg
+          bound_local_pos bound_outgoing_pos bound_stack_data_pos
+          used_callee_save_norepet used_callee_save_prop hstacks ls rs hregs hcs ho m' hmem p
+          (hlocs p (by simp))
+      obtain ⟨vl, hargs, hinjs⟩ := ih (by
+        intro q hq
+        exact hlocs q (by simp [hq]))
+      exact ⟨v :: vl,
+        CompCert4Lean.Lib.Coqlib.list_forall2.cons p v harg hargs,
+        Val.inject_list.inject_list_cons _ _ _ _ hinj hinjs⟩
+
+theorem transl_external_arguments : transl_external_argumentsStatement := by
+  intro cfg return_address_offset tprog j cs cs' sg
+    bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop hstacks ls rs hregs hcs ho m' hmem
+  unfold Mach.extcall_arguments
+  exact transl_external_arguments_rec_aux cfg return_address_offset tprog j cs cs' sg
+    bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop hstacks ls rs hregs hcs ho m' hmem
+    (loc_arguments cfg sg) (by intro p hp; exact hp)
+
+end CompCert4Lean.Backend.Stackingproof
