@@ -5486,3 +5486,135 @@ theorem transl_external_arguments : transl_external_argumentsStatement := by
     (loc_arguments cfg sg) (by intro p hp; exact hp)
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Lineartyping
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Separation
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.Stacklayout
+
+theorem transl_builtin_arg_correct : transl_builtin_arg_correctStatement := by
+  intro cfg return_address_offset prog tprog f hlocal houtgoing hstack hnorep hcallee
+    j m m' ls ls0 rs sp sp' parent retaddr hinj hagree hsep a v heval
+  have hglobals := globalenv_inject_preserves_globals
+    CompCert4Lean.Backend.Linear.fundef Unit (Genv.globalenv prog) j m'
+    hsep.2.1.2.1
+  have hsymb : ∀ id ofs, Val.inject j
+      (Senv.symbol_address (Genv.to_senv (Genv.globalenv prog)) id ofs)
+      (Senv.symbol_address (Genv.to_senv (Genv.globalenv prog)) id ofs) := by
+    intro id ofs
+    exact CompCert4Lean.X86.Op.symbol_address_inject
+      CompCert4Lean.Backend.Linear.fundef Unit (Genv.globalenv prog) j hglobals id ofs
+  induction heval with
+  | eval_BA x =>
+      intro hvalid hbounds
+      cases x with
+      | R r => exact ⟨rs r, eval_BA r, hagree r⟩
+      | S sl ofs ty =>
+          cases sl with
+          | Local =>
+              obtain ⟨v', hload, hinj'⟩ := frame_get_local return_address_offset tprog cfg f
+                hlocal houtgoing hstack hnorep hcallee ofs ty j sp' ls ls0 parent retaddr m'
+                (sepconj (minjection j m) (globalenv_inject (Genv.globalenv prog) j)) hsep
+                (hbounds Local ofs ty (by simp [params_of_builtin_arg]))
+                (hvalid (S Local ofs ty) (by simp [params_of_builtin_arg]))
+              refine ⟨v', ?_, hinj'⟩
+              apply eval_BA_loadstack
+              simpa [Mach.load_stack, transl_builtin_arg] using hload
+          | Outgoing =>
+              have hx := hvalid (S Outgoing ofs ty) (by simp [params_of_builtin_arg])
+              simp [loc_valid] at hx
+          | Incoming =>
+              have hx := hvalid (S Incoming ofs ty) (by simp [params_of_builtin_arg])
+              simp [loc_valid] at hx
+  | eval_BA_int n => intro _ _; exact ⟨Vint n, eval_BA_int n, Val.inject.inject_int n⟩
+  | eval_BA_long n => intro _ _; exact ⟨Vlong n, eval_BA_long n, Val.inject.inject_long n⟩
+  | eval_BA_float n => intro _ _; exact ⟨Vfloat n, eval_BA_float n, Val.inject.inject_float n⟩
+  | eval_BA_single n => intro _ _; exact ⟨Vsingle n, eval_BA_single n, Val.inject.inject_single n⟩
+  | eval_BA_loadstack chunk ofs v hload =>
+      intro _ _
+      have haddr : Val.inject j
+          (Val.offset_ptr (Vptr sp Ptrofs.zero) ofs)
+          (Val.offset_ptr (Vptr sp' Ptrofs.zero)
+            (Ptrofs.add ofs (Ptrofs.repr (make_env cfg (function_bounds cfg f)).fe_stack_data))) := by
+        simp only [Val.offset_ptr]
+        change Val.inject j (Vptr sp (Ptrofs.add Ptrofs.zero ofs))
+          (Vptr sp' (Ptrofs.add Ptrofs.zero
+            (Ptrofs.add ofs (Ptrofs.repr (make_env cfg (function_bounds cfg f)).fe_stack_data))))
+        rw [stkPtrofsAddZero, stkPtrofsAddZero]
+        exact Val.inject.inject_ptr sp ofs sp'
+          (Ptrofs.add ofs (Ptrofs.repr (make_env cfg (function_bounds cfg f)).fe_stack_data))
+          (make_env cfg (function_bounds cfg f)).fe_stack_data hinj rfl
+      obtain ⟨v', hload', hinj'⟩ := loadv_parallel_rule j m m' chunk
+        (Val.offset_ptr (Vptr sp Ptrofs.zero) ofs) v
+        (Val.offset_ptr (Vptr sp' Ptrofs.zero)
+          (Ptrofs.add ofs (Ptrofs.repr (make_env cfg (function_bounds cfg f)).fe_stack_data)))
+        hsep.2.1.1 hload haddr
+      exact ⟨v', eval_BA_loadstack chunk
+        (Ptrofs.add ofs (Ptrofs.repr (make_env cfg (function_bounds cfg f)).fe_stack_data)) v' hload', hinj'⟩
+  | eval_BA_addrstack ofs =>
+      intro _ _
+      have haddr : Val.inject j
+          (Val.offset_ptr (Vptr sp Ptrofs.zero) ofs)
+          (Val.offset_ptr (Vptr sp' Ptrofs.zero)
+            (Ptrofs.add ofs (Ptrofs.repr (make_env cfg (function_bounds cfg f)).fe_stack_data))) := by
+        simp only [Val.offset_ptr]
+        change Val.inject j (Vptr sp (Ptrofs.add Ptrofs.zero ofs))
+          (Vptr sp' (Ptrofs.add Ptrofs.zero
+            (Ptrofs.add ofs (Ptrofs.repr (make_env cfg (function_bounds cfg f)).fe_stack_data))))
+        rw [stkPtrofsAddZero, stkPtrofsAddZero]
+        exact Val.inject.inject_ptr sp ofs sp'
+          (Ptrofs.add ofs (Ptrofs.repr (make_env cfg (function_bounds cfg f)).fe_stack_data))
+          (make_env cfg (function_bounds cfg f)).fe_stack_data hinj rfl
+      exact ⟨Val.offset_ptr (Vptr sp' Ptrofs.zero)
+          (Ptrofs.add ofs (Ptrofs.repr (make_env cfg (function_bounds cfg f)).fe_stack_data)),
+        eval_BA_addrstack (Ptrofs.add ofs
+          (Ptrofs.repr (make_env cfg (function_bounds cfg f)).fe_stack_data)), haddr⟩
+  | eval_BA_loadglobal chunk id ofs v hload =>
+      intro _ _
+      obtain ⟨v', hload', hinj'⟩ := loadv_parallel_rule j m m' chunk
+        (Senv.symbol_address (Genv.to_senv (Genv.globalenv prog)) id ofs) v
+        (Senv.symbol_address (Genv.to_senv (Genv.globalenv prog)) id ofs)
+        hsep.2.1.1 hload (hsymb id ofs)
+      exact ⟨v', eval_BA_loadglobal chunk id ofs v' hload', hinj'⟩
+  | eval_BA_addrglobal id ofs =>
+      intro _ _
+      exact ⟨Senv.symbol_address (Genv.to_senv (Genv.globalenv prog)) id ofs,
+        eval_BA_addrglobal id ofs, hsymb id ofs⟩
+  | eval_BA_splitlong hi lo vhi vlo hhi hlo ihhi ihlo =>
+      intro hvalid hbounds
+      obtain ⟨vhi', hhi', hinjhi⟩ := ihhi
+        (by intro l hl; exact hvalid l (by simp [params_of_builtin_arg, hl]))
+        (by intro sl ofs ty hl; exact hbounds sl ofs ty (by simp [params_of_builtin_arg, hl]))
+      obtain ⟨vlo', hlo', hinjlo⟩ := ihlo
+        (by intro l hl; exact hvalid l (by simp [params_of_builtin_arg, hl]))
+        (by intro sl ofs ty hl; exact hbounds sl ofs ty (by simp [params_of_builtin_arg, hl]))
+      exact ⟨Val.longofwords vhi' vlo', eval_BA_splitlong _ _ vhi' vlo' hhi' hlo',
+        Val.longofwords_inject j _ _ _ _ hinjhi hinjlo⟩
+  | eval_BA_addptr a1 a2 v1 v2 h1 h2 ih1 ih2 =>
+      intro hvalid hbounds
+      obtain ⟨v1', h1', hinj1⟩ := ih1
+        (by intro l hl; exact hvalid l (by simp [params_of_builtin_arg, hl]))
+        (by intro sl ofs ty hl; exact hbounds sl ofs ty (by simp [params_of_builtin_arg, hl]))
+      obtain ⟨v2', h2', hinj2⟩ := ih2
+        (by intro l hl; exact hvalid l (by simp [params_of_builtin_arg, hl]))
+        (by intro sl ofs ty hl; exact hbounds sl ofs ty (by simp [params_of_builtin_arg, hl]))
+      refine ⟨if CompCert4Lean.X86_64.Archi.ptr64 then Val.addl v1' v2' else Val.add v1' v2',
+        eval_BA_addptr _ _ v1' v2' h1' h2', ?_⟩
+      cases hp : CompCert4Lean.X86_64.Archi.ptr64 with
+      | false => simpa [hp] using Val.add_inject j _ _ _ _ hinj1 hinj2
+      | true => simpa [hp] using Val.addl_inject j _ _ _ _ hinj1 hinj2
+
+end CompCert4Lean.Backend.Stackingproof
