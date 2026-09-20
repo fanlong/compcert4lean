@@ -6266,3 +6266,150 @@ theorem mmatch_top' : mmatch_top'Statement := by
   · exact hmm.mmatch_below
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Maps
+
+private theorem mmatch_lub_r_zlt_aux (a b : Z) :
+    (zlt a b = true) ↔ intOfZ a < intOfZ b := by
+  unfold zlt
+  cases h : CompCert4Lean.Lib.Coqlib.zlt a b with
+  | left hlt => simp [boolOfSumbool]; exact hlt
+  | right hge => simp [boolOfSumbool]; exact hge
+
+private theorem mmatch_lub_r_eight_aux : intOfZ (zOfNat 8) = (8 : _root_.Int) := rfl
+
+private theorem mmatch_lub_r_sixteen_aux : intOfZ (zOfNat 16) = (16 : _root_.Int) := rfl
+
+set_option maxHeartbeats 1000000 in
+private theorem mmatch_lub_r_normalize_aux
+    (chunk : memory_chunk) (hnobool : chunk ≠ .Mbool)
+    (x y : aval) (h : vge x y) :
+    vge (vnormalize chunk x) (vnormalize chunk y) := by
+  have hp := provenance_monotone x y h
+  have hkeep := h
+  cases chunk <;> try contradiction
+  all_goals cases h <;>
+    simp only [vnormalize, provenance, CompCert4Lean.X86_64.Archi.ptr64,
+      ↓reduceIte] at hp ⊢
+  all_goals try exact hkeep
+  all_goals try (solve | constructor | constructor; assumption |
+    constructor; exact pge.bot _ | constructor; exact pge.pge_refl _)
+  all_goals try simp only [mmatch_lub_r_zlt_aux, ZArith.BinInt.Z.min]
+  all_goals repeat' split
+  all_goals try (solve | constructor <;> (first
+    | assumption
+    | ((first | (change intOfZ _ ≤ intOfZ _) | (change intOfZ _ < intOfZ _) | (change False)); simp only [ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt, mmatch_lub_r_eight_aux, mmatch_lub_r_sixteen_aux, show intOfZ z0 = 0 from rfl] at * <;> omega)))
+  all_goals try (exfalso; simp only [ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt, mmatch_lub_r_eight_aux, mmatch_lub_r_sixteen_aux, show intOfZ z0 = 0 from rfl] at * <;> omega)
+  all_goals try constructor
+  all_goals first
+    | assumption
+    | ((first | (change intOfZ _ ≤ intOfZ _) | (change intOfZ _ < intOfZ _) | (change False)); simp only [ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt, mmatch_lub_r_eight_aux, mmatch_lub_r_sixteen_aux, show intOfZ z0 = 0 from rfl] at * <;> omega)
+    | (run_tac do
+        let t ← Lean.Elab.Tactic.getMainTarget
+        unless t.isAppOfArity ``is_uns 2 do
+          throwError "different bit predicate: {t}"
+        unless t.getAppArgs[1]!.getAppFn.constName!.toString.endsWith "zero_ext" do
+          throwError "different extension operation: {t}"
+       apply is_zero_ext_uns
+       first
+       | exact Or.inl (by assumption)
+       | (apply Or.inr; (first | (change intOfZ _ ≤ intOfZ _) | (change intOfZ _ < intOfZ _) | (change False)); simp only [ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt, mmatch_lub_r_eight_aux, mmatch_lub_r_sixteen_aux, show intOfZ z0 = 0 from rfl] at * <;> omega))
+    | (run_tac do
+        let t ← Lean.Elab.Tactic.getMainTarget
+        unless t.isAppOfArity ``is_uns 2 do
+          throwError "different bit predicate: {t}"
+        unless t.getAppArgs[1]!.getAppFn.constName!.toString.endsWith "sign_ext" do
+          throwError "different extension operation: {t}"
+       apply is_sign_ext_uns
+       · constructor <;> ((first | (change intOfZ _ ≤ intOfZ _) | (change intOfZ _ < intOfZ _) | (change False)); simp only [ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt, mmatch_lub_r_eight_aux, mmatch_lub_r_sixteen_aux, show intOfZ z0 = 0 from rfl] at * <;> omega)
+       · assumption)
+    | (run_tac do
+        let t ← Lean.Elab.Tactic.getMainTarget
+        unless t.isAppOfArity ``is_sgn 2 do
+          throwError "different bit predicate: {t}"
+        unless t.getAppArgs[1]!.getAppFn.constName!.toString.endsWith "sign_ext" do
+          throwError "different extension operation: {t}"
+       apply is_sign_ext_sgn
+       · (first | (change intOfZ _ ≤ intOfZ _) | (change intOfZ _ < intOfZ _) | (change False)); simp only [ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt, mmatch_lub_r_eight_aux, mmatch_lub_r_sixteen_aux, show intOfZ z0 = 0 from rfl] at * <;> omega
+       · (first | (change intOfZ _ ≤ intOfZ _) | (change intOfZ _ < intOfZ _) | (change False)); simp only [ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt, mmatch_lub_r_eight_aux, mmatch_lub_r_sixteen_aux, show intOfZ z0 = 0 from rfl] at * <;> omega
+       · first
+         | exact Or.inl (by assumption)
+         | (apply Or.inr; (first | (change intOfZ _ ≤ intOfZ _) | (change intOfZ _ < intOfZ _) | (change False)); simp only [ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt, mmatch_lub_r_eight_aux, mmatch_lub_r_sixteen_aux, show intOfZ z0 = 0 from rfl] at * <;> omega))
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Lib.Maps
+
+private theorem mmatch_lub_r_block_aux
+    (cfg : CompilerConfig) (bc : block_classification) (m : mem) (b : block)
+    (x y : ablock) (h : bmatch bc m b y) : bmatch bc m b (blub cfg x y) := by
+  have hs := smatch_lub_r bc m b x.ab_summary y.ab_summary h.1
+  constructor
+  · exact hs
+  · intro chunk ofs v hload
+    have hsummary := vnormalize_cast bc chunk m b ofs v
+      (plub x.ab_summary y.ab_summary) hload (hs.1 chunk ofs v hload)
+    have hold := h.2 chunk ofs v hload
+    unfold ablock_load
+    simp only [blub]
+    erw [ZTree.gcombine_proof acontent acontent acontent (combine_acontents cfg) rfl]
+    cases hx : ZTree.get ofs x.ab_contents with
+    | none => simpa only [combine_acontents] using hsummary
+    | some cx =>
+        cases cx with
+        | ACval chunkx avx =>
+            cases hy : ZTree.get ofs y.ab_contents with
+            | none => simpa only [combine_acontents] using hsummary
+            | some cy =>
+                cases cy with
+                | ACval chunky avy =>
+                    by_cases hchunks : chunkx = chunky
+                    · subst chunky
+                      simp only [combine_acontents, ↓reduceIte]
+                      by_cases hcompat : chunk_compat chunk chunkx = true
+                      · rw [if_pos hcompat]
+                        have hnobool : chunk ≠ .Mbool := by
+                          intro heq
+                          subst chunk
+                          simp [chunk_compat] at hcompat
+                        apply vmatch_ge bc v _ (vnormalize chunk avy)
+                        · exact mmatch_lub_r_normalize_aux chunk hnobool
+                            (vlub cfg avx avy) avy (vge_lub_r cfg avx avy)
+                        · simpa only [ablock_load, hy, hcompat, ↓reduceIte] using hold
+                      · simpa only [if_neg hcompat] using hsummary
+                    · simpa only [combine_acontents, if_neg hchunks] using hsummary
+
+theorem mmatch_lub_r : mmatch_lub_rStatement := by
+  intro cfg bc m x y hmm
+  constructor
+  · intro b hstack
+    exact mmatch_lub_r_block_aux cfg bc m b x.am_stack y.am_stack
+      (hmm.mmatch_stack b hstack)
+  · intro id ab b hglob hab
+    change PTree.get id
+      (PTree.combine (combine_ablock cfg) x.am_glob y.am_glob) = some ab at hab
+    erw [PTree.gcombine_proof (combine_ablock cfg) rfl] at hab
+    cases hx : PTree.get id x.am_glob with
+    | none => simp [hx, combine_ablock] at hab
+    | some abx =>
+        cases hy : PTree.get id y.am_glob with
+        | none => simp [hx, hy, combine_ablock] at hab
+        | some aby =>
+            simp only [hx, hy, combine_ablock, Option.some.injEq] at hab
+            subst ab
+            exact mmatch_lub_r_block_aux cfg bc m b abx aby
+              (hmm.mmatch_glob id aby b hglob hy)
+  · intro b hstack hinvalid
+    exact smatch_lub_r bc m b x.am_nonstack y.am_nonstack
+      (hmm.mmatch_nonstack b hstack hinvalid)
+  · intro b hinvalid
+    exact smatch_lub_r bc m b x.am_top y.am_top (hmm.mmatch_top b hinvalid)
+  · exact hmm.mmatch_below
+
+end CompCert4Lean.Backend.ValueDomain

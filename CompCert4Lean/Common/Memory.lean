@@ -9092,3 +9092,90 @@ theorem free_inject : free_injectStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem free_parallel_inject : free_parallel_injectStatement := by
+  intro f m1 m2 b lo hi m1' b' delta hinj hfree hmap
+  have hsrc : range_perm m1 b lo hi Cur Freeable :=
+    free_range_perm m1 b lo hi m1' hfree
+  have hdst : range_perm m2 b' (zAdd lo delta) (zAdd hi delta) Cur Freeable :=
+    range_perm_inject f m1 m2 b b' delta lo hi Cur Freeable hmap hinj hsrc
+  obtain ⟨m2', hfree2⟩ :=
+    range_perm_free m2 b' (zAdd lo delta) (zAdd hi delta) hdst
+  refine ⟨m2', hfree2, ?_⟩
+  apply free_inject f m1 [(b, lo, hi)] m1' m2 b'
+    (zAdd lo delta) (zAdd hi delta) m2'
+  · exact hinj
+  · simp only [free_list]
+    rw [hfree]
+  · exact hfree2
+  · intro b1 delta1 ofs k p hmap1 hp hinside
+    by_cases hb : b1 = b
+    · subst b1
+      have hpair : (b', delta) = (b', delta1) := Option.some.inj (hmap.symm.trans hmap1)
+      cases hpair
+      refine ⟨lo, hi, ?_, ?_⟩
+      · exact List.mem_cons_self
+      · rcases hinside with ⟨hlower, hupper⟩
+        constructor
+        · change intOfZ lo ≤ intOfZ ofs
+          change intOfZ (zAdd lo delta) ≤ intOfZ (zAdd ofs delta) at hlower
+          simp only [intOfZ_zadd_mem] at hlower
+          omega
+        · change intOfZ ofs < intOfZ hi
+          change intOfZ (zAdd ofs delta) < intOfZ (zAdd hi delta) at hupper
+          simp only [intOfZ_zadd_mem] at hupper
+          omega
+    · exfalso
+      have hzadd (x y : Z) : intOfZ (zAdd x y) = intOfZ x + intOfZ y := by
+        change intOfZ (zOfInt (intOfZ x + intOfZ y)) = _
+        rw [intOfZ_zOfInt]
+      have hzsub (x y : Z) : intOfZ (zSub x y) = intOfZ x - intOfZ y := by
+        change intOfZ (zOfInt (intOfZ x - intOfZ y)) = _
+        rw [intOfZ_zOfInt]
+      let ofs0 := zSub (zAdd ofs delta1) delta
+      have hsrcBounds : zLe lo ofs0 ∧ zLt ofs0 hi := by
+        dsimp [ofs0]
+        rcases hinside with ⟨hlower, hupper⟩
+        change intOfZ (zAdd lo delta) ≤ intOfZ (zAdd ofs delta1) at hlower
+        change intOfZ (zAdd ofs delta1) < intOfZ (zAdd hi delta) at hupper
+        rw [hzadd lo delta, hzadd ofs delta1] at hlower
+        rw [hzadd ofs delta1, hzadd hi delta] at hupper
+        constructor
+        · change intOfZ lo ≤ intOfZ (zSub (zAdd ofs delta1) delta)
+          rw [hzsub, hzadd]
+          omega
+        · change intOfZ (zSub (zAdd ofs delta1) delta) < intOfZ hi
+          rw [hzsub, hzadd]
+          omega
+      have hpq : perm m1 b1 ofs Max Memtype.Nonempty :=
+        perm_implies m1 b1 ofs Max p Memtype.Nonempty
+          (perm_max m1 b1 ofs k p hp) (perm_any_N p)
+      have hpq' : perm m1 b ofs0 Max Memtype.Nonempty :=
+        perm_implies m1 b ofs0 Max Freeable Memtype.Nonempty
+          (perm_cur_max m1 b ofs0 Freeable (hsrc ofs0 hsrcBounds))
+          (perm_any_N Freeable)
+      have hcontra := hinj.mi_no_overlap b1 b' delta1 b b' delta ofs ofs0
+        hb hmap1 hmap hpq hpq'
+      rcases hcontra with hne | hne
+      · exact (hne rfl).elim
+      · apply hne
+        dsimp [ofs0]
+        apply intOfZ_injective
+        rw [hzadd (zSub (zAdd ofs delta1) delta) delta,
+          hzsub (zAdd ofs delta1) delta, hzadd ofs delta1]
+        omega
+
+end Mem
+
+end CompCert4Lean.Common.Memory

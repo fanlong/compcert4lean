@@ -10037,3 +10037,15 @@ theorem or_zero_proof : or_zero := by
     (WordCore.val_lt (WordCore.zero wordsize)))).trans (Nat.or_zero _)
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+theorem add_zero_l_proof : add_zero_l := by
+  intro x
+  change WordCore.add (WordCore.zero wordsize) x = x
+  apply WordCore.ext_of_val_eq
+  rw [WordCore.add_val]
+  change (0 + x.val) % (2 ^ wordsize) = x.val
+  rw [Nat.zero_add, Nat.mod_eq_of_lt (WordCore.val_lt x)]
+
+end CompCert4Lean.Lib.Integers.Int64
