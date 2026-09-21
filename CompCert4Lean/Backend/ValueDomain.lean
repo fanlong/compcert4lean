@@ -7434,3 +7434,230 @@ theorem romatch_exten : romatch_extenStatement := by
       (block_match.2 chunk offset value loaded)
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+private theorem manual_bool_word_test (integer : int) :
+    (Int.eq integer Int.zero || Int.eq integer Int.one) = true ↔
+      integer = Int.zero ∨ integer = Int.one := by
+  have zero_spec := CompCert4Lean.Lib.Integers.Int.eq_spec_proof integer Int.zero
+  have one_spec := CompCert4Lean.Lib.Integers.Int.eq_spec_proof integer Int.one
+  cases zero_result : Int.eq integer Int.zero <;>
+    cases one_result : Int.eq integer Int.one <;> simp_all
+
+open CompCert4Lean.Common.Values in
+theorem vnormalize_sound : vnormalize_soundStatement := by
+  intro classification chunk value abstract matched
+  by_cases boolean_chunk : chunk = .Mbool
+  · subst chunk
+    have norm_unsigned (integer : int) (pointer : aptr) :
+        vmatch classification (Val.norm_bool (Vint integer)) (Uns pointer z1) := by
+      rcases Val.norm_bool_cases (Vint integer) with undefined | zero | one
+      · rw [undefined]
+        exact .vmatch_Uns_undef pointer z1
+      · rw [zero]
+        apply vmatch.uns
+        · change (0 : _root_.Int) ≤ 1
+          decide
+        · exact (is_uns_zero_ext z1 Int.zero).2 (by decide)
+      · rw [one]
+        apply vmatch.uns
+        · change (0 : _root_.Int) ≤ 1
+          decide
+        · exact (is_uns_zero_ext z1 Int.one).2 (by decide)
+    have norm_exact (integer : int)
+        (boolean : (Int.eq integer Int.zero || Int.eq integer Int.one) = true) :
+        Val.norm_bool (Vint integer) = Vint integer := by
+      rcases (manual_bool_word_test integer).mp boolean with zero | one
+      · subst integer
+        decide
+      · subst integer
+        decide
+    cases matched <;> simp only [vnormalize, Val.load_result, provenance]
+    all_goals try exact norm_unsigned _ _
+    all_goals try (solve | constructor)
+    all_goals split
+    all_goals first
+      | (rw [norm_exact _ ‹_›]; constructor)
+      | exact norm_unsigned _ _
+      | constructor
+  · exact ablock_store_normalize_aux classification chunk boolean_chunk value abstract matched
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem vnormalize_monotone : vnormalize_monotoneStatement := by
+  intro chunk first second above
+  by_cases boolean_chunk : chunk = .Mbool
+  · subst chunk
+    have unsigned_boolean (integer : int)
+        (boolean : (Int.eq integer Int.zero || Int.eq integer Int.one) = true) : is_uns z1 integer := by
+      rcases (manual_bool_word_test integer).mp boolean with zero | one
+      · subst integer
+        exact (is_uns_zero_ext z1 Int.zero).2 (by decide)
+      · subst integer
+        exact (is_uns_zero_ext z1 Int.one).2 (by decide)
+    have nonnegative : zLe z0 z1 := by
+      change (0 : _root_.Int) ≤ 1
+      decide
+    have provenance_above := provenance_monotone first second above
+    cases above <;> simp only [vnormalize, provenance]
+    all_goals try (solve | exact vge.bot _ | exact vge_refl_select_aux _)
+    all_goals repeat' split
+    all_goals try (solve | exact vge.bot _ | exact vge_refl_select_aux _ | constructor)
+    all_goals constructor
+    all_goals first
+      | assumption
+      | exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le_refl _
+      | exact pge.bot _
+      | exact pge.pge_refl _
+      | exact provenance_above
+      | exact unsigned_boolean _ ‹_›
+  · exact mmatch_lub_r_normalize_aux chunk boolean_chunk first second above
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Common.Memory CompCert4Lean.Lib.Maps in
+theorem mmatch_inj_top : mmatch_inj_topStatement := by
+  intro classification memory target_memory injection
+  have summary_match : ∀ source, classification source ≠ BCinvalid →
+      smatch classification memory source Ptop := by
+    intro source valid
+    have mapped := inj_of_bc_valid classification source valid
+    constructor
+    · intro chunk offset value loaded
+      obtain ⟨target_value, target_loaded, injected⟩ :=
+        Mem.load_inject (inj_of_bc classification) memory target_memory chunk source offset source z0 value
+          injection loaded mapped
+      exact vmatch_inj_top classification value target_value injected
+    · intro offset pointer pointer_offset quantity index loaded
+      obtain ⟨target_bytes, target_loaded, injected⟩ :=
+        Mem.loadbytes_inject (inj_of_bc classification) memory target_memory source offset z1 source z0 _
+          injection loaded mapped
+      cases injected with
+      | cons byte target_byte byte_injection rest =>
+          cases byte_injection with
+          | fragment first second quantity index value_injection =>
+              cases value_injection with
+              | inject_ptr pointer pointer_offset target_pointer target_offset delta pointer_injection offset_eq =>
+                  exact pmatch_inj_top classification pointer target_pointer delta pointer_offset pointer_injection
+  constructor
+  · intro source stack
+    exact ablock_init_sound classification memory source Ptop (summary_match source (by simp [stack]))
+  · intro identifier block_abstract source global found
+    change PTree.get identifier (PTree.empty ablock) = some block_abstract at found
+    rw [PTree.gempty ablock identifier] at found
+    cases found
+  · intro source not_stack valid
+    exact summary_match source valid
+  · exact summary_match
+  · intro source valid
+    exact Mem.valid_block_inject_1 (inj_of_bc classification) memory target_memory source source z0
+      (inj_of_bc_valid classification source valid) injection
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+  CompCert4Lean.Common.Memory CompCert4Lean.Common.Memdata
+  CompCert4Lean.Common.Values CompCert4Lean.Lib.Maps in
+theorem mmatch_inj : mmatch_injStatement := by
+  intro classification memory abstract matched below
+  have add_zero (offset : Z) : zAdd offset z0 = offset := by
+    apply intOfZ_injective
+    change intOfZ (zOfInt (intOfZ offset + 0)) = intOfZ offset
+    rw [intOfZ_zOfInt, _root_.Int.add_zero]
+  have readable_byte : ∀ source offset, Mem.perm memory source offset .Cur .Readable →
+      Mem.loadbytes memory source offset z1 =
+        some [ZMap.get offset (PMap.get source memory.mem_contents)] := by
+    intro source offset readable
+    have range : Mem.range_perm memory source offset (zAdd offset z1) .Cur .Readable := by
+      intro position inside
+      have same : position = offset := by
+        apply intOfZ_injective
+        change intOfZ offset ≤ intOfZ position ∧ intOfZ position < intOfZ (zAdd offset z1) at inside
+        simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt,
+          show intOfZ z1 = 1 from rfl] at inside
+        omega
+      exact same ▸ readable
+    cases decision : Mem.range_perm_dec memory source offset (zAdd offset z1) .Cur .Readable with
+    | left allowed =>
+        unfold Mem.loadbytes
+        rw [decision]
+        rfl
+    | right denied => exact False.elim (denied range)
+  constructor
+  · constructor
+    · intro source target delta offset kind permission injection allowed
+      obtain ⟨valid, same, zero⟩ := inj_of_bc_inv classification source target delta injection
+      subst target
+      subst delta
+      simpa only [add_zero] using allowed
+    · intro source target delta chunk offset permission injection allowed
+      obtain ⟨valid, same, zero⟩ := inj_of_bc_inv classification source target delta injection
+      subst delta
+      refine ⟨z0, ?_⟩
+      apply intOfZ_injective
+      change (0 : _root_.Int) = intOfZ (zOfInt (intOfZ (align_chunk chunk) * 0))
+      rw [intOfZ_zOfInt, _root_.Int.mul_zero]
+    · intro source offset target delta injection readable
+      obtain ⟨valid, same, zero⟩ := inj_of_bc_inv classification source target delta injection
+      subst target
+      subst delta
+      change memval_inject (inj_of_bc classification)
+        (ZMap.get offset (PMap.get source memory.mem_contents))
+        (ZMap.get (zAdd offset z0) (PMap.get source memory.mem_contents))
+      simp only [add_zero]
+      have loaded := readable_byte source offset readable
+      cases contents : ZMap.get offset (PMap.get source memory.mem_contents) with
+      | Undef => exact .undef _ _
+      | Byte byte => exact .byte _ byte
+      | Fragment value quantity index =>
+          apply memval_inject.fragment
+          cases value with
+          | Vundef => exact .val_inject_undef _
+          | Vint integer => exact .inject_int integer
+          | Vlong integer => exact .inject_long integer
+          | Vfloat number => exact .inject_float number
+          | Vsingle number => exact .inject_single number
+          | Vptr pointer pointer_offset =>
+              rw [contents] at loaded
+              have pointer_match := (matched.mmatch_top source valid).2 offset pointer pointer_offset
+                quantity index loaded
+              exact vmatch_inj classification (Vptr pointer pointer_offset) (Ptr abstract.am_top)
+                (.ptr pointer pointer_offset abstract.am_top pointer_match)
+  · intro source invalid
+    cases current : classification source with
+    | BCinvalid => simp [inj_of_bc, current]
+    | BCglob identifier => exact False.elim (invalid (below source (by simp [current])))
+    | BCstack => exact False.elim (invalid (below source (by simp [current])))
+    | BCother => exact False.elim (invalid (below source (by simp [current])))
+  · intro source target delta injection
+    obtain ⟨valid, same, zero⟩ := inj_of_bc_inv classification source target delta injection
+    exact same ▸ below source valid
+  · intro first first_target first_delta second second_target second_delta first_offset second_offset
+      different first_injection second_injection first_allowed second_allowed
+    have first_same := (inj_of_bc_inv classification first first_target first_delta first_injection).2.1
+    have second_same := (inj_of_bc_inv classification second second_target second_delta second_injection).2.1
+    exact Or.inl (by simpa only [first_same, second_same] using different)
+  · intro source target delta offset injection allowed
+    obtain ⟨valid, same, zero⟩ := inj_of_bc_inv classification source target delta injection
+    subst delta
+    have bounds := offset.intrange
+    change (-1 : _root_.Int) < intOfZ (Ptrofs.unsigned offset) ∧
+      intOfZ (Ptrofs.unsigned offset) < (2 : _root_.Int) ^ 64 at bounds
+    change (0 : _root_.Int) ≤ 0 ∧ 0 ≤ intOfZ (zOfInt (intOfZ (Ptrofs.unsigned offset) + 0)) ∧
+      intOfZ (zOfInt (intOfZ (Ptrofs.unsigned offset) + 0)) ≤ (2 : _root_.Int) ^ 64 - 1
+    simp only [intOfZ_zOfInt, _root_.Int.add_zero]
+    omega
+  · intro source offset target delta kind permission injection allowed
+    obtain ⟨valid, same, zero⟩ := inj_of_bc_inv classification source target delta injection
+    subst target
+    subst delta
+    exact Or.inl (by simpa only [add_zero] using allowed)
+
+end CompCert4Lean.Backend.ValueDomain

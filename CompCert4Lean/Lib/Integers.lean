@@ -10987,3 +10987,37 @@ open CompCert4Lean.Foundation.Numbers.Rocq.Coq
 theorem add_zero_proof : add_zero := Int64.add_zero_proof
 
 end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem add_zero_l_proof : add_zero_l := Int64.add_zero_l_proof
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem sub_add_r_proof : sub_add_r := Int64.sub_add_r_proof
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem unsigned_zero_proof : unsigned_zero := by
+  rfl
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem unsigned_one_proof : unsigned_one := by
+  rfl
+
+end CompCert4Lean.Lib.Integers.Ptrofs
