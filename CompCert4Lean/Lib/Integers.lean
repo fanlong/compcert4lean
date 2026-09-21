@@ -11938,3 +11938,93 @@ theorem shl'_one_two_p_proof : shl'_one_two_p := by
   rw [shl'_mul_two_p_proof, mul_commut_proof, mul_one_proof]
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem shl'_mul_proof : shl'_mul := by
+  intro value amount
+  rw [shl'_one_two_p_proof]
+  exact shl'_mul_two_p_proof value amount
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem bits_loword_proof : bits_loword := by
+  intro value index bounds
+  exact (Int.testbit_repr_proof (unsigned value) index bounds).trans
+    (pg_int64_testbit_unsigned value index bounds.1).symm
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem manual_int64_unsigned_as_nat (value : int) :
+    unsigned value = zOfNat value.val := WordCore.intval_eq_zOfNat_val value
+
+theorem size_range_proof : size_range := by
+  intro value
+  change zLe zZero (CompCert4Lean.Lib.Zbits.Zsize (unsigned value)) ∧
+    zLe (CompCert4Lean.Lib.Zbits.Zsize (unsigned value)) zwordsize
+  rw [manual_int64_unsigned_as_nat value]
+  cases value_eq : value.val with
+  | zero =>
+      change (0 : _root_.Int) ≤ 0 ∧ (0 : _root_.Int) ≤ _root_.Int.ofNat wordsize
+      exact ⟨by omega, _root_.Int.natCast_nonneg _⟩
+  | succ natural =>
+      have size_eq : posToNat (PArith.BinPos.Pos.size (posOfNat (natural + 1))) =
+          Nat.log2 (natural + 1) + 1 := by
+        unfold PArith.BinPos.Pos.size
+        rw [posToNat_posOfNat (by omega : 0 < natural + 1)]
+        exact posToNat_posOfNat (by omega)
+      have upper : natural + 1 < 2 ^ wordsize := by
+        have bound := WordCore.val_lt value
+        omega
+      have logarithm : Nat.log2 (natural + 1) < wordsize :=
+        (Nat.log2_lt (Nat.ne_of_gt (by omega : 0 < natural + 1))).mpr upper
+      constructor
+      · change (0 : _root_.Int) ≤
+          _root_.Int.ofNat (posToNat (PArith.BinPos.Pos.size (posOfNat (natural + 1))))
+        exact _root_.Int.natCast_nonneg _
+      · change _root_.Int.ofNat (posToNat (PArith.BinPos.Pos.size (posOfNat (natural + 1)))) ≤
+          _root_.Int.ofNat wordsize
+        rw [size_eq]
+        exact _root_.Int.ofNat_le.mpr (by omega)
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem manual_int64_eqm_sub (first second third fourth : Z)
+    (first_equiv : eqm first second) (second_equiv : eqm third fourth) :
+    eqm (zSub first third) (zSub second fourth) := by
+  have subtraction (left right : Z) : zSub left right = zAdd left (zOpp right) := by
+    apply intOfZ_injective
+    simp only [zSub, zAdd, zOpp, ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add,
+      ZArith.BinInt.Z.opp, intOfZ_zOfInt, _root_.Int.sub_eq_add_neg]
+  rw [subtraction, subtraction]
+  exact eqm_add_proof _ _ _ _ first_equiv
+    (CompCert4Lean.Lib.Zbits.eqmod_neg modulus third fourth second_equiv)
+
+theorem mods_divs_proof : mods_divs := by
+  intro left right
+  change repr (zSub (signed left) (zMul (zQuot (signed left) (signed right)) (signed right))) =
+    repr (zSub (unsigned left) (unsigned (mul (divs left right) right)))
+  apply eqm_samerepr_proof
+  apply manual_int64_eqm_sub
+  · exact eqm_signed_unsigned_proof left
+  · exact eqm_trans_proof _ _ _
+      (eqm_mult_proof _ _ _ _
+        (eqm_unsigned_repr_proof (zQuot (signed left) (signed right)))
+        (eqm_signed_unsigned_proof right))
+      (eqm_unsigned_repr_proof (zMul (unsigned (divs left right)) (unsigned right)))
+
+end CompCert4Lean.Lib.Integers.Int64
