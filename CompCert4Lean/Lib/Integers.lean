@@ -11587,3 +11587,92 @@ theorem and_zero_proof : and_zero := by
   rfl
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem and_idem_proof : and_idem := by
+  intro value
+  change repr (zOfNat (Nat.land value.val value.val)) = value
+  rw [Nat.land_eq, Nat.and_self, ← WordCore.intval_eq_zOfNat_val value]
+  exact repr_unsigned_proof value
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem bits_above_proof : bits_above := by
+  intro value index above
+  cases index with
+  | Z0 =>
+      change (64 : _root_.Int) ≤ 0 at above
+      omega
+  | Zneg position =>
+      change (64 : _root_.Int) ≤ -_root_.Int.ofNat (posToNat position) at above
+      simp only [_root_.Int.ofNat_eq_natCast] at above
+      omega
+  | Zpos position =>
+      have exponent : wordsize ≤ posToNat position := by
+        change (64 : _root_.Int) ≤ _root_.Int.ofNat (posToNat position) at above
+        simp only [_root_.Int.ofNat_eq_natCast] at above
+        change 64 ≤ posToNat position
+        omega
+      change Nat.testBit value.val (WordCore.positiveToNat position) = false
+      rw [WordCore.positiveToNat_eq_posToNat]
+      exact Nat.testBit_lt_two_pow (Nat.lt_of_lt_of_le (WordCore.val_lt value)
+        (Nat.pow_le_pow_right Nat.zero_lt_two exponent))
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem same_bits_eq_proof : same_bits_eq := by
+  intro left right matching
+  apply WordCore.ext_of_val_eq
+  apply Nat.eq_of_testBit_eq
+  intro index
+  by_cases inRange : index < wordsize
+  · have lower : zLe zZero (zOfNat index) := by
+      change 0 ≤ intOfZ (zOfNat index)
+      simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+      exact _root_.Int.natCast_nonneg _
+    have upper : zLt (zOfNat index) zwordsize := by
+      change intOfZ (zOfNat index) < intOfZ (zOfNat wordsize)
+      simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+      exact _root_.Int.ofNat_lt.mpr inRange
+    have bits := matching (zOfNat index) ⟨lower, upper⟩
+    rw [suffix_int64_testbit_nat, suffix_int64_testbit_nat] at bits
+    exact bits
+  · have power : 2 ^ wordsize ≤ 2 ^ index :=
+      Nat.pow_le_pow_right Nat.zero_lt_two (Nat.le_of_not_gt inRange)
+    rw [Nat.testBit_lt_two_pow (Nat.lt_of_lt_of_le (WordCore.val_lt left) power),
+      Nat.testBit_lt_two_pow (Nat.lt_of_lt_of_le (WordCore.val_lt right) power)]
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem bits_mone_proof : bits_mone := by
+  intro index bounds
+  change testbit (repr (zOpp zOne)) index = true
+  rw [testbit_repr_proof _ _ bounds]
+  cases index with
+  | Z0 => rfl
+  | Zneg position =>
+      have positive := posToNat_positive position
+      have lower := bounds.1
+      change (0 : _root_.Int) ≤ -_root_.Int.ofNat (posToNat position) at lower
+      simp only [_root_.Int.ofNat_eq_natCast] at lower
+      omega
+  | Zpos position =>
+      change (!Nat.testBit 0 (posToNat position)) = true
+      simp
+
+end CompCert4Lean.Lib.Integers.Int64
