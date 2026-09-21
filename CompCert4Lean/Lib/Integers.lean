@@ -11363,3 +11363,72 @@ theorem mul_add_distr_r_proof : mul_add_distr_r := by
     mul_commut_proof middle left, mul_commut_proof right left]
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem shru_zero_proof : shru_zero := by
+  intro value
+  change repr (ZArith.BinInt.Z.shiftr (unsigned value) Z0) = value
+  rw [ZArith.BinInt.Z.shiftr_0_r]
+  exact repr_unsigned_proof value
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem shr_zero_proof : shr_zero := by
+  intro value
+  change repr (ZArith.BinInt.Z.shiftr (signed value) Z0) = value
+  rw [ZArith.BinInt.Z.shiftr_0_r]
+  exact repr_signed_proof value
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem shl_zero_proof : shl_zero := by
+  intro value
+  change repr (ZArith.BinInt.Z.shiftl (unsigned value) Z0) = value
+  rw [ZArith.BinInt.Z.shiftl_0_r]
+  exact repr_unsigned_proof value
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem signed_repr_proof : signed_repr := by
+  intro number bounds
+  have shifted_range (candidate : Z)
+      (candidate_bounds : zLe min_signed candidate ∧ zLe candidate max_signed) :
+      zLe zZero (zAdd candidate half_modulus) ∧
+        zLt (zAdd candidate half_modulus) modulus := by
+    change (-9223372036854775808 : _root_.Int) ≤ intOfZ candidate ∧
+      intOfZ candidate ≤ 9223372036854775807 at candidate_bounds
+    change 0 ≤ intOfZ (zAdd candidate half_modulus) ∧
+      intOfZ (zAdd candidate half_modulus) < 18446744073709551616
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    change 0 ≤ intOfZ candidate + 9223372036854775808 ∧
+      intOfZ candidate + 9223372036854775808 < 18446744073709551616
+    omega
+  have equivalent : eqm (signed (repr number)) number :=
+    eqm_trans_proof (signed (repr number)) (unsigned (repr number)) number
+      (eqm_signed_unsigned_proof (repr number))
+      (eqm_sym_proof number (unsigned (repr number)) (eqm_unsigned_repr_proof number))
+  have translated := CompCert4Lean.Lib.Zbits.eqmod_small_eq modulus
+    (zAdd (signed (repr number)) half_modulus) (zAdd number half_modulus)
+    (eqm_add_proof _ _ _ _ equivalent (eqm_refl_proof half_modulus))
+    (shifted_range _ (signed_range_proof (repr number))) (shifted_range number bounds)
+  apply intOfZ_injective
+  have converted := congrArg intOfZ translated
+  simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at converted
+  omega
+
+end CompCert4Lean.Lib.Integers.Int64
