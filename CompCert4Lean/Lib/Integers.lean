@@ -12341,3 +12341,151 @@ theorem bits_shr'_proof : bits_shr' := by
   omega
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem bits_ror_proof : bits_ror := by
+  intro value amount index bounds
+  have natural (offset : Nat) (inRange : offset < wordsize) :
+      testbit (ror value amount) (zOfNat offset) =
+        testbit value (zMod (zAdd (zOfNat offset) (unsigned amount)) zwordsize) := by
+    rw [pg_suffix_zmod_add_nat]
+    exact pg_suffix_ror_testbit_nat value amount offset inRange
+  cases index with
+  | Zneg position =>
+      have lower := bounds.1
+      have positive := posToNat_positive position
+      change (0 : _root_.Int) ≤ -_root_.Int.ofNat (posToNat position) at lower
+      simp only [_root_.Int.ofNat_eq_natCast] at lower
+      omega
+  | Z0 => exact natural 0 (by decide)
+  | Zpos position =>
+      have encoded : zOfNat (posToNat position) = .Zpos position :=
+        ZArith.Znat.positive_nat_Z position
+      rw [← encoded] at bounds ⊢
+      have upper := bounds.2
+      change intOfZ (zOfNat (posToNat position)) < intOfZ zwordsize at upper
+      simp only [zOfNat, zwordsize, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at upper
+      exact natural (posToNat position) (_root_.Int.ofNat_lt.mp upper)
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem manual_int64_zmod_sub_nat (index : Nat) (amount : int) :
+    zMod (zSub (zOfNat index) (unsigned amount)) zwordsize =
+      zOfNat ((index + wordsize - (amount.val % wordsize)) % wordsize) := by
+  rw [manual_int64_unsigned_as_nat amount]
+  apply intOfZ_injective
+  simp only [zMod, zSub, zwordsize, zOfNat, ZArith.BinInt.Z.modulo,
+    ZArith.BinInt.Z.sub, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  change (if (_root_.Int.ofNat wordsize) = 0 then
+      _root_.Int.ofNat index - _root_.Int.ofNat amount.val
+    else if 0 < _root_.Int.ofNat wordsize then
+      (_root_.Int.ofNat index - _root_.Int.ofNat amount.val) % _root_.Int.ofNat wordsize
+    else _) = _root_.Int.ofNat ((index + wordsize - (amount.val % wordsize)) % wordsize)
+  have remainder_bound : amount.val % wordsize ≤ index + wordsize := by
+    have upper : amount.val % wordsize < wordsize := Nat.mod_lt _ (by decide)
+    omega
+  simp only [show (_root_.Int.ofNat wordsize) ≠ 0 by decide,
+    show 0 < _root_.Int.ofNat wordsize by decide, if_false, if_true]
+  simp only [_root_.Int.ofNat_eq_natCast, _root_.Int.natCast_emod,
+    _root_.Int.natCast_sub remainder_bound, _root_.Int.natCast_add]
+  have rearrange : _root_.Int.ofNat index + _root_.Int.ofNat wordsize -
+      (_root_.Int.ofNat amount.val % _root_.Int.ofNat wordsize) =
+      (_root_.Int.ofNat index - (_root_.Int.ofNat amount.val % _root_.Int.ofNat wordsize)) +
+        _root_.Int.ofNat wordsize := by omega
+  simp only [_root_.Int.ofNat_eq_natCast] at rearrange
+  rw [rearrange, _root_.Int.add_emod_right, _root_.Int.sub_emod_emod]
+
+theorem bits_rol_proof : bits_rol := by
+  intro value amount index bounds
+  have natural (offset : Nat) (inRange : offset < wordsize) :
+      testbit (rol value amount) (zOfNat offset) =
+        testbit value (zMod (zSub (zOfNat offset) (unsigned amount)) zwordsize) := by
+    rw [manual_int64_zmod_sub_nat]
+    exact pg_suffix_rol_testbit_nat value amount offset inRange
+  cases index with
+  | Zneg position =>
+      have lower := bounds.1
+      have positive := posToNat_positive position
+      change (0 : _root_.Int) ≤ -_root_.Int.ofNat (posToNat position) at lower
+      simp only [_root_.Int.ofNat_eq_natCast] at lower
+      omega
+  | Z0 => exact natural 0 (by decide)
+  | Zpos position =>
+      have encoded : zOfNat (posToNat position) = .Zpos position :=
+        ZArith.Znat.positive_nat_Z position
+      rw [← encoded] at bounds ⊢
+      have upper := bounds.2
+      change intOfZ (zOfNat (posToNat position)) < intOfZ zwordsize at upper
+      simp only [zOfNat, zwordsize, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at upper
+      exact natural (posToNat position) (_root_.Int.ofNat_lt.mp upper)
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem bits_size_2_proof : bits_size_2 := by
+  intro value index above
+  have natural (offset : Nat) (bound : zLe (size value) (zOfNat offset)) :
+      testbit value (zOfNat offset) = false := by
+    rw [suffix_int64_testbit_nat]
+    cases value_eq : value.val with
+    | zero => simp
+    | succ number =>
+        have logarithm : Nat.log2 (number + 1) + 1 ≤ offset := by
+          change intOfZ (CompCert4Lean.Lib.Zbits.Zsize (unsigned value)) ≤
+            intOfZ (zOfNat offset) at bound
+          rw [manual_int64_unsigned_as_nat value, value_eq] at bound
+          simp only [CompCert4Lean.Lib.Zbits.Zsize, ZArith.BinInt.Z.of_nat,
+            intOfZ_zOfInt] at bound
+          change _root_.Int.ofNat (posToNat (PArith.BinPos.Pos.size (posOfNat (number + 1)))) ≤
+            _root_.Int.ofNat offset at bound
+          have size_eq : posToNat (PArith.BinPos.Pos.size (posOfNat (number + 1))) =
+              Nat.log2 (number + 1) + 1 := by
+            unfold PArith.BinPos.Pos.size
+            rw [posToNat_posOfNat (by omega : 0 < number + 1)]
+            exact posToNat_posOfNat (by omega)
+          rw [size_eq] at bound
+          exact _root_.Int.ofNat_le.mp bound
+        apply Nat.testBit_lt_two_pow
+        apply (Nat.log2_lt (Nat.ne_of_gt (by omega : 0 < number + 1))).mp
+        omega
+  cases index with
+  | Zneg position => rfl
+  | Z0 => exact natural 0 above
+  | Zpos position =>
+      have encoded : zOfNat (posToNat position) = .Zpos position :=
+        ZArith.Znat.positive_nat_Z position
+      rw [← encoded] at above ⊢
+      exact natural (posToNat position) above
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem bits_zero_ext_proof : bits_zero_ext := by
+  intro width value index nonnegative
+  by_cases within : zLt index zwordsize
+  · change testbit (repr (CompCert4Lean.Lib.Zbits.Zzero_ext width (unsigned value))) index = _
+    rw [testbit_repr_proof _ _ ⟨nonnegative, within⟩]
+    have specification :
+        zTestbit (CompCert4Lean.Lib.Zbits.Zzero_ext width (unsigned value)) index =
+          zltSelect index width (zTestbit (unsigned value) index) false :=
+      CompCert4Lean.Lib.Zbits.Zzero_ext_spec width (unsigned value) index nonnegative
+    rw [specification, ← pg_int64_testbit_unsigned value index nonnegative]
+  · have above : zLe zwordsize index := _root_.Int.le_of_not_gt within
+    rw [bits_above_proof _ _ above, bits_above_proof _ _ above]
+    cases comparison : CompCert4Lean.Lib.Coqlib.zlt index width <;>
+      simp [zltSelect, sumboolSelect, comparison]
+
+end CompCert4Lean.Lib.Integers.Int64
