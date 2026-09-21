@@ -10952,3 +10952,38 @@ open CompCert4Lean.Foundation.Numbers.Rocq.Coq
 theorem min_signed_neg_proof : min_signed_neg := Int64.min_signed_neg_proof
 
 end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eq_true_proof : eq_true := Int64.eq_true_proof
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eq_spec_proof : eq_spec := Int64.eq_spec_proof
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eq_false_proof : eq_false := by
+  intro left right different
+  have fields : left.intval ≠ right.intval := fun same => different (WordCore.ext same)
+  simp [eq, WordCore.eq, fields]
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem add_zero_proof : add_zero := Int64.add_zero_proof
+
+end CompCert4Lean.Lib.Integers.Ptrofs

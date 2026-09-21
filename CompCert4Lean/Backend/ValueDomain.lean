@@ -7226,3 +7226,211 @@ theorem load_sound : load_soundStatement := by
   | top valid => exact summary_sound _ (memory_match.mmatch_top source valid)
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Common.Memory in
+theorem loadv_sound : loadv_soundStatement := by
+  intro configuration classification chunk memory address value readonly abstract abstract_address
+    loaded readonly_match memory_match address_match
+  cases address <;> simp only [Mem.loadv] at loaded <;> try contradiction
+  case Vptr source offset =>
+    exact load_sound configuration classification chunk memory source offset value readonly abstract
+      (aptr_of_aval configuration abstract_address) loaded readonly_match memory_match
+      (match_aptr_of_aval configuration classification source offset abstract_address address_match)
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Common.Memory CompCert4Lean.Lib.Maps in
+theorem store_sound : store_soundStatement := by
+  intro classification chunk memory source offset value after abstract pointer abstract_value
+    stored memory_match pointer_match value_match
+  have unchanged : ∀ target, target ≠ source → ∀ query size, zLe z0 size →
+      Mem.loadbytes after target query size = Mem.loadbytes memory target query size := by
+    intro target different query size nonnegative
+    exact Mem.loadbytes_store_other chunk memory source (Ptrofs.unsigned offset) value after
+      stored target query size (Or.inl different)
+  constructor
+  · intro target stack
+    have unrelated : classification source ≠ BCstack → bmatch classification after target abstract.am_stack := by
+      intro not_stack
+      apply bmatch_inv classification memory target abstract.am_stack after (memory_match.mmatch_stack target stack)
+      apply unchanged target
+      intro same
+      exact not_stack (same ▸ stack)
+    cases pointer_match with
+    | gl identifier global => exact unrelated (by simp [global])
+    | glo identifier global => exact unrelated (by simp [global])
+    | glob identifier global => exact unrelated (by simp [global])
+    | stk source_stack =>
+        have same := classification.bc_stack target source stack source_stack
+        subst target
+        exact ablock_store_sound classification chunk memory source (Ptrofs.unsigned offset) value after
+          abstract.am_stack abstract_value stored (memory_match.mmatch_stack source source_stack) value_match
+    | stack source_stack =>
+        exact ablock_store_anywhere_sound classification chunk memory source (Ptrofs.unsigned offset) value after
+          target abstract.am_stack abstract_value stored (memory_match.mmatch_stack target stack) value_match
+    | nonstack not_stack valid => exact unrelated not_stack
+    | top valid =>
+        exact ablock_store_anywhere_sound classification chunk memory source (Ptrofs.unsigned offset) value after
+          target abstract.am_stack abstract_value stored (memory_match.mmatch_stack target stack) value_match
+  · intro identifier block_abstract target global found
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at identifier
+    have unrelated : classification source ≠ BCglob identifier →
+        PTree.get identifier abstract.am_glob = some block_abstract →
+        bmatch classification after target block_abstract := by
+      intro different original_found
+      apply bmatch_inv classification memory target block_abstract after
+        (memory_match.mmatch_glob identifier block_abstract target global original_found)
+      apply unchanged target
+      intro same
+      exact different (same ▸ global)
+    have initial : ∀ source_identifier, classification source = BCglob source_identifier →
+        bmatch classification memory source
+          ((PTree.get source_identifier abstract.am_glob).getD (ablock_init abstract.am_nonstack)) := by
+      intro source_identifier source_global
+      cases original_found : PTree.get source_identifier abstract.am_glob with
+      | some original => exact memory_match.mmatch_glob source_identifier original source source_global original_found
+      | none =>
+          exact ablock_init_sound classification memory source abstract.am_nonstack
+            (memory_match.mmatch_nonstack source (by simp [source_global]) (by simp [source_global]))
+    cases pointer_match with
+    | gl source_identifier source_global =>
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at source_identifier
+        change PTree.get identifier (PTree.set source_identifier
+          (ablock_store chunk ((PTree.get source_identifier abstract.am_glob).getD
+            (ablock_init abstract.am_nonstack)) (Ptrofs.unsigned offset) abstract_value)
+          abstract.am_glob) = some block_abstract at found
+        erw [PTree.getSet_equation] at found
+        by_cases same_identifier : identifier = source_identifier
+        · subst source_identifier
+          erw [dif_pos rfl] at found
+          rw [← Option.some.inj found]
+          have same := classification.bc_glob target source identifier global source_global
+          rw [same]
+          exact ablock_store_sound classification chunk memory source (Ptrofs.unsigned offset) value after
+            _ abstract_value stored (initial identifier source_global) value_match
+        · erw [dif_neg same_identifier] at found
+          apply unrelated _ found
+          intro source_here
+          exact same_identifier (block_class.BCglob.inj (source_global.symm.trans source_here)).symm
+    | glo source_identifier source_global =>
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at source_identifier
+        change PTree.get identifier (PTree.set source_identifier
+          (ablock_store_anywhere chunk ((PTree.get source_identifier abstract.am_glob).getD
+            (ablock_init abstract.am_nonstack)) abstract_value)
+          abstract.am_glob) = some block_abstract at found
+        erw [PTree.getSet_equation] at found
+        by_cases same_identifier : identifier = source_identifier
+        · subst source_identifier
+          erw [dif_pos rfl] at found
+          rw [← Option.some.inj found]
+          have same := classification.bc_glob target source identifier global source_global
+          rw [same]
+          exact ablock_store_anywhere_sound classification chunk memory source (Ptrofs.unsigned offset) value after
+            source _ abstract_value stored (initial identifier source_global) value_match
+        · erw [dif_neg same_identifier] at found
+          apply unrelated _ found
+          intro source_here
+          exact same_identifier (block_class.BCglob.inj (source_global.symm.trans source_here)).symm
+    | glob source_identifier source_global =>
+        change PTree.get identifier (PTree.empty ablock) = some block_abstract at found
+        rw [PTree.gempty] at found
+        cases found
+    | stk stack => exact unrelated (by simp [stack]) found
+    | stack stack => exact unrelated (by simp [stack]) found
+    | nonstack not_stack valid =>
+        change PTree.get identifier (PTree.empty ablock) = some block_abstract at found
+        rw [PTree.gempty] at found
+        cases found
+    | top valid =>
+        change PTree.get identifier (PTree.empty ablock) = some block_abstract at found
+        rw [PTree.gempty] at found
+        cases found
+  · intro target not_stack valid
+    have changed : smatch classification after target (vplub abstract_value abstract.am_nonstack) :=
+      smatch_store classification chunk memory source (Ptrofs.unsigned offset) value after target
+        abstract.am_nonstack abstract_value stored (memory_match.mmatch_nonstack target not_stack valid) value_match
+    have unrelated : classification source = BCstack → smatch classification after target abstract.am_nonstack := by
+      intro stack
+      apply smatch_inv classification memory target abstract.am_nonstack after
+        (memory_match.mmatch_nonstack target not_stack valid)
+      apply unchanged target
+      intro same
+      exact not_stack (same.symm ▸ stack)
+    cases pointer_match with
+    | gl identifier global => exact changed
+    | glo identifier global => exact changed
+    | glob identifier global => exact changed
+    | stk stack => exact unrelated stack
+    | stack stack => exact unrelated stack
+    | nonstack not_stack valid => exact changed
+    | top valid => exact changed
+  · intro target valid
+    exact smatch_store classification chunk memory source (Ptrofs.unsigned offset) value after target
+      abstract.am_top abstract_value stored (memory_match.mmatch_top target valid) value_match
+  · rw [Mem.nextblock_store chunk memory source (Ptrofs.unsigned offset) value after stored]
+    exact memory_match.mmatch_below
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Common.Memory in
+theorem storev_sound : storev_soundStatement := by
+  intro configuration classification chunk memory address value after abstract abstract_address abstract_value
+    stored memory_match address_match value_match
+  cases address <;> simp only [Mem.storev] at stored <;> try contradiction
+  case Vptr source offset =>
+    exact store_sound classification chunk memory source offset value after abstract
+      (aptr_of_aval configuration abstract_address) abstract_value stored memory_match
+      (match_aptr_of_aval configuration classification source offset abstract_address address_match) value_match
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem romatch_exten : romatch_extenStatement := by
+  intro first second memory abstract matched globals
+  have pointer_transfer : ∀ source offset pointer, pmatch first source offset Glob →
+      pmatch first source offset pointer → pmatch second source offset pointer := by
+    intro source offset pointer global_match pointer_match
+    cases global_match with
+    | glob identifier global =>
+        have same : second source = first source := ((globals source identifier).mpr global).trans global.symm
+        cases pointer_match with
+        | gl name classified => exact .gl name (same.trans classified)
+        | glo name classified => exact .glo name (same.trans classified)
+        | glob name classified => exact .glob name (same.trans classified)
+        | stk classified => exact .stk (same.trans classified)
+        | stack classified => exact .stack (same.trans classified)
+        | nonstack not_stack valid =>
+            exact .nonstack (by simpa only [same] using not_stack) (by simpa only [same] using valid)
+        | top valid => exact .top (by simpa only [same] using valid)
+  have value_transfer : ∀ value abstract_value, vmatch first value (Ifptr Glob) →
+      vmatch first value abstract_value → vmatch second value abstract_value := by
+    intro value abstract_value global_match value_match
+    cases value_match <;> constructor <;> try assumption
+    all_goals
+      cases global_match
+      exact pointer_transfer _ _ _ ‹pmatch first _ _ Glob› ‹_›
+  intro source identifier block_abstract global found
+  obtain ⟨summary, block_match, readonly⟩ :=
+    matched source identifier block_abstract ((globals source identifier).mp global) found
+  have global_summary := smatch_ge first memory source block_abstract.ab_summary Glob block_match.1 summary
+  refine ⟨summary, ⟨?_, ?_⟩, readonly⟩
+  · constructor
+    · intro chunk offset value loaded
+      exact value_transfer value _ (global_summary.1 chunk offset value loaded)
+        (block_match.1.1 chunk offset value loaded)
+    · intro offset target target_offset quantity index loaded
+      exact pointer_transfer target target_offset _
+        (global_summary.2 offset target target_offset quantity index loaded)
+        (block_match.1.2 offset target target_offset quantity index loaded)
+  · intro chunk offset value loaded
+    exact value_transfer value _ (global_summary.1 chunk offset value loaded)
+      (block_match.2 chunk offset value loaded)
+
+end CompCert4Lean.Backend.ValueDomain
