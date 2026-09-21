@@ -10101,3 +10101,128 @@ theorem loadbytes_unchanged_on_1 : loadbytes_unchanged_on_1Statement := by
         | right missing => simp [boolOfSumbool, first, second]
 
 end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memtype
+
+theorem loadbytes_unchanged_on : loadbytes_unchanged_onStatement := by
+  intro predicate before after address offset length bytes unchanged region loaded
+  by_cases emptyRange : zLe length z0
+  · exact (loadbytes_empty after address offset length emptyRange).trans
+      ((loadbytes_empty before address offset length emptyRange).symm.trans loaded)
+  · have firstOffset : zLe offset offset ∧ zLt offset (zAdd offset length) := by
+      change ¬ intOfZ length ≤ 0 at emptyRange
+      constructor
+      · exact Int.le_refl _
+      · change intOfZ offset < intOfZ (zOfInt (intOfZ offset + intOfZ length))
+        rw [intOfZ_zOfInt]
+        omega
+    have readable := loadbytes_range_perm before address offset length bytes loaded offset firstOffset
+    have valid := perm_valid_block before address offset Cur Readable readable
+    rw [loadbytes_unchanged_on_1 predicate before after address offset length unchanged valid region]
+    exact loaded
+
+end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem load_unchanged_on_1 : load_unchanged_on_1Statement := by
+  intro predicate before after chunk address offset unchanged valid region
+  have accessEquivalent : valid_access before chunk address offset Readable ↔
+      valid_access after chunk address offset Readable := by
+    constructor
+    · intro accessible
+      refine ⟨?_, accessible.2⟩
+      intro candidate bounds
+      exact (unchanged.unchanged_on_perm address candidate Cur Readable
+        (region candidate bounds) valid).mp (accessible.1 candidate bounds)
+    · intro accessible
+      refine ⟨?_, accessible.2⟩
+      intro candidate bounds
+      exact (unchanged.unchanged_on_perm address candidate Cur Readable
+        (region candidate bounds) valid).mpr (accessible.1 candidate bounds)
+  unfold load
+  cases first : valid_access_dec before chunk address offset Readable with
+  | left accessible =>
+      cases second : valid_access_dec after chunk address offset Readable with
+      | left preserved =>
+          simp [boolOfSumbool, first, second]
+          apply congrArg (decode_val chunk)
+          apply getN_exten (PMap.get address after.mem_contents)
+            (PMap.get address before.mem_contents) (size_chunk_nat chunk) offset
+          intro candidate bounds
+          have inside : zLe offset candidate ∧ zLt candidate (zAdd offset (size_chunk chunk)) := by
+            simpa only [← size_chunk_conv chunk] using bounds
+          exact unchanged.unchanged_on_contents address candidate
+            (region candidate inside) (accessible.1 candidate inside)
+      | right unavailable => exact False.elim (unavailable (accessEquivalent.mp accessible))
+  | right unavailable =>
+      cases second : valid_access_dec after chunk address offset Readable with
+      | left accessible => exact False.elim (unavailable (accessEquivalent.mpr accessible))
+      | right missing => simp [boolOfSumbool, first, second]
+
+end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+open CompCert4Lean.Common.Memdata
+
+theorem load_unchanged_on : load_unchanged_onStatement := by
+  intro predicate before after chunk address offset value unchanged region loaded
+  obtain ⟨bytes, loadedBytes, decoded⟩ := load_loadbytes chunk before address offset value loaded
+  have preserved := loadbytes_unchanged_on predicate before after address offset
+    (size_chunk chunk) bytes unchanged region loadedBytes
+  rw [decoded]
+  exact loadbytes_load chunk after address offset bytes preserved
+    (load_valid_access before chunk address offset value loaded).2
+
+end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+open CompCert4Lean.Common.Memtype
+
+theorem free_left_inject : free_left_injectStatement := by
+  intro injection before target freedBlock lower upper after related freed
+  refine {
+    mi_inj := free_left_inj injection before target freedBlock lower upper after related.mi_inj freed
+    mi_freeblocks := ?_
+    mi_mappedblocks := related.mi_mappedblocks
+    mi_no_overlap := ?_
+    mi_representable := ?_
+    mi_perm_inv := ?_ }
+  · intro source invalid
+    apply related.mi_freeblocks source
+    simpa only [valid_block, nextblock_free before freedBlock lower upper after freed] using invalid
+  · intro source mapped delta other mappedOther otherDelta offset otherOffset distinct mapping otherMapping
+      accessible otherAccessible
+    exact related.mi_no_overlap source mapped delta other mappedOther otherDelta offset otherOffset
+      distinct mapping otherMapping
+      (perm_free_3 before freedBlock lower upper after freed source offset Max Memtype.Nonempty accessible)
+      (perm_free_3 before freedBlock lower upper after freed other otherOffset Max Memtype.Nonempty otherAccessible)
+  · intro source mapped delta offset mapping accessible
+    apply related.mi_representable source mapped delta offset mapping
+    obtain current | previous := accessible
+    · exact Or.inl (perm_free_3 before freedBlock lower upper after freed source _ _ _ current)
+    · exact Or.inr (perm_free_3 before freedBlock lower upper after freed source _ _ _ previous)
+  · intro source offset mapped delta kind permission mapping accessible
+    obtain allowed | unavailable := related.mi_perm_inv source offset mapped delta kind permission mapping accessible
+    · obtain affected | preserved :=
+        perm_free_inv before freedBlock lower upper after freed source offset kind permission allowed
+      · right
+        intro remaining
+        apply perm_free_2 before freedBlock lower upper after freed offset Max Memtype.Nonempty affected.2
+        simpa only [affected.1] using remaining
+      · exact Or.inl preserved
+    · right
+      intro remaining
+      exact unavailable (perm_free_3 before freedBlock lower upper after freed source _ _ _ remaining)
+
+end CompCert4Lean.Common.Memory.Mem

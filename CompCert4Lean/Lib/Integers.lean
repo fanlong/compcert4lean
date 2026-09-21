@@ -10838,3 +10838,45 @@ theorem one_not_zero_proof : one_not_zero := by
   omega
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eqm_refl2_proof : eqm_refl2 := by
+  intro left right same
+  subst right
+  exact eqm_refl_proof left
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem unsigned_range_proof : unsigned_range := by
+  intro value
+  constructor
+  · have lower := value.intrange.1
+    change (-1 : _root_.Int) < intOfZ (unsigned value) at lower
+    change 0 ≤ intOfZ (unsigned value)
+    omega
+  · exact value.intrange.2
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem lt_not_proof : lt_not := suffix_int64_lt_not
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eqm_add_proof : eqm_add := CompCert4Lean.Lib.Zbits.eqmod_add modulus
+
+end CompCert4Lean.Lib.Integers.Int64

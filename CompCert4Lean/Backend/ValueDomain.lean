@@ -6889,3 +6889,98 @@ theorem ematch_update : ematch_updateStatement := by
     exact matched query
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem eforget_ge : eforget_geStatement := by
+  intro registers environment
+  induction registers generalizing environment with
+  | nil => exact fun query => vge_refl_select_aux (AE.get query environment)
+  | cons target rest induction_hypothesis =>
+      apply AE.ge_trans_proof _ (AE.set target Vtop environment) _
+        (induction_hypothesis (AE.set target Vtop environment))
+      cases environment with
+      | Bot => exact fun query => vge.bot _
+      | Top_except values =>
+          intro query
+          rw [AE.gsspec_proof target Vtop (.Top_except values) query
+            (by intro impossible; cases impossible) (by intro impossible; cases impossible)]
+          split
+          · exact AE.ge_top_proof (.Top_except values) query
+          · exact vge_refl_select_aux _
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem genv_match_exten : genv_match_extenStatement := by
+  intro environment first second matched globals others
+  constructor
+  · intro identifier source
+    exact (matched.1 identifier source).trans (globals source identifier)
+  · intro source below
+    have valid := matched.2 source below
+    cases current : first source with
+    | BCinvalid => exact False.elim (valid.1 current)
+    | BCstack => exact False.elim (valid.2 current)
+    | BCglob identifier =>
+        have same := (globals source identifier).mp current
+        simp [same]
+    | BCother =>
+        have same := others source current
+        simp [same]
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Common.Globalenvs in
+theorem inj_of_bc_preserves_globals : inj_of_bc_preserves_globalsStatement := by
+  intro classification environment matched
+  constructor
+  · intro identifier source found
+    apply inj_of_bc_valid classification source
+    have global := (matched.1 identifier source).mp found
+    simp [global]
+  constructor
+  · intro source information found
+    have definition := (Genv.find_var_info_iff _ _ environment source information).mp found
+    exact inj_of_bc_valid classification source
+      (matched.2 source (environment.genv_defs_range source definition)).1
+  · intro source target delta information found injection
+    exact (inj_of_bc_inv classification source target delta injection).2.1
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Lib.Maps in
+theorem mmatch_lub_l : mmatch_lub_lStatement := by
+  intro configuration classification memory first second matched
+  constructor
+  · intro source stack
+    exact bmatch_lub_l configuration classification memory source first.am_stack second.am_stack
+      (matched.mmatch_stack source stack)
+  · intro identifier abstract source global found
+    change PTree.get identifier
+      (PTree.combine (combine_ablock configuration) first.am_glob second.am_glob) = some abstract at found
+    erw [PTree.gcombine_proof (combine_ablock configuration) rfl] at found
+    cases first_found : PTree.get identifier first.am_glob with
+    | none => simp [first_found, combine_ablock] at found
+    | some first_block =>
+        cases second_found : PTree.get identifier second.am_glob with
+        | none => simp [first_found, second_found, combine_ablock] at found
+        | some second_block =>
+            simp only [first_found, second_found, combine_ablock, Option.some.injEq] at found
+            subst abstract
+            exact bmatch_lub_l configuration classification memory source first_block second_block
+              (matched.mmatch_glob identifier first_block source global first_found)
+  · intro source not_stack valid
+    exact smatch_lub_l classification memory source first.am_nonstack second.am_nonstack
+      (matched.mmatch_nonstack source not_stack valid)
+  · intro source valid
+    exact smatch_lub_l classification memory source first.am_top second.am_top
+      (matched.mmatch_top source valid)
+  · exact matched.mmatch_below
+
+end CompCert4Lean.Backend.ValueDomain
