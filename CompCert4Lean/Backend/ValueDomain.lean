@@ -6715,3 +6715,45 @@ theorem inj_of_bc_valid : inj_of_bc_validStatement := by
   cases current : classification source <;> simp_all [inj_of_bc]
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem inj_of_bc_inv : inj_of_bc_invStatement := by
+  intro classification source target delta injection
+  cases current : classification source <;> simp_all [inj_of_bc]
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem pmatch_inj_top : pmatch_inj_topStatement := by
+  intro classification source target delta offset injection
+  exact pmatch.top (inj_of_bc_inv classification source target delta injection).1
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem pmatch_inj : pmatch_injStatement := by
+  intro classification source offset pointer matched
+  have top_match := pmatch_top' classification source offset pointer matched
+  cases top_match with
+  | top valid => exact inj_of_bc_valid classification source valid
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem vmatch_inj_top : vmatch_inj_topStatement := by
+  intro classification value target injection
+  cases injection with
+  | inject_int integer => exact .ifptrInt integer Ptop
+  | inject_long integer => exact .ifptrLong integer Ptop
+  | inject_float number => exact .ifptrFloat number Ptop
+  | inject_single number => exact .ifptrSingle number Ptop
+  | inject_ptr source offset destination result_offset delta injected offset_eq =>
+      exact .ifptrPtr source offset Ptop
+        (pmatch_inj_top classification source destination delta offset injected)
+  | val_inject_undef result => exact .ifptrUndef Ptop
+
+end CompCert4Lean.Backend.ValueDomain

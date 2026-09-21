@@ -10723,3 +10723,31 @@ namespace CompCert4Lean.Lib.Integers.Int64
 theorem signed_range_proof : signed_range := pg_int64_signed_range
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+theorem eqm_signed_unsigned_proof : eqm_signed_unsigned := pg_int64_eqm_signed_unsigned
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+theorem unsigned_repr_eq_proof : unsigned_repr_eq := suffix_int64_unsigned_repr_eq_exact
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem add_commut_proof : add_commut := Ptrofs.add_commut_proof_api
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem add_assoc_proof : add_assoc := Ptrofs.add_assoc_proof_api
+
+end CompCert4Lean.Lib.Integers.Int64

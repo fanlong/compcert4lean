@@ -9784,3 +9784,73 @@ theorem valid_block_unchanged_on : valid_block_unchanged_onStatement := by
     valid unchanged.unchanged_on_nextblock
 
 end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+theorem unchanged_on_trans : unchanged_on_transStatement := by
+  intro predicate before middle after first second
+  refine ⟨CompCert4Lean.Lib.Coqlib.Ple_trans before.nextblock middle.nextblock
+    after.nextblock first.unchanged_on_nextblock second.unchanged_on_nextblock, ?_, ?_⟩
+  · intro address offset kind permission region valid
+    exact (first.unchanged_on_perm address offset kind permission region valid).trans
+      (second.unchanged_on_perm address offset kind permission region
+        (valid_block_unchanged_on predicate before middle address first valid))
+  · intro address offset region readable
+    exact (second.unchanged_on_contents address offset region
+      (perm_unchanged_on predicate before middle address offset _ _ first region readable)).trans
+        (first.unchanged_on_contents address offset region readable)
+
+end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+theorem unchanged_on_implies : unchanged_on_impliesStatement := by
+  intro original restricted before after unchanged inclusion
+  refine ⟨unchanged.unchanged_on_nextblock, ?_, ?_⟩
+  · intro address offset kind permission region valid
+    exact unchanged.unchanged_on_perm address offset kind permission
+      (inclusion address offset region valid) valid
+  · intro address offset region readable
+    exact unchanged.unchanged_on_contents address offset
+      (inclusion address offset region (perm_valid_block before address offset _ _ readable))
+      readable
+
+end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+theorem store_inject_neutral : store_inject_neutralStatement := by
+  intro chunk before address offset value after threshold stored neutral below injectedValue
+  have mapping : flat_inj threshold address = some (address, z0) := by
+    unfold flat_inj
+    cases CompCert4Lean.Lib.Coqlib.plt address threshold with
+    | left valid => rfl
+    | right invalid => exact False.elim (invalid below)
+  obtain ⟨resultMemory, repeated, injectedMemory⟩ :=
+    store_mapped_inj (flat_inj threshold) chunk before address offset value after before
+      address z0 value neutral stored (flat_inj_no_overlap threshold before) mapping injectedValue
+  have repeatedAtOffset : store chunk before address offset value = some resultMemory := by
+    simpa only [zAdd, z0, scc083_zadd_zero] using repeated
+  have same : resultMemory = after := Option.some.inj (repeatedAtOffset.symm.trans stored)
+  simpa only [inject_neutral, same] using injectedMemory
+
+end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+theorem drop_inject_neutral : drop_inject_neutralStatement := by
+  intro before address lower upper permission after threshold dropped neutral below
+  have mapping : flat_inj threshold address = some (address, z0) := by
+    unfold flat_inj
+    cases CompCert4Lean.Lib.Coqlib.plt address threshold with
+    | left valid => rfl
+    | right invalid => exact False.elim (invalid below)
+  obtain ⟨resultMemory, repeated, injectedMemory⟩ :=
+    drop_mapped_inj (flat_inj threshold) before before address address z0 lower upper
+      permission after neutral dropped (flat_inj_no_overlap threshold before) mapping
+  have repeatedAtBounds : drop_perm before address lower upper permission = some resultMemory := by
+    simpa only [zAdd, z0, scc083_zadd_zero] using repeated
+  have same : resultMemory = after := Option.some.inj (repeatedAtBounds.symm.trans dropped)
+  simpa only [inject_neutral, same] using injectedMemory
+
+end CompCert4Lean.Common.Memory.Mem
