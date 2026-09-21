@@ -9957,3 +9957,147 @@ theorem store_unchanged_on : store_unchanged_onStatement := by
   simpa only [encode_val_length chunk value, ← size_chunk_conv chunk] using bounds
 
 end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+open CompCert4Lean.Lib.Coqlib
+
+theorem free_unchanged_on : free_unchanged_onStatement := by
+  intro predicate before address lower upper after freed excluded
+  constructor
+  · rw [nextblock_free before address lower upper after freed]
+    exact Ple_refl before.nextblock
+  · intro readAddress readOffset kind permission region valid
+    constructor
+    · intro allowed
+      obtain affected | preserved :=
+        perm_free_inv before address lower upper after freed readAddress readOffset kind permission allowed
+      · have regionAtAddress : predicate address readOffset := by
+          simpa only [affected.1] using region
+        exact False.elim (excluded readOffset affected.2 regionAtAddress)
+      · exact preserved
+    · exact perm_free_3 before address lower upper after freed readAddress readOffset kind permission
+  · intro readAddress readOffset region readable
+    rw [free_result before address lower upper after freed]
+    rfl
+
+end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Coqlib
+
+theorem drop_perm_unchanged_on : drop_perm_unchanged_onStatement := by
+  intro predicate before address lower upper permission after dropped excluded
+  constructor
+  · rw [nextblock_drop before address lower upper permission after dropped]
+    exact Ple_refl before.nextblock
+  · intro readAddress readOffset kind requested region valid
+    constructor
+    · apply perm_drop_3 before address lower upper permission after dropped
+        readAddress readOffset kind requested
+      by_cases same : readAddress = address
+      · subst readAddress
+        right
+        have outside : ¬ (zLe lower readOffset ∧ zLt readOffset upper) :=
+          fun bounds => excluded readOffset bounds region
+        change ¬ (intOfZ lower ≤ intOfZ readOffset ∧ intOfZ readOffset < intOfZ upper) at outside
+        change intOfZ readOffset < intOfZ lower ∨ intOfZ upper ≤ intOfZ readOffset
+        omega
+      · exact Or.inl same
+    · exact perm_drop_4 before address lower upper permission after dropped
+        readAddress readOffset kind requested
+  · intro readAddress readOffset region readable
+    unfold drop_perm at dropped
+    cases decision : range_perm_dec before address lower upper Cur Freeable with
+    | right invalid => simp [decision] at dropped
+    | left allowed =>
+        simp [decision] at dropped
+        cases dropped
+        rfl
+
+end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem alloc_unchanged_on : alloc_unchanged_onStatement := by
+  intro predicate before lower upper after address allocated
+  constructor
+  · rw [nextblock_alloc before lower upper after address allocated]
+    exact Ple_succ before.nextblock
+  · intro readAddress readOffset kind permission region valid
+    constructor
+    · exact perm_alloc_1 before lower upper after address allocated readAddress readOffset kind permission
+    · intro allowed
+      apply perm_alloc_4 before lower upper after address allocated readAddress readOffset kind permission allowed
+      intro same
+      apply fresh_block_alloc before lower upper after address allocated
+      simpa only [same] using valid
+  · intro readAddress readOffset region readable
+    have distinct : readAddress ≠ before.nextblock :=
+      Plt_ne readAddress before.nextblock (perm_valid_block before readAddress readOffset Cur Readable readable)
+    have allocation := allocated
+    simp [alloc] at allocation
+    obtain ⟨rfl, rfl⟩ := allocation
+    change ZMap.get readOffset
+      (PMap.get readAddress (PMap.set before.nextblock (ZMap.init Undef) before.mem_contents)) = _
+    rw [pmapGetSetOther _ _ _ _ distinct]
+
+end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem loadbytes_unchanged_on_1 : loadbytes_unchanged_on_1Statement := by
+  intro predicate before after address offset length unchanged valid region
+  by_cases emptyRange : zLe length z0
+  · rw [loadbytes_empty after address offset length emptyRange,
+      loadbytes_empty before address offset length emptyRange]
+  · have nonnegative : 0 ≤ intOfZ length := by
+      change ¬ intOfZ length ≤ 0 at emptyRange
+      omega
+    have natLength : zOfNat (zToNat length) = length := by
+      apply intOfZ_injective
+      change intOfZ (zOfInt (Int.ofNat (Int.toNat (intOfZ length)))) = intOfZ length
+      rw [intOfZ_zOfInt]
+      exact Int.toNat_of_nonneg nonnegative
+    have accessEquivalent :
+        range_perm before address offset (zAdd offset length) Cur Readable ↔
+        range_perm after address offset (zAdd offset length) Cur Readable := by
+      constructor
+      · intro accessible candidate bounds
+        exact (unchanged.unchanged_on_perm address candidate Cur Readable
+          (region candidate bounds) valid).mp (accessible candidate bounds)
+      · intro accessible candidate bounds
+        exact (unchanged.unchanged_on_perm address candidate Cur Readable
+          (region candidate bounds) valid).mpr (accessible candidate bounds)
+    unfold loadbytes
+    cases first : range_perm_dec before address offset (zAdd offset length) Cur Readable with
+    | left accessible =>
+        cases second : range_perm_dec after address offset (zAdd offset length) Cur Readable with
+        | left preserved =>
+            simp [boolOfSumbool, first, second]
+            apply getN_exten (PMap.get address after.mem_contents)
+              (PMap.get address before.mem_contents) (zToNat length) offset
+            intro candidate bounds
+            rw [natLength] at bounds
+            exact unchanged.unchanged_on_contents address candidate
+              (region candidate bounds) (accessible candidate bounds)
+        | right unavailable => exact False.elim (unavailable (accessEquivalent.mp accessible))
+    | right unavailable =>
+        cases second : range_perm_dec after address offset (zAdd offset length) Cur Readable with
+        | left accessible => exact False.elim (unavailable (accessEquivalent.mpr accessible))
+        | right missing => simp [boolOfSumbool, first, second]
+
+end CompCert4Lean.Common.Memory.Mem

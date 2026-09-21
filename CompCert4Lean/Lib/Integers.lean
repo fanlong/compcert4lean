@@ -10791,3 +10791,50 @@ theorem eq_true_proof : eq_true := by
   simp [eq, WordCore.eq]
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eq_sym_proof : eq_sym := by
+  intro left right
+  simp [eq, WordCore.eq, eq_comm]
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eq_spec_proof : eq_spec := by
+  intro left right
+  by_cases equal : left.intval = right.intval
+  · have same : left = right := WordCore.ext equal
+    simp [eq, WordCore.eq, equal, same]
+  · have different : left ≠ right := by
+      intro same
+      exact equal (congrArg (fun value => value.intval) same)
+    simp [eq, WordCore.eq, equal, different]
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem signed_zero_proof : signed_zero := by
+  rfl
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem one_not_zero_proof : one_not_zero := by
+  intro same
+  have values := congrArg WordCore.Word.val same
+  change (1 : Nat) = 0 at values
+  omega
+
+end CompCert4Lean.Lib.Integers.Int64

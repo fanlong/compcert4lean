@@ -6812,3 +6812,80 @@ theorem smatch_incr : smatch_incrStatement := by
       (matched.2 offset target target_offset quantity index loaded)
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem bmatch_incr : bmatch_incrStatement := by
+  intro first second increasing memory source abstract matched
+  constructor
+  · exact smatch_incr first second increasing _ _ _ matched.1
+  · intro chunk offset value loaded
+    exact vmatch_incr first second increasing _ _ (matched.2 chunk offset value loaded)
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem ematch_incr : ematch_incrStatement := by
+  intro first second registers environment matched increasing register
+  exact vmatch_incr first second increasing _ _ (matched register)
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Lib.Maps in
+theorem AE.gsspec_proof : AE.gsspec := by
+  intro target value environment query not_bottom value_not_bottom
+  cases environment with
+  | Bot => exact False.elim (not_bottom rfl)
+  | Top_except values =>
+      change PTree.tree aval at values
+      simp only [AE.set, if_neg value_not_bottom]
+      by_cases at_top : value = Vtop
+      · subst value
+        simp only [↓reduceIte, AE.get]
+        by_cases same : query = target
+        · subst query
+          rw [PTree.grs_proof]
+          simp
+        · rw [PTree.gro_proof values same, if_neg same]
+      · simp only [if_neg at_top, AE.get]
+        by_cases same : query = target
+        · subst query
+          rw [PTree.gss]
+          simp
+        · rw [PTree.gso value values same, if_neg same]
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Backend.Registers in
+theorem ematch_update : ematch_updateStatement := by
+  intro classification registers environment value abstract target matched value_match
+  change Regmap.t val at registers
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at target
+  have no_bottom (actual : val) : ¬vmatch classification actual Vbot := by
+    intro impossible
+    cases impossible
+  have environment_not_bottom : environment ≠ AE.Bot := by
+    intro equal
+    have impossible := matched target
+    rw [equal] at impossible
+    exact no_bottom _ impossible
+  have abstract_not_bottom : abstract ≠ Vbot := by
+    intro equal
+    rw [equal] at value_match
+    exact no_bottom _ value_match
+  intro query
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at query
+  rw [AE.gsspec_proof target abstract environment query environment_not_bottom abstract_not_bottom]
+  by_cases same : query = target
+  · subst query
+    rw [if_pos rfl, Regmap.gss_proof _ target value registers]
+    exact value_match
+  · rw [if_neg same, Regmap.gso_proof _ query target value registers same]
+    exact matched query
+
+end CompCert4Lean.Backend.ValueDomain
