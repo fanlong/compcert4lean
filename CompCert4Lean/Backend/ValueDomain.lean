@@ -6678,3 +6678,40 @@ theorem bmatch_lub_r : bmatch_lub_rStatement := by
   exact bmatch_lub_r_block_aux
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem AE.ge_trans_proof : AE.ge_trans := by
+  intro first second third first_second second_third register
+  exact vge_trans (AE.get register first) (AE.get register second)
+    (AE.get register third) (first_second register) (second_third register)
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Lib.Maps in
+theorem AE.ge_top_proof : AE.ge_top := by
+  intro environment register
+  change vge ((PTree.get register (PTree.empty aval)).getD Vtop) (AE.get register environment)
+  rw [PTree.gempty]
+  change vge (Ifptr Ptop) (AE.get register environment)
+  cases AE.get register environment <;> constructor <;> exact pge.pge_top _
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem ematch_ge : ematch_geStatement := by
+  intro classification registers first second matched above register
+  exact vmatch_ge classification _ _ _ (above register) (matched register)
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem inj_of_bc_valid : inj_of_bc_validStatement := by
+  intro classification source valid
+  cases current : classification source <;> simp_all [inj_of_bc]
+
+end CompCert4Lean.Backend.ValueDomain

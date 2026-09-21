@@ -10699,3 +10699,27 @@ theorem bits_signed_proof : bits_signed := by
       exact htop.symm
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+theorem repr_unsigned_proof : repr_unsigned := pg_int64_repr_unsigned
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+theorem repr_signed_proof : repr_signed := pg_int64_repr_signed
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+theorem testbit_repr_proof : testbit_repr := pg_int64_testbit_repr
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+theorem signed_range_proof : signed_range := pg_int64_signed_range
+
+end CompCert4Lean.Lib.Integers.Int64

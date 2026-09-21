@@ -9746,3 +9746,41 @@ theorem alloc_left_mapped_inject : alloc_left_mapped_injectStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+theorem unchanged_on_refl : unchanged_on_reflStatement := by
+  intro predicate memory
+  refine ⟨CompCert4Lean.Lib.Coqlib.Ple_refl memory.nextblock, ?_, ?_⟩
+  · intro address offset kind permission region valid
+    exact Iff.rfl
+  · intro address offset region readable
+    rfl
+
+end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+theorem perm_unchanged_on_2 : perm_unchanged_on_2Statement := by
+  intro predicate before after address offset kind permission unchanged region valid allowed
+  exact (unchanged.unchanged_on_perm address offset kind permission region valid).mpr allowed
+
+end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+theorem perm_unchanged_on : perm_unchanged_onStatement := by
+  intro predicate before after address offset kind permission unchanged region allowed
+  exact (unchanged.unchanged_on_perm address offset kind permission region
+    (perm_valid_block before address offset kind permission allowed)).mp allowed
+
+end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+theorem valid_block_unchanged_on : valid_block_unchanged_onStatement := by
+  intro predicate before after address unchanged valid
+  exact CompCert4Lean.Lib.Coqlib.Plt_Ple_trans address before.nextblock after.nextblock
+    valid unchanged.unchanged_on_nextblock
+
+end CompCert4Lean.Common.Memory.Mem
