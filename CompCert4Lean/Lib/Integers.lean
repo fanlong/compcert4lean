@@ -12489,3 +12489,102 @@ theorem bits_zero_ext_proof : bits_zero_ext := by
       simp [zltSelect, sumboolSelect, comparison]
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem bits_hiword_proof : bits_hiword := by
+  intro value index bounds
+  change Int.testbit (Int.repr (unsigned (shru value (repr Int.zwordsize)))) index = _
+  rw [Int.testbit_repr_proof _ _ bounds,
+    ← pg_int64_testbit_unsigned (shru value (repr Int.zwordsize)) index bounds.1]
+  have within : zLt index zwordsize := by
+    have upper := bounds.2
+    change intOfZ index < 32 at upper
+    change intOfZ index < 64
+    omega
+  rw [bits_shru_proof _ _ index ⟨bounds.1, within⟩]
+  have shift_amount : unsigned (repr Int.zwordsize) = Int.zwordsize := by rfl
+  rw [shift_amount]
+  cases comparison : CompCert4Lean.Lib.Coqlib.zlt (zAdd index Int.zwordsize) zwordsize with
+  | left less => simp only [zltSelect, sumboolSelect, comparison]
+  | right greater =>
+      have upper := bounds.2
+      change intOfZ index < 32 at upper
+      change 64 ≤ intOfZ (zAdd index Int.zwordsize) at greater
+      simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at greater
+      change 64 ≤ intOfZ index + 32 at greater
+      omega
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem manual_int64_widen_bits (value : Int.int) (index : Z)
+    (nonnegative : zLe zZero index) :
+    testbit (repr (Int.unsigned value)) index = Int.testbit value index := by
+  rw [pg_int64_testbit_unsigned _ _ nonnegative, manual_int64_widen_unsigned,
+    ← Int.suffix_testbit_unsigned value index nonnegative]
+
+theorem bits_ofwords_proof : bits_ofwords := by
+  intro high low index bounds
+  unfold ofwords
+  rw [bits_or_proof _ _ index bounds, bits_shl_proof _ _ index bounds]
+  have shift_amount : unsigned (repr Int.zwordsize) = Int.zwordsize := by rfl
+  rw [shift_amount, manual_int64_widen_bits low index bounds.1]
+  cases comparison : CompCert4Lean.Lib.Coqlib.zlt index Int.zwordsize with
+  | left less => simp only [zltSelect, sumboolSelect, comparison, Bool.false_or]
+  | right greater =>
+      have difference_nonnegative : zLe zZero (zSub index Int.zwordsize) := by
+        change intOfZ Int.zwordsize ≤ intOfZ index at greater
+        change 0 ≤ intOfZ (zSub index Int.zwordsize)
+        simp only [zSub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        omega
+      simp only [zltSelect, sumboolSelect, comparison]
+      rw [manual_int64_widen_bits high _ difference_nonnegative,
+        Int.bits_above_proof low index greater, Bool.or_false]
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem decompose_bitwise_binop_proof : decompose_bitwise_binop := by
+  intro operation wide narrow high_left low_left high_right low_right wide_bits narrow_bits
+  apply same_bits_eq_proof
+  intro index bounds
+  rw [wide_bits _ _ index bounds, bits_ofwords_proof _ _ index bounds,
+    bits_ofwords_proof _ _ index bounds, bits_ofwords_proof _ _ index bounds]
+  cases comparison : CompCert4Lean.Lib.Coqlib.zlt index Int.zwordsize with
+  | left less =>
+      simp only [zltSelect, sumboolSelect, comparison]
+      exact (narrow_bits low_left low_right index ⟨bounds.1, less⟩).symm
+  | right greater =>
+      simp only [zltSelect, sumboolSelect, comparison]
+      apply Eq.symm
+      apply narrow_bits
+      have upper := bounds.2
+      change intOfZ index < 64 at upper
+      change 32 ≤ intOfZ index at greater
+      change 0 ≤ intOfZ (zSub index Int.zwordsize) ∧
+        intOfZ (zSub index Int.zwordsize) < 32
+      simp only [zSub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+      change 0 ≤ intOfZ index - 32 ∧ intOfZ index - 32 < 32
+      omega
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem decompose_and_proof : decompose_and := by
+  intro high_left low_left high_right low_right
+  exact decompose_bitwise_binop_proof Bool.and and Int.and
+    high_left low_left high_right low_right bits_and_proof Int.bits_and_proof
+
+end CompCert4Lean.Lib.Integers.Int64
