@@ -12231,3 +12231,113 @@ theorem bits_shl_proof : bits_shl := by
       exact manual_int64_bits_shl_nat value amount (posToNat position) upper
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem manual_int64_bits_shru_nat (value amount : int) (index : Nat) :
+    testbit (shru value amount) (zOfNat index) =
+      zltSelect (zAdd (zOfNat index) (unsigned amount)) zwordsize
+        (testbit value (zAdd (zOfNat index) (unsigned amount))) false := by
+  have sum : zAdd (zOfNat index) (unsigned amount) = zOfNat (index + amount.val) := by
+    rw [manual_int64_unsigned_as_nat amount]
+    apply intOfZ_injective
+    simp only [zAdd, ZArith.BinInt.Z.add, zOfNat, ZArith.BinInt.Z.of_nat,
+      intOfZ_zOfInt, _root_.Int.ofNat_eq_natCast, _root_.Int.natCast_add]
+  rw [sum, suffix_int64_testbit_nat, manual_int64_shru_val]
+  rw [← Nat.shiftRight_eq_div_pow, Nat.testBit_shiftRight, Nat.add_comm amount.val index]
+  cases comparison : CompCert4Lean.Lib.Coqlib.zlt (zOfNat (index + amount.val)) zwordsize with
+  | left less =>
+      simp only [zltSelect, sumboolSelect, comparison]
+      exact (suffix_int64_testbit_nat value (index + amount.val)).symm
+  | right greater =>
+      simp only [zltSelect, sumboolSelect, comparison]
+      apply Nat.testBit_lt_two_pow
+      have bound : wordsize ≤ index + amount.val := by
+        change intOfZ zwordsize ≤ intOfZ (zOfNat (index + amount.val)) at greater
+        simp only [zwordsize, zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at greater
+        exact _root_.Int.ofNat_le.mp greater
+      exact Nat.lt_of_lt_of_le (WordCore.val_lt value)
+        (Nat.pow_le_pow_right Nat.zero_lt_two bound)
+
+theorem bits_shru_proof : bits_shru := by
+  intro value amount index bounds
+  cases index with
+  | Zneg position =>
+      have lower := bounds.1
+      change (0 : _root_.Int) ≤ -_root_.Int.ofNat (posToNat position) at lower
+      have positive : (0 : _root_.Int) < _root_.Int.ofNat (posToNat position) :=
+        _root_.Int.natCast_pos.mpr (posToNat_positive position)
+      omega
+  | Z0 =>
+      exact manual_int64_bits_shru_nat value amount 0
+  | Zpos position =>
+      have encoded : zOfNat (posToNat position) = .Zpos position :=
+        ZArith.Znat.positive_nat_Z position
+      rw [← encoded] at bounds ⊢
+      have upper : posToNat position < wordsize := by
+        have bound := bounds.2
+        change intOfZ (zOfNat (posToNat position)) < intOfZ zwordsize at bound
+        simp only [zOfNat, zwordsize, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at bound
+        exact _root_.Int.ofNat_lt.mp bound
+      exact manual_int64_bits_shru_nat value amount (posToNat position)
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem manual_int64_widen_unsigned (value : Int.int) :
+    unsigned (repr (Int.unsigned value)) = Int.unsigned value := by
+  apply unsigned_repr_proof
+  have bounds := Int.unsigned_range_proof value
+  refine ⟨bounds.1, ?_⟩
+  have upper := bounds.2
+  change intOfZ (Int.unsigned value) < 4294967296 at upper
+  change intOfZ (Int.unsigned value) ≤ 18446744073709551615
+  omega
+
+theorem bits_shl'_proof : bits_shl' := by
+  intro value amount index bounds
+  have original := bits_shl_proof value (repr (Int.unsigned amount)) index bounds
+  change testbit (repr (zShiftl (unsigned value) (unsigned (repr (Int.unsigned amount))))) index = _ at original
+  rw [manual_int64_widen_unsigned] at original
+  exact original
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem bits_shru'_proof : bits_shru' := by
+  intro value amount index bounds
+  have original := bits_shru_proof value (repr (Int.unsigned amount)) index bounds
+  change testbit (repr (zShiftr (unsigned value) (unsigned (repr (Int.unsigned amount))))) index = _ at original
+  rw [manual_int64_widen_unsigned] at original
+  exact original
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem bits_shr'_proof : bits_shr' := by
+  intro value amount index bounds
+  change testbit (repr (zShiftr (signed value) (Int.unsigned amount))) index = _
+  rw [testbit_repr_proof _ _ bounds]
+  change ZArith.BinInt.Z.testbit
+    (ZArith.BinInt.Z.shiftr (signed value) (Int.unsigned amount)) index = _
+  rw [ZArith.BinInt.Z.shiftr_spec (signed value) (Int.unsigned amount) index bounds.1]
+  apply bits_signed_proof
+  have index_nonnegative : 0 ≤ intOfZ index := bounds.1
+  have amount_nonnegative : 0 ≤ intOfZ (Int.unsigned amount) :=
+    (Int.unsigned_range_proof amount).1
+  change 0 ≤ intOfZ (zAdd index (Int.unsigned amount))
+  simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  omega
+
+end CompCert4Lean.Lib.Integers.Int64
