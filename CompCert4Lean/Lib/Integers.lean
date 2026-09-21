@@ -12588,3 +12588,81 @@ theorem decompose_and_proof : decompose_and := by
     high_left low_left high_right low_right bits_and_proof Int.bits_and_proof
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem decompose_or_proof : decompose_or := by
+  intro high_left low_left high_right low_right
+  exact decompose_bitwise_binop_proof Bool.or or Int.or
+    high_left low_left high_right low_right bits_or_proof Int.bits_or_proof
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem decompose_xor_proof : decompose_xor := by
+  intro high_left low_left high_right low_right
+  exact decompose_bitwise_binop_proof Bool.xor xor Int.xor
+    high_left low_left high_right low_right bits_xor_proof Int.bits_xor_proof
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem lo_ofwords_proof : lo_ofwords := by
+  intro high low
+  apply Int.same_bits_eq_proof
+  intro index bounds
+  rw [bits_loword_proof _ _ bounds]
+  have wider : zLe zZero index ∧ zLt index zwordsize := by
+    refine ⟨bounds.1, ?_⟩
+    have upper := bounds.2
+    change intOfZ index < 32 at upper
+    change intOfZ index < 64
+    omega
+  rw [bits_ofwords_proof high low index wider]
+  cases comparison : CompCert4Lean.Lib.Coqlib.zlt index Int.zwordsize with
+  | left less => simp only [zltSelect, sumboolSelect, comparison]
+  | right greater => exact (_root_.Int.not_lt_of_ge greater bounds.2).elim
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem hi_ofwords_proof : hi_ofwords := by
+  intro high low
+  apply Int.same_bits_eq_proof
+  intro index bounds
+  rw [bits_hiword_proof _ _ bounds]
+  have offset_bounds : zLe zZero (zAdd index Int.zwordsize) ∧
+      zLt (zAdd index Int.zwordsize) zwordsize := by
+    change 0 ≤ intOfZ index ∧ intOfZ index < 32 at bounds
+    change 0 ≤ intOfZ (zAdd index Int.zwordsize) ∧
+      intOfZ (zAdd index Int.zwordsize) < 64
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    change 0 ≤ intOfZ index + 32 ∧ intOfZ index + 32 < 64
+    omega
+  rw [bits_ofwords_proof high low _ offset_bounds]
+  cases comparison : CompCert4Lean.Lib.Coqlib.zlt (zAdd index Int.zwordsize) Int.zwordsize with
+  | left less =>
+      have lower : 0 ≤ intOfZ index := bounds.1
+      change intOfZ (zAdd index Int.zwordsize) < 32 at less
+      simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at less
+      change intOfZ index + 32 < 32 at less
+      omega
+  | right greater =>
+      simp only [zltSelect, sumboolSelect, comparison]
+      congr 1
+      apply intOfZ_injective
+      simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+      omega
+
+end CompCert4Lean.Lib.Integers.Int64
