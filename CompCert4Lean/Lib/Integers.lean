@@ -11021,3 +11021,42 @@ theorem unsigned_one_proof : unsigned_one := by
   rfl
 
 end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem add_unsigned_proof : add_unsigned := by
+  intro left right
+  rfl
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem swap_cmpu_proof : swap_cmpu := Int64.swap_cmpu_proof
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eqm_repr_eq_proof : eqm_repr_eq := by
+  intro number value equivalent
+  exact (Int64.eqm_samerepr_proof number (unsigned value) equivalent).trans
+    (repr_unsigned_proof value)
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem modulus_eq64_proof : modulus_eq64 := by
+  intro architecture
+  rfl
+
+end CompCert4Lean.Lib.Integers.Ptrofs
