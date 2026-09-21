@@ -10920,3 +10920,35 @@ open CompCert4Lean.Foundation.Numbers.Rocq.Coq
 theorem unsigned_range_proof : unsigned_range := Int64.unsigned_range_proof
 
 end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem unsigned_repr_eq_proof : unsigned_repr_eq := Int64.unsigned_repr_eq_proof
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eqm_unsigned_repr_proof : eqm_unsigned_repr := Int64.eqm_unsigned_repr_proof
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem modulus_pos_proof : modulus_pos := Int64.modulus_pos_proof
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem min_signed_neg_proof : min_signed_neg := Int64.min_signed_neg_proof
+
+end CompCert4Lean.Lib.Integers.Ptrofs

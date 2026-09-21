@@ -7063,3 +7063,166 @@ theorem vmatch_inj : vmatch_injStatement := by
     | exact pointer_injection _ _ _ ‹_›
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Backend.Registers CompCert4Lean.Backend.RTL
+  CompCert4Lean.Common.Values CompCert4Lean.Lib.Maps in
+theorem ematch_init : ematch_initStatement := by
+  intro classification registers values types typed matched
+  have empty_match : ematch classification (Regmap.init Vundef) AE.top := by
+    intro query
+    change vmatch classification Vundef ((PTree.get query (PTree.empty aval)).getD Vtop)
+    rw [PTree.gempty aval query]
+    exact .ifptrUndef Ptop
+  induction registers generalizing values types with
+  | nil => cases values <;> exact empty_match
+  | cons target rest induction_hypothesis =>
+      cases typed with
+      | nil =>
+          have tail_match := induction_hypothesis [] [] (.nil _) (by simp)
+          have updated := ematch_update classification (Regmap.init Vundef)
+            (einit_regs rest []) Vundef (Ifptr Nonstack) target tail_match (.ifptrUndef Nonstack)
+          intro query
+          have current := updated query
+          have lookup : Regmap.get query (Regmap.set target Vundef (Regmap.init Vundef)) = Vundef := by
+            by_cases same : query = target
+            · subst query
+              exact Regmap.gss_proof _ target Vundef (Regmap.init Vundef)
+            · rw [Regmap.gso_proof _ query target Vundef (Regmap.init Vundef) same]
+              rfl
+          rw [lookup] at current
+          exact current
+      | @cons value value_tail argument_type type_tail head_typed tail_typed =>
+          have head_match := matched value (by simp)
+          have tail_match := induction_hypothesis value_tail type_tail tail_typed
+            (fun item member => matched item (List.mem_cons_of_mem value member))
+          apply ematch_update classification _ _ value _ target tail_match
+          split
+          · exact head_match
+          · exact of_xtype_arg_sound classification value argument_type Nonstack head_typed head_match
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Common.Memory in
+theorem romatch_storebytes : romatch_storebytesStatement := by
+  intro classification memory source offset bytes after abstract stored matched
+  intro target identifier block_abstract global found
+  obtain ⟨summary, block_match, readonly⟩ := matched target identifier block_abstract global found
+  refine ⟨summary, ?_, ?_⟩
+  · apply bmatch_inv classification memory target block_abstract after block_match
+    intro query size nonnegative
+    apply Mem.loadbytes_storebytes_disjoint memory source offset bytes after stored
+      target query size nonnegative
+    by_cases different : target ≠ source
+    · exact Or.inl different
+    · have same : target = source := Classical.byContradiction different
+      subst target
+      right
+      intro position inside_read inside_write
+      exact readonly position (Mem.perm_cur_max memory source position _
+        (Mem.storebytes_range_perm memory source offset bytes after stored position inside_write))
+  · intro position writable
+    exact readonly position
+      (Mem.perm_storebytes_2 memory source offset bytes after stored target position _ _ writable)
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Lib.Maps in
+theorem loadbytes_sound : loadbytes_soundStatement := by
+  intro configuration classification memory source offset size bytes abstract readonly pointer
+    loaded readonly_match memory_match pointer_match target target_offset quantity index member
+  have summary_sound : ∀ summary, smatch classification memory source summary →
+      pmatch classification target target_offset summary := by
+    intro summary matched
+    exact smatch_loadbytes classification memory source summary target target_offset quantity index
+      size (Ptrofs.unsigned offset) bytes loaded matched member
+  have global_sound : ∀ identifier, classification source = BCglob identifier →
+      pmatch classification target target_offset
+        (match PTree.get identifier readonly with
+        | some block_abstract => ablock_loadbytes block_abstract
+        | none => match PTree.get identifier abstract.am_glob with
+          | some block_abstract => ablock_loadbytes block_abstract
+          | none => abstract.am_nonstack) := by
+    intro identifier global
+    cases readonly_found : PTree.get identifier readonly with
+    | some block_abstract =>
+        exact summary_sound _ (readonly_match source identifier block_abstract global readonly_found).2.1.1
+    | none =>
+        cases global_found : PTree.get identifier abstract.am_glob with
+        | some block_abstract =>
+            exact summary_sound _
+              (memory_match.mmatch_glob identifier block_abstract source global global_found).1
+        | none =>
+            exact summary_sound _ (memory_match.mmatch_nonstack source (by simp [global]) (by simp [global]))
+  cases pointer_match with
+  | gl identifier global => exact global_sound identifier global
+  | glo identifier global => exact global_sound identifier global
+  | glob identifier global =>
+      exact summary_sound _ (memory_match.mmatch_nonstack source (by simp [global]) (by simp [global]))
+  | stk stack => exact summary_sound _ (memory_match.mmatch_stack source stack).1
+  | stack stack => exact summary_sound _ (memory_match.mmatch_stack source stack).1
+  | nonstack not_stack valid => exact summary_sound _ (memory_match.mmatch_nonstack source not_stack valid)
+  | top valid => exact summary_sound _ (memory_match.mmatch_top source valid)
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Lib.Maps in
+theorem load_sound : load_soundStatement := by
+  intro configuration classification chunk memory source offset value readonly abstract pointer
+    loaded readonly_match memory_match pointer_match
+  have summary_sound : ∀ summary, smatch classification memory source summary →
+      vmatch classification value (vnormalize chunk (Ifptr summary)) := by
+    intro summary matched
+    exact vnormalize_cast classification chunk memory source (Ptrofs.unsigned offset) value summary
+      loaded (matched.1 chunk (Ptrofs.unsigned offset) value loaded)
+  have global_block : ∀ identifier, classification source = BCglob identifier →
+      ∀ block_abstract, PTree.get identifier abstract.am_glob = some block_abstract →
+        bmatch classification memory source block_abstract := by
+    intro identifier global block_abstract found
+    exact memory_match.mmatch_glob identifier block_abstract source global found
+  cases pointer_match with
+  | gl identifier global =>
+      simp only [load]
+      cases readonly_found : PTree.get identifier readonly with
+      | some block_abstract =>
+          exact ablock_load_sound classification chunk memory source (Ptrofs.unsigned offset)
+            value block_abstract loaded (readonly_match source identifier block_abstract global readonly_found).2.1
+      | none =>
+          cases global_found : PTree.get identifier abstract.am_glob with
+          | some block_abstract =>
+              exact ablock_load_sound classification chunk memory source (Ptrofs.unsigned offset)
+                value block_abstract loaded (global_block identifier global block_abstract global_found)
+          | none =>
+              exact summary_sound _ (memory_match.mmatch_nonstack source (by simp [global]) (by simp [global]))
+  | glo identifier global =>
+      simp only [load]
+      cases readonly_found : PTree.get identifier readonly with
+      | some block_abstract =>
+          exact ablock_load_anywhere_sound classification chunk memory source (Ptrofs.unsigned offset)
+            value block_abstract loaded (readonly_match source identifier block_abstract global readonly_found).2.1
+      | none =>
+          cases global_found : PTree.get identifier abstract.am_glob with
+          | some block_abstract =>
+              exact ablock_load_anywhere_sound classification chunk memory source (Ptrofs.unsigned offset)
+                value block_abstract loaded (global_block identifier global block_abstract global_found)
+          | none =>
+              exact summary_sound _ (memory_match.mmatch_nonstack source (by simp [global]) (by simp [global]))
+  | glob identifier global =>
+      exact summary_sound _ (memory_match.mmatch_nonstack source (by simp [global]) (by simp [global]))
+  | stk stack =>
+      exact ablock_load_sound classification chunk memory source (Ptrofs.unsigned offset) value
+        abstract.am_stack loaded (memory_match.mmatch_stack source stack)
+  | stack stack =>
+      exact ablock_load_anywhere_sound classification chunk memory source (Ptrofs.unsigned offset) value
+        abstract.am_stack loaded (memory_match.mmatch_stack source stack)
+  | nonstack not_stack valid => exact summary_sound _ (memory_match.mmatch_nonstack source not_stack valid)
+  | top valid => exact summary_sound _ (memory_match.mmatch_top source valid)
+
+end CompCert4Lean.Backend.ValueDomain
