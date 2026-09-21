@@ -11243,3 +11243,65 @@ theorem eqm_unsigned_repr_l_proof : eqm_unsigned_repr_l := by
     (eqm_sym_proof left (unsigned (repr left)) (eqm_unsigned_repr_proof left)) equivalent
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem add_signed_proof : add_signed := by
+  intro left right
+  change repr (zAdd (unsigned left) (unsigned right)) =
+    repr (zAdd (signed left) (signed right))
+  apply eqm_samerepr_proof
+  apply eqm_add_proof
+  · exact eqm_sym_proof _ _ (eqm_signed_unsigned_proof left)
+  · exact eqm_sym_proof _ _ (eqm_signed_unsigned_proof right)
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem mul_commut_proof : mul_commut := by
+  intro left right
+  change WordCore.mul left right = WordCore.mul right left
+  apply WordCore.ext_of_val_eq
+  apply _root_.Int.ofNat.inj
+  rw [suffix_int64_wordcore_mul_val, suffix_int64_wordcore_mul_val,
+    _root_.Int.mul_comm]
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem sub_zero_l_proof : sub_zero_l := by
+  intro value
+  change WordCore.sub value (WordCore.zero wordsize) = value
+  apply WordCore.ext_of_val_eq
+  apply _root_.Int.ofNat.inj
+  rw [WordCore.sub_val_int]
+  change (_root_.Int.ofNat value.val - 0) % _root_.Int.ofNat (2 ^ wordsize) =
+    _root_.Int.ofNat value.val
+  rw [_root_.Int.sub_zero]
+  exact _root_.Int.emod_eq_of_lt (_root_.Int.natCast_nonneg _)
+    (_root_.Int.ofNat_lt.mpr (WordCore.val_lt value))
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem sub_add_opp_proof : sub_add_opp := by
+  intro left right
+  change WordCore.sub left right = WordCore.add left (WordCore.neg right)
+  apply WordCore.ext_of_val_eq
+  apply _root_.Int.ofNat.inj
+  rw [WordCore.sub_val_int, WordCore.add_val_int, pg_int64_neg_val_int,
+    _root_.Int.add_emod_emod]
+  rw [_root_.Int.sub_eq_add_neg]
+
+end CompCert4Lean.Lib.Integers.Int64
