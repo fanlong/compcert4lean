@@ -11489,3 +11489,50 @@ open CompCert4Lean.Foundation.Numbers.Rocq.Coq
 theorem ltu_not_proof : ltu_not := Int64.ltu_not_proof
 
 end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem not_ltu_proof : not_ltu := Int64.not_ltu_proof
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem xor_assoc_proof : xor_assoc := by
+  intro left middle right
+  apply WordCore.ext_of_val_eq
+  simp only [suffix_int64_xor_val, Nat.xor_eq, Nat.xor_assoc]
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem xor_idem_proof : xor_idem := by
+  intro value
+  apply WordCore.ext_of_val_eq
+  rw [suffix_int64_xor_val]
+  change Nat.xor value.val value.val = 0
+  exact Nat.xor_self value.val
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem xor_zero_equal_proof : xor_zero_equal := by
+  intro left right equal
+  calc
+    left = xor left zero := (xor_zero_proof left).symm
+    _ = xor left (xor left right) := by rw [equal]
+    _ = xor (xor left left) right := (xor_assoc_proof left left right).symm
+    _ = right := by
+      rw [xor_idem_proof, xor_commut_proof zero right, xor_zero_proof]
+
+end CompCert4Lean.Lib.Integers.Int64
