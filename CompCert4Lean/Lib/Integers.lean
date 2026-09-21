@@ -11676,3 +11676,87 @@ theorem bits_mone_proof : bits_mone := by
       simp
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem manual_int64_and_val (left right : int) :
+    (and left right).val = Nat.land left.val right.val := by
+  change (WordCore.and left right).val = Nat.land left.val right.val
+  unfold WordCore.and
+  have encoded : zOfNat (Nat.land left.val right.val) =
+      zOfInt (_root_.Int.ofNat (Nat.land left.val right.val)) := by rfl
+  rw [encoded, WordCore.val_repr_residue, WordCore.residue_zOfNat]
+  exact Nat.mod_eq_of_lt (Nat.and_lt_two_pow _ (WordCore.val_lt right))
+
+theorem and_assoc_proof : and_assoc := by
+  intro left middle right
+  apply WordCore.ext_of_val_eq
+  simp only [manual_int64_and_val, Nat.land_eq, Nat.and_assoc]
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem bits_and_proof : bits_and := by
+  intro left right index bounds
+  have natural (offset : Nat) :
+      testbit (and left right) (zOfNat offset) =
+        (testbit left (zOfNat offset) && testbit right (zOfNat offset)) := by
+    rw [suffix_int64_testbit_nat, suffix_int64_testbit_nat, suffix_int64_testbit_nat]
+    rw [manual_int64_and_val, Nat.land_eq, Nat.testBit_and]
+  cases index with
+  | Zneg position => rfl
+  | Z0 => exact natural 0
+  | Zpos position =>
+      have encoded : zOfNat (posToNat position) = .Zpos position :=
+        ZArith.Znat.positive_nat_Z position
+      rw [← encoded]
+      exact natural (posToNat position)
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem manual_int64_or_val (left right : int) :
+    (or left right).val = Nat.lor left.val right.val := by
+  change (WordCore.or left right).val = Nat.lor left.val right.val
+  unfold WordCore.or
+  have encoded : zOfNat (Nat.lor left.val right.val) =
+      zOfInt (_root_.Int.ofNat (Nat.lor left.val right.val)) := by rfl
+  rw [encoded, WordCore.val_repr_residue, WordCore.residue_zOfNat]
+  exact Nat.mod_eq_of_lt (Nat.or_lt_two_pow (WordCore.val_lt left) (WordCore.val_lt right))
+
+theorem or_assoc_proof : or_assoc := by
+  intro left middle right
+  apply WordCore.ext_of_val_eq
+  simp only [manual_int64_or_val, Nat.lor_eq, Nat.or_assoc]
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem bits_or_proof : bits_or := by
+  intro left right index bounds
+  have natural (offset : Nat) :
+      testbit (or left right) (zOfNat offset) =
+        (testbit left (zOfNat offset) || testbit right (zOfNat offset)) := by
+    rw [suffix_int64_testbit_nat, suffix_int64_testbit_nat, suffix_int64_testbit_nat]
+    rw [manual_int64_or_val, Nat.lor_eq, Nat.testBit_or]
+  cases index with
+  | Zneg position => rfl
+  | Z0 => exact natural 0
+  | Zpos position =>
+      have encoded : zOfNat (posToNat position) = .Zpos position :=
+        ZArith.Znat.positive_nat_Z position
+      rw [← encoded]
+      exact natural (posToNat position)
+
+end CompCert4Lean.Lib.Integers.Int64
