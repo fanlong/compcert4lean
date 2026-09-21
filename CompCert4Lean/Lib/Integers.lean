@@ -11432,3 +11432,60 @@ theorem signed_repr_proof : signed_repr := by
   omega
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem signed_repr_proof : signed_repr := Int64.signed_repr_proof
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem ltu_not_proof : ltu_not := by
+  intro left right
+  change zltSelect (unsigned right) (unsigned left) true false =
+    (!zltSelect (unsigned left) (unsigned right) true false &&
+      !decide (left.intval = right.intval))
+  cases forward : CompCert4Lean.Lib.Coqlib.zlt (unsigned right) (unsigned left) with
+  | left less =>
+      cases reverse : CompCert4Lean.Lib.Coqlib.zlt (unsigned left) (unsigned right) with
+      | left opposite => exact (_root_.Int.lt_asymm less opposite).elim
+      | right atLeast =>
+          have different : left.intval ≠ right.intval := by
+            intro fields
+            have bound : intOfZ right.intval < intOfZ left.intval := less
+            rw [fields] at bound
+            omega
+          simp [zltSelect, sumboolSelect, forward, reverse, different]
+  | right atLeast =>
+      cases reverse : CompCert4Lean.Lib.Coqlib.zlt (unsigned left) (unsigned right) with
+      | left less => simp [zltSelect, sumboolSelect, forward, reverse]
+      | right opposite =>
+          have equal : left.intval = right.intval :=
+            intOfZ_injective (_root_.Int.le_antisymm atLeast opposite)
+          simp [zltSelect, sumboolSelect, forward, reverse, equal]
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem not_ltu_proof : not_ltu := by
+  intro left right
+  rw [ltu_not_proof left right]
+  cases less : ltu left right <;> cases same : eq left right <;> simp [less, same]
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem ltu_not_proof : ltu_not := Int64.ltu_not_proof
+
+end CompCert4Lean.Lib.Integers.Ptrofs
