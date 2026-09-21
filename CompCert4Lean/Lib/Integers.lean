@@ -10880,3 +10880,43 @@ open CompCert4Lean.Foundation.Numbers.Rocq.Coq
 theorem eqm_add_proof : eqm_add := CompCert4Lean.Lib.Zbits.eqmod_add modulus
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eqm_mult_proof : eqm_mult := CompCert4Lean.Lib.Zbits.eqmod_mult modulus
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem mul_one_proof : mul_one := by
+  intro value
+  change WordCore.mul value (WordCore.one wordsize) = value
+  unfold WordCore.mul
+  rw [show WordCore.unsigned (WordCore.one wordsize) = Zpos xH by rfl]
+  change WordCore.repr wordsize
+      (ZArith.BinInt.Z.mul (WordCore.unsigned value) (Zpos xH)) = value
+  rw [ZArith.BinInt.Zmult_1_r_proof]
+  exact repr_unsigned_proof value
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem repr_unsigned_proof : repr_unsigned := Int64.repr_unsigned_proof
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem unsigned_range_proof : unsigned_range := Int64.unsigned_range_proof
+
+end CompCert4Lean.Lib.Integers.Ptrofs

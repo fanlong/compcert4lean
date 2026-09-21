@@ -10226,3 +10226,159 @@ theorem free_left_inject : free_left_injectStatement := by
       exact unavailable (perm_free_3 before freedBlock lower upper after freed source _ _ _ remaining)
 
 end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+theorem free_list_left_inject : free_list_left_injectStatement := by
+  intro injection target ranges
+  induction ranges with
+  | nil =>
+      intro before after related freed
+      simp only [free_list, Option.some.injEq] at freed
+      subst after
+      exact related
+  | cons entry rest inductionHypothesis =>
+      intro before after related freed
+      obtain ⟨address, lower, upper⟩ := entry
+      simp only [free_list] at freed
+      cases decision : free before address lower upper with
+      | none => simp [decision] at freed
+      | some middle =>
+          simp only [decision] at freed
+          exact inductionHypothesis middle after
+            (free_left_inject injection before target address lower upper middle related decision) freed
+
+end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Integers
+
+theorem alloc_parallel_inject : alloc_parallel_injectStatement := by
+  intro injection before target lower upper after sourceBlock targetLower targetUpper
+    related allocated lowerBound upperBound
+  cases targetAllocated : alloc target targetLower targetUpper with
+  | mk targetAfter targetBlock =>
+      have rightInjection := alloc_right_inject injection before target targetLower targetUpper
+        targetBlock targetAfter related targetAllocated
+      have zeroBounds : zLe z0 z0 ∧ zLe z0 Ptrofs.max_unsigned := by
+        change (0 : Int) ≤ 0 ∧ (0 : Int) ≤ intOfZ Ptrofs.max_unsigned
+        decide
+      have targetPermissions : ∀ offset kind permission,
+          zLe lower offset ∧ zLt offset upper →
+          perm targetAfter targetBlock (zAdd offset z0) kind permission := by
+        intro offset kind permission bounds
+        have largerBounds : zLe targetLower offset ∧ zLt offset targetUpper := by
+          change intOfZ targetLower ≤ intOfZ lower at lowerBound
+          change intOfZ upper ≤ intOfZ targetUpper at upperBound
+          change intOfZ lower ≤ intOfZ offset ∧ intOfZ offset < intOfZ upper at bounds
+          change intOfZ targetLower ≤ intOfZ offset ∧ intOfZ offset < intOfZ targetUpper
+          omega
+        have allowed := perm_implies targetAfter targetBlock offset kind Freeable permission
+          (perm_alloc_2 target targetLower targetUpper targetAfter targetBlock targetAllocated
+            offset kind largerBounds) (perm_F_any permission)
+        simpa only [zAdd, z0, scc083_zadd_zero] using allowed
+      have aligned : inj_offset_aligned z0 (zSub upper lower) := by
+        intro chunk bounded
+        refine ⟨.Z0, ?_⟩
+        apply intOfZ_injective
+        change 0 = intOfZ (zOfInt (intOfZ (align_chunk chunk) * 0))
+        rw [intOfZ_zOfInt]
+        simp
+      have collisionImpossible : ∀ candidate delta offset kind permission,
+          injection candidate = some (targetBlock, delta) →
+          perm before candidate offset kind permission →
+          zLe (zAdd lower z0) (zAdd offset delta) ∧
+            zLt (zAdd offset delta) (zAdd upper z0) → False := by
+        intro candidate delta offset kind permission mapping accessible bounds
+        exact fresh_block_alloc target targetLower targetUpper targetAfter targetBlock targetAllocated
+          (related.mi_mappedblocks candidate targetBlock delta mapping)
+      obtain ⟨extended, adjusted, monotone, newMapping, preserved⟩ :=
+        alloc_left_mapped_inject injection before targetAfter lower upper after sourceBlock
+          targetBlock z0 rightInjection allocated
+          (valid_new_block target targetLower targetUpper targetAfter targetBlock targetAllocated)
+          zeroBounds (fun offset kind permission accessible => Or.inl rfl)
+          targetPermissions aligned collisionImpossible
+      exact ⟨extended, targetAfter, targetBlock, rfl, adjusted, monotone, newMapping, preserved⟩
+
+end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+
+set_option maxHeartbeats 4000000 in
+private theorem memory_manual_decode_equal_size
+    (value : val) (storedChunk loadedChunk : memory_chunk)
+    (sameSize : size_chunk loadedChunk = size_chunk storedChunk) :
+    decode_encode_val value storedChunk loadedChunk
+      (decode_val loadedChunk (encode_val storedChunk value)) := by
+  have numericSize := congrArg intOfZ sameSize
+  cases storedChunk <;> cases loadedChunk <;>
+    simp [size_chunk, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at numericSize
+  all_goals cases value <;> simp only [decode_encode_val]
+  all_goals try exact True.intro
+  all_goals try exact load_store_same_decode_id _ _
+  all_goals try rfl
+  case Mbool.Mint8signed.Vint integer | Mint8unsigned.Mint8signed.Vint integer =>
+    simpa only [encode_val, Val.load_result] using (load_store_same_decode_id (Vint integer) Mint8signed)
+  case Mbool.Mint8unsigned.Vint integer | Mint8signed.Mint8unsigned.Vint integer =>
+    simpa only [encode_val, Val.load_result] using (load_store_same_decode_id (Vint integer) Mint8unsigned)
+  case Mint8signed.Mbool.Vint integer | Mint8unsigned.Mbool.Vint integer =>
+    simpa only [encode_val, Val.load_result] using (load_store_same_decode_id (Vint integer) Mbool)
+  case Mint16signed.Mint16unsigned.Vint integer =>
+    simpa only [encode_val, Val.load_result] using (load_store_same_decode_id (Vint integer) Mint16unsigned)
+  case Mint16unsigned.Mint16signed.Vint integer =>
+    simpa only [encode_val, Val.load_result] using (load_store_same_decode_id (Vint integer) Mint16signed)
+  case Mint32.Mfloat32.Vint integer =>
+    simp only [encode_val, decode_val, load_store_same_proj_bytes]
+    exact congrArg (fun word => Vsingle (CompCert4Lean.Lib.Floats.Float32.of_bits word))
+      (load_store_same_decode_int32 integer)
+  case Mint64.Mfloat64.Vlong integer =>
+    simp only [encode_val, decode_val, load_store_same_proj_bytes]
+    exact congrArg (fun word => Vfloat (CompCert4Lean.Lib.Floats.Float.of_bits word))
+      (load_store_same_decode_int64 integer)
+  case Mfloat32.Mint32.Vsingle floating =>
+    simp only [encode_val, decode_val, load_store_same_proj_bytes]
+    exact congrArg Vint (load_store_same_decode_int32 (CompCert4Lean.Lib.Floats.Float32.to_bits floating))
+  case Mfloat64.Mint64.Vfloat floating =>
+    simp only [encode_val, decode_val, load_store_same_proj_bytes]
+    exact congrArg Vlong (load_store_same_decode_int64 (CompCert4Lean.Lib.Floats.Float.to_bits floating))
+  case Mint64.Many64.Vptr address offset =>
+    simpa only [encode_val, CompCert4Lean.X86_64.Archi.ptr64, if_true, Val.load_result] using
+      (load_store_same_frag Many64 (Vptr address offset) Q64 rfl (Or.inr rfl))
+  case Many64.Mint64.Vptr address offset =>
+    simpa only [encode_val, CompCert4Lean.X86_64.Archi.ptr64, if_true, Val.load_result] using
+      (load_store_same_ptr64 address offset)
+  case Many64.Mint64.Vint integer =>
+    change decode_val Mint64 (inj_value Q64 (Vint integer)) = Vundef
+    have noBytes : proj_bytes (inj_value Q64 (Vint integer)) = none := rfl
+    simp only [decode_val, noBytes, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+      load_store_same_proj_value_inj, Val.load_result]
+  case Many64.Mint64.Vsingle floating =>
+    change decode_val Mint64 (inj_value Q64 (Vsingle floating)) = Vundef
+    have noBytes : proj_bytes (inj_value Q64 (Vsingle floating)) = none := rfl
+    simp only [decode_val, noBytes, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+      load_store_same_proj_value_inj, Val.load_result]
+
+theorem load_store_similar : load_store_similarStatement := by
+  intro chunk before address offset value after stored loadedChunk sameSize alignment
+  have sourceAccess := store_valid_access_3 chunk before address offset value after stored
+  have compatible := valid_access_compat before chunk loadedChunk address offset Writable
+    sameSize.symm alignment sourceAccess
+  have loadedBytes := loadbytes_store_same chunk before address offset value after stored
+  have targetBytes : loadbytes after address offset (size_chunk loadedChunk) =
+      some (encode_val chunk value) := by
+    simpa only [sameSize] using loadedBytes
+  exact ⟨decode_val loadedChunk (encode_val chunk value),
+    loadbytes_load loadedChunk after address offset (encode_val chunk value) targetBytes compatible.2,
+    memory_manual_decode_equal_size value chunk loadedChunk sameSize⟩
+
+end CompCert4Lean.Common.Memory.Mem

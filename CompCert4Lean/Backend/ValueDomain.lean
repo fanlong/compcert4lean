@@ -6984,3 +6984,82 @@ theorem mmatch_lub_l : mmatch_lub_lStatement := by
   · exact matched.mmatch_below
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem romatch_ext : romatch_extStatement := by
+  intro classification memory abstract after matched bytes_preserved permissions_preserved
+  intro source identifier block_abstract global found
+  obtain ⟨summary, block_match, readonly⟩ := matched source identifier block_abstract global found
+  refine ⟨summary, ?_, ?_⟩
+  · apply bmatch_ext classification memory source block_abstract after block_match
+    intro offset size bytes loaded nonnegative
+    exact bytes_preserved source identifier offset size bytes global loaded
+  · intro offset writable
+    exact readonly offset (permissions_preserved source identifier offset _ global writable)
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Common.Memory in
+theorem romatch_free : romatch_freeStatement := by
+  intro classification memory source low high after abstract freed matched
+  apply romatch_ext classification memory abstract after matched
+  · intro block identifier offset size bytes global loaded
+    exact Mem.loadbytes_free_2 memory source low high after freed block offset size bytes loaded
+  · intro block identifier offset permission global allowed
+    exact Mem.perm_free_3 memory source low high after freed block offset _ permission allowed
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Common.Memory in
+theorem romatch_alloc : romatch_allocStatement := by
+  intro classification memory fresh low high after abstract allocated below matched
+  have global_valid : ∀ source identifier, classification source = BCglob identifier →
+      Mem.valid_block memory source := by
+    intro source identifier global
+    exact below source (by simp [global])
+  apply romatch_ext classification memory abstract after matched
+  · intro source identifier offset size bytes global loaded
+    rw [Mem.loadbytes_alloc_unchanged memory low high after fresh allocated
+      source offset size (global_valid source identifier global)] at loaded
+    exact loaded
+  · intro source identifier offset permission global allowed
+    apply Mem.perm_alloc_4 memory low high after fresh allocated source offset _ permission allowed
+    intro same
+    have valid := global_valid source identifier global
+    rw [same] at valid
+    exact Mem.fresh_block_alloc memory low high after fresh allocated valid
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Common.Values in
+theorem vmatch_inj : vmatch_injStatement := by
+  intro classification value abstract matched
+  have pointer_injection : ∀ source offset pointer,
+      pmatch classification source offset pointer →
+      Val.inject (inj_of_bc classification) (Vptr source offset) (Vptr source offset) := by
+    intro source offset pointer pointer_match
+    have identity := (val_inject_id (Vptr source offset) (Vptr source offset)).mpr
+      (Val.lessdef_refl _)
+    cases identity
+    rename_i delta mapping offset_eq
+    have delta_zero : delta = z0 := by
+      simpa only [inject_id, Option.some.injEq, Prod.mk.injEq, true_and] using mapping.symm
+    subst delta
+    exact Val.inject.inject_ptr source offset source offset z0
+      (pmatch_inj classification source offset pointer pointer_match) offset_eq
+  cases matched <;> first
+    | exact Val.inject.inject_int _
+    | exact Val.inject.inject_long _
+    | exact Val.inject.inject_float _
+    | exact Val.inject.inject_single _
+    | exact Val.inject.val_inject_undef _
+    | exact pointer_injection _ _ _ ‹_›
+
+end CompCert4Lean.Backend.ValueDomain
