@@ -3578,3 +3578,733 @@ theorem eval_builtin_args_lessdef : eval_builtin_args_lessdefStatement := by
         CompCert4Lean.Common.Values.Val.lessdef_list_cons _ _ _ _ hld hldtail⟩
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.ExternalCalls
+
+theorem external_call_trace_length_proof
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (providers : ExternalCalls) (function : external_function) :
+    external_call_trace_length providers function := by
+  intro environment arguments before trace result after call
+  cases function with
+  | EF_external name signature =>
+      exact (external_functions_properties providers name signature).ec_trace_length
+        environment arguments before trace result after call
+  | EF_builtin name signature | EF_runtime name signature =>
+      exact (builtin_or_external_sem_ok providers name signature).ec_trace_length
+        environment arguments before trace result after call
+  | EF_vload chunk =>
+      exact (volatile_load_ok chunk).ec_trace_length
+        environment arguments before trace result after call
+  | EF_vstore chunk =>
+      exact (volatile_store_ok chunk).ec_trace_length
+        environment arguments before trace result after call
+  | EF_inline_asm text signature clobbers =>
+      exact (inline_assembly_properties providers text signature).ec_trace_length
+        environment arguments before trace result after call
+  | EF_malloc | EF_free | EF_memcpy _ _ | EF_annot _ _ _
+  | EF_annot_val _ _ _ | EF_debug _ _ _ =>
+      cases call <;> simp [E0]
+
+end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Values
+
+theorem external_call_well_typed_gen_proof
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (providers : ExternalCalls) (function : external_function) :
+    external_call_well_typed_gen providers function := by
+  intro environment arguments before trace result after call
+  cases function with
+  | EF_external name signature =>
+      exact (external_functions_properties providers name signature).ec_well_typed
+        environment arguments before trace result after call
+  | EF_builtin name signature | EF_runtime name signature =>
+      exact (builtin_or_external_sem_ok providers name signature).ec_well_typed
+        environment arguments before trace result after call
+  | EF_vload chunk =>
+      exact (volatile_load_ok chunk).ec_well_typed
+        environment arguments before trace result after call
+  | EF_vstore chunk =>
+      exact (volatile_store_ok chunk).ec_well_typed
+        environment arguments before trace result after call
+  | EF_inline_asm text signature clobbers =>
+      exact (inline_assembly_properties providers text signature).ec_well_typed
+        environment arguments before trace result after call
+  | EF_annot_val kind text argumentType =>
+      exact (extcall_annot_val_ok text argumentType).ec_well_typed
+        environment arguments before trace result after call
+  | EF_malloc | EF_free | EF_memcpy _ _ | EF_annot _ _ _ | EF_debug _ _ _ =>
+      cases call <;> simp [ef_sig, Val.has_rettype]
+
+end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+
+theorem external_call_well_typed
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    external_call_well_typedStatement := by
+  intro providers function environment arguments before trace result after call
+  exact Val.has_proj_xtype result _
+    (external_call_well_typed_gen_proof providers function
+      environment arguments before trace result after call)
+
+end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Integers
+
+private theorem events_ptrofs_value_injective (left right : Ptrofs.int)
+    (equality : Vptrofs left = Vptrofs right) : left = right := by
+  have wordEquality : Ptrofs.to_int64 left = Ptrofs.to_int64 right := by
+    simpa [Vptrofs, CompCert4Lean.X86_64.Archi.ptr64] using equality
+  calc
+    left = Ptrofs.of_int64 (Ptrofs.to_int64 left) :=
+      (Ptrofs.of_int64_to_int64_proof rfl left).symm
+    _ = Ptrofs.of_int64 (Ptrofs.to_int64 right) := congrArg _ wordEquality
+    _ = right := Ptrofs.of_int64_to_int64_proof rfl right
+
+private theorem events_ptrofs_lessdef (size : Ptrofs.int) (value : val)
+    (related : Val.lessdef (Vptrofs size) value) : value = Vptrofs size := by
+  change Val.lessdef (Vlong (Ptrofs.to_int64 size)) value at related
+  cases related
+  rfl
+
+private theorem events_ptrofs_inject (injection : Val.meminj)
+    (size : Ptrofs.int) (value : val)
+    (related : Val.inject injection (Vptrofs size) value) : value = Vptrofs size := by
+  change Val.inject injection (Vlong (Ptrofs.to_int64 size)) value at related
+  cases related
+  rfl
+
+private theorem events_malloc_unchanged (predicate : block → Z → Prop)
+    (before middle after : mem) (lower upper : Z) (value : val) (allocated : block)
+    (allocation : Mem.alloc before lower upper = (middle, allocated))
+    (store : Mem.store Mptr middle allocated lower value = some after) :
+    Mem.unchanged_on predicate before after := by
+  apply Mem.unchanged_on_implies (fun current _ => current ≠ allocated)
+    predicate before after
+  · exact Mem.unchanged_on_trans _ before middle after
+      (Mem.alloc_unchanged_on _ _ _ _ _ _ allocation)
+      (Mem.store_unchanged_on _ _ _ _ _ _ _ store
+        (by intro offset range different; exact different rfl))
+  · intro current offset selected valid
+    exact Mem.valid_not_valid_diff before current allocated valid
+      (Mem.fresh_block_alloc _ _ _ _ _ allocation)
+
+private theorem events_malloc_inv (environment : CompCert4Lean.Common.Globalenvs.Senv.t)
+    (arguments : List val) (before : mem) (trace : Events.trace) (result : val) (after : mem)
+    (call : extcall_malloc_sem environment arguments before trace result after) :
+    ∃ size middle allocated,
+      arguments = [Vptrofs size] ∧ trace = E0 ∧ result = Vptr allocated Ptrofs.zero ∧
+      Mem.alloc before (zOpp (size_chunk Mptr)) (Ptrofs.unsigned size) = (middle, allocated) ∧
+      Mem.store Mptr middle allocated (zOpp (size_chunk Mptr)) (Vptrofs size) = some after := by
+  cases call with
+  | extcall_malloc_sem_intro size initial middle allocated final allocation store =>
+      exact ⟨size, middle, allocated, rfl, rfl, rfl, allocation, store⟩
+
+theorem extcall_malloc_ok : extcall_malloc_okStatement := by
+  refine {
+    ec_well_typed := ?_
+    ec_symbols_preserved := ?_
+    ec_valid_block := ?_
+    ec_max_perm := ?_
+    ec_readonly := ?_
+    ec_mem_extends := ?_
+    ec_mem_inject := ?_
+    ec_trace_length := ?_
+    ec_receptive := ?_
+    ec_determ := ?_ }
+  · intro environment arguments before trace result after call
+    cases call
+    trivial
+  · intro sourceEnvironment targetEnvironment arguments before trace result after equivalent call
+    cases call with
+    | extcall_malloc_sem_intro size initial middle allocated final allocation store =>
+        exact extcall_malloc_sem_intro size before middle allocated after allocation store
+  · intro environment arguments before trace result after current call valid
+    cases call with
+    | extcall_malloc_sem_intro size initial middle allocated final allocation store =>
+        exact Mem.store_valid_block_1 _ _ _ _ _ _ store current
+          (Mem.valid_block_alloc _ _ _ _ _ allocation current valid)
+  · intro environment arguments before trace result after current offset permission call valid allowed
+    cases call with
+    | extcall_malloc_sem_intro size initial middle allocated final allocation store =>
+        exact Mem.perm_alloc_4 _ _ _ _ _ allocation current offset Max permission
+          (Mem.perm_store_2 _ _ _ _ _ _ store _ _ _ _ allowed)
+          (Mem.valid_not_valid_diff before current allocated valid
+            (Mem.fresh_block_alloc _ _ _ _ _ allocation))
+  · intro environment arguments before trace result after current offset count bytes call valid loaded readonly
+    cases call with
+    | extcall_malloc_sem_intro size initial middle allocated final allocation store =>
+        exact unchanged_on_readonly before after current offset count bytes
+          (events_malloc_unchanged _ _ _ _ _ _ _ _ allocation store) valid loaded readonly
+  · intro environment arguments before trace result after targetBefore targetArguments call extended argumentsRelated
+    cases call with
+    | extcall_malloc_sem_intro size initial middle allocated final allocation store =>
+      cases argumentsRelated with
+      | lessdef_list_cons _ value _ rest sizeRelated restRelated =>
+        cases restRelated
+        have sameSize := events_ptrofs_lessdef size value sizeRelated
+        subst value
+        obtain ⟨targetMiddle, targetAllocation, middleExtends⟩ :=
+          Mem.alloc_extends before targetBefore _ _ allocated middle
+            (zOpp (size_chunk Mptr)) (Ptrofs.unsigned size) extended allocation
+            (_root_.Int.le_refl _) (_root_.Int.le_refl _)
+        obtain ⟨targetAfter, targetStore, afterExtends⟩ :=
+          Mem.store_within_extends _ _ _ _ _ _ _ _ middleExtends store (.lessdef_refl _)
+        exact ⟨Vptr allocated Ptrofs.zero, targetAfter,
+          extcall_malloc_sem_intro size targetBefore targetMiddle allocated targetAfter
+            targetAllocation targetStore,
+          .lessdef_refl _, afterExtends,
+          events_malloc_unchanged _ _ _ _ _ _ _ _ targetAllocation targetStore⟩
+  · intro sourceEnvironment targetEnvironment arguments before trace result after
+      injection targetBefore targetArguments symbols call injected argumentsInjected
+    cases call with
+    | extcall_malloc_sem_intro size initial middle allocated final allocation store =>
+      cases argumentsInjected with
+      | inject_list_cons _ value _ rest sizeInjected restInjected =>
+        cases restInjected
+        have sameSize := events_ptrofs_inject injection size value sizeInjected
+        subst value
+        obtain ⟨extendedInjection, targetMiddle, targetBlock, targetAllocation,
+          middleInjected, increasing, allocatedMapping, oldMappings⟩ :=
+          Mem.alloc_parallel_inject injection before targetBefore _ _ middle allocated
+            (zOpp (size_chunk Mptr)) (Ptrofs.unsigned size) injected allocation
+            (_root_.Int.le_refl _) (_root_.Int.le_refl _)
+        obtain ⟨targetAfter, targetStore, afterInjected⟩ :=
+          Mem.store_mapped_inject _ _ _ _ _ _ _ _ _ _ _ middleInjected store
+            allocatedMapping (show Val.inject extendedInjection (Vptrofs size) (Vptrofs size)
+              from .inject_long _)
+        change Mem.store Mptr targetMiddle targetBlock
+          (zAdd (zOpp (size_chunk Mptr)) .Z0) (Vptrofs size) = some targetAfter at targetStore
+        rw [memcpy_aux_zadd_zero] at targetStore
+        refine ⟨extendedInjection, Vptr targetBlock Ptrofs.zero, targetAfter,
+          extcall_malloc_sem_intro size targetBefore targetMiddle targetBlock targetAfter
+            targetAllocation targetStore,
+          .inject_ptr _ _ _ _ _ allocatedMapping (events_ptrofs_add_zero _).symm,
+          afterInjected, events_malloc_unchanged _ _ _ _ _ _ _ _ allocation store,
+          events_malloc_unchanged _ _ _ _ _ _ _ _ targetAllocation targetStore,
+          increasing, ?_⟩
+        intro sourceBlock destinationBlock displacement oldAbsent newPresent
+        by_cases sameBlock : sourceBlock = allocated
+        · subst sourceBlock
+          rw [allocatedMapping] at newPresent
+          cases newPresent
+          exact ⟨Mem.fresh_block_alloc _ _ _ _ _ allocation,
+            Mem.fresh_block_alloc _ _ _ _ _ targetAllocation⟩
+        · rw [oldMappings sourceBlock sameBlock, oldAbsent] at newPresent
+          cases newPresent
+  · intro environment arguments before trace result after call
+    cases call
+    simp [E0]
+  · intro environment arguments before firstTrace result after secondTrace call matching
+    cases call with
+    | extcall_malloc_sem_intro size initial middle allocated final allocation store =>
+      cases matching
+      exact ⟨_, _, extcall_malloc_sem_intro size before middle allocated after allocation store⟩
+  · intro environment arguments before firstTrace firstResult firstAfter secondTrace secondResult secondAfter firstCall secondCall
+    cases firstCall with
+    | extcall_malloc_sem_intro size initial middle allocated final allocation store =>
+      obtain ⟨otherSize, otherMiddle, otherBlock, argumentsEquality, rfl, rfl,
+        otherAllocation, otherStore⟩ := events_malloc_inv _ _ _ _ _ _ secondCall
+      have sizeEquality : size = otherSize :=
+        events_ptrofs_value_injective _ _ (List.cons.inj argumentsEquality).1
+      subst otherSize
+      obtain ⟨rfl, rfl⟩ := Prod.mk.inj (allocation.symm.trans otherAllocation)
+      have finalEquality := Option.some.inj (store.symm.trans otherStore)
+      exact ⟨match_traces_E0, fun _ => ⟨rfl, finalEquality⟩⟩
+
+end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Integers
+
+private theorem events_free_permission (before after : mem) (freedBlock : block)
+    (lower upper offset : Z)
+    (freed : Mem.free before freedBlock lower upper = some after)
+    (inside : zLe lower offset ∧ zLt offset upper) :
+    Mem.perm before freedBlock offset Max Nonempty := by
+  exact Mem.perm_cur_max _ _ _ _
+    (Mem.perm_implies _ _ _ _ Freeable Nonempty
+      (Mem.free_range_perm _ _ _ _ _ freed offset inside) (perm_F_any _))
+
+theorem extcall_free_ok : extcall_free_okStatement := by
+  refine {
+    ec_well_typed := ?_
+    ec_symbols_preserved := ?_
+    ec_valid_block := ?_
+    ec_max_perm := ?_
+    ec_readonly := ?_
+    ec_mem_extends := ?_
+    ec_mem_inject := ?_
+    ec_trace_length := ?_
+    ec_receptive := ?_
+    ec_determ := ?_ }
+  · intro environment arguments before trace result after call
+    cases call <;> trivial
+  · intro sourceEnvironment targetEnvironment arguments before trace result after equivalent call
+    cases call with
+    | extcall_free_sem_ptr freedBlock lower size initial final loaded freed =>
+        exact extcall_free_sem_ptr freedBlock lower size before after loaded freed
+    | extcall_free_sem_null initial => exact extcall_free_sem_null before
+  · intro environment arguments before trace result after current call valid
+    cases call with
+    | extcall_free_sem_ptr freedBlock lower size initial final loaded freed =>
+        change CompCert4Lean.Lib.Coqlib.Plt current after.nextblock
+        rw [Mem.nextblock_free _ _ _ _ _ freed]
+        exact valid
+    | extcall_free_sem_null initial => exact valid
+  · intro environment arguments before trace result after current offset permission call valid allowed
+    cases call with
+    | extcall_free_sem_ptr freedBlock lower size initial final loaded freed =>
+        exact Mem.perm_free_3 _ _ _ _ _ freed _ _ _ _ allowed
+    | extcall_free_sem_null initial => exact allowed
+  · intro environment arguments before trace result after current offset count bytes call valid loaded readonly
+    cases call with
+    | extcall_free_sem_ptr freedBlock lower size initial final sizeLoaded freed =>
+        exact Mem.loadbytes_free_2 _ _ _ _ _ freed _ _ _ _ loaded
+    | extcall_free_sem_null initial => exact loaded
+  · intro environment arguments before trace result after targetBefore targetArguments call extended argumentsRelated
+    cases call with
+    | extcall_free_sem_ptr freedBlock lower size initial final loaded freed =>
+      cases argumentsRelated with
+      | lessdef_list_cons _ value _ rest valueRelated restRelated =>
+        cases restRelated
+        cases valueRelated
+        obtain ⟨targetSize, targetLoad, sizeRelated⟩ :=
+          Mem.load_extends _ _ _ _ _ _ extended loaded
+        have sizeEquality := events_ptrofs_lessdef size targetSize sizeRelated
+        subst targetSize
+        obtain ⟨targetAfter, targetFree, afterExtended⟩ :=
+          Mem.free_parallel_extends _ _ _ _ _ _ extended freed
+        refine ⟨Vundef, targetAfter,
+          extcall_free_sem_ptr freedBlock lower size targetBefore targetAfter targetLoad targetFree,
+          .lessdef_refl _, afterExtended, ?_⟩
+        apply Mem.free_unchanged_on _ _ _ _ _ _ targetFree
+        intro offset inside outside
+        exact outside (events_free_permission _ _ _ _ _ _ freed inside)
+    | extcall_free_sem_null initial =>
+      cases argumentsRelated with
+      | lessdef_list_cons _ value _ rest valueRelated restRelated =>
+        cases restRelated
+        change Val.lessdef (Vlong Int64.zero) value at valueRelated
+        cases valueRelated
+        exact ⟨Vundef, targetBefore, extcall_free_sem_null targetBefore,
+          .lessdef_refl _, extended, Mem.unchanged_on_refl _ _⟩
+  · intro sourceEnvironment targetEnvironment arguments before trace result after
+      injection targetBefore targetArguments symbols call injected argumentsInjected
+    cases call with
+    | extcall_free_sem_ptr freedBlock lower size initial final loaded freed =>
+      cases argumentsInjected with
+      | inject_list_cons _ value _ rest valueInjected restInjected =>
+        cases restInjected
+        cases valueInjected with
+        | inject_ptr _ _ targetBlock targetOffset displacement mapping offsetEquality =>
+          subst targetOffset
+          obtain ⟨targetSize, targetLoad, sizeInjected⟩ :=
+            Mem.load_inject _ _ _ _ _ _ _ _ _ injected loaded mapping
+          have sizeEquality := events_ptrofs_inject injection size targetSize sizeInjected
+          subst targetSize
+          have previousPermission : Mem.perm before freedBlock
+              (zSub (Ptrofs.unsigned lower) z1) Cur Freeable := by
+            apply Mem.free_range_perm _ _ _ _ _ freed
+            have nonnegative := (Ptrofs.unsigned_range_proof size).1
+            have positive := size_chunk_pos Mptr
+            change 0 ≤ intOfZ (Ptrofs.unsigned size) at nonnegative
+            change 0 < intOfZ (size_chunk Mptr) at positive
+            change zLe (zSub (Ptrofs.unsigned lower) (size_chunk Mptr))
+                (zSub (Ptrofs.unsigned lower) z1) ∧
+              zLt (zSub (Ptrofs.unsigned lower) z1)
+                (zAdd (Ptrofs.unsigned lower) (Ptrofs.unsigned size))
+            simp only [zLe, zLt, ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt,
+              zSub, zAdd, ZArith.BinInt.Z.sub,
+              ZArith.BinInt.Z.add, intOfZ_zOfInt]
+            change intOfZ (Ptrofs.unsigned lower) - intOfZ (size_chunk Mptr) ≤
+                intOfZ (Ptrofs.unsigned lower) - 1 ∧
+              intOfZ (Ptrofs.unsigned lower) - 1 <
+                intOfZ (Ptrofs.unsigned lower) + intOfZ (Ptrofs.unsigned size)
+            omega
+          have addressEquality := Mem.address_inject_gen injection before targetBefore
+            freedBlock lower targetBlock displacement Freeable injected
+            (Or.inr previousPermission) mapping
+          have lowerEquality :
+              zSub (Ptrofs.unsigned (Ptrofs.add lower (Ptrofs.repr displacement))) (size_chunk Mptr) =
+                zAdd (zSub (Ptrofs.unsigned lower) (size_chunk Mptr)) displacement := by
+            rw [addressEquality]
+            apply intOfZ_injective
+            simp only [zSub, zAdd, ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+            omega
+          have upperEquality :
+              zAdd (Ptrofs.unsigned (Ptrofs.add lower (Ptrofs.repr displacement))) (Ptrofs.unsigned size) =
+                zAdd (zAdd (Ptrofs.unsigned lower) (Ptrofs.unsigned size)) displacement := by
+            rw [addressEquality]
+            apply intOfZ_injective
+            simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+            omega
+          obtain ⟨targetAfter, targetFree, afterInjected⟩ :=
+            Mem.free_parallel_inject _ _ _ _ _ _ _ _ _ injected freed mapping
+          refine ⟨injection, Vundef, targetAfter, ?_, .val_inject_undef _, afterInjected, ?_, ?_,
+            inject_incr_refl injection, ?_⟩
+          · apply extcall_free_sem_ptr targetBlock (Ptrofs.add lower (Ptrofs.repr displacement)) size
+              targetBefore targetAfter
+            · rw [lowerEquality]
+              exact targetLoad
+            · rw [lowerEquality, upperEquality]
+              exact targetFree
+          · apply Mem.free_unchanged_on _ _ _ _ _ _ freed
+            intro offset inside unmapped
+            change injection freedBlock = none at unmapped
+            rw [mapping] at unmapped
+            cases unmapped
+          · apply Mem.free_unchanged_on _ _ _ _ _ _ targetFree
+            intro offset inside unreachable
+            apply unreachable freedBlock displacement mapping
+            apply events_free_permission _ _ _ _ _ _ freed
+            change zLe (zAdd (zSub (Ptrofs.unsigned lower) (size_chunk Mptr)) displacement) offset ∧
+              zLt offset (zAdd (zAdd (Ptrofs.unsigned lower) (Ptrofs.unsigned size)) displacement) at inside
+            change zLe (zSub (Ptrofs.unsigned lower) (size_chunk Mptr)) (zSub offset displacement) ∧
+              zLt (zSub offset displacement) (zAdd (Ptrofs.unsigned lower) (Ptrofs.unsigned size))
+            simp only [zLe, zLt, ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt,
+              zAdd, zSub, ZArith.BinInt.Z.add,
+              ZArith.BinInt.Z.sub, intOfZ_zOfInt] at inside ⊢
+            omega
+          · intro sourceBlock destinationBlock displacement absent present
+            rw [absent] at present
+            cases present
+    | extcall_free_sem_null initial =>
+      cases argumentsInjected with
+      | inject_list_cons _ value _ rest valueInjected restInjected =>
+        cases restInjected
+        change Val.inject injection (Vlong Int64.zero) value at valueInjected
+        cases valueInjected
+        refine ⟨injection, Vundef, targetBefore, extcall_free_sem_null targetBefore,
+          .val_inject_undef _, injected, Mem.unchanged_on_refl _ _,
+          Mem.unchanged_on_refl _ _, inject_incr_refl injection, ?_⟩
+        intro sourceBlock destinationBlock displacement absent present
+        rw [absent] at present
+        cases present
+  · intro environment arguments before trace result after call
+    cases call <;> simp [E0]
+  · intro environment arguments before firstTrace result after secondTrace call matching
+    cases call with
+    | extcall_free_sem_ptr freedBlock lower size initial final loaded freed =>
+        cases matching
+        exact ⟨_, _, extcall_free_sem_ptr freedBlock lower size before after loaded freed⟩
+    | extcall_free_sem_null initial =>
+        cases matching
+        exact ⟨_, _, extcall_free_sem_null before⟩
+  · intro environment arguments before firstTrace firstResult firstAfter secondTrace secondResult secondAfter firstCall secondCall
+    cases firstCall with
+    | extcall_free_sem_ptr freedBlock lower size initial final loaded freed =>
+      cases secondCall with
+      | extcall_free_sem_ptr _ _ otherSize _ _ otherLoaded otherFreed =>
+        have sizeEquality : size = otherSize := events_ptrofs_value_injective _ _
+          (Option.some.inj (loaded.symm.trans otherLoaded))
+        subst otherSize
+        exact ⟨match_traces_E0, fun _ => ⟨rfl, Option.some.inj (freed.symm.trans otherFreed)⟩⟩
+    | extcall_free_sem_null initial =>
+      cases secondCall
+      exact ⟨match_traces_E0, fun _ => ⟨rfl, rfl⟩⟩
+
+end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+
+theorem external_call_spec
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    external_call_specStatement := by
+  intro providers function
+  cases function with
+  | EF_external name signature => exact external_functions_properties providers name signature
+  | EF_builtin name signature | EF_runtime name signature =>
+      exact builtin_or_external_sem_ok providers name signature
+  | EF_vload chunk => exact volatile_load_ok chunk
+  | EF_vstore chunk => exact volatile_store_ok chunk
+  | EF_malloc => exact extcall_malloc_ok
+  | EF_free => exact extcall_free_ok
+  | EF_memcpy size alignment => exact extcall_memcpy_ok size alignment
+  | EF_annot kind text argumentTypes => exact extcall_annot_ok text argumentTypes
+  | EF_annot_val kind text argumentType => exact extcall_annot_val_ok text argumentType
+  | EF_inline_asm text signature clobbers => exact inline_assembly_properties providers text signature
+  | EF_debug kind text argumentTypes => exact extcall_debug_ok argumentTypes
+
+end CompCert4Lean.Common.Events
+
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.ExternalCalls
+
+theorem external_call_symbols_preserved_proof
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (providers : ExternalCalls) (function : external_function) :
+    external_call_symbols_preserved providers function :=
+  (external_call_spec providers function).ec_symbols_preserved
+
+end CompCert4Lean.Common.Events
+
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.ExternalCalls
+
+theorem external_call_valid_block_proof
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (providers : ExternalCalls) (function : external_function) :
+    external_call_valid_block providers function :=
+  (external_call_spec providers function).ec_valid_block
+
+end CompCert4Lean.Common.Events
+
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.ExternalCalls
+
+theorem external_call_max_perm_proof
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (providers : ExternalCalls) (function : external_function) :
+    external_call_max_perm providers function :=
+  (external_call_spec providers function).ec_max_perm
+
+end CompCert4Lean.Common.Events
+
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.ExternalCalls
+
+theorem external_call_readonly_proof
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (providers : ExternalCalls) (function : external_function) :
+    external_call_readonly providers function :=
+  (external_call_spec providers function).ec_readonly
+
+end CompCert4Lean.Common.Events
+
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.ExternalCalls
+
+theorem external_call_mem_extends_proof
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (providers : ExternalCalls) (function : external_function) :
+    external_call_mem_extends providers function :=
+  (external_call_spec providers function).ec_mem_extends
+
+end CompCert4Lean.Common.Events
+
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.ExternalCalls
+
+theorem external_call_mem_inject_gen_proof
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (providers : ExternalCalls) (function : external_function) :
+    external_call_mem_inject_gen providers function :=
+  (external_call_spec providers function).ec_mem_inject
+
+end CompCert4Lean.Common.Events
+
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.ExternalCalls
+
+theorem external_call_receptive_proof
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (providers : ExternalCalls) (function : external_function) :
+    external_call_receptive providers function :=
+  (external_call_spec providers function).ec_receptive
+
+end CompCert4Lean.Common.Events
+
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.ExternalCalls
+
+theorem external_call_determ_proof
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (providers : ExternalCalls) (function : external_function) :
+    external_call_determ providers function :=
+  (external_call_spec providers function).ec_determ
+
+end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem external_call_nextblock
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    external_call_nextblockStatement := by
+  intro providers function environment arguments before trace result after call
+  have preserved := external_call_valid_block_proof providers function
+    environment arguments before trace result after after.nextblock call
+  change (PArith.BinPos.Pos.to_nat after.nextblock < PArith.BinPos.Pos.to_nat before.nextblock) →
+    (PArith.BinPos.Pos.to_nat after.nextblock < PArith.BinPos.Pos.to_nat after.nextblock) at preserved
+  change PArith.BinPos.Pos.to_nat before.nextblock ≤ PArith.BinPos.Pos.to_nat after.nextblock
+  omega
+
+end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Globalenvs
+
+theorem external_call_mem_inject
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    external_call_mem_injectStatement := by
+  intro providers function functionType variableType environment arguments before trace result after
+    injection targetBefore targetArguments globalsPreserved call injected argumentsInjected
+  obtain ⟨symbolsPreserved, variablesPreserved, variablesSeparated⟩ := globalsPreserved
+  apply external_call_mem_inject_gen_proof providers function
+    (Genv.to_senv environment) (Genv.to_senv environment) arguments before trace result after
+    injection targetBefore targetArguments ?_ call injected argumentsInjected
+  refine ⟨fun _ => rfl, ?_, ?_, ?_⟩
+  · intro name sourceBlock targetBlock displacement mapping found
+    have preserved := symbolsPreserved name sourceBlock found
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj (preserved.symm.trans mapping))
+    exact ⟨rfl, found⟩
+  · intro name sourceBlock publicSymbol found
+    exact ⟨sourceBlock, symbolsPreserved name sourceBlock found, found⟩
+  · intro sourceBlock targetBlock displacement mapping
+    change Genv.block_is_volatile environment targetBlock =
+      Genv.block_is_volatile environment sourceBlock
+    cases sourceVariable : Genv.find_var_info environment sourceBlock with
+    | some globalVariable =>
+        have preserved := variablesPreserved sourceBlock globalVariable sourceVariable
+        have blockEquality := congrArg Prod.fst (Option.some.inj (preserved.symm.trans mapping))
+        change sourceBlock = targetBlock at blockEquality
+        subst targetBlock
+        rfl
+    | none =>
+        cases targetVariable : Genv.find_var_info environment targetBlock with
+        | none => simp [Genv.block_is_volatile, sourceVariable, targetVariable]
+        | some globalVariable =>
+            have blockEquality := variablesSeparated sourceBlock targetBlock displacement
+              globalVariable targetVariable mapping
+            subst targetBlock
+            rw [sourceVariable] at targetVariable
+
+end CompCert4Lean.Common.Events
