@@ -12028,3 +12028,206 @@ theorem mods_divs_proof : mods_divs := by
       (eqm_unsigned_repr_proof (zMul (unsigned (divs left right)) (unsigned right)))
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem modu_divu_proof : modu_divu := by
+  intro left right divisor_nonzero
+  have positive : (0 : _root_.Int) < intOfZ (unsigned right) := by
+    have lower : (0 : _root_.Int) ≤ intOfZ (unsigned right) :=
+      (unsigned_range_proof right).1
+    have nonzero : intOfZ (unsigned right) ≠ 0 := by
+      intro zero_value
+      apply divisor_nonzero
+      apply WordCore.ext
+      apply intOfZ_injective
+      change intOfZ (unsigned right) = 0
+      exact zero_value
+    omega
+  have remainder : zMod (unsigned left) (unsigned right) =
+      zSub (unsigned left) (zMul (zDiv (unsigned left) (unsigned right)) (unsigned right)) := by
+    apply intOfZ_injective
+    have identity := congrArg intOfZ
+      (CompCert4Lean.Lib.Coqlib.Z_div_mod_eq (unsigned left) (unsigned right) positive)
+    simp only [zSub, zMul, zAdd, zDiv, zMod, ZArith.BinInt.Z.sub, ZArith.BinInt.Z.mul,
+      ZArith.BinInt.Z.add, intOfZ_zOfInt, _root_.Int.mul_comm] at identity ⊢
+    omega
+  change repr (zMod (unsigned left) (unsigned right)) =
+    repr (zSub (unsigned left) (unsigned (mul (divu left right) right)))
+  rw [remainder]
+  apply eqm_samerepr_proof
+  apply manual_int64_eqm_sub
+  · exact eqm_refl_proof (unsigned left)
+  · exact eqm_trans_proof _ _ _
+      (eqm_mult_proof _ _ _ _
+        (eqm_unsigned_repr_proof (zDiv (unsigned left) (unsigned right)))
+        (eqm_refl_proof (unsigned right)))
+      (eqm_unsigned_repr_proof (zMul (unsigned (divu left right)) (unsigned right)))
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem manual_int64_ltu_wordsize (value : int)
+    (less : ltu value iwordsize = true) : value.val < wordsize := by
+  have bound := (ltu_inv_proof value iwordsize less).2
+  change ZArith.BinInt.Z.lt value.intval iwordsize.intval at bound
+  rw [WordCore.intval_eq_zOfNat_val value,
+    WordCore.intval_eq_zOfNat_val iwordsize] at bound
+  have size_value : iwordsize.val = wordsize := rfl
+  rw [size_value] at bound
+  change intOfZ (zOfNat value.val) < intOfZ (zOfNat wordsize) at bound
+  simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at bound
+  exact _root_.Int.ofNat_lt.mp bound
+
+private theorem manual_int64_shru_val (value amount : int) :
+    (shru value amount).val = value.val / 2 ^ amount.val := by
+  unfold shru WordCore.shru
+  change (WordCore.repr wordsize
+    (ZArith.BinInt.Z.shiftr value.intval amount.intval)).val = _
+  rw [WordCore.intval_eq_zOfNat_val value, WordCore.intval_eq_zOfNat_val amount]
+  have shifted : ZArith.BinInt.Z.shiftr (zOfNat value.val) (zOfNat amount.val) =
+      zOfNat (value.val / 2 ^ amount.val) := by
+    unfold ZArith.BinInt.Z.shiftr
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+      _root_.Int.ofNat_eq_natCast, _root_.Int.natCast_nonneg, ↓reduceIte,
+      _root_.Int.toNat_natCast, _root_.Int.natCast_pow]
+    exact congrArg zOfInt _root_.Int.ofNat_ediv_ofNat
+  rw [shifted, WordCore.val_repr_residue]
+  have encoded : zOfNat (value.val / 2 ^ amount.val) =
+      zOfInt (_root_.Int.ofNat (value.val / 2 ^ amount.val)) := by rfl
+  rw [encoded, WordCore.residue_zOfNat]
+  exact Nat.mod_eq_of_lt
+    (Nat.lt_of_le_of_lt (Nat.div_le_self value.val _) (WordCore.val_lt value))
+
+theorem shru_shru_proof : shru_shru := by
+  intro value first second first_lt second_lt sum_lt
+  have first_bound := manual_int64_ltu_wordsize first first_lt
+  have second_bound := manual_int64_ltu_wordsize second second_lt
+  have sum_bound : first.val + second.val < 2 ^ wordsize := by
+    change first.val < 64 at first_bound
+    change second.val < 64 at second_bound
+    change first.val + second.val < 18446744073709551616
+    omega
+  apply WordCore.ext_of_val_eq
+  rw [manual_int64_shru_val, manual_int64_shru_val, manual_int64_shru_val]
+  change value.val / 2 ^ first.val / 2 ^ second.val =
+    value.val / 2 ^ (WordCore.add first second).val
+  rw [WordCore.add_val, Nat.mod_eq_of_lt sum_bound,
+    Nat.div_div_eq_div_mul, ← Nat.pow_add]
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem manual_int64_shl_val (value amount : int) :
+    (shl value amount).val = (value.val * 2 ^ amount.val) % (2 ^ wordsize) := by
+  change (WordCore.repr wordsize
+    (zShiftl (unsigned value) (unsigned amount))).val = _
+  rw [manual_int64_unsigned_as_nat value, manual_int64_unsigned_as_nat amount]
+  have shifted : zShiftl (zOfNat value.val) (zOfNat amount.val) =
+      zOfNat (value.val * 2 ^ amount.val) := by
+    unfold zShiftl ZArith.BinInt.Z.shiftl
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+      _root_.Int.ofNat_eq_natCast, _root_.Int.natCast_nonneg, ↓reduceIte]
+    rw [_root_.Int.natCast_mul, _root_.Int.natCast_pow]
+    rfl
+  rw [shifted, WordCore.val_repr_residue]
+  have encoded : zOfNat (value.val * 2 ^ amount.val) =
+      zOfInt (_root_.Int.ofNat (value.val * 2 ^ amount.val)) := by rfl
+  rw [encoded, WordCore.residue_zOfNat]
+
+theorem shl_shl_proof : shl_shl := by
+  intro value first second first_lt second_lt sum_lt
+  have first_bound := manual_int64_ltu_wordsize first first_lt
+  have second_bound := manual_int64_ltu_wordsize second second_lt
+  have sum_bound : first.val + second.val < 2 ^ wordsize := by
+    change first.val < 64 at first_bound
+    change second.val < 64 at second_bound
+    change first.val + second.val < 18446744073709551616
+    omega
+  apply WordCore.ext_of_val_eq
+  rw [manual_int64_shl_val, manual_int64_shl_val, manual_int64_shl_val]
+  change ((value.val * 2 ^ first.val) % (2 ^ wordsize) * 2 ^ second.val) %
+      (2 ^ wordsize) =
+    (value.val * 2 ^ (WordCore.add first second).val) % (2 ^ wordsize)
+  rw [WordCore.add_val, Nat.mod_eq_of_lt sum_bound, Nat.pow_add, ← Nat.mul_assoc]
+  exact Nat.mod_mul_mod _ _ _
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem manual_int64_bits_shl_nat (value amount : int) (index : Nat)
+    (inRange : index < wordsize) :
+    testbit (shl value amount) (zOfNat index) =
+      zltSelect (zOfNat index) (unsigned amount) false
+        (testbit value (zSub (zOfNat index) (unsigned amount))) := by
+  have amount_nat : unsigned amount = zOfNat amount.val :=
+    manual_int64_unsigned_as_nat amount
+  rw [suffix_int64_testbit_nat, manual_int64_shl_val, Nat.testBit_mod_two_pow]
+  simp only [inRange, decide_true]
+  rw [← Nat.shiftLeft_eq, Nat.testBit_shiftLeft]
+  cases comparison : CompCert4Lean.Lib.Coqlib.zlt (zOfNat index) (unsigned amount) with
+  | left less =>
+      have bound : index < amount.val := by
+        rw [amount_nat] at less
+        change intOfZ (zOfNat index) < intOfZ (zOfNat amount.val) at less
+        simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at less
+        exact _root_.Int.ofNat_lt.mp less
+      have not_le : ¬amount.val ≤ index := Nat.not_le.mpr bound
+      simp [zltSelect, sumboolSelect, comparison, not_le]
+  | right greater =>
+      have bound : amount.val ≤ index := by
+        rw [amount_nat] at greater
+        change intOfZ (zOfNat amount.val) ≤ intOfZ (zOfNat index) at greater
+        simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at greater
+        exact _root_.Int.ofNat_le.mp greater
+      have difference : zSub (zOfNat index) (unsigned amount) =
+          zOfNat (index - amount.val) := by
+        rw [amount_nat]
+        apply intOfZ_injective
+        simp only [zSub, zOfNat, ZArith.BinInt.Z.sub, ZArith.BinInt.Z.of_nat,
+          intOfZ_zOfInt]
+        exact (_root_.Int.ofNat_sub bound).symm
+      rw [difference]
+      simp [bound]
+      have selected : zltSelect (zOfNat index) (unsigned amount) false
+          (testbit value (zOfNat (index - amount.val))) =
+          testbit value (zOfNat (index - amount.val)) := by
+        unfold zltSelect
+        rw [comparison]
+        rfl
+      rw [selected, suffix_int64_testbit_nat]
+
+theorem bits_shl_proof : bits_shl := by
+  intro value amount index bounds
+  cases index with
+  | Zneg position =>
+      have lower := bounds.1
+      change (0 : _root_.Int) ≤ -_root_.Int.ofNat (posToNat position) at lower
+      have positive : (0 : _root_.Int) < _root_.Int.ofNat (posToNat position) :=
+        _root_.Int.natCast_pos.mpr (posToNat_positive position)
+      omega
+  | Z0 =>
+      exact manual_int64_bits_shl_nat value amount 0 (by decide)
+  | Zpos position =>
+      have encoded : zOfNat (posToNat position) = .Zpos position :=
+        ZArith.Znat.positive_nat_Z position
+      rw [← encoded] at bounds ⊢
+      have upper : posToNat position < wordsize := by
+        have bound := bounds.2
+        change intOfZ (zOfNat (posToNat position)) < intOfZ zwordsize at bound
+        simp only [zOfNat, zwordsize, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at bound
+        exact _root_.Int.ofNat_lt.mp bound
+      exact manual_int64_bits_shl_nat value amount (posToNat position) upper
+
+end CompCert4Lean.Lib.Integers.Int64
