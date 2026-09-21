@@ -11100,3 +11100,45 @@ theorem agree32_of_int_proof : agree32_of_int := by
   cases incompatible
 
 end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem of_int_to_int_proof : of_int_to_int := by
+  intro incompatible
+  cases incompatible
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eqm64_proof : eqm64 := by
+  intro architecture left right
+  rfl
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem agree64_repr_proof : agree64_repr := by
+  intro architecture number
+  rfl
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem of_int64_to_int64_proof : of_int64_to_int64 := by
+  intro architecture value
+  change Int64.repr (Int64.unsigned (Int64.repr (Int64.unsigned value))) = value
+  exact (Int64.repr_unsigned_proof (Int64.repr (Int64.unsigned value))).trans
+    (Int64.repr_unsigned_proof value)
+
+end CompCert4Lean.Lib.Integers.Ptrofs
