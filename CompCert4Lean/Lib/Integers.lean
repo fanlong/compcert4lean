@@ -11195,3 +11195,51 @@ theorem swap_cmp_proof : swap_cmp := by
   cases comparison <;> simp [cmp, WordCore.cmp, swap_comparison, WordCore.eq, eq_comm]
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem unsigned_repr_proof : unsigned_repr := Int64.unsigned_repr_proof
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem negate_cmpu_proof : negate_cmpu := Int64.negate_cmpu_proof
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eqm_sym_proof : eqm_sym := by
+  intro left right equivalent
+  unfold eqm WordCore.eqm CompCert4Lean.Lib.Zbits.eqmod at equivalent ⊢
+  obtain ⟨quotient, equality⟩ := equivalent
+  refine ⟨zOpp quotient, ?_⟩
+  apply intOfZ_injective
+  have converted := congrArg intOfZ equality
+  simp only [zAdd, zMul, zOpp, ZArith.BinInt.Z.add,
+    ZArith.BinInt.Z.mul, ZArith.BinInt.Z.opp, intOfZ_zOfInt] at converted ⊢
+  change intOfZ right = -intOfZ quotient * intOfZ modulus + intOfZ left
+  change intOfZ left = intOfZ quotient * intOfZ modulus + intOfZ right at converted
+  rw [converted]
+  simp only [_root_.Int.neg_mul]
+  omega
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eqm_unsigned_repr_l_proof : eqm_unsigned_repr_l := by
+  intro left right equivalent
+  exact eqm_trans_proof (unsigned (repr left)) left right
+    (eqm_sym_proof left (unsigned (repr left)) (eqm_unsigned_repr_proof left)) equivalent
+
+end CompCert4Lean.Lib.Integers.Int64
