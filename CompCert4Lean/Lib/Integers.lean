@@ -11760,3 +11760,118 @@ theorem bits_or_proof : bits_or := by
       exact natural (posToNat position)
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem or_mone_proof : or_mone := by
+  intro value
+  apply same_bits_eq_proof
+  intro index bounds
+  simp only [bits_or_proof value mone index bounds, bits_mone_proof index bounds,
+    Bool.or_true]
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem not_or_and_not_proof : not_or_and_not := by
+  have complement (value : int) (index : Z)
+      (bounds : zLe zZero index ∧ zLt index zwordsize) :
+      testbit (not value) index = !(testbit value index) := by
+    have encoding : not value = xor value mone := by
+      apply WordCore.ext_of_val_eq
+      change (WordCore.not value).val = (xor value mone).val
+      rw [suffix_int64_not_val, suffix_int64_xor_val]
+      congr 1
+    rw [encoding, bits_xor_proof value mone index bounds, bits_mone_proof index bounds]
+    cases testbit value index <;> rfl
+  intro left right
+  apply same_bits_eq_proof
+  intro index bounds
+  rw [complement (or left right) index bounds, bits_or_proof left right index bounds,
+    bits_and_proof (not left) (not right) index bounds,
+    complement left index bounds, complement right index bounds]
+  cases testbit left index <;> cases testbit right index <;> rfl
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem translate_cmpu_proof : translate_cmpu := by
+  intro comparison left right offset left_bounds right_bounds
+  have left_sum : unsigned (add left offset) = zAdd (unsigned left) (unsigned offset) :=
+    unsigned_repr_proof _ left_bounds
+  have right_sum : unsigned (add right offset) = zAdd (unsigned right) (unsigned offset) :=
+    unsigned_repr_proof _ right_bounds
+  have equality : eq (add left offset) (add right offset) = eq left right := by
+    change decide (unsigned (add left offset) = unsigned (add right offset)) =
+      decide (unsigned left = unsigned right)
+    rw [left_sum, right_sum]
+    simp only [decide_eq_decide]
+    constructor
+    · intro sums
+      apply intOfZ_injective
+      have converted := congrArg intOfZ sums
+      simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at converted
+      omega
+    · intro same
+      rw [same]
+  have ordered (first second : int)
+      (first_sum : unsigned (add first offset) = zAdd (unsigned first) (unsigned offset))
+      (second_sum : unsigned (add second offset) = zAdd (unsigned second) (unsigned offset)) :
+      ltu (add first offset) (add second offset) = ltu first second := by
+    change zltSelect (unsigned (add first offset)) (unsigned (add second offset)) true false =
+      zltSelect (unsigned first) (unsigned second) true false
+    rw [first_sum, second_sum]
+    cases shifted : CompCert4Lean.Lib.Coqlib.zlt
+        (zAdd (unsigned first) (unsigned offset)) (zAdd (unsigned second) (unsigned offset)) with
+    | left shifted_less =>
+        cases original : CompCert4Lean.Lib.Coqlib.zlt (unsigned first) (unsigned second) with
+        | left base_less => simp [zltSelect, sumboolSelect, shifted, original]
+        | right base_ge =>
+            change intOfZ (zAdd (unsigned first) (unsigned offset)) <
+              intOfZ (zAdd (unsigned second) (unsigned offset)) at shifted_less
+            simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at shifted_less
+            change intOfZ (unsigned second) ≤ intOfZ (unsigned first) at base_ge
+            omega
+    | right shifted_ge =>
+        cases original : CompCert4Lean.Lib.Coqlib.zlt (unsigned first) (unsigned second) with
+        | left base_less =>
+            change intOfZ (zAdd (unsigned second) (unsigned offset)) ≤
+              intOfZ (zAdd (unsigned first) (unsigned offset)) at shifted_ge
+            simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at shifted_ge
+            change intOfZ (unsigned first) < intOfZ (unsigned second) at base_less
+            omega
+        | right base_ge => simp [zltSelect, sumboolSelect, shifted, original]
+  cases comparison <;> simp only [cmpu, equality,
+    ordered left right left_sum right_sum, ordered right left right_sum left_sum]
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem manual_int64_divs_one (value : int) : divs value one = value := by
+  change repr (zQuot (signed value) (signed one)) = value
+  rw [show signed one = zOne by rfl]
+  have quotient : zQuot (signed value) zOne = signed value := by
+    apply intOfZ_injective
+    simp only [zQuot, ZArith.BinInt.Z.quot, intOfZ_zOfInt]
+    change (intOfZ (signed value)).tdiv 1 = intOfZ (signed value)
+    exact _root_.Int.tdiv_one _
+  rw [quotient]
+  exact repr_signed_proof value
+
+theorem shrx_zero_proof : shrx_zero := by
+  intro value wordsize_large
+  change divs value (shl one zero) = value
+  rw [shl_zero_proof, manual_int64_divs_one]
+
+end CompCert4Lean.Lib.Integers.Int64
