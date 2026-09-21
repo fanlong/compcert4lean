@@ -9854,3 +9854,106 @@ theorem drop_inject_neutral : drop_inject_neutralStatement := by
   simpa only [inject_neutral, same] using injectedMemory
 
 end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem empty_inject_neutral : empty_inject_neutralStatement := by
+  intro threshold
+  constructor
+  · intro source target delta offset kind permission mapping allowed
+    change positive at source target
+    unfold perm empty at allowed
+    rw [pmapGetInit] at allowed
+    exact False.elim allowed
+  · intro source target delta chunk offset permission mapping accessible
+    obtain ⟨rfl, rfl, below⟩ := scc083_flat_inj_some threshold source target delta mapping
+    refine ⟨.Z0, ?_⟩
+    apply intOfZ_injective
+    change 0 = intOfZ (zOfInt (intOfZ (CompCert4Lean.Common.Memdata.align_chunk chunk) * 0))
+    rw [intOfZ_zOfInt]
+    simp
+  · intro source offset target delta mapping readable
+    change positive at source target
+    unfold perm empty at readable
+    rw [pmapGetInit] at readable
+    exact False.elim readable
+
+end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Coqlib
+
+theorem alloc_inject_neutral : alloc_inject_neutralStatement := by
+  intro threshold before lower upper address after allocated neutral below
+  change mem_inj (flat_inj threshold) after after
+  have rightInjection := alloc_right_inj (flat_inj threshold) before before lower upper
+    address after neutral allocated
+  refine alloc_left_mapped_inj (flat_inj threshold) before after lower upper after address
+    address z0 rightInjection allocated
+    (valid_new_block before lower upper after address allocated) ?_ ?_ ?_
+  · intro chunk bounded
+    refine ⟨.Z0, ?_⟩
+    apply intOfZ_injective
+    change 0 = intOfZ (zOfInt (intOfZ (align_chunk chunk) * 0))
+    rw [intOfZ_zOfInt]
+    simp
+  · intro offset kind permission bounds
+    have allowed := perm_implies after address offset kind Freeable permission
+      (perm_alloc_2 before lower upper after address allocated offset kind bounds)
+      (perm_F_any permission)
+    simpa only [zAdd, z0, scc083_zadd_zero] using allowed
+  · have addressBelow : Plt address threshold := by
+      rw [alloc_result before lower upper after address allocated]
+      exact below
+    unfold flat_inj
+    cases plt address threshold with
+    | left valid => rfl
+    | right invalid => exact False.elim (invalid addressBelow)
+
+end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+theorem storebytes_unchanged_on : storebytes_unchanged_onStatement := by
+  intro predicate before address offset bytes after stored excluded
+  constructor
+  · rw [nextblock_storebytes before address offset bytes after stored]
+    exact Ple_refl before.nextblock
+  · intro readAddress readOffset kind permission region valid
+    exact ⟨perm_storebytes_1 before address offset bytes after stored readAddress readOffset kind permission,
+      perm_storebytes_2 before address offset bytes after stored readAddress readOffset kind permission⟩
+  · intro readAddress readOffset region readable
+    rw [storebytes_mem_contents before address offset bytes after stored]
+    by_cases same : readAddress = address
+    · subst readAddress
+      rw [pmapGetSetSame]
+      apply setN_other bytes (PMap.get address before.mem_contents) offset readOffset
+      intro candidate bounds identical
+      subst candidate
+      exact excluded readOffset bounds region
+    · rw [pmapGetSetOther _ _ _ _ same]
+
+end CompCert4Lean.Common.Memory.Mem
+
+namespace CompCert4Lean.Common.Memory.Mem
+
+open CompCert4Lean.Common.Memdata
+
+theorem store_unchanged_on : store_unchanged_onStatement := by
+  intro predicate chunk before address offset value after stored excluded
+  apply storebytes_unchanged_on predicate before address offset (encode_val chunk value) after
+    (store_storebytes before address offset chunk value after stored)
+  intro candidate bounds
+  apply excluded candidate
+  simpa only [encode_val_length chunk value, ← size_chunk_conv chunk] using bounds
+
+end CompCert4Lean.Common.Memory.Mem

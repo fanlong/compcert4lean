@@ -6757,3 +6757,58 @@ theorem vmatch_inj_top : vmatch_inj_topStatement := by
   | val_inject_undef result => exact .ifptrUndef Ptop
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem VA.ge_trans : VA.ge_transStatement := by
+  intro first second third first_second second_third
+  cases first <;> cases second <;> cases third <;>
+    simp only [VA.ge] at * <;> try contradiction <;> try trivial
+  exact ⟨AE.ge_trans_proof _ _ _ first_second.1 second_third.1,
+    fun classification memory matched =>
+      first_second.2 classification memory (second_third.2 classification memory matched)⟩
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem pmatch_incr : pmatch_incrStatement := by
+  intro first second increasing source offset pointer matched
+  have valid := (inj_of_bc_inv first source source z0
+    (pmatch_inj first source offset pointer matched)).1
+  have same := increasing source valid
+  cases matched with
+  | gl identifier global => exact .gl identifier (same.trans global)
+  | glo identifier global => exact .glo identifier (same.trans global)
+  | glob identifier global => exact .glob identifier (same.trans global)
+  | stk stack => exact .stk (same.trans stack)
+  | stack stack => exact .stack (same.trans stack)
+  | nonstack not_stack valid =>
+      exact .nonstack (by simpa only [same] using not_stack) (by simpa only [same] using valid)
+  | top valid => exact .top (by simpa only [same] using valid)
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem vmatch_incr : vmatch_incrStatement := by
+  intro first second increasing value abstract matched
+  cases matched <;> constructor <;>
+    first
+    | assumption
+    | exact pmatch_incr first second increasing _ _ _ ‹_›
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem smatch_incr : smatch_incrStatement := by
+  intro first second increasing memory source pointer matched
+  constructor
+  · intro chunk offset value loaded
+    exact vmatch_incr first second increasing _ _ (matched.1 chunk offset value loaded)
+  · intro offset target target_offset quantity index loaded
+    exact pmatch_incr first second increasing _ _ _
+      (matched.2 offset target target_offset quantity index loaded)
+
+end CompCert4Lean.Backend.ValueDomain

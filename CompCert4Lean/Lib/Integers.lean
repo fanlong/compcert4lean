@@ -10751,3 +10751,43 @@ open CompCert4Lean.Foundation.Numbers.Rocq.Coq
 theorem add_assoc_proof : add_assoc := Ptrofs.add_assoc_proof_api
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem add_zero_proof : add_zero := by
+  intro value
+  rw [add_commut_proof, add_zero_l_proof]
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem modulus_pos_proof : modulus_pos := by
+  change (0 : _root_.Int) < 18446744073709551616
+  decide
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem half_modulus_pos_proof : half_modulus_pos := by
+  change (0 : _root_.Int) < 9223372036854775808
+  decide
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eq_true_proof : eq_true := by
+  intro value
+  simp [eq, WordCore.eq]
+
+end CompCert4Lean.Lib.Integers.Int64
