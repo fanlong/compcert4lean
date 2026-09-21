@@ -11305,3 +11305,61 @@ theorem sub_add_opp_proof : sub_add_opp := by
   rw [_root_.Int.sub_eq_add_neg]
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem sub_add_opp_proof : sub_add_opp := Int64.sub_add_opp_proof
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem neg_involutive_proof : neg_involutive := by
+  intro value
+  change WordCore.neg (WordCore.neg value) = value
+  apply WordCore.ext_of_val_eq
+  apply _root_.Int.ofNat.inj
+  rw [pg_int64_neg_val_int, pg_int64_neg_val_int]
+  calc
+    (-((-_root_.Int.ofNat value.val) % _root_.Int.ofNat (2 ^ wordsize))) %
+        _root_.Int.ofNat (2 ^ wordsize) =
+        _root_.Int.ofNat value.val % _root_.Int.ofNat (2 ^ wordsize) := by
+      simpa only [_root_.Int.zero_sub, _root_.Int.neg_neg] using
+        (_root_.Int.sub_emod_emod 0 (-_root_.Int.ofNat value.val)
+          (_root_.Int.ofNat (2 ^ wordsize)))
+    _ = _ := _root_.Int.emod_eq_of_lt (_root_.Int.natCast_nonneg _)
+      (_root_.Int.ofNat_lt.mpr (WordCore.val_lt value))
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem mul_add_distr_l_proof : mul_add_distr_l := by
+  intro left middle right
+  change WordCore.mul (WordCore.add left middle) right =
+    WordCore.add (WordCore.mul left right) (WordCore.mul middle right)
+  apply WordCore.ext_of_val_eq
+  apply _root_.Int.ofNat.inj
+  simp only [suffix_int64_wordcore_mul_val, WordCore.add_val_int,
+    _root_.Int.emod_add_emod, _root_.Int.add_emod_emod]
+  rw [_root_.Int.mul_emod, _root_.Int.emod_emod, ← _root_.Int.mul_emod,
+    _root_.Int.add_mul]
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem mul_add_distr_r_proof : mul_add_distr_r := by
+  intro left middle right
+  rw [mul_commut_proof left (add middle right), mul_add_distr_l_proof,
+    mul_commut_proof middle left, mul_commut_proof right left]
+
+end CompCert4Lean.Lib.Integers.Int64
