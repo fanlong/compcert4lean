@@ -11142,3 +11142,56 @@ theorem of_int64_to_int64_proof : of_int64_to_int64 := by
     (Int64.repr_unsigned_proof value)
 
 end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem unsigned_range_2_proof : unsigned_range_2 := by
+  intro value
+  have bounds := unsigned_range_proof value
+  refine ⟨bounds.1, ?_⟩
+  have upper := bounds.2
+  change intOfZ (unsigned value) < 18446744073709551616 at upper
+  change intOfZ (unsigned value) ≤ 18446744073709551615
+  omega
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem unsigned_repr_proof : unsigned_repr := by
+  intro number bounds
+  apply Eq.symm
+  apply CompCert4Lean.Lib.Zbits.eqmod_small_eq modulus number (unsigned (repr number))
+  · exact eqm_unsigned_repr_proof number
+  · refine ⟨bounds.1, ?_⟩
+    have upper := bounds.2
+    change intOfZ number ≤ 18446744073709551615 at upper
+    change intOfZ number < 18446744073709551616
+    omega
+  · exact unsigned_range_proof (repr number)
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem negate_cmpu_proof : negate_cmpu := by
+  intro comparison left right
+  cases comparison <;> simp [cmpu, WordCore.cmpu, negate_comparison]
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem swap_cmp_proof : swap_cmp := by
+  intro comparison left right
+  cases comparison <;> simp [cmp, WordCore.cmp, swap_comparison, WordCore.eq, eq_comm]
+
+end CompCert4Lean.Lib.Integers.Int64
