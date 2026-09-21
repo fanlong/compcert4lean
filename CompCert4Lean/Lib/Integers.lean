@@ -11060,3 +11060,43 @@ theorem modulus_eq64_proof : modulus_eq64 := by
   rfl
 
 end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem modulus_eq32_proof : modulus_eq32 := by
+  intro incompatible
+  cases incompatible
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eqm32_proof : eqm32 := by
+  intro incompatible
+  cases incompatible
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem agree32_repr_proof : agree32_repr := by
+  intro incompatible
+  cases incompatible
+
+end CompCert4Lean.Lib.Integers.Ptrofs
+
+namespace CompCert4Lean.Lib.Integers.Ptrofs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem agree32_of_int_proof : agree32_of_int := by
+  intro incompatible
+  cases incompatible
+
+end CompCert4Lean.Lib.Integers.Ptrofs
