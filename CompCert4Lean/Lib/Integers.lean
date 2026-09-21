@@ -11875,3 +11875,66 @@ theorem shrx_zero_proof : shrx_zero := by
   rw [shl_zero_proof, manual_int64_divs_one]
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem shrx'_zero_proof : shrx'_zero := by
+  intro value
+  change divs value (shl' one Int.zero) = value
+  rw [show shl' one Int.zero = one by rfl]
+  exact manual_int64_divs_one value
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eqm_mul_2p32_proof : eqm_mul_2p32 := by
+  intro left right equivalent
+  unfold Int.eqm WordCore.eqm CompCert4Lean.Lib.Zbits.eqmod at equivalent
+  obtain ⟨quotient, equality⟩ := equivalent
+  unfold eqm WordCore.eqm CompCert4Lean.Lib.Zbits.eqmod
+  refine ⟨quotient, ?_⟩
+  apply intOfZ_injective
+  have converted := congrArg intOfZ equality
+  simp only [zAdd, zMul, ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+    intOfZ_zOfInt] at converted ⊢
+  change intOfZ left = intOfZ quotient * 4294967296 + intOfZ right at converted
+  change intOfZ left * 4294967296 =
+    intOfZ quotient * 18446744073709551616 + intOfZ right * 4294967296
+  rw [converted, _root_.Int.add_mul, _root_.Int.mul_assoc]
+  rfl
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem shl'_mul_two_p_proof : shl'_mul_two_p := by
+  intro value amount
+  change repr (zShiftl (unsigned value) (Int.unsigned amount)) =
+    repr (zMul (unsigned value) (unsigned (repr (zTwoP (Int.unsigned amount)))))
+  have shift : zShiftl (unsigned value) (Int.unsigned amount) =
+      zMul (unsigned value) (zTwoP (Int.unsigned amount)) :=
+    CompCert4Lean.Lib.Zbits.Zshiftl_mul_two_p (unsigned value) (Int.unsigned amount)
+      (Int.unsigned_range_proof amount).1
+  rw [shift]
+  apply eqm_samerepr_proof
+  exact eqm_mult_proof _ _ _ _ (eqm_refl_proof (unsigned value))
+    (eqm_unsigned_repr_proof (zTwoP (Int.unsigned amount)))
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem shl'_one_two_p_proof : shl'_one_two_p := by
+  intro amount
+  rw [shl'_mul_two_p_proof, mul_commut_proof, mul_one_proof]
+
+end CompCert4Lean.Lib.Integers.Int64
