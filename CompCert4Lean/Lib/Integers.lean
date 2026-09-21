@@ -11536,3 +11536,54 @@ theorem xor_zero_equal_proof : xor_zero_equal := by
       rw [xor_idem_proof, xor_commut_proof zero right, xor_zero_proof]
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem bits_zero_proof : bits_zero := by
+  intro index
+  cases index with
+  | Z0 => rfl
+  | Zneg position => rfl
+  | Zpos position =>
+      change Nat.testBit 0 (WordCore.positiveToNat position) = false
+      simp
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem and_commut_proof : and_commut := by
+  intro left right
+  change repr (zOfNat (Nat.land left.val right.val)) =
+    repr (zOfNat (Nat.land right.val left.val))
+  rw [Nat.land_eq, Nat.land_eq, Nat.and_comm]
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem or_commut_proof : or_commut := by
+  intro left right
+  change repr (zOfNat (Nat.lor left.val right.val)) =
+    repr (zOfNat (Nat.lor right.val left.val))
+  rw [Nat.lor_eq, Nat.lor_eq, Nat.or_comm]
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem and_zero_proof : and_zero := by
+  intro value
+  change repr (zOfNat (Nat.land value.val 0)) = zero
+  rw [Nat.land_eq, Nat.and_zero]
+  rfl
+
+end CompCert4Lean.Lib.Integers.Int64
