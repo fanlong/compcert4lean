@@ -4827,3 +4827,328 @@ theorem Znearest_opp :
   exact pg_suffix_Znearest_opp ctx choice x
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem manual_runtime_floor (value : R) :
+    intOfZ (Zfloor value) = value.value.floor := by
+  change intOfZ (zOfInt (intOfZ (zOfInt _) - 1)) = _
+  simp only [intOfZ_zOfInt]
+  change (if (value.value.ceil : Rat) = value.value then
+      value.value.ceil + 1 else value.value.ceil) - 1 = value.value.floor
+  split
+  next equality =>
+    have floor_eq : value.value.floor = value.value.ceil := by
+      simpa only [Rat.floor_intCast] using congrArg Rat.floor equality.symm
+    omega
+  next inequality =>
+    have upper : value.value.floor < value.value.ceil :=
+      Rat.floor_lt_iff.mpr (Rat.lt_of_le_of_ne Rat.le_ceil
+        (fun equality => inequality equality.symm))
+    have lower : value.value.ceil ≤ value.value.floor + 1 :=
+      Rat.ceil_le_iff.mpr (Rat.le_of_lt (Rat.lt_floor_add_one _))
+    omega
+
+private theorem manual_runtime_ceil (value : R) :
+    intOfZ (Zceil value) = value.value.ceil := by
+  change intOfZ (zOfInt (-intOfZ (Zfloor (Ropp value)))) = _
+  rw [intOfZ_zOfInt, manual_runtime_floor, Rat.ceil_eq_neg_floor_neg]
+  rfl
+
+private theorem manual_runtime_compare (left right : R) :
+    Rcompare left right = if left.value < right.value then .Lt
+      else if left.value = right.value then .Eq else .Gt := by
+  by_cases less : left.value < right.value
+  · simp [Rcompare, Raux.Rcompare, less]
+  · by_cases equal : left.value = right.value
+    · simp [Rcompare, Raux.Rcompare, equal]
+    · simp [Rcompare, Raux.Rcompare, less, equal]
+
+private theorem manual_runtime_nearest (choice : Z → Bool) (value : R) :
+    intOfZ (Znearest choice value) =
+      if value.value - (value.value.floor : Rat) < (1 / 2 : Rat) then value.value.floor
+      else if value.value - (value.value.floor : Rat) = (1 / 2 : Rat) then
+        if choice (Zfloor value) then value.value.ceil else value.value.floor
+      else value.value.ceil := by
+  unfold Znearest
+  rw [manual_runtime_compare]
+  have difference : (Rminus value (IZR (Zfloor value))).value =
+      value.value - (intOfZ (Zfloor value) : Rat) := by
+    rfl
+  have half_value : (Rdiv Rone Rtwo).value = (1 / 2 : Rat) := by
+    decide +kernel
+  rw [difference, half_value]
+  change intOfZ (match (if value.value - (intOfZ (Zfloor value) : Rat) < (1 / 2 : Rat)
+      then Raux.Lt else if value.value - (intOfZ (Zfloor value) : Rat) = (1 / 2 : Rat)
+      then Raux.Eq else Raux.Gt) with
+    | .Lt => Zfloor value
+    | .Eq => if choice (Zfloor value) then Zceil value else Zfloor value
+    | .Gt => Zceil value) = _
+  rw [manual_runtime_floor]
+  by_cases below : value.value - (value.value.floor : Rat) < (1 / 2 : Rat)
+  · simp [below, manual_runtime_floor]
+  · by_cases equal : value.value - (value.value.floor : Rat) = (1 / 2 : Rat)
+    · by_cases choose_up : choice (Zfloor value) = true
+      · simp [equal, choose_up, manual_runtime_ceil]
+      · simp [equal, choose_up, manual_runtime_floor]
+    · simp [below, equal, manual_runtime_ceil]
+
+private theorem manual_runtime_nearest_bounds (choice : Z → Bool) (value : R) :
+    value.value.floor ≤ intOfZ (Znearest choice value) ∧
+      intOfZ (Znearest choice value) ≤ value.value.ceil := by
+  have floor_le_ceil : value.value.floor ≤ value.value.ceil :=
+    Rat.intCast_le_intCast.mp (Rat.le_trans (Rat.floor_le _) Rat.le_ceil)
+  rw [manual_runtime_nearest]
+  split
+  · omega
+  · split
+    · split <;> omega
+    · omega
+
+private theorem manual_runtime_nearest_monotone (choice : Z → Bool)
+    (left right : R) (ordered : Rle left right) :
+    Zle (Znearest choice left) (Znearest choice right) := by
+  change left.value ≤ right.value at ordered
+  change intOfZ (Znearest choice left) ≤ intOfZ (Znearest choice right)
+  have left_bounds := manual_runtime_nearest_bounds choice left
+  have right_bounds := manual_runtime_nearest_bounds choice right
+  have floor_order := Rat.floor_monotone ordered
+  have ceil_order : left.value.ceil ≤ right.value.ceil :=
+    Rat.ceil_le_iff.mpr (Rat.le_trans ordered Rat.le_ceil)
+  by_cases floor_gap : left.value.floor < right.value.floor
+  · have ceil_bound : left.value.ceil ≤ left.value.floor + 1 :=
+      Rat.ceil_le_iff.mpr (Rat.le_of_lt (Rat.lt_floor_add_one _))
+    omega
+  · have same_floor : left.value.floor = right.value.floor := by omega
+    by_cases same_value : left.value = right.value
+    · have same : left = right := by
+        cases left
+        cases right
+        cases same_value
+        rfl
+      rw [same]
+      exact Int.le_refl _
+    · have strict : left.value < right.value := Rat.lt_of_le_of_ne ordered same_value
+      have fraction_order : left.value - (left.value.floor : Rat) <
+          right.value - (right.value.floor : Rat) := by
+        rw [same_floor]
+        simp only [Rat.sub_eq_add_neg]
+        exact Rat.add_lt_add_right.mpr strict
+      by_cases round_down : left.value - (left.value.floor : Rat) < (1 / 2 : Rat)
+      · have nearest_left : intOfZ (Znearest choice left) = left.value.floor := by
+          rw [manual_runtime_nearest, if_pos round_down]
+        omega
+      · have right_above : (1 / 2 : Rat) <
+            right.value - (right.value.floor : Rat) := by
+          apply Rat.not_le.mp
+          intro reversed
+          exact (Rat.not_le.mpr fraction_order)
+            (Rat.le_trans reversed (Rat.not_lt.mp round_down))
+        have right_not_below : ¬right.value - (right.value.floor : Rat) < (1 / 2 : Rat) :=
+          Rat.not_lt.mpr (Rat.le_of_lt right_above)
+        have right_not_equal : right.value - (right.value.floor : Rat) ≠ (1 / 2 : Rat) := by
+          intro equality
+          rw [equality] at right_above
+          exact Rat.lt_irrefl right_above
+        have nearest_right : intOfZ (Znearest choice right) = right.value.ceil := by
+          rw [manual_runtime_nearest, if_neg right_not_below, if_neg right_not_equal]
+        omega
+
+theorem valid_rnd_certificate_proof : Valid_rnd_Certificate := by
+  constructor
+  · intro choice
+    constructor
+    · exact manual_runtime_nearest_monotone choice
+    · intro number
+      apply intOfZ_injective
+      have bounds := manual_runtime_nearest_bounds choice (IZR number)
+      change (Rat.ofInt (intOfZ number)).floor ≤ _ ∧
+        _ ≤ (Rat.ofInt (intOfZ number)).ceil at bounds
+      change intOfZ number ≤ _ ∧ _ ≤ intOfZ number at bounds
+      omega
+  · constructor
+    · intro left right ordered
+      change intOfZ (Zfloor left) ≤ intOfZ (Zfloor right)
+      rw [manual_runtime_floor, manual_runtime_floor]
+      exact Rat.floor_monotone ordered
+    · intro number
+      apply intOfZ_injective
+      rw [manual_runtime_floor]
+      exact Rat.floor_intCast _
+
+
+end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals
+
+private theorem manual_nearest_distances (ctx : ExactRealContext)
+    (choice : Z → Bool) (value : Exact.R ctx) :
+    Exact.Rle ctx
+        (Exact.Rabs ctx (Exact.Rminus ctx (Exact.IZR ctx (Exact.Znearest ctx choice value)) value))
+        (Exact.Rminus ctx value (Exact.IZR ctx (Exact.Zfloor ctx value))) ∧
+      Exact.Rle ctx
+        (Exact.Rabs ctx (Exact.Rminus ctx (Exact.IZR ctx (Exact.Znearest ctx choice value)) value))
+        (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx value)) value) := by
+  by_cases integral : Exact.IZR ctx (Exact.Zfloor ctx value) = value
+  · have same_ceil : Exact.Zceil ctx value = Exact.Zfloor ctx value := by
+      calc
+        Exact.Zceil ctx value =
+            Exact.Zceil ctx (Exact.IZR ctx (Exact.Zfloor ctx value)) :=
+          congrArg (Exact.Zceil ctx) integral.symm
+        _ = Exact.Zfloor ctx value := Raux.Zceil_IZR ctx _
+    have upper_integral : Exact.IZR ctx (Exact.Zceil ctx value) = value := by
+      rw [same_ceil]
+      exact integral
+    have nearest_integral : Exact.IZR ctx (Exact.Znearest ctx choice value) = value := by
+      rcases Znearest_DN_or_UP ctx choice value with down | up
+      · rw [down]
+        exact integral
+      · rw [up]
+        exact upper_integral
+    have self_sub : Exact.Rminus ctx value value = Exact.R0 ctx := by
+      change ctx.spec.add value (ctx.spec.neg value) = ctx.spec.zero
+      rw [ctx.certificate.orderedField.add_comm, ctx.certificate.orderedField.neg_add_cancel]
+    rw [nearest_integral, integral, upper_integral, self_sub, pg_abs_zero]
+    exact ⟨ctx.certificate.orderedField.le_refl _, ctx.certificate.orderedField.le_refl _⟩
+  · have lower_nonnegative := Raux.Rle_0_minus ctx
+      (Exact.IZR ctx (Exact.Zfloor ctx value)) value (Raux.Zfloor_lb ctx value)
+    have upper_nonnegative := Raux.Rle_0_minus ctx value
+      (Exact.IZR ctx (Exact.Zceil ctx value)) (Raux.Zceil_ub ctx value)
+    have lower_absolute :
+        Exact.Rabs ctx (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zfloor ctx value)) value) =
+          Exact.Rminus ctx value (Exact.IZR ctx (Exact.Zfloor ctx value)) := by
+      calc
+        _ = Exact.Rabs ctx
+            (Exact.Rminus ctx value (Exact.IZR ctx (Exact.Zfloor ctx value))) :=
+          Rbasic_fun.Rabs_minus_sym ctx _ _
+        _ = _ := ctx.certificate.sourceLaws.abs_nonnegative _ lower_nonnegative
+    have upper_absolute :
+        Exact.Rabs ctx (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx value)) value) =
+          Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx value)) value :=
+      ctx.certificate.sourceLaws.abs_nonnegative _ upper_nonnegative
+    have compare_distances :
+        Exact.Rcompare ctx
+            (Exact.Rminus ctx value (Exact.IZR ctx (Exact.Zfloor ctx value)))
+            (Exact.Rdiv ctx (Exact.Rone ctx) (Exact.Rtwo ctx)) =
+          Exact.Rcompare ctx
+            (Exact.Rminus ctx value (Exact.IZR ctx (Exact.Zfloor ctx value)))
+            (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx value)) value) :=
+      Raux.Rcompare_floor_ceil_middle ctx value integral
+    unfold Exact.Znearest
+    rw [compare_distances]
+    cases comparison : Exact.Rcompare ctx
+        (Exact.Rminus ctx value (Exact.IZR ctx (Exact.Zfloor ctx value)))
+        (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx value)) value) with
+    | Lt =>
+        rw [lower_absolute]
+        exact ⟨ctx.certificate.orderedField.le_refl _,
+          ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp
+            (Raux.Rcompare_Lt_inv ctx _ _ comparison)).1⟩
+    | Eq =>
+        dsimp only
+        have equal_distance := Raux.Rcompare_Eq_inv ctx _ _ comparison
+        split
+        · rw [upper_absolute, ← equal_distance]
+          exact ⟨ctx.certificate.orderedField.le_refl _, ctx.certificate.orderedField.le_refl _⟩
+        · rw [lower_absolute, equal_distance]
+          exact ⟨ctx.certificate.orderedField.le_refl _, ctx.certificate.orderedField.le_refl _⟩
+    | Gt =>
+        rw [upper_absolute]
+        exact ⟨((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp
+          (Raux.Rcompare_Gt_inv ctx _ _ comparison)).1,
+          ctx.certificate.orderedField.le_refl _⟩
+
+theorem round_N_pt : ∀ ctx magnitude, round_N_ptStatement ctx magnitude := by
+  intro ctx magnitude beta fexp valid choice value
+  let mantissa := Exact.scaled_mantissa ctx magnitude beta fexp value
+  let scale := Exact.bpow ctx beta (Exact.cexp ctx magnitude beta fexp value)
+  let lower := Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) value
+  let upper := Exact.round ctx magnitude beta fexp (Exact.Zceil ctx) value
+  let nearest := Exact.round ctx magnitude beta fexp (Exact.Znearest ctx choice) value
+  have reconstruction : Exact.Rmult ctx mantissa scale = value :=
+    scaled_mantissa_mult_bpow ctx magnitude beta fexp value
+  have lower_round := round_DN_pt ctx magnitude beta fexp valid value
+  have upper_round := round_UP_pt ctx magnitude beta fexp valid value
+  have format : Exact.generic_format ctx magnitude beta fexp nearest := by
+    rcases Znearest_DN_or_UP ctx choice mantissa with down | up
+    · have rounded : nearest = lower :=
+        congrArg (fun number => Exact.F2R ctx
+          (Float beta number (Exact.cexp ctx magnitude beta fexp value))) down
+      rw [rounded]
+      exact lower_round.1
+    · have rounded : nearest = upper :=
+        congrArg (fun number => Exact.F2R ctx
+          (Float beta number (Exact.cexp ctx magnitude beta fexp value))) up
+      rw [rounded]
+      exact upper_round.1
+  have lower_rescale :
+      Exact.Rmult ctx (Exact.Rminus ctx mantissa (Exact.IZR ctx (Exact.Zfloor ctx mantissa))) scale =
+        Exact.Rminus ctx value lower := by
+    have distributed := RIneq.Rmult_minus_distr_r ctx scale mantissa
+      (Exact.IZR ctx (Exact.Zfloor ctx mantissa))
+    change Exact.Rmult ctx
+        (Exact.Rminus ctx mantissa (Exact.IZR ctx (Exact.Zfloor ctx mantissa))) scale =
+      Exact.Rminus ctx (Exact.Rmult ctx mantissa scale) lower at distributed
+    rw [reconstruction] at distributed
+    exact distributed
+  have upper_rescale :
+      Exact.Rmult ctx (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx mantissa)) mantissa) scale =
+        Exact.Rminus ctx upper value := by
+    have distributed := RIneq.Rmult_minus_distr_r ctx scale
+      (Exact.IZR ctx (Exact.Zceil ctx mantissa)) mantissa
+    change Exact.Rmult ctx
+        (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx mantissa)) mantissa) scale =
+      Exact.Rminus ctx upper (Exact.Rmult ctx mantissa scale) at distributed
+    rw [reconstruction] at distributed
+    exact distributed
+  have nearest_rescale :
+      Exact.Rmult ctx
+        (Exact.Rminus ctx (Exact.IZR ctx (Exact.Znearest ctx choice mantissa)) mantissa) scale =
+        Exact.Rminus ctx nearest value := by
+    have distributed := RIneq.Rmult_minus_distr_r ctx scale
+      (Exact.IZR ctx (Exact.Znearest ctx choice mantissa)) mantissa
+    change Exact.Rmult ctx
+        (Exact.Rminus ctx (Exact.IZR ctx (Exact.Znearest ctx choice mantissa)) mantissa) scale =
+      Exact.Rminus ctx nearest (Exact.Rmult ctx mantissa scale) at distributed
+    rw [reconstruction] at distributed
+    exact distributed
+  have absolute_rescale :
+      Exact.Rabs ctx (Exact.Rminus ctx nearest value) =
+        Exact.Rmult ctx
+          (Exact.Rabs ctx
+            (Exact.Rminus ctx (Exact.IZR ctx (Exact.Znearest ctx choice mantissa)) mantissa)) scale := by
+    rw [← nearest_rescale]
+    calc
+      _ = Exact.Rmult ctx
+          (Exact.Rabs ctx
+            (Exact.Rminus ctx (Exact.IZR ctx (Exact.Znearest ctx choice mantissa)) mantissa))
+          (Exact.Rabs ctx scale) := pg_abs_mul ctx _ _
+      _ = _ := by
+        have scale_absolute : Exact.Rabs ctx scale = scale := pg_abs_bpow ctx beta _
+        rw [scale_absolute]
+  have scale_order (left right : Exact.R ctx) (ordered : Exact.Rle ctx left right) :
+      Exact.Rle ctx (Exact.Rmult ctx left scale) (Exact.Rmult ctx right scale) := by
+    apply RIneq.Rmult_le_compat_r ctx scale left right
+    · change ctx.spec.le (ctx.spec.ofZ Z0) scale
+      rw [ctx.certificate.sourceLaws.ofZ_zero]
+      exact Raux.bpow_ge_0 ctx beta _
+    · exact ordered
+  have distances := manual_nearest_distances ctx choice mantissa
+  apply Round_pred.Rnd_N_pt_DN_UP ctx (Exact.generic_format ctx magnitude beta fexp)
+    value lower upper nearest format lower_round upper_round
+  · change Exact.Rle ctx (Exact.Rabs ctx (Exact.Rminus ctx nearest value))
+      (Exact.Rminus ctx value lower)
+    rw [absolute_rescale, ← lower_rescale]
+    exact scale_order _ _ distances.1
+  · change Exact.Rle ctx (Exact.Rabs ctx (Exact.Rminus ctx nearest value))
+      (Exact.Rminus ctx upper value)
+    rw [absolute_rescale, ← upper_rescale]
+    exact scale_order _ _ distances.2
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

@@ -547,3 +547,234 @@ theorem round_NE_abs :
     rw [habsx, habsr]
 
 end CompCert4Lean.Flocq.Core.Round_NE
+
+namespace CompCert4Lean.Flocq.Core.Round_NE
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals
+
+private theorem parity_sub_nonneg (left right : Z) (bound : Zle left right) :
+    Zaux.Zle Zaux.Z0 (Zaux.Zsub right left) := by
+  change intOfZ left ≤ intOfZ right at bound
+  change (0 : Int) ≤ intOfZ (Zaux.Zsub right left)
+  simp only [Zaux.Zsub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+  omega
+
+private theorem parity_sub_pos (left right : Z) (bound : Zlt left right) :
+    Zaux.Zlt Zaux.Z0 (Zaux.Zsub right left) := by
+  change intOfZ left < intOfZ right at bound
+  change (0 : Int) < intOfZ (Zaux.Zsub right left)
+  simp only [Zaux.Zsub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+  omega
+
+private theorem parity_successor (mantissa : Z) :
+    Zeven (Zadd mantissa Zone) = Bool.not (Zeven mantissa) := by
+  have addition := ZArith.BinInt.Z.even_add mantissa Zone
+  change Zeven (Zadd mantissa Zone) =
+    CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.eqb (Zeven mantissa) false at addition
+  rw [addition]
+  cases Zeven mantissa <;> rfl
+
+private theorem parity_power_representation (ctx : ExactRealContext) (beta : radix)
+    (exponent target : Z) (bound : Zle target exponent) :
+    Exact.F2R ctx (Defs.float.Float beta
+      (Zaux.Zpower (beta : Z) (Zaux.Zsub exponent target)) target) =
+        Exact.bpow ctx beta exponent := by
+  have change_exp := Float_prop.F2R_change_exp ctx beta target Zone exponent bound
+  change Exact.F2R ctx (Defs.float.Float beta Zone exponent) =
+    Exact.F2R ctx (Defs.float.Float beta
+      (Zaux.Zmul Zone (Zaux.Zpower (beta : Z) (Zaux.Zsub exponent target))) target) at change_exp
+  have one_mul : Zaux.Zmul Zone
+      (Zaux.Zpower (beta : Z) (Zaux.Zsub exponent target)) =
+        Zaux.Zpower (beta : Z) (Zaux.Zsub exponent target) := by
+    apply intOfZ_injective
+    simp only [Zaux.Zmul, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+    change 1 * _ = _
+    omega
+  rw [one_mul] at change_exp
+  exact change_exp.symm.trans (Float_prop.F2R_bpow ctx beta exponent)
+
+private theorem parity_canonical_power (ctx : ExactRealContext)
+    (magnitude : ExactMagnitude ctx) (beta : radix) (fexp : Z → Z)
+    (exponent : Z) (value : Defs.float beta)
+    (canonical_value : canonical ctx magnitude beta fexp value)
+    (value_eq : Exact.F2R ctx value = Exact.bpow ctx beta exponent)
+    (bound : Zle (fexp (Zadd exponent Zone)) exponent) :
+    Defs.Fnum value = Zaux.Zpower (beta : Z)
+      (Zaux.Zsub exponent (fexp (Zadd exponent Zone))) := by
+  rcases value with ⟨mantissa, storedExponent⟩
+  change storedExponent = fexp
+    (Generic_fmt.Exact.mag magnitude beta
+      (Exact.F2R ctx (Defs.float.Float beta mantissa storedExponent))) at canonical_value
+  have power_mag : Generic_fmt.Exact.mag magnitude beta (Exact.bpow ctx beta exponent) =
+      Zadd exponent Zone := Raux.mag_bpow ctx magnitude beta exponent
+  rw [value_eq, power_mag] at canonical_value
+  subst storedExponent
+  exact Float_prop.eq_F2R ctx beta (fexp (Zadd exponent Zone)) mantissa _
+    (value_eq.trans (parity_power_representation ctx beta exponent _ bound).symm)
+
+theorem DN_UP_parity_generic_pos :
+    ∀ ctx magnitude, DN_UP_parity_generic_posStatement ctx magnitude := by
+  intro ctx magnitude beta fexp valid nearest value lower upper
+    positive not_format canonical_lower canonical_upper lower_round upper_round
+  rcases lower with ⟨lowerMantissa, lowerExponent⟩
+  rcases upper with ⟨upperMantissa, upperExponent⟩
+  change Zeven upperMantissa = Bool.not (Zeven lowerMantissa)
+  let exponent := Generic_fmt.Exact.mag magnitude beta value
+  have nonzero : value ≠ Exact.R0 ctx := by
+    intro equality
+    rw [equality] at positive
+    exact ctx.certificate.orderedField.lt_irrefl _ positive
+  have nonnegative := (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp positive |>.1
+  have bounds := (Raux.Exact.mag magnitude beta value).mag_bound nonzero
+  change Generic_fmt.Exact.Rle ctx (Exact.bpow ctx beta (Zaux.Zsub exponent Zone))
+      (Exact.Rabs ctx value) ∧
+    Exact.Rlt ctx (Exact.Rabs ctx value) (Exact.bpow ctx beta exponent) at bounds
+  have abs_value : Exact.Rabs ctx value = value :=
+    ctx.certificate.sourceLaws.abs_nonnegative value nonnegative
+  rw [abs_value] at bounds
+  change Generic_fmt.Exact.Rle ctx (Exact.bpow ctx beta (Zaux.Zsub exponent Zone)) value ∧
+    Exact.Rlt ctx value (Exact.bpow ctx beta exponent) at bounds
+  by_cases small : Zle exponent (fexp exponent)
+  · have lower_zero : lowerMantissa = Zaux.Z0 :=
+      Float_prop.eq_0_F2R ctx beta lowerMantissa lowerExponent
+        (lower_round.trans (Generic_fmt.round_DN_small_pos ctx magnitude beta fexp
+          value exponent bounds small))
+    have exponent_bound := ((valid.valid_exp exponent).2 small).1
+    have upper_power := parity_canonical_power ctx magnitude beta fexp (fexp exponent)
+      (Defs.float.Float beta upperMantissa upperExponent) canonical_upper
+      (upper_round.trans (Generic_fmt.round_UP_small_pos ctx magnitude beta fexp
+        value exponent bounds small)) exponent_bound
+    change upperMantissa = _ at upper_power
+    rw [lower_zero, upper_power]
+    change Zeven (Zaux.Zpower (beta : Z)
+      (Zaux.Zsub (fexp exponent) (fexp (Zadd (fexp exponent) Zone)))) = false
+    rcases nearest.exists_NE with odd | stable
+    · exact Zaux.Zeven_Zpower_odd _ _ (parity_sub_nonneg _ _ exponent_bound) odd
+    · rw [(stable exponent).2 small]
+      have difference : Zaux.Zsub (fexp exponent) (fexp exponent) = Zaux.Z0 := by
+        apply intOfZ_injective
+        simp only [Zaux.Zsub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        change _ - _ = 0
+        omega
+      rw [difference]
+      have power_zero : Zaux.Zpower (beta : Z) Zaux.Z0 = Zone := by
+        apply intOfZ_injective
+        change intOfZ (zOfInt (Int.pow (intOfZ (beta : Z)) 0)) = 1
+        rw [intOfZ_zOfInt]
+        cases intOfZ (beta : Z) <;> simp [Int.pow]
+      rw [power_zero]
+      rfl
+  · have large : Zlt (fexp exponent) exponent := by
+      change ¬ intOfZ exponent ≤ intOfZ (fexp exponent) at small
+      change intOfZ (fexp exponent) < intOfZ exponent
+      omega
+    have valid_floor : Generic_fmt.Exact.Valid_rnd ctx (Exact.Zfloor ctx) :=
+      ⟨Raux.Zfloor_le ctx, Raux.Zfloor_IZR ctx⟩
+    have valid_ceil : Generic_fmt.Exact.Valid_rnd ctx (Exact.Zceil ctx) :=
+      ⟨Raux.Zceil_le ctx, Raux.Zceil_IZR ctx⟩
+    have lower_bounds := Generic_fmt.round_bounded_large_pos ctx magnitude beta fexp
+      (Exact.Zfloor ctx) valid_floor value exponent large bounds
+    have upper_bounds := Generic_fmt.round_bounded_large_pos ctx magnitude beta fexp
+      (Exact.Zceil ctx) valid_ceil value exponent large bounds
+    have lower_le := (Generic_fmt.round_DN_pt ctx magnitude beta fexp valid value).2.1
+    have value_le := (Generic_fmt.round_UP_pt ctx magnitude beta fexp valid value).2.1
+    have lower_mag : Generic_fmt.Exact.mag magnitude beta
+        (Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) value) = exponent :=
+      Raux.mag_unique_pos ctx magnitude beta
+        (Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) value) exponent
+        ⟨lower_bounds.1, RIneq.Rle_lt_trans ctx _ _ _ lower_le bounds.2⟩
+    change lowerExponent = fexp
+      (Generic_fmt.Exact.mag magnitude beta
+        (Exact.F2R ctx (Defs.float.Float beta lowerMantissa lowerExponent))) at canonical_lower
+    rw [lower_round, lower_mag] at canonical_lower
+    subst lowerExponent
+    have lower_mantissa : lowerMantissa = Exact.Zfloor ctx
+        (Generic_fmt.Exact.scaled_mantissa ctx magnitude beta fexp value) :=
+      Float_prop.eq_F2R ctx beta (fexp exponent) _ _ lower_round
+    have ceil_floor : Exact.Zceil ctx
+        (Generic_fmt.Exact.scaled_mantissa ctx magnitude beta fexp value) =
+        Zadd (Exact.Zfloor ctx
+          (Generic_fmt.Exact.scaled_mantissa ctx magnitude beta fexp value)) Zone := by
+      apply Raux.Zceil_floor_neq ctx
+      intro scaled_eq
+      change Generic_fmt.Exact.IZR ctx (Exact.Zfloor ctx
+          (Generic_fmt.Exact.scaled_mantissa ctx magnitude beta fexp value)) =
+        Generic_fmt.Exact.scaled_mantissa ctx magnitude beta fexp value at scaled_eq
+      have rounded_eq :
+          Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) value = value := by
+        change Generic_fmt.Exact.Rmult ctx
+          (Generic_fmt.Exact.IZR ctx (Exact.Zfloor ctx
+            (Generic_fmt.Exact.scaled_mantissa ctx magnitude beta fexp value)))
+          (Exact.bpow ctx beta (Generic_fmt.Exact.cexp ctx magnitude beta fexp value)) = value
+        rw [scaled_eq]
+        exact Generic_fmt.scaled_mantissa_mult_bpow ctx magnitude beta fexp value
+      apply not_format
+      rw [← rounded_eq]
+      exact (Generic_fmt.round_DN_pt ctx magnitude beta fexp valid value).1
+    by_cases boundary : Exact.round ctx magnitude beta fexp (Exact.Zceil ctx) value =
+        Exact.bpow ctx beta exponent
+    · have upper_exponent_bound := (valid.valid_exp exponent).1 large
+      have upper_power := parity_canonical_power ctx magnitude beta fexp exponent
+        (Defs.float.Float beta upperMantissa upperExponent) canonical_upper
+        (upper_round.trans boundary) upper_exponent_bound
+      have lower_exponent_bound : Zle (fexp exponent) exponent := by
+        change intOfZ (fexp exponent) < intOfZ exponent at large
+        change intOfZ (fexp exponent) ≤ intOfZ exponent
+        omega
+      have ceiling_power : Exact.Zceil ctx
+          (Generic_fmt.Exact.scaled_mantissa ctx magnitude beta fexp value) =
+          Zaux.Zpower (beta : Z) (Zaux.Zsub exponent (fexp exponent)) :=
+        Float_prop.eq_F2R ctx beta (fexp exponent) _ _
+          (boundary.trans
+            (parity_power_representation ctx beta exponent _ lower_exponent_bound).symm)
+      have next_power : Zadd lowerMantissa Zone =
+          Zaux.Zpower (beta : Z) (Zaux.Zsub exponent (fexp exponent)) := by
+        rw [lower_mantissa, ← ceil_floor]
+        exact ceiling_power
+      have lower_parity := parity_successor lowerMantissa
+      rw [next_power] at lower_parity
+      change upperMantissa = _ at upper_power
+      rw [upper_power, ← lower_parity]
+      rcases nearest.exists_NE with odd | stable
+      · exact (Zaux.Zeven_Zpower_odd _ _
+          (parity_sub_nonneg _ _ upper_exponent_bound) odd).trans
+          (Zaux.Zeven_Zpower_odd _ _
+          (parity_sub_nonneg _ _ lower_exponent_bound) odd).symm
+      · exact (ZArith.BinInt.Z.even_pow _ _
+          (parity_sub_pos _ _ ((stable exponent).1 large))).trans
+          (ZArith.BinInt.Z.even_pow _ _ (parity_sub_pos _ _ large)).symm
+    · have upper_lt : Exact.Rlt ctx
+          (Exact.round ctx magnitude beta fexp (Exact.Zceil ctx) value)
+          (Exact.bpow ctx beta exponent) := by
+        apply (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+        refine ⟨upper_bounds.2, ?_⟩
+        intro reverse
+        exact boundary (ctx.certificate.orderedField.le_antisymm _ _ upper_bounds.2 reverse)
+      have upper_mag : Generic_fmt.Exact.mag magnitude beta
+          (Exact.round ctx magnitude beta fexp (Exact.Zceil ctx) value) = exponent :=
+        Raux.mag_unique_pos ctx magnitude beta
+          (Exact.round ctx magnitude beta fexp (Exact.Zceil ctx) value) exponent
+          ⟨ctx.certificate.orderedField.le_trans _ _ _ bounds.1 value_le, upper_lt⟩
+      change upperExponent = fexp
+        (Generic_fmt.Exact.mag magnitude beta
+          (Exact.F2R ctx (Defs.float.Float beta upperMantissa upperExponent))) at canonical_upper
+      rw [upper_round, upper_mag] at canonical_upper
+      subst upperExponent
+      have upper_mantissa : upperMantissa = Exact.Zceil ctx
+          (Generic_fmt.Exact.scaled_mantissa ctx magnitude beta fexp value) :=
+        Float_prop.eq_F2R ctx beta (fexp exponent) _ _ upper_round
+      rw [upper_mantissa, ceil_floor, ← lower_mantissa]
+      exact parity_successor lowerMantissa
+
+end CompCert4Lean.Flocq.Core.Round_NE
+
+namespace CompCert4Lean.Flocq.Core.Round_NE
+
+theorem DN_UP_parity_generic :
+    ∀ ctx magnitude, DN_UP_parity_genericStatement ctx magnitude := by
+  intro ctx magnitude beta fexp valid nearest
+  exact DN_UP_parity_aux ctx magnitude beta fexp
+    (DN_UP_parity_generic_pos ctx magnitude beta fexp valid nearest)
+
+end CompCert4Lean.Flocq.Core.Round_NE

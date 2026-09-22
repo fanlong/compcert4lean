@@ -7763,3 +7763,199 @@ theorem round_N_le_midp :
         · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hcu |>.1
 
 end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+theorem generic_format_succ_aux1 :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      generic_format_succ_aux1Statement ctx magnitude := by
+  intro ctx magnitude beta fexp valid value positive formatted
+  have nonnegative :=
+    ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp positive).1
+  have successor := generic_format_succ ctx magnitude beta fexp valid value formatted
+  rw [succ_eq_pos ctx magnitude beta fexp value nonnegative] at successor
+  exact successor
+
+end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+theorem round_N_eq_DN :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      round_N_eq_DNStatement ctx magnitude := by
+  intro ctx magnitude beta fexp valid choice value down up midpoint
+  rcases pg_round_nearest_dn_or_up ctx magnitude beta fexp choice value with
+    rounded_down | rounded_up
+  · exact rounded_down
+  · by_cases formatted : Exact.generic_format ctx magnitude beta fexp value
+    · have down_exact := pg_sllt_round_generic ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx)
+        (pg_rdu_valid_rnd_DN ctx) value formatted
+      have up_exact := pg_sllt_round_generic ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx)
+        (pg_rdu_valid_rnd_UP ctx) value formatted
+      exact rounded_up.trans (up_exact.trans down_exact.symm)
+    · have down_formatted :=
+        pg_current_generic_format_round_DN ctx magnitude beta fexp valid value
+      have below_midpoint : Exact.Rlt ctx value
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rdiv ctx
+            (Exact.Rplus ctx down (Exact.succ ctx magnitude beta fexp down))
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx)) := by
+        rw [succ_DN_eq_UP ctx magnitude beta fexp valid value formatted]
+        exact midpoint
+      apply ctx.certificate.orderedField.le_antisymm
+      · exact round_N_le_midp ctx magnitude beta fexp valid choice
+          down value down_formatted below_midpoint
+      · rw [rounded_up]
+        exact ctx.certificate.orderedField.le_trans _ _ _
+          (pg_current_round_DN_le_id ctx magnitude beta fexp value)
+          (pg_current_round_UP_ge_id ctx magnitude beta fexp value)
+
+end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+theorem round_N_eq_DN_pt :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      round_N_eq_DN_ptStatement ctx magnitude := by
+  intro ctx magnitude beta fexp valid choice value down up down_point up_point midpoint
+  have canonical_down :=
+    CompCert4Lean.Flocq.Core.Generic_fmt.round_DN_pt ctx magnitude beta fexp valid value
+  have canonical_up :=
+    CompCert4Lean.Flocq.Core.Generic_fmt.round_UP_pt ctx magnitude beta fexp valid value
+  have down_eq : down = Exact.round ctx magnitude beta fexp
+      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx) value :=
+    ctx.certificate.orderedField.le_antisymm _ _
+      (canonical_down.2.2 down down_point.1 down_point.2.1)
+      (down_point.2.2 _ canonical_down.1 canonical_down.2.1)
+  have up_eq : up = Exact.round ctx magnitude beta fexp
+      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx) value :=
+    ctx.certificate.orderedField.le_antisymm _ _
+      (up_point.2.2 _ canonical_up.1 canonical_up.2.1)
+      (canonical_up.2.2 up up_point.1 up_point.2.1)
+  rw [down_eq, up_eq] at midpoint
+  rw [down_eq]
+  exact round_N_eq_DN ctx magnitude beta fexp valid choice value midpoint
+
+end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+theorem round_N_ge_midp :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      round_N_ge_midpStatement ctx magnitude := by
+  intro ctx magnitude beta fexp valid choice endpoint value formatted midpoint
+  let reflected_choice := fun integer =>
+    Bool.not (choice (Zopp (CompCert4Lean.Flocq.Core.Generic_fmt.Zadd integer Zone)))
+  have reflected_midpoint :
+      CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rdiv ctx
+        (Exact.Rplus ctx (Exact.Ropp ctx endpoint)
+          (Exact.succ ctx magnitude beta fexp (Exact.Ropp ctx endpoint)))
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx) =
+      Exact.Ropp ctx (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rdiv ctx
+        (Exact.Rplus ctx endpoint (Exact.pred ctx magnitude beta fexp endpoint))
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx)) := by
+    rw [succ_opp ctx magnitude beta fexp endpoint]
+    change ctx.spec.div
+        (ctx.spec.add (ctx.spec.neg endpoint)
+          (ctx.spec.neg (Exact.pred ctx magnitude beta fexp endpoint))) _ =
+      ctx.spec.neg (ctx.spec.div
+        (ctx.spec.add endpoint (Exact.pred ctx magnitude beta fexp endpoint)) _)
+    have neg_sum := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_plus_distr
+      ctx endpoint (Exact.pred ctx magnitude beta fexp endpoint)
+    change ctx.spec.neg (ctx.spec.add endpoint (Exact.pred ctx magnitude beta fexp endpoint)) =
+      ctx.spec.add (ctx.spec.neg endpoint)
+        (ctx.spec.neg (Exact.pred ctx magnitude beta fexp endpoint)) at neg_sum
+    rw [← neg_sum, ctx.certificate.orderedField.div_eq_mul_inv,
+      ctx.certificate.orderedField.div_eq_mul_inv]
+    exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_mult_distr_l_reverse
+      ctx _ _
+  have reflected_bound : Exact.Rlt ctx (Exact.Ropp ctx value)
+      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rdiv ctx
+        (Exact.Rplus ctx (Exact.Ropp ctx endpoint)
+          (Exact.succ ctx magnitude beta fexp (Exact.Ropp ctx endpoint)))
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx)) := by
+    rw [reflected_midpoint]
+    exact ulp_neg_lt_neg ctx midpoint
+  have reflected_format := CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_opp
+    ctx magnitude beta fexp endpoint formatted
+  have upper := round_N_le_midp ctx magnitude beta fexp valid reflected_choice
+    (Exact.Ropp ctx endpoint) (Exact.Ropp ctx value) reflected_format reflected_bound
+  have reflection := CompCert4Lean.Flocq.Core.Generic_fmt.round_N_opp
+    ctx magnitude beta fexp choice (Exact.Ropp ctx value)
+  change Exact.round ctx magnitude beta fexp (Exact.Znearest ctx choice)
+      (Exact.Ropp ctx (Exact.Ropp ctx value)) =
+    Exact.Ropp ctx (Exact.round ctx magnitude beta fexp
+      (Exact.Znearest ctx reflected_choice) (Exact.Ropp ctx value)) at reflection
+  have twice_negated : Exact.Ropp ctx (Exact.Ropp ctx value) = value := ulp_neg_neg ctx value
+  rw [twice_negated] at reflection
+  rw [reflection]
+  have restored := ulp_neg_le_neg ctx upper
+  change ctx.spec.le (ctx.spec.neg (ctx.spec.neg endpoint)) _ at restored
+  rw [ulp_neg_neg ctx endpoint] at restored
+  exact restored
+
+end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+theorem round_N_eq_UP :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      round_N_eq_UPStatement ctx magnitude := by
+  intro ctx magnitude beta fexp valid choice value down up midpoint
+  rcases pg_round_nearest_dn_or_up ctx magnitude beta fexp choice value with
+    rounded_down | rounded_up
+  · by_cases formatted : Exact.generic_format ctx magnitude beta fexp value
+    · have down_exact := pg_sllt_round_generic ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx)
+        (pg_rdu_valid_rnd_DN ctx) value formatted
+      have up_exact := pg_sllt_round_generic ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx)
+        (pg_rdu_valid_rnd_UP ctx) value formatted
+      exact rounded_down.trans (down_exact.trans up_exact.symm)
+    · have up_formatted :=
+        pg_current_generic_format_round_UP ctx magnitude beta fexp valid value
+      have above_midpoint : Exact.Rlt ctx
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rdiv ctx
+            (Exact.Rplus ctx up (Exact.pred ctx magnitude beta fexp up))
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx)) value := by
+        rw [pred_UP_eq_DN ctx magnitude beta fexp valid value formatted]
+        change ctx.spec.lt (ctx.spec.div (ctx.spec.add up down) _) value
+        rw [ctx.certificate.orderedField.add_comm up down]
+        exact midpoint
+      apply ctx.certificate.orderedField.le_antisymm
+      · rw [rounded_down]
+        exact ctx.certificate.orderedField.le_trans _ _ _
+          (pg_current_round_DN_le_id ctx magnitude beta fexp value)
+          (pg_current_round_UP_ge_id ctx magnitude beta fexp value)
+      · exact round_N_ge_midp ctx magnitude beta fexp valid choice
+          up value up_formatted above_midpoint
+  · exact rounded_up
+
+end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+theorem round_N_eq_UP_pt :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      round_N_eq_UP_ptStatement ctx magnitude := by
+  intro ctx magnitude beta fexp valid choice value down up down_point up_point midpoint
+  have canonical_down :=
+    CompCert4Lean.Flocq.Core.Generic_fmt.round_DN_pt ctx magnitude beta fexp valid value
+  have canonical_up :=
+    CompCert4Lean.Flocq.Core.Generic_fmt.round_UP_pt ctx magnitude beta fexp valid value
+  have down_eq : down = Exact.round ctx magnitude beta fexp
+      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx) value :=
+    ctx.certificate.orderedField.le_antisymm _ _
+      (canonical_down.2.2 down down_point.1 down_point.2.1)
+      (down_point.2.2 _ canonical_down.1 canonical_down.2.1)
+  have up_eq : up = Exact.round ctx magnitude beta fexp
+      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx) value :=
+    ctx.certificate.orderedField.le_antisymm _ _
+      (up_point.2.2 _ canonical_up.1 canonical_up.2.1)
+      (canonical_up.2.2 up up_point.1 up_point.2.1)
+  rw [down_eq, up_eq] at midpoint
+  rw [up_eq]
+  exact round_N_eq_UP ctx magnitude beta fexp valid choice value midpoint
+
+end CompCert4Lean.Flocq.Core.Ulp

@@ -2210,3 +2210,43 @@ theorem Bsqrt_result_obligation_proof :
           · exact (binary_sqrt_core_valid prec emax mantissa exponent).2
 
 end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+open CompCert4Lean.Flocq.Core
+
+private theorem binary_conversion_fields {prec emax : Z}
+    (ctx : ExactRealContext) (value : BinarySingleNaN.binary_float prec emax)
+    (notNan : BinarySingleNaN.is_nan value = false) :
+    Exact.B2R ctx (BSN2B' value notNan) = BinarySingleNaN.Exact.B2R ctx value ∧
+      is_finite (BSN2B' value notNan) = BinarySingleNaN.is_finite value ∧
+      Bsign (BSN2B' value notNan) = BinarySingleNaN.Bsign value ∧
+      FF2SF (B2FF (BSN2B' value notNan)) = BinarySingleNaN.B2SF value := by
+  cases value with
+  | B754_zero sign => exact ⟨rfl, rfl, rfl, rfl⟩
+  | B754_infinity sign => exact ⟨rfl, rfl, rfl, rfl⟩
+  | B754_finite sign mantissa exponent => exact ⟨rfl, rfl, rfl, rfl⟩
+  | B754_nan => cases notNan
+
+theorem binary_normalize_correct :
+    ∀ {prec emax : Z} [FLX.Prec_gt_0 prec] [BinarySingleNaN.Prec_lt_emax prec emax]
+      (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+      [BinaryNormalizeCertificate prec emax],
+      binary_normalize_correctStatement (prec := prec) (emax := emax) ctx magnitude := by
+  intro prec emax precision exponentLimit ctx magnitude certificate rounding mantissa exponent zeroSign
+  have result := BinarySingleNaN.binary_normalize_correct
+    (prec := prec) (emax := emax) ctx magnitude rounding mantissa exponent zeroSign
+  have fields := binary_conversion_fields ctx
+    (BinarySingleNaN.binary_normalize (prec := prec) (emax := emax)
+      rounding mantissa exponent zeroSign)
+    (certificate.is_nan_binary_normalize rounding mantissa exponent zeroSign)
+  dsimp only [binary_normalize_correctStatement] at result ⊢
+  split <;> rename_i condition
+  · rw [if_pos condition] at result
+    exact ⟨fields.1.trans result.1, fields.2.1.trans result.2.1,
+      fields.2.2.1.trans result.2.2⟩
+  · rw [if_neg condition] at result
+    apply eq_binary_overflow_FF2SF
+    exact fields.2.2.2.trans result
+
+end CompCert4Lean.Flocq.IEEE754.Binary
