@@ -6901,3 +6901,37 @@ theorem transf_step_correct
 end
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Lineartyping
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem transf_program_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    transf_program_correctStatement := by
+  intro cfg xi return_address_offset hreturn prog tprog hlocal houtgoing hstack
+    hnorep hcallee hprog
+  let relation := fun source target => wt_state cfg source ∧
+    match_states cfg return_address_offset prog tprog hlocal houtgoing hstack hnorep hcallee source target
+  apply forward_simulation_plus _ _ (senv_preserved cfg prog tprog hprog).2.1 relation
+  · intro source hinitial
+    obtain ⟨target, htarget, hmatch⟩ := transf_initial_states cfg return_address_offset prog tprog
+      hlocal houtgoing hstack hnorep hcallee hprog source hinitial
+    exact ⟨target, htarget, wt_initial_state cfg prog (wt_prog cfg prog tprog hprog) source hinitial, hmatch⟩
+  · intro source target result hmatch hfinal
+    exact transf_final_states cfg return_address_offset prog tprog hlocal houtgoing hstack
+      hnorep hcallee source target result hmatch.2 hfinal
+  · intro source trace successor hstep target hmatch
+    obtain ⟨targetSuccessor, hsteps, hsuccessor⟩ := transf_step_correct cfg xi return_address_offset
+      hreturn prog tprog hlocal houtgoing hstack hnorep hcallee hprog
+      source trace successor hstep hmatch.1 target hmatch.2
+    exact ⟨targetSuccessor, hsteps,
+      step_type_preservation cfg xi prog (wt_prog cfg prog tprog hprog) source trace successor hstep hmatch.1,
+      hsuccessor⟩
+
+end CompCert4Lean.Backend.Stackingproof
