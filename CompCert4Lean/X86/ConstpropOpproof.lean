@@ -4858,3 +4858,526 @@ theorem make_andimm_correct
         rfl
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.ConstpropOp
+
+theorem make_cast8signed_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @make_cast8signed_correctStatement binary64_certificate binary32_certificate := by
+  intro classification globals stack env memory register abstract hmatch
+  dsimp [make_cast8signed]
+  split
+  · rename_i hincl
+    refine ⟨Regmap.get register env, rfl, ?_⟩
+    have hbounded := vmatch_ge classification (Regmap.get register env)
+      (Sgn Ptop (zOfNat 8)) abstract (vincl_ge _ _ hincl) hmatch
+    generalize hvalue : Regmap.get register env = value at hbounded ⊢
+    cases hbounded with
+    | sgn pointer number bits hpositive hbits =>
+        change Val.lessdef (.Vint (Int.sign_ext (zOfNat 8) number)) (.Vint number)
+        rw [(is_sgn_sign_ext _ _ hpositive).mp hbits]
+        exact Val.lessdef_refl _
+    | sgnUndef => exact Val.lessdef_refl _
+  · exact ⟨Val.sign_ext (zOfNat 8) (Regmap.get register env), rfl,
+      Val.lessdef_refl _⟩
+
+end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.ConstpropOp
+
+theorem make_cast8unsigned_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @make_cast8unsigned_correctStatement binary64_certificate binary32_certificate := by
+  intro classification globals stack env memory register abstract hmatch
+  dsimp [make_cast8unsigned]
+  split
+  · rename_i hincl
+    refine ⟨Regmap.get register env, rfl, ?_⟩
+    have hbounded := vmatch_ge classification (Regmap.get register env)
+      (Uns Ptop (zOfNat 8)) abstract (vincl_ge _ _ hincl) hmatch
+    generalize hvalue : Regmap.get register env = value at hbounded ⊢
+    cases hbounded with
+    | uns pointer number bits hnonnegative hbits =>
+        change Val.lessdef (.Vint (Int.zero_ext (zOfNat 8) number)) (.Vint number)
+        have hext : Int.zero_ext (zOfNat 8) number = number :=
+          (is_uns_zero_ext _ _).mp hbits
+        rw [hext]
+        exact Val.lessdef_refl _
+    | vmatch_Uns_undef => exact Val.lessdef_refl _
+  · exact ⟨Val.zero_ext (zOfNat 8) (Regmap.get register env), rfl,
+      Val.lessdef_refl _⟩
+
+end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Floats
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.ConstpropOp
+
+theorem make_mulfsimm_correct_2
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @make_mulfsimm_correct_2Statement binary64_certificate binary32_certificate := by
+  intro globals stack env memory number left right hleft
+  dsimp [make_mulfsimm]
+  split
+  · rename_i htwo
+    refine ⟨Val.addfs (Regmap.get right env) (Regmap.get right env), rfl, ?_⟩
+    rw [hleft, htwo]
+    cases Regmap.get right env with
+    | Vsingle operand =>
+        change Val.lessdef
+          (.Vsingle (CompCert4Lean.Lib.Floats.Float32.mul
+            (CompCert4Lean.Lib.Floats.Float32.of_int
+              (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 2))) operand))
+          (.Vsingle (CompCert4Lean.Lib.Floats.Float32.add operand operand))
+        have hbits : CompCert4Lean.Lib.Floats.Float32.of_int
+            (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 2)) =
+              ⟨BitVec.ofNat 32 1073741824⟩ := by rfl
+        rw [CompCert4Lean.Lib.Floats.Float32.mul_commut _ operand (Or.inl (by
+          rw [hbits]
+          rfl)),
+          ← CompCert4Lean.Lib.Floats.Float32.mul2_add]
+        exact Val.lessdef_refl _
+    | _ => exact Val.lessdef_undef _
+  · exact ⟨Val.mulfs (Regmap.get left env) (Regmap.get right env), rfl,
+      Val.lessdef_refl _⟩
+
+end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+
+theorem make_select_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @make_select_correctStatement binary64_certificate binary32_certificate := by
+  intro configuration classification globals stack abstracts env memory hmatch
+    condition resultType left right args values hvalues
+  subst values
+  have hargs : list_forall2 (vmatch classification) (reg_values env args)
+      (args.map (fun register => AE.get register abstracts)) := by
+    induction args with
+    | nil => exact .nil _
+    | cons register rest inductionHypothesis =>
+        exact .cons _ _ (hmatch register) inductionHypothesis
+  have hcondition := CompCert4Lean.X86.ValueAOp.eval_static_condition_sound
+    configuration classification condition (reg_values env args) memory _ hargs
+  dsimp [make_select]
+  cases hresolved : resolve_branch (CompCert4Lean.X86.ValueAOp.eval_static_condition
+      configuration condition (args.map (fun register => AE.get register abstracts))) with
+  | some branch =>
+      refine ⟨if branch then Regmap.get left env else Regmap.get right env, ?_, ?_⟩
+      · cases branch <;> rfl
+      · cases heval : eval_condition condition (reg_values env args) memory with
+        | none => exact Val.lessdef_undef _
+        | some actual =>
+            have hequal := resolve_branch_sound actual _ branch
+              (by simpa only [heval] using hcondition) hresolved
+            subst actual
+            exact Val.lessdef_normalize _ _
+  | none =>
+      have hequivalent := cond_strength_reduction_correct classification abstracts env
+        memory hmatch condition args _ rfl
+      rcases hreduce : cond_strength_reduction condition args
+          (args.map (fun register => AE.get register abstracts)) with
+        ⟨reduced, reducedArgs⟩
+      rw [hreduce] at hequivalent
+      dsimp only at hequivalent ⊢
+      refine ⟨Val.select (eval_condition reduced (reg_values env reducedArgs) memory)
+        (Regmap.get left env) (Regmap.get right env) resultType, rfl, ?_⟩
+      rw [hequivalent]
+      exact Val.lessdef_refl _
+
+end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+
+set_option maxHeartbeats 1000000 in
+theorem op_strength_reduction_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @op_strength_reduction_correctStatement binary64_certificate binary32_certificate := by
+  intro configuration classification globals hglobals stack hstack abstracts env memory
+    hmatch operator args values result hvalues heval
+  have matchRegister (register : reg) (abstract : aval)
+      (habstract : abstract = AE.get register abstracts) :
+      vmatch classification (Regmap.get register env) abstract := by
+    rw [habstract]
+    exact hmatch register
+  have integerValue (register : reg) (number : int)
+      (hnumber : I number = AE.get register abstracts) :
+      Regmap.get register env = .Vint number :=
+    cp_cond_int_value (matchRegister register _ hnumber)
+  have longValue (register : reg) (number : int64)
+      (hnumber : L number = AE.get register abstracts) :
+      Regmap.get register env = .Vlong number :=
+    cp_cond_long_value (matchRegister register _ hnumber)
+  have floatValue (register : reg) (number : float)
+      (hnumber : F number = AE.get register abstracts) :
+      Regmap.get register env = .Vfloat number := by
+    have hmatched := matchRegister register _ hnumber
+    generalize hvalue : Regmap.get register env = value at hmatched ⊢
+    cases hmatched
+    rfl
+  have singleValue (register : reg) (number : float32)
+      (hnumber : FS number = AE.get register abstracts) :
+      Regmap.get register env = .Vsingle number := by
+    have hmatched := matchRegister register _ hnumber
+    generalize hvalue : Regmap.get register env = value at hmatched ⊢
+    cases hmatched
+    rfl
+  unfold op_strength_reduction
+  cases hreduce : op_strength_reduction_match operator args values with
+  | op_strength_reduction_case1 register abstract =>
+      dsimp only
+      have hequal : Val.sign_ext (zOfNat 8) (Regmap.get register env) = result :=
+        Option.some.inj heval
+      subst result
+      exact make_cast8signed_correct classification globals stack env memory register abstract
+        (matchRegister register abstract (List.cons.inj hvalues).1)
+  | op_strength_reduction_case2 register abstract =>
+      dsimp only
+      have hequal : Val.zero_ext (zOfNat 8) (Regmap.get register env) = result :=
+        Option.some.inj heval
+      subst result
+      exact make_cast8unsigned_correct classification globals stack env memory register abstract
+        (matchRegister register abstract (List.cons.inj hvalues).1)
+  | op_strength_reduction_case3 register abstract =>
+      dsimp only
+      have hequal : Val.sign_ext (zOfNat 16) (Regmap.get register env) = result :=
+        Option.some.inj heval
+      subst result
+      exact make_cast16signed_correct classification globals stack env memory register abstract
+        (matchRegister register abstract (List.cons.inj hvalues).1)
+  | op_strength_reduction_case4 register abstract =>
+      dsimp only
+      have hequal : Val.zero_ext (zOfNat 16) (Regmap.get register env) = result :=
+        Option.some.inj heval
+      subst result
+      exact make_cast16unsigned_correct classification globals stack env memory register abstract
+        (matchRegister register abstract (List.cons.inj hvalues).1)
+  | op_strength_reduction_case5 left right abstract number =>
+      dsimp only
+      have hequal : Val.sub (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      rw [integerValue right number (List.cons.inj (List.cons.inj hvalues).2).1, Val.sub_add_opp]
+      exact make_addimm_correct globals stack env memory
+        (CompCert4Lean.Lib.Integers.Int.neg number) left
+  | op_strength_reduction_case6 left right number abstract =>
+      dsimp only
+      have hequal : Val.mul (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := integerValue left number (List.cons.inj hvalues).1
+      rw [hconstant, Val.mul_commut]
+      exact make_mulimm_correct globals stack env memory number right
+  | op_strength_reduction_case7 left right abstract number =>
+      dsimp only
+      have hequal : Val.mul (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := integerValue right number (List.cons.inj (List.cons.inj hvalues).2).1
+      rw [hconstant]
+      exact make_mulimm_correct globals stack env memory number left
+  | op_strength_reduction_case8 left right abstract number =>
+      dsimp only
+      exact make_divimm_correct globals stack env memory number left right result heval
+        (integerValue right number (List.cons.inj (List.cons.inj hvalues).2).1)
+  | op_strength_reduction_case9 left right abstract number =>
+      dsimp only
+      exact make_divuimm_correct globals stack env memory number left right result heval
+        (integerValue right number (List.cons.inj (List.cons.inj hvalues).2).1)
+  | op_strength_reduction_case10 left right abstract number =>
+      dsimp only
+      exact make_moduimm_correct globals stack env memory number left right result heval
+        (integerValue right number (List.cons.inj (List.cons.inj hvalues).2).1)
+  | op_strength_reduction_case11 left right number abstract =>
+      dsimp only
+      have hequal : Val.and (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := integerValue left number (List.cons.inj hvalues).1
+      rw [hconstant, Val.and_commut]
+      exact make_andimm_correct classification globals stack env memory number right abstract
+        (matchRegister right abstract (List.cons.inj (List.cons.inj hvalues).2).1)
+  | op_strength_reduction_case12 left right abstract number =>
+      dsimp only
+      have hequal : Val.and (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := integerValue right number (List.cons.inj (List.cons.inj hvalues).2).1
+      rw [hconstant]
+      exact make_andimm_correct classification globals stack env memory number left abstract
+        (matchRegister left abstract (List.cons.inj hvalues).1)
+  | op_strength_reduction_case13 number register abstract =>
+      dsimp only
+      have hequal : Val.and (Regmap.get register env) (.Vint number) = result :=
+        Option.some.inj heval
+      subst result
+      exact make_andimm_correct classification globals stack env memory number register abstract
+        (matchRegister register abstract (List.cons.inj hvalues).1)
+  | op_strength_reduction_case14 left right number abstract =>
+      dsimp only
+      have hequal : Val.or (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := integerValue left number (List.cons.inj hvalues).1
+      rw [hconstant, Val.or_commut]
+      exact make_orimm_correct globals stack env memory number right
+  | op_strength_reduction_case15 left right abstract number =>
+      dsimp only
+      have hequal : Val.or (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := integerValue right number (List.cons.inj (List.cons.inj hvalues).2).1
+      rw [hconstant]
+      exact make_orimm_correct globals stack env memory number left
+  | op_strength_reduction_case16 left right number abstract =>
+      dsimp only
+      have hequal : Val.xor (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := integerValue left number (List.cons.inj hvalues).1
+      rw [hconstant, Val.xor_commut]
+      exact make_xorimm_correct globals stack env memory number right
+  | op_strength_reduction_case17 left right abstract number =>
+      dsimp only
+      have hequal : Val.xor (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := integerValue right number (List.cons.inj (List.cons.inj hvalues).2).1
+      rw [hconstant]
+      exact make_xorimm_correct globals stack env memory number left
+  | op_strength_reduction_case18 left right abstract number =>
+      dsimp only
+      have hequal : Val.shl (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := integerValue right number (List.cons.inj (List.cons.inj hvalues).2).1
+      rw [hconstant]
+      exact make_shlimm_correct globals stack env memory number left right hconstant
+  | op_strength_reduction_case19 left right abstract number =>
+      dsimp only
+      have hequal : Val.shr (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := integerValue right number (List.cons.inj (List.cons.inj hvalues).2).1
+      rw [hconstant]
+      exact make_shrimm_correct globals stack env memory number left right hconstant
+  | op_strength_reduction_case20 left right abstract number =>
+      dsimp only
+      have hequal : Val.shru (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := integerValue right number (List.cons.inj (List.cons.inj hvalues).2).1
+      rw [hconstant]
+      exact make_shruimm_correct globals stack env memory number left right hconstant
+  | op_strength_reduction_case21 address =>
+      dsimp only
+      have haddress := addr_strength_reduction_32_correct classification globals hglobals
+        stack hstack abstracts env hmatch address args values result hvalues heval
+      rcases hreduced : addr_strength_reduction_32 address args values with
+        ⟨reduced, reducedArgs⟩
+      rw [hreduced] at haddress
+      exact haddress
+  | op_strength_reduction_case22 left right abstract number =>
+      dsimp only
+      have hequal : Val.subl (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      rw [longValue right number (List.cons.inj (List.cons.inj hvalues).2).1, Val.subl_addl_opp]
+      exact make_addlimm_correct globals stack env memory
+        (CompCert4Lean.Lib.Integers.Int64.neg number) left
+  | op_strength_reduction_case23 left right number abstract =>
+      dsimp only
+      have hequal : Val.mull (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := longValue left number (List.cons.inj hvalues).1
+      rw [hconstant, Val.mull_commut]
+      exact make_mullimm_correct globals stack env memory number right
+  | op_strength_reduction_case24 left right abstract number =>
+      dsimp only
+      have hequal : Val.mull (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := longValue right number (List.cons.inj (List.cons.inj hvalues).2).1
+      rw [hconstant]
+      exact make_mullimm_correct globals stack env memory number left
+  | op_strength_reduction_case25 left right abstract number =>
+      dsimp only
+      exact make_divlimm_correct globals stack env memory number left right result heval
+        (longValue right number (List.cons.inj (List.cons.inj hvalues).2).1)
+  | op_strength_reduction_case26 left right abstract number =>
+      dsimp only
+      exact make_divluimm_correct globals stack env memory number left right result heval
+        (longValue right number (List.cons.inj (List.cons.inj hvalues).2).1)
+  | op_strength_reduction_case27 left right abstract number =>
+      dsimp only
+      exact make_modluimm_correct globals stack env memory number left right result heval
+        (longValue right number (List.cons.inj (List.cons.inj hvalues).2).1)
+  | op_strength_reduction_case28 left right number abstract =>
+      dsimp only
+      have hequal : Val.andl (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      rw [longValue left number (List.cons.inj hvalues).1, Val.andl_commut]
+      exact make_andlimm_correct globals stack env memory number right abstract
+  | op_strength_reduction_case29 left right abstract number =>
+      dsimp only
+      have hequal : Val.andl (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      rw [longValue right number (List.cons.inj (List.cons.inj hvalues).2).1]
+      exact make_andlimm_correct globals stack env memory number left abstract
+  | op_strength_reduction_case30 number register abstract =>
+      dsimp only
+      have hequal : Val.andl (Regmap.get register env) (.Vlong number) = result :=
+        Option.some.inj heval
+      subst result
+      exact make_andlimm_correct globals stack env memory number register abstract
+  | op_strength_reduction_case31 left right number abstract =>
+      dsimp only
+      have hequal : Val.orl (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := longValue left number (List.cons.inj hvalues).1
+      rw [hconstant, Val.orl_commut]
+      exact make_orlimm_correct globals stack env memory number right
+  | op_strength_reduction_case32 left right abstract number =>
+      dsimp only
+      have hequal : Val.orl (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := longValue right number (List.cons.inj (List.cons.inj hvalues).2).1
+      rw [hconstant]
+      exact make_orlimm_correct globals stack env memory number left
+  | op_strength_reduction_case33 left right number abstract =>
+      dsimp only
+      have hequal : Val.xorl (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := longValue left number (List.cons.inj hvalues).1
+      rw [hconstant, Val.xorl_commut]
+      exact make_xorlimm_correct globals stack env memory number right
+  | op_strength_reduction_case34 left right abstract number =>
+      dsimp only
+      have hequal : Val.xorl (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := longValue right number (List.cons.inj (List.cons.inj hvalues).2).1
+      rw [hconstant]
+      exact make_xorlimm_correct globals stack env memory number left
+  | op_strength_reduction_case35 left right abstract number =>
+      dsimp only
+      have hequal : Val.shll (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := integerValue right number (List.cons.inj (List.cons.inj hvalues).2).1
+      rw [hconstant]
+      exact make_shllimm_correct globals stack env memory number left right hconstant
+  | op_strength_reduction_case36 left right abstract number =>
+      dsimp only
+      have hequal : Val.shrl (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := integerValue right number (List.cons.inj (List.cons.inj hvalues).2).1
+      rw [hconstant]
+      exact make_shrlimm_correct globals stack env memory number left right hconstant
+  | op_strength_reduction_case37 left right abstract number =>
+      dsimp only
+      have hequal : Val.shrlu (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      have hconstant := integerValue right number (List.cons.inj (List.cons.inj hvalues).2).1
+      rw [hconstant]
+      exact make_shrluimm_correct globals stack env memory number left right hconstant
+  | op_strength_reduction_case38 address =>
+      dsimp only
+      have haddress := addr_strength_reduction_64_correct classification globals hglobals
+        stack hstack abstracts env hmatch address args values result hvalues heval
+      rcases hreduced : addr_strength_reduction_64 address args values with
+        ⟨reduced, reducedArgs⟩
+      rw [hreduced] at haddress
+      exact haddress
+  | op_strength_reduction_case39 condition =>
+      dsimp only
+      have hequal : Val.of_optbool (eval_condition condition (reg_values env args) memory) = result :=
+        Option.some.inj heval
+      subst result
+      exact make_cmp_correct classification globals stack abstracts env memory hmatch
+        condition args values hvalues
+  | op_strength_reduction_case40 condition resultType left right registers
+      leftAbstract rightAbstract abstractValues =>
+      dsimp only
+      have hequal : Val.select (eval_condition condition (reg_values env registers) memory)
+          (Regmap.get left env) (Regmap.get right env) resultType = result :=
+        Option.some.inj heval
+      subst result
+      exact make_select_correct configuration classification globals stack abstracts env memory
+        hmatch condition resultType left right registers abstractValues
+        (List.cons.inj (List.cons.inj hvalues).2).2
+  | op_strength_reduction_case41 left right abstract number =>
+      dsimp only
+      have hequal : Val.mulf (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      exact make_mulfimm_correct globals stack env memory number left right
+        (floatValue right number (List.cons.inj (List.cons.inj hvalues).2).1)
+  | op_strength_reduction_case42 left right number abstract =>
+      dsimp only
+      have hequal : Val.mulf (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      exact make_mulfimm_correct_2 globals stack env memory number left right
+        (floatValue left number (List.cons.inj hvalues).1)
+  | op_strength_reduction_case43 left right abstract number =>
+      dsimp only
+      have hequal : Val.mulfs (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      exact make_mulfsimm_correct globals stack env memory number left right
+        (singleValue right number (List.cons.inj (List.cons.inj hvalues).2).1)
+  | op_strength_reduction_case44 left right number abstract =>
+      dsimp only
+      have hequal : Val.mulfs (Regmap.get left env) (Regmap.get right env) = result :=
+        Option.some.inj heval
+      subst result
+      exact make_mulfsimm_correct_2 globals stack env memory number left right
+        (singleValue left number (List.cons.inj hvalues).1)
+  | op_strength_reduction_default =>
+      exact ⟨result, heval, Val.lessdef_refl _⟩
+
+end CompCert4Lean.X86.ConstpropOpproof

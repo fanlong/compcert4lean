@@ -9855,3 +9855,19 @@ theorem eagree_update_dead : eagree_update_deadStatement := by
       simpa [h] using henv r0
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem NE.gsspec_proof : NE.gsspec := by
+  intro position value environment query
+  exact pg_ne_set_get position query value environment
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem eagree_ge : eagree_geStatement := by
+  intro source target environment weaker agreement inclusion register
+  exact nge_agree _ _ _ _ (inclusion register) (agreement register)
+
+end CompCert4Lean.Backend.NeedDomain

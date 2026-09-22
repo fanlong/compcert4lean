@@ -735,3 +735,220 @@ theorem combine_cond'_sound : combine_cond'_soundStatement := by
         | cons z rest => cases hcombine
 
 end CompCert4Lean.X86.CombineOpproof
+
+namespace CompCert4Lean.X86.CombineOpproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.CombineOp
+
+private theorem combine_normalize_lessdef (value : val) (ty : typ) :
+    Val.lessdef (Val.normalize value ty) value := by
+  cases value <;> cases ty <;>
+    simp only [Val.normalize, CompCert4Lean.X86_64.Archi.ptr64, ↓reduceIte] <;>
+    first | exact Val.lessdef_refl _ | exact Val.lessdef_undef _
+
+set_option maxHeartbeats 1600000 in
+theorem combine_op_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @combine_op_soundStatement binary64_certificate binary32_certificate := by
+  intro ge sp memory get valu get_sound op args op' args' result hcombine heval
+  unfold combine_op at hcombine
+  split at hcombine
+  next addr =>
+    split at hcombine
+    next addr' operands haddr =>
+      cases Option.some.inj hcombine
+      exact ⟨result,
+        (combine_addr_32_sound ge sp memory get valu get_sound addr args
+          addr' args' haddr).trans heval, Val.lessdef_refl _⟩
+    next => cases hcombine
+  next addr =>
+    split at hcombine
+    next addr' operands haddr =>
+      cases Option.some.inj hcombine
+      exact ⟨result,
+        (combine_addr_64_sound ge sp memory get valu get_sound addr args
+          addr' args' haddr).trans heval, Val.lessdef_refl _⟩
+    next => cases hcombine
+  next outer source =>
+    split at hcombine
+    next inner operands hget =>
+      cases Option.some.inj hcombine
+      have hinner := get_op_sound ge sp memory get valu get_sound source
+        (.Oandimm inner) args' hget
+      cases args' with
+      | nil => change none = some (valu source) at hinner; cases hinner
+      | cons operand rest =>
+          cases rest with
+          | nil =>
+              change some (Val.and (valu operand) (.Vint inner)) = some (valu source) at hinner
+              have hvalue := Option.some.inj hinner
+              change some (Val.and (valu source) (.Vint outer)) = some result at heval
+              rw [← hvalue, Val.and_assoc] at heval
+              exact ⟨result, heval, Val.lessdef_refl _⟩
+          | cons extra rest => change none = some (valu source) at hinner; cases hinner
+    next => cases hcombine
+  next outer source =>
+    split at hcombine
+    next inner operands hget =>
+      cases Option.some.inj hcombine
+      have hinner := get_op_sound ge sp memory get valu get_sound source
+        (.Oorimm inner) args' hget
+      cases args' with
+      | nil => change none = some (valu source) at hinner; cases hinner
+      | cons operand rest =>
+          cases rest with
+          | nil =>
+              change some (Val.or (valu operand) (.Vint inner)) = some (valu source) at hinner
+              have hvalue := Option.some.inj hinner
+              change some (Val.or (valu source) (.Vint outer)) = some result at heval
+              rw [← hvalue, Val.or_assoc] at heval
+              exact ⟨result, heval, Val.lessdef_refl _⟩
+          | cons extra rest => change none = some (valu source) at hinner; cases hinner
+    next => cases hcombine
+  next outer source =>
+    split at hcombine
+    next inner operands hget =>
+      cases Option.some.inj hcombine
+      have hinner := get_op_sound ge sp memory get valu get_sound source
+        (.Oxorimm inner) args' hget
+      cases args' with
+      | nil => change none = some (valu source) at hinner; cases hinner
+      | cons operand rest =>
+          cases rest with
+          | nil =>
+              change some (Val.xor (valu operand) (.Vint inner)) = some (valu source) at hinner
+              have hvalue := Option.some.inj hinner
+              change some (Val.xor (valu source) (.Vint outer)) = some result at heval
+              rw [← hvalue, Val.xor_assoc] at heval
+              exact ⟨result, heval, Val.lessdef_refl _⟩
+          | cons extra rest => change none = some (valu source) at hinner; cases hinner
+    next => cases hcombine
+  next outer source =>
+    split at hcombine
+    next inner operands hget =>
+      cases Option.some.inj hcombine
+      have hinner := get_op_sound ge sp memory get valu get_sound source
+        (.Oandlimm inner) args' hget
+      cases args' with
+      | nil => change none = some (valu source) at hinner; cases hinner
+      | cons operand rest =>
+          cases rest with
+          | nil =>
+              change some (Val.andl (valu operand) (.Vlong inner)) = some (valu source) at hinner
+              have hvalue := Option.some.inj hinner
+              change some (Val.andl (valu source) (.Vlong outer)) = some result at heval
+              rw [← hvalue, Val.andl_assoc] at heval
+              exact ⟨result, heval, Val.lessdef_refl _⟩
+          | cons extra rest => change none = some (valu source) at hinner; cases hinner
+    next => cases hcombine
+  next outer source =>
+    split at hcombine
+    next inner operands hget =>
+      cases Option.some.inj hcombine
+      have hinner := get_op_sound ge sp memory get valu get_sound source
+        (.Oorlimm inner) args' hget
+      cases args' with
+      | nil => change none = some (valu source) at hinner; cases hinner
+      | cons operand rest =>
+          cases rest with
+          | nil =>
+              change some (Val.orl (valu operand) (.Vlong inner)) = some (valu source) at hinner
+              have hvalue := Option.some.inj hinner
+              change some (Val.orl (valu source) (.Vlong outer)) = some result at heval
+              rw [← hvalue, Val.orl_assoc] at heval
+              exact ⟨result, heval, Val.lessdef_refl _⟩
+          | cons extra rest => change none = some (valu source) at hinner; cases hinner
+    next => cases hcombine
+  next outer source =>
+    split at hcombine
+    next inner operands hget =>
+      cases Option.some.inj hcombine
+      have hinner := get_op_sound ge sp memory get valu get_sound source
+        (.Oxorlimm inner) args' hget
+      cases args' with
+      | nil => change none = some (valu source) at hinner; cases hinner
+      | cons operand rest =>
+          cases rest with
+          | nil =>
+              change some (Val.xorl (valu operand) (.Vlong inner)) = some (valu source) at hinner
+              have hvalue := Option.some.inj hinner
+              change some (Val.xorl (valu source) (.Vlong outer)) = some result at heval
+              rw [← hvalue, Val.xorl_assoc] at heval
+              exact ⟨result, heval, Val.lessdef_refl _⟩
+          | cons extra rest => change none = some (valu source) at hinner; cases hinner
+    next => cases hcombine
+  next cond =>
+    split at hcombine
+    next expected hknown =>
+      cases Option.some.inj hcombine
+      refine ⟨if expected then Vtrue else Vfalse, ?_, ?_⟩
+      · cases expected <;> rfl
+      · change some (Val.of_optbool (eval_condition cond (List.map valu args) memory)) =
+          some result at heval
+        have hresult := Option.some.inj heval
+        subst result
+        cases hcondition : eval_condition cond (List.map valu args) memory with
+        | none => exact Val.lessdef_undef _
+        | some actual =>
+            have heq := combine_cond'_sound memory valu cond args actual expected
+              hknown hcondition
+            subst actual
+            cases expected <;> exact Val.lessdef_refl _
+    next hunknown =>
+      split at hcombine
+      next cond' operands hcond =>
+        cases Option.some.inj hcombine
+        refine ⟨result, ?_, Val.lessdef_refl _⟩
+        change some (Val.of_optbool (eval_condition cond' (List.map valu args') memory)) =
+          some result
+        rw [combine_cond_sound ge sp memory get valu get_sound cond args
+          cond' args' hcond]
+        exact heval
+      next => cases hcombine
+  next cond ty first second rest =>
+    split at hcombine
+    next expected hknown =>
+      cases Option.some.inj hcombine
+      refine ⟨valu (if expected then first else second), rfl, ?_⟩
+      change some (Val.select (eval_condition cond (List.map valu rest) memory)
+        (valu first) (valu second) ty) = some result at heval
+      have hresult := Option.some.inj heval
+      subst result
+      cases hcondition : eval_condition cond (List.map valu rest) memory with
+      | none => exact Val.lessdef_undef _
+      | some actual =>
+          have heq := combine_cond'_sound memory valu cond rest actual expected
+            hknown hcondition
+          subst actual
+          cases expected <;> exact combine_normalize_lessdef _ _
+    next hunknown =>
+      split at hcombine
+      next hequal =>
+        cases Option.some.inj hcombine
+        subst second
+        refine ⟨valu first, rfl, ?_⟩
+        change some (Val.select (eval_condition cond (List.map valu rest) memory)
+          (valu first) (valu first) ty) = some result at heval
+        have hresult := Option.some.inj heval
+        subst result
+        cases hcondition : eval_condition cond (List.map valu rest) memory with
+        | none => exact Val.lessdef_undef _
+        | some actual => cases actual <;> exact combine_normalize_lessdef _ _
+      next hdistinct =>
+        split at hcombine
+        next cond' operands hcond =>
+          cases Option.some.inj hcombine
+          refine ⟨result, ?_, Val.lessdef_refl _⟩
+          change some (Val.select (eval_condition cond' (List.map valu operands) memory)
+            (valu first) (valu second) ty) = some result
+          rw [combine_cond_sound ge sp memory get valu get_sound cond rest
+            cond' operands hcond]
+          exact heval
+        next => cases hcombine
+  next => cases hcombine
+
+end CompCert4Lean.X86.CombineOpproof

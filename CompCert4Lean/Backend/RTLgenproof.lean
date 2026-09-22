@@ -6208,3 +6208,13 @@ open CompCert4Lean.Common.Smallstep
     (transl_step_correct xi prog tprog hprog)
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+theorem transl_expr_Eexternal_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_expr_Eexternal_correctStatement :=
+  rtlgen_expr_external_case
+
+end CompCert4Lean.Backend.RTLgenproof

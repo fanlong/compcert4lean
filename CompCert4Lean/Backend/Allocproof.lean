@@ -8410,3 +8410,898 @@ namespace CompCert4Lean.Backend.Allocproof
 theorem pair_instr_block_sound : pair_instr_block_soundStatement := local_pair_instr
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Allocation CompCert4Lean.Backend.Conventions
+open CompCert4Lean.Backend.Locations CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTLtyping
+open CompCert4Lean.Common.AST CompCert4Lean.Common.Errors
+open CompCert4Lean.Common.Events CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Smallstep CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib CompCert4Lean.Lib.Integers CompCert4Lean.Lib.Maps
+open CompCert4Lean.X86.Op CompCert4Lean.X86.Conventions1 CompCert4Lean.X86.Machregs
+open CompCert4Lean.Flocq.IEEE754.Binary
+
+private theorem sprint_quiet_prefix {environment state : Type}
+    {transition : environment → state → trace → state → Prop} {global : environment}
+    {first middle last : state} {events : trace}
+    (leading : star transition global first E0 middle)
+    (suffix : star transition global middle events last) :
+    star transition global first events last :=
+  star_trans _ _ _ _ _ _ _ leading _ _ _ suffix rfl
+
+private theorem sprint_quiet_suffix {environment state : Type}
+    {transition : environment → state → trace → state → Prop} {global : environment}
+    {first middle last : state} {events : trace}
+    (leading : star transition global first events middle)
+    (suffix : transition global middle E0 last) :
+    star transition global first events last :=
+  star_right _ _ _ _ _ _ _ _ _ _ leading suffix (_root_.List.append_nil events).symm
+
+private theorem sprint_step_suffix {environment state : Type}
+    {transition : environment → state → trace → state → Prop} {global : environment}
+    {first middle last : state} {events : trace}
+    (leading : transition global first events middle)
+    (suffix : star transition global middle E0 last) :
+    star transition global first events last :=
+  star_left _ _ _ _ _ _ _ _ _ _ leading suffix (_root_.List.append_nil events).symm
+
+section
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    {cfg : CompCert4Lean.Config.CompilerConfig} {oracle : RegallocOracle}
+    {providers : ExternalCalls} {program : RTL.program} {targetProgram : LTL.program}
+    {sourceStack : List RTL.stackframe} {sourceFunction : RTL.function}
+    {pointer : val} {counter : RTL.node} {registers : RTL.regset} {memory : mem}
+    {targetBefore : LTL.state}
+
+private theorem sprint_successor
+    {targetStack : List LTL.stackframe} {targetFunction : LTL.function}
+    {locations : LTL.locset} {targetMemory : mem} {analysis : PMap.t (res eqs)}
+    {environment : regenv} {afterEquations : eqs} {shape : block_shape} {next : RTL.node}
+    (stacks : match_stackframes cfg oracle providers targetProgram
+      sourceStack targetStack targetFunction.fn_sig)
+    (translated : transf_function cfg oracle sourceFunction = .OK targetFunction)
+    (analyzed : analyze cfg sourceFunction environment (pair_codes sourceFunction targetFunction) = some analysis)
+    (shape_found : PTree.get counter (pair_codes sourceFunction targetFunction) = some shape)
+    (successor : next ∈ successors_block_shape shape)
+    (after_found : PMap.get counter analysis = .OK afterEquations)
+    (satisfied : satisf registers locations afterEquations)
+    (extended : Mem.extends memory targetMemory)
+    (typed_function : wt_function cfg sourceFunction environment)
+    (typed_registers : wt_regset environment registers) :
+    match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction pointer next registers memory)
+      (LTL.State targetStack targetFunction pointer next locations targetMemory) := by
+  obtain ⟨equations, transferred, satisfies⟩ := satisf_successors cfg sourceFunction environment
+    _ analysis counter shape next afterEquations registers locations analyzed shape_found
+    successor after_found satisfied
+  exact match_states_intro _ _ _ _ _ _ _ _ _ _ _ _ _ stacks translated analyzed
+    transferred satisfies extended typed_function typed_registers
+
+private theorem sprint_nop {next : RTL.node}
+    (source_code : PTree.get counter sourceFunction.fn_code = some (.Inop next))
+    (matched : match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction pointer counter registers memory) targetBefore) :
+    ∃ targetAfter, plus (LTL.step cfg providers) (Genv.globalenv targetProgram)
+      targetBefore E0 targetAfter ∧ match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction pointer next registers memory) targetAfter := by
+  cases matched with
+  | match_states_intro _ _ _ _ _ _ targetStack targetFunction locations targetMemory
+      analysis equations environment stacks translated analyzed transferred satisfied extended typed_function typed_registers =>
+    obtain ⟨afterEquations, shape, code, after_found, shape_found, target_code, expanded,
+      transfer_ok, typed_instruction⟩ := invert_code cfg sourceFunction environment targetFunction
+      counter _ _ equations typed_function source_code transferred
+    cases expanded with
+    | ebs_nop moves next tail well_formed =>
+      obtain ⟨updated, moves_run, satisfies⟩ := exec_moves cfg providers targetProgram moves
+        environment registers targetStack targetFunction pointer (.Lbranch next :: tail)
+        targetMemory afterEquations equations locations transfer_ok well_formed satisfied typed_registers
+      refine ⟨_, plus_left _ E0 (LTL.step.exec_start_block _ _ _ _ _ _ _ target_code)
+        (sprint_quiet_suffix moves_run (LTL.step.exec_Lbranch ..)) rfl, ?_⟩
+      exact sprint_successor stacks translated analyzed shape_found (by simp [successors_block_shape])
+        after_found satisfies extended typed_function typed_registers
+
+set_option maxHeartbeats 4000000 in
+private theorem sprint_operation
+    (translated_program : match_prog cfg oracle program targetProgram)
+    {operation : operation} {arguments : List reg} {result : reg} {next : RTL.node} {value : val}
+    (source_code : PTree.get counter sourceFunction.fn_code = some (.Iop operation arguments result next))
+    (evaluated : eval_operation (Genv.globalenv program) pointer operation
+      (arguments.map (fun register => Regmap.get register registers)) memory = some value)
+    (matched : match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction pointer counter registers memory) targetBefore) :
+    ∃ targetAfter, plus (LTL.step cfg providers) (Genv.globalenv targetProgram)
+      targetBefore E0 targetAfter ∧ match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction pointer next (Regmap.set result value registers) memory)
+      targetAfter := by
+  cases matched with
+  | match_states_intro _ _ _ _ _ _ targetStack targetFunction locations targetMemory
+      analysis equations environment stacks translated analyzed transferred satisfied extended typed_function typed_registers =>
+    obtain ⟨afterEquations, shape, code, after_found, shape_found, target_code, expanded,
+      transfer_ok, typed_instruction⟩ := invert_code cfg sourceFunction environment targetFunction
+      counter _ _ equations typed_function source_code transferred
+    have updated_typed := wt_exec_Iop cfg (Genv.globalenv program) environment sourceFunction
+      pointer operation arguments result next registers memory value typed_instruction evaluated typed_registers
+    cases expanded with
+    | ebs_move source result moves next tail well_formed =>
+      change some (Regmap.get source registers) = some value at evaluated
+      have value_eq := Option.some.inj evaluated
+      subst value
+      obtain ⟨updated, moves_run, satisfies⟩ := exec_moves cfg providers targetProgram moves
+        environment registers targetStack targetFunction pointer (.Lbranch next :: tail)
+        targetMemory _ equations locations transfer_ok well_formed satisfied typed_registers
+      refine ⟨_, plus_left _ E0 (LTL.step.exec_start_block _ _ _ _ _ _ _ target_code)
+        (sprint_quiet_suffix moves_run (LTL.step.exec_Lbranch ..)) rfl, ?_⟩
+      exact sprint_successor stacks translated analyzed shape_found (by simp [successors_block_shape])
+        after_found (subst_reg_satisf _ _ _ _ _ satisfies) extended typed_function updated_typed
+    | ebs_makelong _ _ _ _ _ _ _ split => cases split
+    | ebs_lowlong _ _ _ _ _ _ split => cases split
+    | ebs_highlong _ _ _ _ _ _ split => cases split
+    | ebs_op operation arguments result beforeMoves targetArguments targetResult afterMoves next tail before_wf after_wf =>
+      dsimp only [transfer_aux] at transfer_ok
+      cases tracked_after : track_moves environment afterMoves afterEquations with
+      | none => simp [tracked_after] at transfer_ok
+      | some middleEquations =>
+        simp only [tracked_after] at transfer_ok
+        cases uses : transfer_use_def arguments result targetArguments targetResult
+            (destroyed_by_op operation) middleEquations with
+        | none => simp [uses] at transfer_ok
+        | some beforeEquations =>
+          simp only [uses] at transfer_ok
+          obtain ⟨beforeLocations, before_run, before_satisfied⟩ := exec_moves cfg providers targetProgram
+            beforeMoves environment registers targetStack targetFunction pointer _ targetMemory
+            beforeEquations equations locations transfer_ok before_wf satisfied typed_registers
+          obtain ⟨arguments_less, result_satisfied⟩ := transfer_use_def_satisf _ _ _ _ _ _ _ _ _ uses before_satisfied
+          obtain ⟨targetValue, target_evaluated, value_less⟩ := eval_operation_lessdef _ _
+            (Genv.globalenv program) pointer operation _ _ value memory targetMemory
+            arguments_less extended evaluated
+          have target_evaluated' : eval_operation (Genv.globalenv targetProgram) pointer operation
+              (LTL.reglist beforeLocations targetArguments) targetMemory = some targetValue :=
+            (eval_operation_preserved _ _ _ _ _ _
+              (symbols_preserved cfg oracle program targetProgram translated_program) _ _ _ _).trans target_evaluated
+          obtain ⟨afterLocations, after_run, after_satisfied⟩ := exec_moves cfg providers targetProgram
+            afterMoves environment (Regmap.set result value registers) targetStack targetFunction pointer
+            (.Lbranch next :: tail) targetMemory afterEquations middleEquations
+            (Locmap.set (R targetResult) targetValue (LTL.undef_regs (destroyed_by_op operation) beforeLocations))
+            tracked_after after_wf (result_satisfied _ _ value_less) updated_typed
+          refine ⟨_, plus_left _ E0 (LTL.step.exec_start_block _ _ _ _ _ _ _ target_code)
+            (sprint_quiet_prefix before_run (sprint_step_suffix
+              (LTL.step.exec_Lop _ _ _ _ _ _ _ _ _ _ _ target_evaluated' rfl)
+              (sprint_quiet_suffix after_run (LTL.step.exec_Lbranch ..)))) rfl, ?_⟩
+          exact sprint_successor stacks translated analyzed shape_found (by simp [successors_block_shape])
+            after_found after_satisfied extended typed_function updated_typed
+    | ebs_op_dead operation arguments result moves next tail well_formed =>
+      dsimp only [transfer_aux] at transfer_ok
+      split at transfer_ok
+      next unconstrained =>
+        obtain ⟨updated, moves_run, satisfies⟩ := exec_moves cfg providers targetProgram moves
+          environment registers targetStack targetFunction pointer (.Lbranch next :: tail)
+          targetMemory afterEquations equations locations transfer_ok well_formed satisfied typed_registers
+        refine ⟨_, plus_left _ E0 (LTL.step.exec_start_block _ _ _ _ _ _ _ target_code)
+          (sprint_quiet_suffix moves_run (LTL.step.exec_Lbranch ..)) rfl, ?_⟩
+        exact sprint_successor stacks translated analyzed shape_found (by simp [successors_block_shape])
+          after_found (reg_unconstrained_satisf _ _ _ _ _ unconstrained satisfies) extended
+          typed_function updated_typed
+      next => contradiction
+
+private theorem sprint_load
+    (translated_program : match_prog cfg oracle program targetProgram)
+    {chunk : memory_chunk} {address : addressing} {arguments : List reg}
+    {result : reg} {next : RTL.node} {location value : val}
+    (source_code : PTree.get counter sourceFunction.fn_code = some (.Iload chunk address arguments result next))
+    (addressed : eval_addressing (Genv.globalenv program) pointer address
+      (arguments.map (fun register => Regmap.get register registers)) = some location)
+    (loaded : Mem.loadv chunk memory location = some value)
+    (matched : match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction pointer counter registers memory) targetBefore) :
+    ∃ targetAfter, plus (LTL.step cfg providers) (Genv.globalenv targetProgram)
+      targetBefore E0 targetAfter ∧ match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction pointer next (Regmap.set result value registers) memory)
+      targetAfter := by
+  cases matched with
+  | match_states_intro _ _ _ _ _ _ targetStack targetFunction locations targetMemory
+      analysis equations environment stacks translated analyzed transferred satisfied extended typed_function typed_registers =>
+    obtain ⟨afterEquations, shape, code, after_found, shape_found, target_code, expanded,
+      transfer_ok, typed_instruction⟩ := invert_code cfg sourceFunction environment targetFunction
+      counter _ _ equations typed_function source_code transferred
+    have updated_typed := wt_exec_Iload cfg environment sourceFunction chunk address arguments result
+      next memory location value registers typed_instruction loaded typed_registers
+    cases expanded with
+    | ebs_load chunk address arguments result beforeMoves targetArguments targetResult afterMoves next tail before_wf after_wf =>
+      dsimp only [transfer_aux] at transfer_ok
+      cases tracked_after : track_moves environment afterMoves afterEquations with
+      | none => simp [tracked_after] at transfer_ok
+      | some middleEquations =>
+        simp only [tracked_after] at transfer_ok
+        cases uses : transfer_use_def arguments result targetArguments targetResult
+            (destroyed_by_load chunk address) middleEquations with
+        | none => simp [uses] at transfer_ok
+        | some beforeEquations =>
+          simp only [uses] at transfer_ok
+          obtain ⟨beforeLocations, before_run, before_satisfied⟩ := exec_moves cfg providers targetProgram
+            beforeMoves environment registers targetStack targetFunction pointer _ targetMemory
+            beforeEquations equations locations transfer_ok before_wf satisfied typed_registers
+          obtain ⟨arguments_less, result_satisfied⟩ := transfer_use_def_satisf _ _ _ _ _ _ _ _ _ uses before_satisfied
+          obtain ⟨targetLocation, target_addressed, location_less⟩ := eval_addressing_lessdef _ _
+            (Genv.globalenv program) pointer address _ _ location arguments_less addressed
+          obtain ⟨targetValue, target_loaded, value_less⟩ := Mem.loadv_extends chunk memory targetMemory
+            location targetLocation value extended loaded location_less
+          have target_addressed' : eval_addressing (Genv.globalenv targetProgram) pointer address
+              (LTL.reglist beforeLocations targetArguments) = some targetLocation :=
+            (eval_addressing_preserved _ _ _ _ _ _
+              (symbols_preserved cfg oracle program targetProgram translated_program) _ _ _).trans target_addressed
+          obtain ⟨afterLocations, after_run, after_satisfied⟩ := exec_moves cfg providers targetProgram
+            afterMoves environment (Regmap.set result value registers) targetStack targetFunction pointer
+            (.Lbranch next :: tail) targetMemory afterEquations middleEquations
+            (Locmap.set (R targetResult) targetValue (LTL.undef_regs (destroyed_by_load chunk address) beforeLocations))
+            tracked_after after_wf (result_satisfied _ _ value_less) updated_typed
+          refine ⟨_, plus_left _ E0 (LTL.step.exec_start_block _ _ _ _ _ _ _ target_code)
+            (sprint_quiet_prefix before_run (sprint_step_suffix
+              (by apply LTL.step.exec_Lload; exact target_addressed'; exact target_loaded; rfl)
+              (sprint_quiet_suffix after_run (LTL.step.exec_Lbranch ..)))) rfl, ?_⟩
+          exact sprint_successor stacks translated analyzed shape_found (by simp [successors_block_shape])
+            after_found after_satisfied extended typed_function updated_typed
+    | ebs_load2 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ split _ => cases split
+    | ebs_load2_1 _ _ _ _ _ _ _ _ _ _ _ split => cases split
+    | ebs_load2_2 _ _ _ _ _ _ _ _ _ _ _ _ split _ => cases split
+    | ebs_load_dead chunk address arguments result moves next tail well_formed =>
+      dsimp only [transfer_aux] at transfer_ok
+      split at transfer_ok
+      next unconstrained =>
+        obtain ⟨updated, moves_run, satisfies⟩ := exec_moves cfg providers targetProgram moves
+          environment registers targetStack targetFunction pointer (.Lbranch next :: tail)
+          targetMemory afterEquations equations locations transfer_ok well_formed satisfied typed_registers
+        refine ⟨_, plus_left _ E0 (LTL.step.exec_start_block _ _ _ _ _ _ _ target_code)
+          (sprint_quiet_suffix moves_run (LTL.step.exec_Lbranch ..)) rfl, ?_⟩
+        exact sprint_successor stacks translated analyzed shape_found (by simp [successors_block_shape])
+          after_found (reg_unconstrained_satisf _ _ _ _ _ unconstrained satisfies) extended
+          typed_function updated_typed
+      next => contradiction
+
+private theorem sprint_store
+    (translated_program : match_prog cfg oracle program targetProgram)
+    {chunk : memory_chunk} {address : addressing} {arguments : List reg}
+    {source : reg} {next : RTL.node} {location : val} {afterMemory : mem}
+    (source_code : PTree.get counter sourceFunction.fn_code = some (.Istore chunk address arguments source next))
+    (addressed : eval_addressing (Genv.globalenv program) pointer address
+      (arguments.map (fun register => Regmap.get register registers)) = some location)
+    (stored : Mem.storev chunk memory location (Regmap.get source registers) = some afterMemory)
+    (matched : match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction pointer counter registers memory) targetBefore) :
+    ∃ targetAfter, plus (LTL.step cfg providers) (Genv.globalenv targetProgram)
+      targetBefore E0 targetAfter ∧ match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction pointer next registers afterMemory) targetAfter := by
+  cases matched with
+  | match_states_intro _ _ _ _ _ _ targetStack targetFunction locations targetMemory
+      analysis equations environment stacks translated analyzed transferred satisfied extended typed_function typed_registers =>
+    obtain ⟨afterEquations, shape, code, after_found, shape_found, target_code, expanded,
+      transfer_ok, typed_instruction⟩ := invert_code cfg sourceFunction environment targetFunction
+      counter _ _ equations typed_function source_code transferred
+    cases expanded with
+    | ebs_store chunk address arguments source moves targetArguments targetSource next tail well_formed =>
+      dsimp only [transfer_aux] at transfer_ok
+      split at transfer_ok
+      next undef_ok =>
+        cases arguments_added : add_equations (source :: arguments) (targetSource :: targetArguments) afterEquations with
+        | none => simp [arguments_added] at transfer_ok
+        | some beforeEquations =>
+          simp only [arguments_added] at transfer_ok
+          obtain ⟨beforeLocations, before_run, before_satisfied⟩ := exec_moves cfg providers targetProgram
+            moves environment registers targetStack targetFunction pointer _ targetMemory
+            beforeEquations equations locations transfer_ok well_formed satisfied typed_registers
+          have arguments_less := add_equations_lessdef _ _ _ _ _ _ arguments_added before_satisfied
+          cases arguments_less with
+          | lessdef_list_cons _ _ _ _ source_less arguments_less =>
+            obtain ⟨targetLocation, target_addressed, location_less⟩ := eval_addressing_lessdef _ _
+              (Genv.globalenv program) pointer address _ _ location arguments_less addressed
+            obtain ⟨afterTargetMemory, target_stored, after_extended⟩ := Mem.storev_extends chunk memory targetMemory
+              location _ afterMemory targetLocation _ extended stored location_less source_less
+            have target_addressed' : eval_addressing (Genv.globalenv targetProgram) pointer address
+                (LTL.reglist beforeLocations targetArguments) = some targetLocation :=
+              (eval_addressing_preserved _ _ _ _ _ _
+                (symbols_preserved cfg oracle program targetProgram translated_program) _ _ _).trans target_addressed
+            have after_satisfied := can_undef_satisf _ _ _ _ undef_ok
+              (add_equations_satisf _ _ _ _ _ _ arguments_added before_satisfied)
+            refine ⟨_, plus_left _ E0 (LTL.step.exec_start_block _ _ _ _ _ _ _ target_code)
+              (sprint_quiet_prefix before_run (sprint_step_suffix
+                (by apply LTL.step.exec_Lstore; exact target_addressed'; exact target_stored; rfl)
+                (star_one _ _ _ _ _ _ _ (LTL.step.exec_Lbranch ..)))) rfl, ?_⟩
+            exact sprint_successor stacks translated analyzed shape_found (by simp [successors_block_shape])
+              after_found after_satisfied after_extended typed_function typed_registers
+      next => contradiction
+    | ebs_store2 _ _ _ _ _ _ _ _ _ _ _ _ _ _ split _ => cases split
+
+private theorem sprint_condition {condition : condition} {arguments : List reg}
+    {ifso ifnot next : RTL.node} {result : Bool}
+    (source_code : PTree.get counter sourceFunction.fn_code = some (.Icond condition arguments ifso ifnot))
+    (evaluated : eval_condition condition
+      (arguments.map (fun register => Regmap.get register registers)) memory = some result)
+    (next_eq : next = if result then ifso else ifnot)
+    (matched : match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction pointer counter registers memory) targetBefore) :
+    ∃ targetAfter, plus (LTL.step cfg providers) (Genv.globalenv targetProgram)
+      targetBefore E0 targetAfter ∧ match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction pointer next registers memory) targetAfter := by
+  cases matched with
+  | match_states_intro _ _ _ _ _ _ targetStack targetFunction locations targetMemory
+      analysis equations environment stacks translated analyzed transferred satisfied extended typed_function typed_registers =>
+    obtain ⟨afterEquations, shape, code, after_found, shape_found, target_code, expanded,
+      transfer_ok, typed_instruction⟩ := invert_code cfg sourceFunction environment targetFunction
+      counter _ _ equations typed_function source_code transferred
+    cases expanded with
+    | ebs_cond condition arguments moves targetArguments ifso ifnot tail well_formed =>
+      dsimp only [transfer_aux] at transfer_ok
+      split at transfer_ok
+      next undef_ok =>
+        cases arguments_added : add_equations arguments targetArguments afterEquations with
+        | none => simp [arguments_added] at transfer_ok
+        | some beforeEquations =>
+          simp only [arguments_added] at transfer_ok
+          obtain ⟨beforeLocations, before_run, before_satisfied⟩ := exec_moves cfg providers targetProgram
+            moves environment registers targetStack targetFunction pointer _ targetMemory
+            beforeEquations equations locations transfer_ok well_formed satisfied typed_registers
+          have target_evaluated := eval_condition_lessdef _ _ _ _ _ _
+            (add_equations_lessdef _ _ _ _ _ _ arguments_added before_satisfied) extended evaluated
+          have after_satisfied := can_undef_satisf _ _ _ _ undef_ok
+            (add_equations_satisf _ _ _ _ _ _ arguments_added before_satisfied)
+          refine ⟨_, plus_left _ E0 (LTL.step.exec_start_block _ _ _ _ _ _ _ target_code)
+            (sprint_quiet_suffix before_run
+              (LTL.step.exec_Lcond _ _ _ _ _ _ _ _ _ _ _ _ _ target_evaluated next_eq rfl)) rfl, ?_⟩
+          exact sprint_successor stacks translated analyzed shape_found
+            (by cases result <;> simp_all [successors_block_shape]) after_found after_satisfied extended
+            typed_function typed_registers
+      next => contradiction
+
+private theorem sprint_jumptable {argument : reg} {table : List RTL.node}
+    {index : Int.int} {next : RTL.node}
+    (source_code : PTree.get counter sourceFunction.fn_code = some (.Ijumptable argument table))
+    (argument_eq : Regmap.get argument registers = Vint index)
+    (selected : list_nth_z table (Int.unsigned index) = some next)
+    (matched : match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction pointer counter registers memory) targetBefore) :
+    ∃ targetAfter, plus (LTL.step cfg providers) (Genv.globalenv targetProgram)
+      targetBefore E0 targetAfter ∧ match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction pointer next registers memory) targetAfter := by
+  cases matched with
+  | match_states_intro _ _ _ _ _ _ targetStack targetFunction locations targetMemory
+      analysis equations environment stacks translated analyzed transferred satisfied extended typed_function typed_registers =>
+    obtain ⟨afterEquations, shape, code, after_found, shape_found, target_code, expanded,
+      transfer_ok, typed_instruction⟩ := invert_code cfg sourceFunction environment targetFunction
+      counter _ _ equations typed_function source_code transferred
+    cases expanded with
+    | ebs_jumptable argument moves targetArgument table tail well_formed =>
+      dsimp only [transfer_aux] at transfer_ok
+      split at transfer_ok
+      next undef_ok =>
+        obtain ⟨beforeLocations, before_run, before_satisfied⟩ := exec_moves cfg providers targetProgram
+          moves environment registers targetStack targetFunction pointer _ targetMemory
+          _ equations locations transfer_ok well_formed satisfied typed_registers
+        have argument_less := add_equation_lessdef _ _ _ _ before_satisfied
+        change Val.lessdef (Regmap.get argument registers) (beforeLocations (R targetArgument)) at argument_less
+        rw [argument_eq] at argument_less
+        have target_argument : beforeLocations (R targetArgument) = Vint index := by
+          generalize target_eq : beforeLocations (R targetArgument) = targetValue at argument_less
+          cases argument_less
+          rfl
+        have after_satisfied := can_undef_satisf _ _ _ _ undef_ok
+          (add_equation_satisf _ _ _ _ before_satisfied)
+        refine ⟨_, plus_left _ E0 (LTL.step.exec_start_block _ _ _ _ _ _ _ target_code)
+          (sprint_quiet_suffix before_run
+            (LTL.step.exec_Ljumptable _ _ _ _ _ _ _ _ _ _ _ target_argument selected rfl)) rfl, ?_⟩
+        exact sprint_successor stacks translated analyzed shape_found
+          (list_nth_z_in _ _ _ _ selected) after_found after_satisfied extended typed_function typed_registers
+      next => contradiction
+
+private theorem sprint_builtin
+    (translated_program : match_prog cfg oracle program targetProgram)
+    {external : external_function} {arguments : List (builtin_arg reg)}
+    {result : builtin_res reg} {next : RTL.node} {values : List val}
+    {events : trace} {value : val} {afterMemory : mem}
+    (source_code : PTree.get counter sourceFunction.fn_code = some (.Ibuiltin external arguments result next))
+    (arguments_evaluated : eval_builtin_args (Genv.to_senv (Genv.globalenv program))
+      (fun register => Regmap.get register registers) pointer memory arguments values)
+    (called : external_call providers external (Genv.to_senv (Genv.globalenv program))
+      values memory events value afterMemory)
+    (matched : match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction pointer counter registers memory) targetBefore) :
+    ∃ targetAfter, plus (LTL.step cfg providers) (Genv.globalenv targetProgram)
+      targetBefore events targetAfter ∧ match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction pointer next (regmap_setres result value registers) afterMemory)
+      targetAfter := by
+  cases matched with
+  | match_states_intro _ _ _ _ _ _ targetStack targetFunction locations targetMemory
+      analysis equations environment stacks translated analyzed transferred satisfied extended typed_function typed_registers =>
+    obtain ⟨afterEquations, shape, code, after_found, shape_found, target_code, expanded,
+      transfer_ok, typed_instruction⟩ := invert_code cfg sourceFunction environment targetFunction
+      counter _ _ equations typed_function source_code transferred
+    cases expanded with
+    | ebs_builtin external arguments result beforeMoves targetArguments targetResult afterMoves next tail before_wf after_wf =>
+      dsimp only [transfer_aux] at transfer_ok
+      cases tracked_after : track_moves environment afterMoves afterEquations with
+      | none => simp [tracked_after] at transfer_ok
+      | some resultEquations =>
+        simp only [tracked_after] at transfer_ok
+        cases removed : remove_equations_builtin_res environment result targetResult resultEquations with
+        | none => simp [removed] at transfer_ok
+        | some argumentEquations =>
+          simp only [removed] at transfer_ok
+          split at transfer_ok
+          next conditions =>
+            have conditions' :
+                (params_of_builtin_res result).all (fun register => reg_unconstrained register argumentEquations) = true ∧
+                (params_of_builtin_res targetResult).all (fun register => loc_unconstrained (R register) argumentEquations) = true ∧
+                can_undef (destroyed_by_builtin external) argumentEquations = true := by
+              simpa [Bool.and_eq_true, and_assoc] using conditions
+            obtain ⟨beforeEquations, arguments_added, tracked_before⟩ :
+                ∃ beforeEquations,
+                  (match external with
+                    | .EF_debug _ _ _ => add_equations_debug_args environment arguments targetArguments argumentEquations
+                    | _ => add_equations_builtin_args environment arguments targetArguments argumentEquations) = some beforeEquations ∧
+                  track_moves environment beforeMoves beforeEquations = some equations := by
+              cases external <;> dsimp only at transfer_ok ⊢ <;>
+                (split at transfer_ok
+                 · contradiction
+                 · rename_i beforeEquations arguments_added
+                   exact ⟨beforeEquations, arguments_added, transfer_ok⟩)
+            obtain ⟨beforeLocations, before_run, before_satisfied⟩ := exec_moves cfg providers targetProgram
+              beforeMoves environment registers targetStack targetFunction pointer _ targetMemory
+              beforeEquations equations locations tracked_before before_wf satisfied typed_registers
+            obtain ⟨argument_satisfied, targetValues, targetValue, afterTargetMemory,
+              target_arguments, target_call, value_less, after_extended⟩ :=
+              add_equations_builtin_eval providers external environment arguments targetArguments
+                argumentEquations beforeEquations memory targetMemory registers beforeLocations
+                (Genv.globalenv program) pointer values events value afterMemory typed_registers arguments_added
+                extended before_satisfied arguments_evaluated called
+            have updated_typed := wt_exec_Ibuiltin cfg providers environment sourceFunction external
+              (Genv.globalenv program) arguments result next values memory events value afterMemory registers
+              typed_instruction called typed_registers
+            have after_satisfied := parallel_set_builtin_res_satisf environment result targetResult
+              resultEquations argumentEquations registers _ value targetValue removed conditions'.1 conditions'.2.1
+              (can_undef_satisf _ _ _ _ conditions'.2.2 argument_satisfied) value_less
+            obtain ⟨afterLocations, after_run, after_satisfied⟩ := exec_moves cfg providers targetProgram
+              afterMoves environment (regmap_setres result value registers) targetStack targetFunction pointer
+              (.Lbranch next :: tail) afterTargetMemory afterEquations resultEquations _ tracked_after
+              after_wf after_satisfied updated_typed
+            have target_arguments' := eval_builtin_args_preserved _ _ _ _ _
+              (Genv.globalenv program) (Genv.globalenv targetProgram) beforeLocations pointer targetMemory
+              (symbols_preserved cfg oracle program targetProgram translated_program) _ _ target_arguments
+            have target_call' := external_call_symbols_preserved_proof providers external _ _ _ _ _ _ _
+              (senv_preserved cfg oracle program targetProgram translated_program) target_call
+            refine ⟨_, plus_left _ E0 (LTL.step.exec_start_block _ _ _ _ _ _ _ target_code)
+              (sprint_quiet_prefix before_run (sprint_step_suffix
+                (by apply LTL.step.exec_Lbuiltin; exact target_arguments'; exact target_call'; rfl)
+                (sprint_quiet_suffix after_run (LTL.step.exec_Lbranch ..)))) rfl, ?_⟩
+            exact sprint_successor stacks translated analyzed shape_found (by simp [successors_block_shape])
+              after_found after_satisfied after_extended typed_function updated_typed
+          next => contradiction
+
+private theorem sprint_layout {targetFunction : LTL.function}
+    (translated : transf_function cfg oracle sourceFunction = .OK targetFunction) :
+    sourceFunction.fn_stacksize = targetFunction.fn_stacksize ∧
+      sourceFunction.fn_sig = targetFunction.fn_sig := by
+  cases transf_function_inv cfg oracle sourceFunction targetFunction translated with
+  | transf_function_spec_intro _ _ _ _ _ _ _ _ _ _ _ _ _ _ stack_eq signature_eq =>
+      exact ⟨stack_eq, signature_eq⟩
+
+private theorem sprint_return_result (cfg : CompCert4Lean.Config.CompilerConfig)
+    (signature : signature) (caller callee : LTL.locset) :
+    Locmap.getpair (map_rpair R (loc_result signature)) (LTL.return_regs cfg caller callee) =
+      Locmap.getpair (map_rpair R (loc_result signature)) callee := by
+  have saved := loc_result_caller_save cfg signature
+  generalize result_eq : loc_result signature = resultPair at saved ⊢
+  cases resultPair with
+  | One register =>
+      change is_callee_save cfg register = false at saved
+      simp [map_rpair, Locmap.getpair, LTL.return_regs, saved]
+  | Twolong high low =>
+      have parts : is_callee_save cfg high = false ∧ is_callee_save cfg low = false := saved
+      simp [map_rpair, Locmap.getpair, LTL.return_regs, parts.1, parts.2]
+
+private theorem sprint_return {block : block} {result : Option reg} {afterMemory : mem}
+    (source_code : PTree.get counter sourceFunction.fn_code = some (.Ireturn result))
+    (freed : Mem.free memory block .Z0 sourceFunction.fn_stacksize = some afterMemory)
+    (matched : match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction (Vptr block Ptrofs.zero) counter registers memory) targetBefore) :
+    ∃ targetAfter, plus (LTL.step cfg providers) (Genv.globalenv targetProgram)
+      targetBefore E0 targetAfter ∧ match_states cfg oracle providers targetProgram
+      (RTL.Returnstate sourceStack (regmap_optget result Vundef registers) afterMemory) targetAfter := by
+  cases matched with
+  | match_states_intro _ _ _ _ _ _ targetStack targetFunction locations targetMemory
+      analysis equations environment stacks translated analyzed transferred satisfied extended typed_function typed_registers =>
+    obtain ⟨afterEquations, shape, code, after_found, shape_found, target_code, expanded,
+      transfer_ok, typed_instruction⟩ := invert_code cfg sourceFunction environment targetFunction
+      counter _ _ equations typed_function source_code transferred
+    obtain ⟨stack_eq, signature_eq⟩ := sprint_layout translated
+    obtain ⟨afterTargetMemory, target_freed, after_extended⟩ := Mem.free_parallel_extends
+      memory targetMemory block .Z0 sourceFunction.fn_stacksize afterMemory extended freed
+    rw [stack_eq] at target_freed
+    cases expanded with
+    | ebs_return result moves tail well_formed =>
+      cases result with
+      | none =>
+        obtain ⟨updated, moves_run, satisfies⟩ := exec_moves cfg providers targetProgram moves
+          environment registers targetStack targetFunction (Vptr block Ptrofs.zero) (.Lreturn :: tail)
+          targetMemory empty_eqs equations locations transfer_ok well_formed satisfied typed_registers
+        refine ⟨_, plus_left _ E0 (LTL.step.exec_start_block _ _ _ _ _ _ _ target_code)
+          (sprint_quiet_suffix moves_run (LTL.step.exec_Lreturn _ _ _ _ _ _ _ target_freed)) rfl, ?_⟩
+        exact match_states_return _ _ _ _ _ _ _ stacks (Val.lessdef_undef _)
+          (return_regs_agree_callee_save _ _ _) after_extended (by cases targetFunction.fn_sig.sig_res <;> trivial)
+      | some result =>
+        dsimp only [transfer_aux] at transfer_ok
+        cases result_added : add_equations_res result (proj_sig_res sourceFunction.fn_sig)
+            (loc_result sourceFunction.fn_sig) empty_eqs with
+        | none => simp [result_added] at transfer_ok
+        | some beforeEquations =>
+          simp only [result_added] at transfer_ok
+          obtain ⟨updated, moves_run, satisfies⟩ := exec_moves cfg providers targetProgram moves
+            environment registers targetStack targetFunction (Vptr block Ptrofs.zero) (.Lreturn :: tail)
+            targetMemory beforeEquations equations locations transfer_ok well_formed satisfied typed_registers
+          have result_type : environment result = proj_sig_res sourceFunction.fn_sig := by
+            cases typed_instruction; assumption
+          have value_typed : Val.has_type (Regmap.get result registers) (proj_sig_res sourceFunction.fn_sig) :=
+            result_type ▸ typed_registers result
+          have result_less := add_equations_res_lessdef _ _ _ _ _ _ _ result_added satisfies value_typed
+          refine ⟨_, plus_left _ E0 (LTL.step.exec_start_block _ _ _ _ _ _ _ target_code)
+            (sprint_quiet_suffix moves_run (LTL.step.exec_Lreturn _ _ _ _ _ _ _ target_freed)) rfl, ?_⟩
+          apply match_states_return _ _ _ _ _ _ targetFunction.fn_sig stacks
+          · rw [sprint_return_result, ← signature_eq]
+            exact result_less
+          · exact return_regs_agree_callee_save _ _ _
+          · exact after_extended
+          · exact signature_eq ▸ value_typed
+
+set_option maxHeartbeats 4000000 in
+private theorem sprint_call
+    (translated_program : match_prog cfg oracle program targetProgram)
+    {signature : signature} {target : Sum reg ident} {arguments : List reg}
+    {result : reg} {next : RTL.node} {callee : RTL.fundef}
+    (source_code : PTree.get counter sourceFunction.fn_code = some (.Icall signature target arguments result next))
+    (found : RTL.find_function (Genv.globalenv program) target registers = some callee)
+    (signature_eq : RTL.funsig callee = signature)
+    (matched : match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction pointer counter registers memory) targetBefore) :
+    ∃ targetAfter, plus (LTL.step cfg providers) (Genv.globalenv targetProgram)
+      targetBefore E0 targetAfter ∧ match_states cfg oracle providers targetProgram
+      (RTL.Callstate (RTL.Stackframe result sourceFunction pointer next registers :: sourceStack)
+        callee (arguments.map (fun register => Regmap.get register registers)) memory) targetAfter := by
+  cases matched with
+  | match_states_intro _ _ _ _ _ _ targetStack targetFunction locations targetMemory
+      analysis equations environment stacks translated analyzed transferred satisfied extended typed_function typed_registers =>
+    obtain ⟨afterEquations, shape, code, after_found, shape_found, target_code, expanded,
+      transfer_ok, typed_instruction⟩ := invert_code cfg sourceFunction environment targetFunction
+      counter _ _ equations typed_function source_code transferred
+    cases expanded with
+    | ebs_call signature target arguments result beforeMoves targetTarget afterMoves next tail before_wf after_wf =>
+      dsimp only [transfer_aux] at transfer_ok
+      cases tracked_after : track_moves environment afterMoves afterEquations with
+      | none => simp [tracked_after] at transfer_ok
+      | some resultEquations =>
+        simp only [tracked_after] at transfer_ok
+        cases removed : remove_equations_res result (loc_result signature) resultEquations with
+        | none => simp [removed] at transfer_ok
+        | some savedEquations =>
+          simp only [removed] at transfer_ok
+          split at transfer_ok
+          next conditions =>
+            have conditions' :
+                (regs_of_rpair (loc_result signature)).all
+                  (fun register => reg_loc_unconstrained result (R register) savedEquations) = true ∧
+                no_caller_saves cfg savedEquations = true := by simpa using conditions
+            cases target_added : add_equation_ros target targetTarget savedEquations with
+            | none => simp [target_added] at transfer_ok
+            | some targetEquations =>
+              simp only [target_added] at transfer_ok
+              cases arguments_added : add_equations_args arguments (proj_sig_args signature)
+                  (loc_arguments cfg signature) targetEquations with
+              | none => simp [arguments_added] at transfer_ok
+              | some beforeEquations =>
+                simp only [arguments_added] at transfer_ok
+                obtain ⟨beforeLocations, before_run, before_satisfied⟩ := exec_moves cfg providers targetProgram
+                  beforeMoves environment registers targetStack targetFunction pointer _ targetMemory
+                  beforeEquations equations locations transfer_ok before_wf satisfied typed_registers
+                have target_satisfied := add_equations_args_satisf _ _ _ _ _ _ _ arguments_added before_satisfied
+                have saved_satisfied := add_equation_ros_satisf _ _ _ _ _ _ target_added target_satisfied
+                obtain ⟨targetCallee, target_found, translated_callee⟩ := find_function_translated
+                  cfg oracle program targetProgram translated_program target registers callee targetTarget
+                  savedEquations targetEquations beforeLocations found target_added target_satisfied
+                have target_signature := (sig_function_translated _ _ _ _ translated_callee).trans signature_eq
+                have argument_types : arguments.map environment = proj_sig_args signature := by
+                  cases typed_instruction; assumption
+                have result_type : environment result = proj_sig_res signature := by
+                  cases typed_instruction; assumption
+                have arguments_typed : Val.has_type_list
+                    (arguments.map (fun register => Regmap.get register registers)) (proj_sig_args signature) :=
+                  argument_types ▸ wt_regset_list environment registers typed_registers arguments
+                obtain ⟨nextEquations, next_transfer, next_subset⟩ := analyze_successors cfg sourceFunction
+                  environment _ analysis counter _ next afterEquations analyzed shape_found
+                  (by exact _root_.List.Mem.head _) after_found
+                refine ⟨_, plus_left _ E0 (LTL.step.exec_start_block _ _ _ _ _ _ _ target_code)
+                  (sprint_quiet_suffix before_run
+                    (LTL.step.exec_Lcall _ _ _ _ _ _ _ _ _ target_found target_signature)) rfl, ?_⟩
+                refine match_states_call _ _ _ _ _ _ _ _ ?_ translated_callee ?_ ?_ ?_ ?_
+                · refine match_stackframes_cons result sourceFunction pointer next registers sourceStack
+                    targetFunction (expand_moves afterMoves (.Lbranch next :: tail)) beforeLocations targetStack
+                    (LTL.funsig targetCallee) analysis nextEquations environment stacks translated analyzed
+                    next_transfer typed_function typed_registers ?_ ?_
+                  · simpa only [target_signature] using result_type
+                  · intro returned returnLocations returnMemory returned_less returned_typed saved_agreement
+                    rw [target_signature] at returned_less
+                    have after_satisfied := function_return_satisf cfg registers beforeLocations returnLocations
+                      result (loc_result signature) signature resultEquations savedEquations returned rfl removed
+                      saved_satisfied (by rw [_root_.List.all_map]; exact conditions'.1)
+                      conditions'.2 returned_less saved_agreement
+                    obtain ⟨updated, moves_run, satisfies⟩ := exec_moves cfg providers targetProgram
+                      afterMoves environment (Regmap.set result returned registers) targetStack targetFunction pointer
+                      (.Lbranch next :: tail) returnMemory afterEquations resultEquations returnLocations
+                      tracked_after after_wf after_satisfied
+                      (wt_regset_assign environment registers returned result typed_registers returned_typed)
+                    exact ⟨updated, sprint_quiet_suffix moves_run (LTL.step.exec_Lbranch ..),
+                      satisf_incr _ _ _ _ satisfies next_subset⟩
+                · simpa only [target_signature] using add_equations_args_lessdef _ _ _ _ _ _ _
+                    arguments_added before_satisfied arguments_typed
+                · intro location saved; rfl
+                · exact extended
+                · simpa only [target_signature] using arguments_typed
+          next => contradiction
+
+set_option maxHeartbeats 4000000 in
+private theorem sprint_tailcall
+    (translated_program : match_prog cfg oracle program targetProgram)
+    {block : block} {signature : signature} {target : Sum reg ident} {arguments : List reg}
+    {callee : RTL.fundef} {afterMemory : mem}
+    (source_code : PTree.get counter sourceFunction.fn_code = some (.Itailcall signature target arguments))
+    (found : RTL.find_function (Genv.globalenv program) target registers = some callee)
+    (signature_eq : RTL.funsig callee = signature)
+    (freed : Mem.free memory block .Z0 sourceFunction.fn_stacksize = some afterMemory)
+    (matched : match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction (Vptr block Ptrofs.zero) counter registers memory) targetBefore) :
+    ∃ targetAfter, plus (LTL.step cfg providers) (Genv.globalenv targetProgram)
+      targetBefore E0 targetAfter ∧ match_states cfg oracle providers targetProgram
+      (RTL.Callstate sourceStack callee (arguments.map (fun register => Regmap.get register registers)) afterMemory)
+      targetAfter := by
+  cases matched with
+  | match_states_intro _ _ _ _ _ _ targetStack targetFunction locations targetMemory
+      analysis equations environment stacks translated analyzed transferred satisfied extended typed_function typed_registers =>
+    obtain ⟨afterEquations, shape, code, after_found, shape_found, target_code, expanded,
+      transfer_ok, typed_instruction⟩ := invert_code cfg sourceFunction environment targetFunction
+      counter _ _ equations typed_function source_code transferred
+    obtain ⟨stack_eq, function_signature⟩ := sprint_layout translated
+    obtain ⟨afterTargetMemory, target_freed, after_extended⟩ := Mem.free_parallel_extends
+      memory targetMemory block .Z0 sourceFunction.fn_stacksize afterMemory extended freed
+    rw [stack_eq] at target_freed
+    cases expanded with
+    | ebs_tailcall signature target arguments moves targetTarget tail well_formed =>
+      dsimp only [transfer_aux] at transfer_ok
+      split at transfer_ok
+      next conditions =>
+        have conditions' : tailcall_is_possible cfg signature = true ∧
+            signature.sig_res = sourceFunction.fn_sig.sig_res ∧
+            ros_compatible_tailcall cfg targetTarget = true := by
+          simpa [Bool.and_eq_true, and_assoc] using conditions
+        cases target_added : add_equation_ros target targetTarget empty_eqs with
+        | none => simp [target_added] at transfer_ok
+        | some targetEquations =>
+          simp only [target_added] at transfer_ok
+          cases arguments_added : add_equations_args arguments (proj_sig_args signature)
+              (loc_arguments cfg signature) targetEquations with
+          | none => simp [arguments_added] at transfer_ok
+          | some beforeEquations =>
+            simp only [arguments_added] at transfer_ok
+            obtain ⟨beforeLocations, before_run, before_satisfied⟩ := exec_moves cfg providers targetProgram
+              moves environment registers targetStack targetFunction (Vptr block Ptrofs.zero) _ targetMemory
+              beforeEquations equations locations transfer_ok well_formed satisfied typed_registers
+            obtain ⟨targetCallee, target_found, translated_callee⟩ := find_function_translated
+              cfg oracle program targetProgram translated_program target registers callee targetTarget
+              empty_eqs targetEquations beforeLocations found target_added
+              (add_equations_args_satisf _ _ _ _ _ _ _ arguments_added before_satisfied)
+            have target_signature := (sig_function_translated _ _ _ _ translated_callee).trans signature_eq
+            have returned_found := (find_function_tailcall cfg (Genv.globalenv targetProgram) targetTarget
+              (LTL.parent_locset targetStack) beforeLocations conditions'.2.2).trans target_found
+            have argument_types : arguments.map environment = proj_sig_args signature := by
+              cases typed_instruction; assumption
+            have arguments_typed : Val.has_type_list
+                (arguments.map (fun register => Regmap.get register registers)) (proj_sig_args signature) :=
+              argument_types ▸ wt_regset_list environment registers typed_registers arguments
+            refine ⟨_, plus_left _ E0 (LTL.step.exec_start_block _ _ _ _ _ _ _ target_code)
+              (sprint_quiet_suffix before_run
+                (LTL.step.exec_Ltailcall _ _ _ _ _ _ _ _ _ _ _ rfl returned_found target_signature target_freed)) rfl, ?_⟩
+            refine match_states_call _ _ _ _ _ _ _ _ ?_ translated_callee ?_ ?_ ?_ ?_
+            · apply match_stackframes_change_sig cfg oracle providers targetProgram _ _ _ _ stacks
+              exact (congrArg CompCert4Lean.Common.AST.signature.sig_res target_signature).trans
+                (conditions'.2.1.trans (congrArg CompCert4Lean.Common.AST.signature.sig_res function_signature))
+            · rw [target_signature, return_regs_arg_values cfg signature _ _ conditions'.1]
+              exact add_equations_args_lessdef _ _ _ _ _ _ _ arguments_added before_satisfied arguments_typed
+            · exact return_regs_agree_callee_save _ _ _
+            · exact after_extended
+            · simpa only [target_signature] using arguments_typed
+      next => contradiction
+
+private theorem sprint_internal {arguments : List val} {block : block} {afterMemory : mem}
+    (allocated : Mem.alloc memory .Z0 sourceFunction.fn_stacksize = (afterMemory, block))
+    (matched : match_states cfg oracle providers targetProgram
+      (RTL.Callstate sourceStack (.Internal sourceFunction) arguments memory) targetBefore) :
+    ∃ targetAfter, plus (LTL.step cfg providers) (Genv.globalenv targetProgram)
+      targetBefore E0 targetAfter ∧ match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction (Vptr block Ptrofs.zero) sourceFunction.fn_entrypoint
+        (RTL.init_regs arguments sourceFunction.fn_params) afterMemory) targetAfter := by
+  cases matched with
+  | match_states_call _ _ _ _ targetStack targetCallee locations targetMemory
+      stacks translated arguments_less saved extended arguments_typed =>
+    cases translated_function : transf_function cfg oracle sourceFunction with
+    | Error message => simp [Allocation.transf_fundef, transf_partial_fundef, translated_function] at translated
+    | OK targetFunction =>
+      have callee_eq : targetCallee = .Internal targetFunction := by
+        dsimp only [Allocation.transf_fundef, transf_partial_fundef] at translated
+        rw [translated_function] at translated
+        exact (res.OK.inj translated).symm
+      subst targetCallee
+      cases transf_function_inv cfg oracle sourceFunction targetFunction translated_function with
+      | transf_function_spec_intro environment analysis moves tail entryEquations beforeEquations
+          typed_function analyzed target_code well_formed transferred tracked compatible undef_ok stack_eq signature_eq =>
+        have typed_registers : wt_regset environment (RTL.init_regs arguments sourceFunction.fn_params) := by
+          apply wt_init_regs
+          rw [typed_function.wt_params, signature_eq]
+          exact arguments_typed
+        obtain ⟨afterTargetMemory, target_allocated, after_extended⟩ := Mem.alloc_extends
+          memory targetMemory .Z0 sourceFunction.fn_stacksize block afterMemory .Z0 sourceFunction.fn_stacksize
+          extended allocated (by exact _root_.Int.le_refl _) (by exact _root_.Int.le_refl _)
+        rw [stack_eq] at target_allocated
+        have entry_satisfied := compat_entry_satisf sourceFunction.fn_params
+          (loc_parameters cfg targetFunction.fn_sig) beforeEquations compatible arguments (LTL.call_regs locations)
+          (by rw [call_regs_param_values]; exact arguments_less)
+        obtain ⟨updated, moves_run, satisfies⟩ := exec_moves cfg providers targetProgram moves
+          environment (RTL.init_regs arguments sourceFunction.fn_params) targetStack targetFunction
+          (Vptr block Ptrofs.zero) (.Lbranch sourceFunction.fn_entrypoint :: tail) afterTargetMemory
+          entryEquations beforeEquations (LTL.undef_regs destroyed_at_function_entry (LTL.call_regs locations))
+          tracked well_formed (can_undef_satisf _ _ _ _ undef_ok entry_satisfied) typed_registers
+        refine ⟨_, plus_left _ E0
+          (LTL.step.exec_function_internal _ _ _ _ _ _ _ target_allocated rfl)
+          (sprint_step_suffix (LTL.step.exec_start_block _ _ _ _ _ _ _ target_code)
+            (sprint_quiet_suffix moves_run (LTL.step.exec_Lbranch ..))) rfl, ?_⟩
+        exact match_states_intro _ _ _ _ _ _ _ _ _ _ _ _ _ stacks translated_function analyzed
+          transferred satisfies after_extended typed_function typed_registers
+
+private theorem sprint_set_result (signature : signature) (value : val) (locations : LTL.locset) :
+    Locmap.getpair (map_rpair R (loc_result signature))
+      (Locmap.setpair (loc_result signature) value locations) = value := by
+  have single : ∃ register, loc_result signature = .One register := by
+    change ∃ register, loc_result_64 signature = .One register
+    unfold loc_result_64
+    cases proj_sig_res signature <;> exact ⟨_, rfl⟩
+  obtain ⟨register, result_eq⟩ := single
+  rw [result_eq]
+  exact Locmap.gss (R register) value locations
+
+private theorem sprint_external
+    (translated_program : match_prog cfg oracle program targetProgram)
+    {external : external_function} {arguments : List val} {value : val}
+    {events : trace} {afterMemory : mem}
+    (called : external_call providers external (Genv.to_senv (Genv.globalenv program))
+      arguments memory events value afterMemory)
+    (matched : match_states cfg oracle providers targetProgram
+      (RTL.Callstate sourceStack (.External external) arguments memory) targetBefore) :
+    ∃ targetAfter, plus (LTL.step cfg providers) (Genv.globalenv targetProgram)
+      targetBefore events targetAfter ∧ match_states cfg oracle providers targetProgram
+      (RTL.Returnstate sourceStack value afterMemory) targetAfter := by
+  cases matched with
+  | match_states_call _ _ _ _ targetStack targetCallee locations targetMemory
+      stacks translated arguments_less saved extended arguments_typed =>
+    have callee_eq : targetCallee = .External external := by
+      exact (res.OK.inj translated).symm
+    subst targetCallee
+    obtain ⟨targetValue, afterTargetMemory, target_call, value_less, after_extended, unchanged⟩ :=
+      external_call_mem_extends_proof providers external (Genv.to_senv (Genv.globalenv program))
+        arguments memory events value afterMemory targetMemory _ called extended arguments_less
+    have target_call' := external_call_symbols_preserved_proof providers external _ _ _ _ _ _ _
+      (senv_preserved cfg oracle program targetProgram translated_program) target_call
+    refine ⟨_, plus_one _ _ _ _ _ _ _
+      (LTL.step.exec_function_external _ _ _ _ _ _ _ _ _ rfl target_call' rfl), ?_⟩
+    apply match_states_return _ _ _ _ _ _ (ef_sig external) stacks
+    · rw [sprint_set_result]
+      exact value_less
+    · intro location callee_saved
+      apply (saved location callee_saved).trans
+      apply Eq.trans _ (locmap_get_set_loc_result_callee_save cfg (ef_sig external) targetValue
+        (LTL.undef_caller_save_regs cfg locations) location callee_saved).symm
+      cases location with
+      | R register =>
+          change is_callee_save cfg register = true at callee_saved
+          simp [LTL.undef_caller_save_regs, callee_saved]
+      | S slot offset ty =>
+          cases slot <;> simp_all [callee_save_loc, LTL.undef_caller_save_regs]
+    · exact after_extended
+    · exact external_call_well_typed providers external _ _ _ _ _ _ called
+
+private theorem sprint_resume {result : reg} {value : val}
+    (matched : match_states cfg oracle providers targetProgram
+      (RTL.Returnstate (RTL.Stackframe result sourceFunction pointer counter registers :: sourceStack)
+        value memory) targetBefore) :
+    ∃ targetAfter, plus (LTL.step cfg providers) (Genv.globalenv targetProgram)
+      targetBefore E0 targetAfter ∧ match_states cfg oracle providers targetProgram
+      (RTL.State sourceStack sourceFunction pointer counter (Regmap.set result value registers) memory)
+      targetAfter := by
+  cases matched with
+  | match_states_return _ _ _ targetStack locations targetMemory signature
+      stacks result_less saved extended result_typed =>
+    cases stacks with
+    | match_stackframes_cons _ _ _ _ _ _ targetFunction code caller targetStack signature analysis equations
+        environment stacks translated analyzed transferred typed_function typed_registers result_type continuation =>
+      have returned_typed : Val.has_type value (environment result) := result_type ▸ result_typed
+      obtain ⟨updated, moves_run, satisfies⟩ := continuation value locations targetMemory
+        result_less returned_typed saved
+      refine ⟨_, plus_left _ E0 (LTL.step.exec_return ..) moves_run rfl, ?_⟩
+      exact match_states_intro _ _ _ _ _ _ _ _ _ _ _ _ _ stacks translated analyzed transferred
+        satisfies extended typed_function (wt_regset_assign _ _ _ _ typed_registers returned_typed)
+
+theorem step_simulation : step_simulationStatement := by
+  intro cfg oracle providers program targetProgram translated_program before events after
+    transition typed targetBefore matched
+  cases transition with
+  | exec_Inop _ _ _ _ _ _ _ code => exact sprint_nop code matched
+  | exec_Iop _ _ _ _ _ _ _ _ _ _ _ code evaluated =>
+      exact sprint_operation translated_program code evaluated matched
+  | exec_Iload _ _ _ _ _ _ _ _ _ _ _ _ _ code addressed loaded =>
+      exact sprint_load translated_program code addressed loaded matched
+  | exec_Istore _ _ _ _ _ _ _ _ _ _ _ _ _ code addressed stored =>
+      exact sprint_store translated_program code addressed stored matched
+  | exec_Icall _ _ _ _ _ _ _ _ _ _ _ _ code found signature_eq =>
+      exact sprint_call translated_program code found signature_eq matched
+  | exec_Itailcall _ _ _ _ _ _ _ _ _ _ _ code found signature_eq freed =>
+      exact sprint_tailcall translated_program code found signature_eq freed matched
+  | exec_Ibuiltin _ _ _ _ _ _ _ _ _ _ _ _ _ _ code arguments called =>
+      exact sprint_builtin translated_program code arguments called matched
+  | exec_Icond _ _ _ _ _ _ _ _ _ _ _ _ code evaluated next_eq =>
+      exact sprint_condition code evaluated next_eq matched
+  | exec_Ijumptable _ _ _ _ _ _ _ _ _ _ code argument_eq selected =>
+      exact sprint_jumptable code argument_eq selected matched
+  | exec_Ireturn _ _ _ _ _ _ _ _ code freed => exact sprint_return code freed matched
+  | exec_function_internal _ _ _ _ _ _ types allocated => exact sprint_internal allocated matched
+  | exec_function_external _ _ _ _ _ _ _ called => exact sprint_external translated_program called matched
+  | exec_return => exact sprint_resume matched
+
+end
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.RTLtyping
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem transf_program_correct
+    [binary64_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    transf_program_correctStatement := by
+  intro cfg oracle providers program targetProgram translated_program
+  have typed_program := wt_prog cfg oracle program targetProgram translated_program
+  refine forward_simulation_plus (RTL.semantics providers program)
+    (LTL.semantics cfg providers targetProgram) ?_
+    (fun source target => wt_state cfg source ∧
+      match_states cfg oracle providers targetProgram source target) ?_ ?_ ?_
+  · exact (senv_preserved cfg oracle program targetProgram translated_program).2.1
+  · intro source initial
+    obtain ⟨target, target_initial, matched⟩ := initial_states_simulation
+      cfg oracle providers program targetProgram translated_program source initial
+    exact ⟨target, target_initial, wt_initial_state cfg program typed_program source initial, matched⟩
+  · intro source target result matched final
+    exact final_states_simulation cfg oracle providers targetProgram source target result matched.2 final
+  · intro source events after transition target matched
+    obtain ⟨targetAfter, target_steps, after_matched⟩ := step_simulation cfg oracle providers
+      program targetProgram translated_program source events after transition matched.1 target matched.2
+    exact ⟨targetAfter, target_steps,
+      subject_reduction cfg providers program typed_program source events after transition matched.1,
+      after_matched⟩
+
+end CompCert4Lean.Backend.Allocproof

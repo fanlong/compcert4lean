@@ -5337,3 +5337,210 @@ theorem Rnd_odd_pt_monotone :
     (Zrnd_odd ctx) (valid_rnd_odd_certificate_proof ctx).odd left right ordered
 
 end CompCert4Lean.Flocq.Prop.Round_odd
+
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals
+
+theorem round_N_odd_pos :
+    ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
+      round_N_odd_posStatement ctx magnitude := by
+  intro ctx magnitude beta even_beta fexp fexpe valid nearest valid_fine nearest_fine
+    exponent_gap choice value lower upper lower_spec lower_canonical upper_spec
+    upper_canonical positive
+  let odd_value := round ctx magnitude beta fexpe (Zrnd_odd ctx) value
+  let midpoint := Rdiv ctx (Rplus ctx (F2R ctx lower) (F2R ctx upper)) (Rtwo ctx)
+  have valid_odd := (valid_rnd_odd_certificate_proof ctx).odd
+  have inclusion := generic_format_fexpe_fexp ctx magnitude beta fexp fexpe exponent_gap
+  change round ctx magnitude beta fexp (Znearest ctx choice) odd_value =
+    round ctx magnitude beta fexp (Znearest ctx choice) value
+  by_cases formatted : generic_format ctx magnitude beta fexp value
+  · have fixed : odd_value = value :=
+      Generic_fmt.round_generic ctx magnitude beta fexpe (Zrnd_odd ctx) valid_odd
+        value (inclusion value formatted)
+    rw [fixed]
+  have odd_spec := round_odd_pt ctx magnitude beta fexpe valid_fine nearest_fine value
+  have even_fixed : ∀ representation : float beta,
+      canonical ctx magnitude beta fexpe representation →
+      Zeven (Fnum representation) = true →
+      odd_value = F2R ctx representation → odd_value = value := by
+    intro representation canonical_rep even_rep equal
+    rcases odd_spec.2 with fixed | ⟨_, odd_rep, odd_equal, canonical_odd, parity_odd⟩
+    · exact fixed
+    · have same_rep := Generic_fmt.canonical_unique ctx magnitude beta fexpe
+        odd_rep representation canonical_odd canonical_rep (odd_equal.symm.trans equal)
+      rw [same_rep, even_rep] at parity_odd
+      cases parity_odd
+  have midpoint_format : generic_format ctx magnitude beta fexpe midpoint :=
+    Fm ctx magnitude beta even_beta fexp fexpe valid nearest exponent_gap value lower upper
+      lower_spec lower_canonical upper_spec upper_canonical positive
+  obtain ⟨midpoint_rep, midpoint_equal, midpoint_canonical, midpoint_even⟩ :=
+    Zm ctx magnitude beta even_beta fexp fexpe valid nearest exponent_gap value lower upper
+      lower_spec lower_canonical upper_spec upper_canonical positive
+  have midpoint_fixed : odd_value = midpoint → value = midpoint := by
+    intro equal
+    have fixed := even_fixed midpoint_rep midpoint_canonical midpoint_even
+      (equal.trans midpoint_equal.symm)
+    exact fixed.symm.trans equal
+  have odd_not_formatted : ¬ generic_format ctx magnitude beta fexp odd_value := by
+    intro coarse_format
+    obtain ⟨coarse_rep, coarse_equal, coarse_canonical⟩ :=
+      odd_canonical_representation ctx magnitude beta fexp odd_value coarse_format
+    have smaller : Zlt (fexpe (mag_val ctx magnitude beta odd_value)) (Fexp coarse_rep) := by
+      change Fexp coarse_rep = fexp (mag_val ctx magnitude beta (F2R ctx coarse_rep))
+        at coarse_canonical
+      rw [coarse_equal] at coarse_canonical
+      rw [coarse_canonical]
+      have gap := exponent_gap (mag_val ctx magnitude beta odd_value)
+      change intOfZ (fexpe (mag_val ctx magnitude beta odd_value)) ≤
+        intOfZ (Zsub (fexp (mag_val ctx magnitude beta odd_value)) Ztwo) at gap
+      simp only [Zsub, Generic_fmt.Zsub, Zaux.Zsub, ZArith.BinInt.Z.sub,
+        intOfZ_zOfInt] at gap
+      change intOfZ (fexpe (mag_val ctx magnitude beta odd_value)) ≤
+        intOfZ (fexp (mag_val ctx magnitude beta odd_value)) - 2 at gap
+      change intOfZ (fexpe (mag_val ctx magnitude beta odd_value)) <
+        intOfZ (fexp (mag_val ctx magnitude beta odd_value))
+      omega
+    obtain ⟨even_rep, even_equal, canonical_even, parity_even⟩ :=
+      exists_even_fexp_lt ctx magnitude beta even_beta fexpe odd_value
+        ⟨coarse_rep, coarse_equal, smaller⟩
+    have fixed := even_fixed even_rep canonical_even parity_even even_equal.symm
+    exact formatted (fixed ▸ coarse_format)
+  have lower_le : Rle ctx (F2R ctx lower) odd_value :=
+    Generic_fmt.round_ge_generic ctx magnitude beta fexpe valid_fine (Zrnd_odd ctx)
+      valid_odd (F2R ctx lower) value (inclusion _ lower_spec.1) lower_spec.2.1
+  have upper_le : Rle ctx odd_value (F2R ctx upper) :=
+    Generic_fmt.round_le_generic ctx magnitude beta fexpe valid_fine (Zrnd_odd ctx)
+      valid_odd value (F2R ctx upper) (inclusion _ upper_spec.1) upper_spec.2.1
+  have lower_lt : Rlt ctx (F2R ctx lower) odd_value := by
+    apply (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+    refine ⟨lower_le, ?_⟩
+    intro reverse
+    have equal := ctx.certificate.orderedField.le_antisymm _ _ reverse lower_le
+    apply odd_not_formatted
+    rw [equal]
+    exact lower_spec.1
+  have upper_lt : Rlt ctx odd_value (F2R ctx upper) := by
+    apply (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+    refine ⟨upper_le, ?_⟩
+    intro reverse
+    have equal := ctx.certificate.orderedField.le_antisymm _ _ upper_le reverse
+    apply odd_not_formatted
+    rw [equal]
+    exact upper_spec.1
+  have odd_lower := DN_odd_d_aux ctx magnitude beta fexp valid value lower upper
+    lower_spec upper_spec odd_value ⟨lower_le, upper_lt⟩
+  have odd_upper := UP_odd_d_aux ctx magnitude beta fexp valid value lower upper
+    lower_spec upper_spec odd_value ⟨lower_lt, upper_le⟩
+  rcases ctx.certificate.total_order value midpoint with below_or_equal | above
+  · rcases below_or_equal with below | equal
+    · have rounded_le : Rle ctx odd_value midpoint :=
+        Generic_fmt.round_le_generic ctx magnitude beta fexpe valid_fine (Zrnd_odd ctx)
+          valid_odd value midpoint midpoint_format (RIneq.Rlt_le ctx _ _ below)
+      have rounded_lt : Rlt ctx odd_value midpoint := by
+        apply (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+        refine ⟨rounded_le, ?_⟩
+        intro reverse
+        have equal := midpoint_fixed
+          (ctx.certificate.orderedField.le_antisymm _ _ rounded_le reverse)
+        rw [equal] at below
+        exact RIneq.Rlt_irrefl ctx _ below
+      exact (Ulp.round_N_eq_DN_pt ctx magnitude beta fexp valid choice odd_value
+        (F2R ctx lower) (F2R ctx upper) odd_lower odd_upper rounded_lt).trans
+        (Ulp.round_N_eq_DN_pt ctx magnitude beta fexp valid choice value
+          (F2R ctx lower) (F2R ctx upper) lower_spec upper_spec below).symm
+    · have fixed : odd_value = value :=
+        Generic_fmt.round_generic ctx magnitude beta fexpe (Zrnd_odd ctx) valid_odd
+          value (equal ▸ midpoint_format)
+      rw [fixed]
+  · have rounded_le : Rle ctx midpoint odd_value :=
+      Generic_fmt.round_ge_generic ctx magnitude beta fexpe valid_fine (Zrnd_odd ctx)
+        valid_odd midpoint value midpoint_format (RIneq.Rlt_le ctx _ _ above)
+    have rounded_lt : Rlt ctx midpoint odd_value := by
+      apply (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+      refine ⟨rounded_le, ?_⟩
+      intro reverse
+      have equal := midpoint_fixed
+        (ctx.certificate.orderedField.le_antisymm _ _ reverse rounded_le)
+      rw [equal] at above
+      exact RIneq.Rlt_irrefl ctx _ above
+    exact (Ulp.round_N_eq_UP_pt ctx magnitude beta fexp valid choice odd_value
+      (F2R ctx lower) (F2R ctx upper) odd_lower odd_upper rounded_lt).trans
+      (Ulp.round_N_eq_UP_pt ctx magnitude beta fexp valid choice value
+        (F2R ctx lower) (F2R ctx upper) lower_spec upper_spec above).symm
+
+end CompCert4Lean.Flocq.Prop.Round_odd
+
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals
+
+theorem round_N_odd :
+    ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
+      round_N_oddStatement ctx magnitude := by
+  intro ctx magnitude beta even_beta fexp fexpe choice valid nearest valid_fine
+    nearest_fine exponent_gap value
+  have positive_case : ∀ (tie_choice : Z → Bool) (positive_value : R ctx),
+      Rlt ctx (R0 ctx) positive_value →
+      round ctx magnitude beta fexp (Znearest ctx tie_choice)
+          (round ctx magnitude beta fexpe (Zrnd_odd ctx) positive_value) =
+        round ctx magnitude beta fexp (Znearest ctx tie_choice) positive_value := by
+    intro tie_choice positive_value positive
+    have lower_spec := Generic_fmt.round_DN_pt ctx magnitude beta fexp valid positive_value
+    have upper_spec := Generic_fmt.round_UP_pt ctx magnitude beta fexp valid positive_value
+    obtain ⟨lower, lower_equal, lower_canonical⟩ :=
+      odd_canonical_representation ctx magnitude beta fexp _ lower_spec.1
+    obtain ⟨upper, upper_equal, upper_canonical⟩ :=
+      odd_canonical_representation ctx magnitude beta fexp _ upper_spec.1
+    apply round_N_odd_pos ctx magnitude beta even_beta fexp fexpe valid nearest
+      valid_fine nearest_fine exponent_gap tie_choice positive_value lower upper
+    · rw [lower_equal]
+      exact lower_spec
+    · exact lower_canonical
+    · rw [upper_equal]
+      exact upper_spec
+    · exact upper_canonical
+    · exact positive
+  rcases ctx.certificate.total_order value (R0 ctx) with negative_or_zero | positive
+  · rcases negative_or_zero with negative | zero
+    · let reflected_choice := fun position =>
+        Bool.not (choice (Generic_fmt.Zopp (Zadd position Zone)))
+      have neg_positive : Rlt ctx (R0 ctx) (Ropp ctx value) := by
+        have reflected_order := RIneq.Ropp_lt_contravar ctx (R0 ctx) value negative
+        change Rlt ctx (Ropp ctx (R0 ctx)) (Ropp ctx value) at reflected_order
+        rw [round_odd_neg_zero_aux ctx] at reflected_order
+        exact reflected_order
+      have neg_neg : Ropp ctx (Ropp ctx value) = value :=
+        RIneq.Ropp_involutive ctx value
+      have reflected := positive_case reflected_choice (Ropp ctx value)
+        neg_positive
+      calc
+        round ctx magnitude beta fexp (Znearest ctx choice)
+            (round ctx magnitude beta fexpe (Zrnd_odd ctx) value) =
+          round ctx magnitude beta fexp (Znearest ctx choice)
+            (Ropp ctx (round ctx magnitude beta fexpe (Zrnd_odd ctx) (Ropp ctx value))) := by
+              rw [← round_odd_opp ctx magnitude beta fexpe (Ropp ctx value),
+                neg_neg]
+        _ = Ropp ctx (round ctx magnitude beta fexp (Znearest ctx reflected_choice)
+            (round ctx magnitude beta fexpe (Zrnd_odd ctx) (Ropp ctx value))) :=
+          Generic_fmt.round_N_opp ctx magnitude beta fexp choice _
+        _ = Ropp ctx (round ctx magnitude beta fexp (Znearest ctx reflected_choice)
+            (Ropp ctx value)) := congrArg (Ropp ctx) reflected
+        _ = round ctx magnitude beta fexp (Znearest ctx choice) value := by
+          have reflection :
+              round ctx magnitude beta fexp (Znearest ctx choice) (Ropp ctx (Ropp ctx value)) =
+                Ropp ctx (round ctx magnitude beta fexp (Znearest ctx reflected_choice)
+                  (Ropp ctx value)) :=
+            Generic_fmt.round_N_opp ctx magnitude beta fexp choice (Ropp ctx value)
+          rw [neg_neg] at reflection
+          exact reflection.symm
+    · have odd_zero : round ctx magnitude beta fexpe (Zrnd_odd ctx) (R0 ctx) = R0 ctx :=
+        Generic_fmt.round_0 ctx magnitude beta fexpe (Zrnd_odd ctx)
+          (valid_rnd_odd_certificate_proof ctx).odd
+      rw [zero, odd_zero]
+  · exact positive_case choice value positive
+
+end CompCert4Lean.Flocq.Prop.Round_odd

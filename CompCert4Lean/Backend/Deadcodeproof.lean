@@ -3506,3 +3506,938 @@ theorem transf_external_call : ∀ cfg, transf_external_callStatement cfg := by
       (fun b ofs => nlive (Genv.globalenv prog) sp nm2 b ofs) hmext'
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.X86.Op CompCert4Lean.X86.NeedOp
+open CompCert4Lean.Backend.Deadcode CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Backend.Registers CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueAnalysis CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Events CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Smallstep CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib CompCert4Lean.Lib.Integers CompCert4Lean.Lib.Maps
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+private theorem deadcode_add_needs_all_eagree (args : List reg)
+    (e te : regset) (ne : nenv) :
+    eagree e te (add_needs_all args ne) → eagree e te ne := by
+  induction args with
+  | nil => exact id
+  | cons arg args ih =>
+      intro henv
+      exact ih (add_need_all_eagree _ _ _ _ henv)
+
+private theorem deadcode_add_needs_eagree (args : List reg)
+    (needs : List nval) (e te : regset) (ne : nenv) :
+    eagree e te (add_needs args needs ne) → eagree e te ne := by
+  induction args generalizing needs with
+  | nil => exact id
+  | cons arg args ih =>
+      cases needs with
+      | nil => exact deadcode_add_needs_all_eagree (arg :: args) e te ne
+      | cons need needs =>
+          intro henv
+          exact ih needs (add_need_eagree _ _ _ _ _ henv)
+
+private theorem deadcode_dead {need : nval} :
+    is_dead need = true → need = Nothing := by
+  cases need <;> simp [is_dead]
+
+private theorem deadcode_live {need : nval} (hdead : is_dead need = false) :
+    need ≠ Nothing := by
+  intro heq
+  cases heq
+  contradiction
+
+private theorem deadcode_zero_agree (value : val) :
+    vagree value (Vint Int.zero) (nval.I Int.zero) := by
+  cases value <;> try trivial
+  exact iagree_zero _ _
+
+private theorem deadcode_step_op
+    (cfg : CompilerConfig) (prog tprog : program) (xi : ExternalCalls)
+    (s ts : List stackframe) (f tf : function) (sp : block) (pc next : node)
+    (e te : regset) (m tm : mem) (cu : program) (an : PMap.t NA.t)
+    (op : operation) (args : List reg) (res : reg) (value : val)
+    (hprog : match_prog cfg prog tprog)
+    (hstacks : list_forall2 (match_stackframes cfg prog) s ts)
+    (hlink : linkorder cu prog)
+    (hfun : Deadcode.transf_function cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf)
+    (han : Deadcode.analyze cfg f (prog_defmap cu) (vanalyze cfg cu f) = some an)
+    (hcode : PTree.get pc f.fn_code = some (.Iop op args res next))
+    (heval : eval_operation (Genv.globalenv prog) (Vptr sp Ptrofs.zero) op
+      (args.map (fun arg => Regmap.get arg e)) m = some value)
+    (henv : eagree e te (Deadcode.transfer cfg f (prog_defmap cu)
+      (vanalyze cfg cu f) pc (PMap.get pc an)).1)
+    (hmem : magree m tm (nlive (Genv.globalenv prog) sp
+      (Deadcode.transfer cfg f (prog_defmap cu) (vanalyze cfg cu f) pc
+        (PMap.get pc an)).2)) :
+    ∃ target,
+      RTL.step xi (Genv.globalenv tprog) (State ts tf (Vptr sp Ptrofs.zero) pc te tm)
+        E0 target ∧
+      match_states cfg prog
+        (State s f (Vptr sp Ptrofs.zero) next (Regmap.set res value e) m) target := by
+  have htarget := transf_function_at cfg cu f tf an pc _ hfun han hcode
+  generalize hanpc : PMap.get pc an = after at henv hmem
+  obtain ⟨ne, nm⟩ := after
+  simp only [Deadcode.transf_instr, hanpc] at htarget
+  simp only [Deadcode.transfer, hcode] at henv hmem
+  have hsucc := match_succ_states cfg prog s f sp pc (Regmap.set res value e) m
+    ts tf
+  by_cases hdead : is_dead (nreg ne res) = true
+  · simp only [hdead, ↓reduceIte] at henv hmem
+    refine ⟨State ts tf (Vptr sp Ptrofs.zero) next te tm, ?_, ?_⟩
+    · apply RTL.exec_Inop
+      simpa only [Deadcode.transf_instr, hdead, ↓reduceIte] using htarget
+    · exact hsucc te tm an next cu (.Iop op args res next) ne nm
+        hlink hstacks hfun han hcode (by simp [RTL.successors_instr]) hanpc
+        (eagree_update_dead _ _ _ _ _ (deadcode_dead hdead) henv) hmem
+  · have hdead' : is_dead (nreg ne res) = false := Bool.eq_false_iff.mpr hdead
+    by_cases hzero : is_int_zero (nreg ne res) = true
+    · simp only [hdead, hzero, ↓reduceIte] at henv hmem
+      refine ⟨State ts tf (Vptr sp Ptrofs.zero) next (Regmap.set res (Vint Int.zero) te) tm,
+        ?_, ?_⟩
+      · apply RTL.exec_Iop
+        · simpa [hdead, hzero] using htarget
+        · rfl
+      · apply hsucc _ tm an next cu (.Iop op args res next) ne nm
+          hlink hstacks hfun han hcode (by simp [RTL.successors_instr]) hanpc
+        · apply eagree_update _ _ _ _ _ _ _ henv
+          rw [is_int_zero_sound _ hzero]
+          exact deadcode_zero_agree value
+        · exact hmem
+    · simp only [hdead, hzero, ↓reduceIte] at henv hmem
+      have hargs := add_needs_vagree args (needs_of_operation op (nreg ne res)) e te _ henv
+      have hbase := deadcode_add_needs_eagree args (needs_of_operation op (nreg ne res)) e te _ henv
+      have hpreserve : ∀ tv,
+          eval_operation (Genv.globalenv prog) (Vptr sp Ptrofs.zero) op
+            (args.map (fun arg => Regmap.get arg te)) tm = some tv →
+          vagree value tv (nreg ne res) →
+          PTree.get pc tf.fn_code = some (.Iop op args res next) →
+          ∃ target,
+            RTL.step xi (Genv.globalenv tprog)
+              (State ts tf (Vptr sp Ptrofs.zero) pc te tm) E0 target ∧
+            match_states cfg prog
+              (State s f (Vptr sp Ptrofs.zero) next (Regmap.set res value e) m) target := by
+        intro tv heval' hagree hcode'
+        refine ⟨State ts tf (Vptr sp Ptrofs.zero) next (Regmap.set res tv te) tm, ?_, ?_⟩
+        · apply RTL.exec_Iop _ _ _ _ _ _ _ _ _ _ _ hcode'
+          rw [eval_operation_preserved _ _ _ _ (Genv.globalenv prog) (Genv.globalenv tprog)
+            (symbols_preserved cfg prog tprog hprog)]
+          exact heval'
+        · exact hsucc _ tm an next cu (.Iop op args res next) ne nm
+            hlink hstacks hfun han hcode (by simp [RTL.successors_instr]) hanpc
+            (eagree_update _ _ _ _ _ _ hagree hbase) hmem
+      by_cases hred : operation_is_redundant op (nreg ne res) = true
+      · cases args with
+        | nil =>
+            obtain ⟨tv, heval', hagree⟩ := needs_of_operation_sound _ _ _ _ hmem.ma_perm
+              op [] value (nreg ne res) [] heval hargs (deadcode_live hdead')
+            apply hpreserve tv heval' hagree
+            simpa [hdead, hzero, hred] using htarget
+        | cons arg args =>
+            have hagree := operation_is_redundant_sound _ _ _ op (nreg ne res)
+              (Regmap.get arg e) (args.map (fun arg => Regmap.get arg e)) value
+              (Regmap.get arg te) (args.map (fun arg => Regmap.get arg te)) hred heval hargs
+            refine ⟨State ts tf (Vptr sp Ptrofs.zero) next
+              (Regmap.set res (Regmap.get arg te) te) tm, ?_, ?_⟩
+            · apply RTL.exec_Iop
+              · simpa [hdead, hzero, hred] using htarget
+              · rfl
+            · exact hsucc _ tm an next cu (.Iop op (arg :: args) res next) ne nm
+                hlink hstacks hfun han hcode (by simp [RTL.successors_instr]) hanpc
+                (eagree_update _ _ _ _ _ _ hagree hbase) hmem
+      · obtain ⟨tv, heval', hagree⟩ := needs_of_operation_sound _ _ _ _ hmem.ma_perm
+          op _ value (nreg ne res) _ heval hargs (deadcode_live hdead')
+        apply hpreserve tv heval' hagree
+        simpa [hdead, hzero, hred] using htarget
+
+private theorem deadcode_step_load
+    (cfg : CompilerConfig) (prog tprog : program) (xi : ExternalCalls)
+    (s ts : List stackframe) (f tf : function) (sp : block) (pc next : node)
+    (e te : regset) (m tm : mem) (cu : program) (an : PMap.t NA.t)
+    (chunk : memory_chunk) (addr : addressing) (args : List reg) (dst : reg)
+    (address value : val)
+    (hprog : match_prog cfg prog tprog)
+    (hstacks : list_forall2 (match_stackframes cfg prog) s ts)
+    (hlink : linkorder cu prog)
+    (hfun : Deadcode.transf_function cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf)
+    (han : Deadcode.analyze cfg f (prog_defmap cu) (vanalyze cfg cu f) = some an)
+    (hcode : PTree.get pc f.fn_code = some (.Iload chunk addr args dst next))
+    (haddr : eval_addressing (Genv.globalenv prog) (Vptr sp Ptrofs.zero) addr
+      (args.map (fun arg => Regmap.get arg e)) = some address)
+    (hload : Mem.loadv chunk m address = some value)
+    (hsound : sound_state cfg prog (State s f (Vptr sp Ptrofs.zero) pc e m))
+    (henv : eagree e te (Deadcode.transfer cfg f (prog_defmap cu)
+      (vanalyze cfg cu f) pc (PMap.get pc an)).1)
+    (hmem : magree m tm (nlive (Genv.globalenv prog) sp
+      (Deadcode.transfer cfg f (prog_defmap cu) (vanalyze cfg cu f) pc
+        (PMap.get pc an)).2)) :
+    ∃ target,
+      RTL.step xi (Genv.globalenv tprog) (State ts tf (Vptr sp Ptrofs.zero) pc te tm)
+        E0 target ∧
+      match_states cfg prog
+        (State s f (Vptr sp Ptrofs.zero) next (Regmap.set dst value e) m) target := by
+  have htarget := transf_function_at cfg cu f tf an pc _ hfun han hcode
+  generalize hanpc : PMap.get pc an = after at henv hmem
+  obtain ⟨ne, nm⟩ := after
+  simp only [Deadcode.transf_instr, hanpc] at htarget
+  simp only [Deadcode.transfer, hcode] at henv hmem
+  have hsucc := match_succ_states cfg prog s f sp pc (Regmap.set dst value e) m
+    ts tf
+  by_cases hdead : is_dead (nreg ne dst) = true
+  · simp only [hdead, ↓reduceIte] at henv hmem
+    refine ⟨State ts tf (Vptr sp Ptrofs.zero) next te tm, ?_, ?_⟩
+    · apply RTL.exec_Inop
+      simpa [hdead] using htarget
+    · exact hsucc te tm an next cu (.Iload chunk addr args dst next) ne nm
+        hlink hstacks hfun han hcode (by simp [RTL.successors_instr]) hanpc
+        (eagree_update_dead _ _ _ _ _ (deadcode_dead hdead) henv) hmem
+  · by_cases hzero : is_int_zero (nreg ne dst) = true
+    · simp only [hdead, hzero, ↓reduceIte] at henv hmem
+      refine ⟨State ts tf (Vptr sp Ptrofs.zero) next (Regmap.set dst (Vint Int.zero) te) tm,
+        ?_, ?_⟩
+      · apply RTL.exec_Iop
+        · simpa [hdead, hzero] using htarget
+        · rfl
+      · apply hsucc _ tm an next cu (.Iload chunk addr args dst next) ne nm
+          hlink hstacks hfun han hcode (by simp [RTL.successors_instr]) hanpc
+        · apply eagree_update _ _ _ _ _ _ _ henv
+          rw [is_int_zero_sound _ hzero]
+          exact deadcode_zero_agree value
+        · exact hmem
+    · simp only [hdead, hzero, ↓reduceIte] at henv hmem
+      have hargs := add_needs_all_lessdef args e te _ henv
+      have hbase := deadcode_add_needs_all_eagree args e te _ henv
+      cases address with
+      | Vptr loc ofs =>
+          obtain ⟨taddr, htaddr, hless⟩ := eval_addressing_lessdef _ _ _ _ _ _ _ _ hargs haddr
+          cases hless
+          obtain ⟨bc, hptr, hge, hsp⟩ :=
+            aaddressing_sound cfg cu prog s f sp pc e m addr args loc ofs hsound hlink haddr
+          obtain ⟨tv, htload, hv⟩ := magree_load m tm _ chunk loc (Ptrofs.unsigned ofs) value
+            hmem hload (fun index hrange => nlive_add _ _ bc loc ofs _ nm _ index hge hsp hptr hrange)
+          refine ⟨State ts tf (Vptr sp Ptrofs.zero) next (Regmap.set dst tv te) tm, ?_, ?_⟩
+          · apply RTL.exec_Iload _ _ _ _ _ _ chunk addr args dst next (Vptr loc ofs) tv
+            · simpa [hdead, hzero] using htarget
+            · rw [eval_addressing_preserved _ _ _ _ (Genv.globalenv prog) (Genv.globalenv tprog)
+                (symbols_preserved cfg prog tprog hprog)]
+              exact htaddr
+            · exact htload
+          · apply hsucc _ tm an next cu (.Iload chunk addr args dst next) ne nm
+              hlink hstacks hfun han hcode (by simp [RTL.successors_instr]) hanpc
+            · exact eagree_update _ _ _ _ _ _ (vagree_lessdef _ _ _ hv) hbase
+            · apply magree_monotone _ _ _ _ hmem
+              intro loc index hlive
+              exact incl_nmem_add _ _ _ _ _ _ _ hlive
+      | _ => simp [Mem.loadv] at hload
+
+private theorem deadcode_step_store
+    (cfg : CompilerConfig) (prog tprog : program) (xi : ExternalCalls)
+    (s ts : List stackframe) (f tf : function) (sp : block) (pc next : node)
+    (e te : regset) (m tm result : mem) (cu : program) (an : PMap.t NA.t)
+    (chunk : memory_chunk) (addr : addressing) (args : List reg) (src : reg)
+    (address : val)
+    (hprog : match_prog cfg prog tprog)
+    (hstacks : list_forall2 (match_stackframes cfg prog) s ts)
+    (hlink : linkorder cu prog)
+    (hfun : Deadcode.transf_function cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf)
+    (han : Deadcode.analyze cfg f (prog_defmap cu) (vanalyze cfg cu f) = some an)
+    (hcode : PTree.get pc f.fn_code = some (.Istore chunk addr args src next))
+    (haddr : eval_addressing (Genv.globalenv prog) (Vptr sp Ptrofs.zero) addr
+      (args.map (fun arg => Regmap.get arg e)) = some address)
+    (hstore : Mem.storev chunk m address (Regmap.get src e) = some result)
+    (hsound : sound_state cfg prog (State s f (Vptr sp Ptrofs.zero) pc e m))
+    (henv : eagree e te (Deadcode.transfer cfg f (prog_defmap cu)
+      (vanalyze cfg cu f) pc (PMap.get pc an)).1)
+    (hmem : magree m tm (nlive (Genv.globalenv prog) sp
+      (Deadcode.transfer cfg f (prog_defmap cu) (vanalyze cfg cu f) pc
+        (PMap.get pc an)).2)) :
+    ∃ target,
+      RTL.step xi (Genv.globalenv tprog) (State ts tf (Vptr sp Ptrofs.zero) pc te tm)
+        E0 target ∧
+      match_states cfg prog (State s f (Vptr sp Ptrofs.zero) next e result) target := by
+  have htarget := transf_function_at cfg cu f tf an pc _ hfun han hcode
+  generalize hanpc : PMap.get pc an = after at henv hmem
+  obtain ⟨ne, nm⟩ := after
+  simp only [Deadcode.transf_instr, hanpc] at htarget
+  simp only [Deadcode.transfer, hcode] at henv hmem
+  have hsucc := match_succ_states cfg prog s f sp pc e result ts tf
+  cases address with
+  | Vptr loc ofs =>
+      obtain ⟨bc, hptr, hge, hsp⟩ :=
+        aaddressing_sound cfg cu prog s f sp pc e m addr args loc ofs hsound hlink haddr
+      by_cases hcontains : nmem_contains nm
+          (aaddressing cfg (PMap.get pc (vanalyze cfg cu f)) addr args) (size_chunk chunk) = true
+      · simp only [hcontains, ↓reduceIte] at henv hmem
+        have hargs := add_needs_all_lessdef args e te _ henv
+        have hneed := deadcode_add_needs_all_eagree args e te _ henv
+        have hvalue := add_need_vagree _ _ _ _ _ hneed
+        have hbase := add_need_eagree _ _ _ _ _ hneed
+        obtain ⟨taddr, htaddr, hless⟩ := eval_addressing_lessdef _ _ _ _ _ _ _ _ hargs haddr
+        cases hless
+        obtain ⟨tm', htstore, hmem'⟩ := magree_store_parallel m tm _
+          (nlive (Genv.globalenv prog) sp nm) chunk loc (Ptrofs.unsigned ofs)
+          (Regmap.get src e) result (Regmap.get src te) hmem hstore hvalue
+          (fun other index hlive hrange =>
+            nlive_remove _ _ bc loc ofs _ nm _ other index hge hsp hptr hlive hrange)
+        refine ⟨State ts tf (Vptr sp Ptrofs.zero) next te tm', ?_, ?_⟩
+        · apply RTL.exec_Istore _ _ _ _ _ _ chunk addr args src next (Vptr loc ofs) tm'
+          · simpa [hcontains] using htarget
+          · rw [eval_addressing_preserved _ _ _ _ (Genv.globalenv prog) (Genv.globalenv tprog)
+              (symbols_preserved cfg prog tprog hprog)]
+            exact htaddr
+          · exact htstore
+        · exact hsucc te tm' an next cu (.Istore chunk addr args src next) ne nm
+            hlink hstacks hfun han hcode (by simp [RTL.successors_instr]) hanpc hbase hmem'
+      · simp only [hcontains, ↓reduceIte] at henv hmem
+        refine ⟨State ts tf (Vptr sp Ptrofs.zero) next te tm, ?_, ?_⟩
+        · apply RTL.exec_Inop
+          simpa [hcontains] using htarget
+        · apply hsucc te tm an next cu (.Istore chunk addr args src next) ne nm
+            hlink hstacks hfun han hcode (by simp [RTL.successors_instr]) hanpc henv
+          exact magree_store_left m tm _ chunk loc (Ptrofs.unsigned ofs)
+            (Regmap.get src e) result hmem hstore
+            (fun index hrange => nlive_contains _ _ bc loc ofs _ nm _ index
+              hge hsp hptr (Bool.eq_false_iff.mpr hcontains) hrange)
+  | _ => simp [Mem.storev] at hstore
+
+private theorem deadcode_eventually_runtime
+    (prog : program) (xi : ExternalCalls)
+    (s : List stackframe) (f : function) (sp : block) (next : node)
+    (e : regset) (m : mem) (args : List val) (res : reg)
+    {name sg bf} (hlookup : lookup_builtin_function name sg = some bf)
+    (post : state → Prop)
+    (hpost : ∀ value, builtin_function_sem bf args = some value →
+      post (State s f (Vptr sp Ptrofs.zero) next (Regmap.set res value e) m)) :
+    eventually prog xi 2
+      (Callstate (Stackframe res f (Vptr sp Ptrofs.zero) next e :: s)
+        (.External (.EF_runtime name sg)) args m) post := by
+  apply eventually_later
+  · intro result hfinal
+    cases hfinal
+  · intro tr target hstep
+    cases hstep with
+    | exec_function_external _ _ _ value _ _ _ hcall =>
+        simp only [external_call, builtin_or_external_sem, hlookup] at hcall
+        cases hcall
+        rfl
+  · intro tr target hstep
+    cases hstep with
+    | exec_function_external _ _ _ value _ _ _ hcall =>
+        simp only [external_call, builtin_or_external_sem, hlookup] at hcall
+        cases hcall with
+        | known_builtin_sem_intro _ _ heval =>
+            apply eventually_later
+            · intro result hfinal
+              cases hfinal
+            · intro tr target hstep
+              cases hstep
+              rfl
+            · intro tr target hstep
+              cases hstep
+              exact CompCert4Lean.Common.Smallstep.eventually.eventually_now _ _ (hpost value heval)
+
+private theorem deadcode_step_call
+    (cfg : CompilerConfig) (prog tprog : program) (xi : ExternalCalls)
+    (s ts : List stackframe) (f tf : function) (sp : block) (pc next : node)
+    (e te : regset) (m tm : mem) (cu : program) (an : PMap.t NA.t)
+    (sig : signature) (ros : Sum reg ident) (args : List reg) (res : reg) (fd : fundef)
+    (hprog : match_prog cfg prog tprog)
+    (hstacks : list_forall2 (match_stackframes cfg prog) s ts)
+    (hlink : linkorder cu prog)
+    (hfun : Deadcode.transf_function cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf)
+    (han : Deadcode.analyze cfg f (prog_defmap cu) (vanalyze cfg cu f) = some an)
+    (hcode : PTree.get pc f.fn_code = some (.Icall sig ros args res next))
+    (hfind : RTL.find_function (Genv.globalenv prog) ros e = some fd)
+    (hsig : RTL.funsig fd = sig)
+    (henv : eagree e te (Deadcode.transfer cfg f (prog_defmap cu)
+      (vanalyze cfg cu f) pc (PMap.get pc an)).1)
+    (hmem : magree m tm (nlive (Genv.globalenv prog) sp
+      (Deadcode.transfer cfg f (prog_defmap cu) (vanalyze cfg cu f) pc
+        (PMap.get pc an)).2)) :
+    (∃ target,
+      RTL.step xi (Genv.globalenv tprog) (State ts tf (Vptr sp Ptrofs.zero) pc te tm)
+        E0 target ∧
+      match_states cfg prog
+        (Callstate (Stackframe res f (Vptr sp Ptrofs.zero) next e :: s) fd
+          (args.map (fun arg => Regmap.get arg e)) m) target) ∨
+    (∃ target count,
+      plus (RTL.step xi) (Genv.globalenv tprog)
+        (State ts tf (Vptr sp Ptrofs.zero) pc te tm) E0 target ∧
+      eventually prog xi count
+        (Callstate (Stackframe res f (Vptr sp Ptrofs.zero) next e :: s) fd
+          (args.map (fun arg => Regmap.get arg e)) m)
+        (fun source => match_states cfg prog source target)) := by
+  have htarget := transf_function_at cfg cu f tf an pc _ hfun han hcode
+  generalize hanpc : PMap.get pc an = after at henv hmem
+  obtain ⟨ne, nm⟩ := after
+  simp only [Deadcode.transf_instr, hanpc] at htarget
+  simp only [Deadcode.transfer, hcode] at henv hmem
+  cases hknown : is_known_runtime_function (prog_defmap cu) ros with
+  | none =>
+      simp only [hknown] at htarget henv hmem
+      have hargs := add_needs_all_lessdef args e te _ henv
+      have hros := deadcode_add_needs_all_eagree args e te _ henv
+      obtain ⟨cu', tfd, htfind, htfun, htlink⟩ :=
+        find_function_translated cfg prog tprog hprog ros e fd te _ hfind hros
+      have hbase : eagree e te (kill res ne) := by
+        cases ros with
+        | inl arg => exact add_need_all_eagree _ _ _ _ hros
+        | inr symbol => exact hros
+      refine Or.inl ⟨Callstate (Stackframe res tf (Vptr sp Ptrofs.zero) next te :: ts)
+        tfd (args.map (fun arg => Regmap.get arg te)) tm, ?_, ?_⟩
+      · exact RTL.exec_Icall _ _ _ _ _ _ _ _ _ _ _ _ htarget htfind
+          ((sig_function_translated cfg _ _ _ _ htfun).trans hsig)
+      · refine match_call_states _ _ _ _ _ _ _ _ cu' ?_ htlink htfun hargs ?_
+        · constructor
+          · apply match_stackframes_intro _ _ _ _ _ _ _ _ _ hlink hfun han
+            intro value tvalue hvalue
+            have hge := analyze_successors cfg cu f an pc _ next han hcode
+              (by simp [RTL.successors_instr])
+            rw [hanpc] at hge
+            exact deadcode_eagree_ge _ _ _ _
+              (eagree_update _ _ _ _ _ _ (vagree_lessdef _ _ _ hvalue) hbase) hge.1
+          · exact hstacks
+        · exact magree_extends _ _ _ (nlive_all _ sp) hmem
+  | some bf =>
+      obtain ⟨name, sg, rfl, hlookup⟩ :=
+        is_known_runtime_function_sound cu prog ros bf e fd hknown hlink hfind
+      simp only [hknown] at htarget henv hmem
+      by_cases hdead : is_dead (nreg ne res) = true
+      · simp only [hdead, ↓reduceIte] at htarget henv hmem
+        refine Or.inr ⟨State ts tf (Vptr sp Ptrofs.zero) next te tm, 2, ?_, ?_⟩
+        · exact plus_one _ _ _ _ _ _ _ (RTL.exec_Inop _ _ _ _ _ _ _ htarget)
+        · apply deadcode_eventually_runtime prog xi s f sp next e m _ res hlookup
+          intro value heval
+          exact match_succ_states cfg prog s f sp pc _ m ts tf te tm an next cu
+            (.Icall sig ros args res next) ne nm hlink hstacks hfun han hcode
+            (by simp [RTL.successors_instr]) hanpc
+            (eagree_update_dead _ _ _ _ _ (deadcode_dead hdead) henv) hmem
+      · simp only [hdead, ↓reduceIte] at henv hmem
+        have htcode : PTree.get pc tf.fn_code = some (.Icall sig ros args res next) := by
+          simpa [hdead] using htarget
+        have hargs := add_needs_all_lessdef args e te _ henv
+        have hros := deadcode_add_needs_all_eagree args e te _ henv
+        obtain ⟨cu', tfd, htfind, htfun, htlink⟩ :=
+          find_function_translated cfg prog tprog hprog ros e _ te _ hfind hros
+        have htfd : tfd = .External (.EF_runtime name sg) := by
+          exact (Common.Errors.res.OK.inj htfun).symm
+        subst tfd
+        have htcall := RTL.exec_Icall (xi := xi) ts tf (Vptr sp Ptrofs.zero) pc te tm
+          sig ros args res next (.External (.EF_runtime name sg)) htcode htfind hsig
+        cases heval : builtin_function_sem bf (args.map (fun arg => Regmap.get arg e)) with
+        | none =>
+            refine Or.inr ⟨_, 2, plus_one _ _ _ _ _ _ _ htcall, ?_⟩
+            apply deadcode_eventually_runtime prog xi s f sp next e m _ res hlookup
+            intro value hvalue
+            rw [heval] at hvalue
+            contradiction
+        | some value =>
+            obtain ⟨tv, hteval, hv⟩ := builtin_function_sem_lessdef bf _ value _ heval hargs
+            have hbase : eagree e te (kill res ne) := by
+              cases ros with
+              | inl arg => exact add_need_all_eagree _ _ _ _ hros
+              | inr symbol => exact hros
+            refine Or.inr ⟨State ts tf (Vptr sp Ptrofs.zero) next (Regmap.set res tv te) tm,
+              2, ?_, ?_⟩
+            · apply plus_three _ _ _ _ _ _ _ _ _ _ _ _ htcall
+                (RTL.exec_function_external _ _ _ tv E0 _ _ ?_) (RTL.exec_return ..) rfl
+              simp only [external_call, builtin_or_external_sem, hlookup]
+              exact known_builtin_sem_intro _ _ _ hteval
+            · apply deadcode_eventually_runtime prog xi s f sp next e m _ res hlookup
+              intro result hresult
+              rw [heval] at hresult
+              cases hresult
+              exact match_succ_states cfg prog s f sp pc _ m ts tf _ tm an next cu
+                (.Icall sig ros args res next) ne nm hlink hstacks hfun han hcode
+                (by simp [RTL.successors_instr]) hanpc
+                (eagree_update _ _ _ _ _ _ (vagree_lessdef _ _ _ hv) hbase) hmem
+
+set_option maxHeartbeats 2000000 in
+private theorem deadcode_step_builtin
+    (cfg : CompilerConfig) (prog tprog : program) (xi : ExternalCalls)
+    (s ts : List stackframe) (f tf : function) (sp : block) (pc next : node)
+    (e te : regset) (m tm result : mem) (cu : program) (an : PMap.t NA.t)
+    (ef : external_function) (args : List (builtin_arg reg)) (res : builtin_res reg)
+    (vargs : List val) (tr : trace) (value : val)
+    (hprog : match_prog cfg prog tprog)
+    (hstacks : list_forall2 (match_stackframes cfg prog) s ts)
+    (hlink : linkorder cu prog)
+    (hfun : Deadcode.transf_function cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf)
+    (han : Deadcode.analyze cfg f (prog_defmap cu) (vanalyze cfg cu f) = some an)
+    (hcode : PTree.get pc f.fn_code = some (.Ibuiltin ef args res next))
+    (hargs : eval_builtin_args (Genv.to_senv (Genv.globalenv prog))
+      (fun arg => Regmap.get arg e) (Vptr sp Ptrofs.zero) m args vargs)
+    (hcall : external_call xi ef (Genv.to_senv (Genv.globalenv prog)) vargs m tr value result)
+    (hsound : sound_state cfg prog (State s f (Vptr sp Ptrofs.zero) pc e m))
+    (henv : eagree e te (Deadcode.transfer cfg f (prog_defmap cu)
+      (vanalyze cfg cu f) pc (PMap.get pc an)).1)
+    (hmem : magree m tm (nlive (Genv.globalenv prog) sp
+      (Deadcode.transfer cfg f (prog_defmap cu) (vanalyze cfg cu f) pc
+        (PMap.get pc an)).2)) :
+    ∃ target,
+      RTL.step xi (Genv.globalenv tprog) (State ts tf (Vptr sp Ptrofs.zero) pc te tm)
+        tr target ∧
+      match_states cfg prog
+        (State s f (Vptr sp Ptrofs.zero) next (regmap_setres res value e) result) target := by
+  have htarget := transf_function_at cfg cu f tf an pc _ hfun han hcode
+  generalize hanpc : PMap.get pc an = after at henv hmem
+  obtain ⟨ne, nm⟩ := after
+  simp only [Deadcode.transfer, hcode] at henv hmem
+  have hbase := sound_state_inv cfg prog _ cu hsound hlink
+  cases hbase with
+  | sound_regular_state _ _ _ _ _ _ ae am bc hstk happ hem hrom hmm hge hsp =>
+    have hfinish : ∀ targetEnv targetMem,
+        RTL.step xi (Genv.globalenv tprog) (State ts tf (Vptr sp Ptrofs.zero) pc te tm)
+          tr (State ts tf (Vptr sp Ptrofs.zero) next targetEnv targetMem) →
+        eagree (regmap_setres res value e) targetEnv ne →
+        magree result targetMem (nlive (Genv.globalenv prog) sp nm) →
+        ∃ target,
+          RTL.step xi (Genv.globalenv tprog) (State ts tf (Vptr sp Ptrofs.zero) pc te tm)
+            tr target ∧
+          match_states cfg prog
+            (State s f (Vptr sp Ptrofs.zero) next (regmap_setres res value e) result) target := by
+      intro targetEnv targetMem hstep he hm
+      refine ⟨_, hstep, ?_⟩
+      exact match_succ_states cfg prog s f sp pc _ result ts tf _ targetMem an next cu
+        (.Ibuiltin ef args res next) ne nm hlink hstacks hfun han hcode
+        (by simp [RTL.successors_instr]) hanpc he hm
+    have hkeep : ∀ tvargs tv tm',
+        PTree.get pc tf.fn_code = some (.Ibuiltin ef args res next) →
+        eval_builtin_args (Genv.to_senv (Genv.globalenv prog))
+          (fun arg => Regmap.get arg te) (Vptr sp Ptrofs.zero) tm args tvargs →
+        external_call xi ef (Genv.to_senv (Genv.globalenv prog)) tvargs tm tr tv tm' →
+        eagree e te (kill_builtin_res res ne) → Val.lessdef value tv →
+        magree result tm' (nlive (Genv.globalenv prog) sp nm) →
+        ∃ target,
+          RTL.step xi (Genv.globalenv tprog) (State ts tf (Vptr sp Ptrofs.zero) pc te tm)
+            tr target ∧
+          match_states cfg prog
+            (State s f (Vptr sp Ptrofs.zero) next (regmap_setres res value e) result) target := by
+      intro tvargs tv tm' htcode htargs htcall he hv hm
+      apply hfinish (regmap_setres res tv te) tm'
+      · apply RTL.exec_Ibuiltin _ _ _ _ _ _ ef args res next tvargs tr tv tm' htcode
+        · exact eval_builtin_args_preserved _ _ _ _ _ (Genv.globalenv prog) (Genv.globalenv tprog)
+            _ _ _ (symbols_preserved cfg prog tprog hprog) args tvargs htargs
+        · exact deadcode_symbols xi ef _ _ _ _ _ _ _ (senv_preserved cfg prog tprog hprog) htcall
+      · exact eagree_set_res _ _ _ _ _ _ hv he
+      · exact hm
+    have hother
+        (htcode : PTree.get pc tf.fn_code = some (.Ibuiltin ef args res next))
+        (he : eagree e te (transfer_builtin_args (kill_builtin_res res ne, nmem_all) args).1)
+        (hm : magree m tm (nlive (Genv.globalenv prog) sp
+          (transfer_builtin_args (kill_builtin_res res ne, nmem_all) args).2)) :
+        ∃ target,
+          RTL.step xi (Genv.globalenv tprog) (State ts tf (Vptr sp Ptrofs.zero) pc te tm)
+            tr target ∧
+          match_states cfg prog
+            (State s f (Vptr sp Ptrofs.zero) next (regmap_setres res value e) result) target := by
+      obtain ⟨tvargs, tv, tm', htargs, htcall, he', hm'⟩ :=
+        transf_external_call cfg prog tprog hprog xi e sp m args vargs ef tr value result
+          res ne nm _ _ bc te tm hargs hcall rfl he hm hge hsp
+      apply hfinish _ _ (RTL.exec_Ibuiltin _ _ _ _ _ _ _ _ _ _ _ _ _ _ htcode htargs htcall) he' hm'
+    cases ef with
+    | EF_external name sig => exact hother htarget henv hmem
+    | EF_runtime name sig => exact hother htarget henv hmem
+    | EF_malloc => exact hother htarget henv hmem
+    | EF_free => exact hother htarget henv hmem
+    | EF_inline_asm text sig clobbers => exact hother htarget henv hmem
+    | EF_vload chunk =>
+        cases hcall with
+        | volatile_load_sem_intro loc ofs _ _ _ hload =>
+          cases hargs with
+          | cons arg _ harg htail =>
+            cases htail
+            obtain ⟨tvptr, htarg, hvptr, he', hm'⟩ := transfer_builtin_arg_sound
+              prog bc e te sp m tm arg (Vptr loc ofs) harg All
+              (kill_builtin_res res ne)
+              (nmem_add nm (aaddr_arg cfg (PMap.get pc (vanalyze cfg cu f)) arg) (size_chunk chunk))
+              _ _ rfl henv hmem hge hsp
+            cases hvptr
+            have hptr := aaddr_arg_sound_1 cfg bc e ae m (romem_for cfg cu) am
+              (Genv.globalenv prog) sp arg loc ofs hem hrom hmm hge hsp harg
+            have hbytes : ∀ index,
+                zLe (Ptrofs.unsigned ofs) index ∧
+                  zLt index (zAdd (Ptrofs.unsigned ofs) (size_chunk chunk)) →
+                nlive (Genv.globalenv prog) sp
+                  (nmem_add nm (aaddr_arg cfg (PMap.get pc (vanalyze cfg cu f)) arg)
+                    (size_chunk chunk)) loc index := by
+              intro index hrange
+              apply nlive_add _ _ bc loc ofs _ nm _ index hge hsp _ hrange
+              simpa only [vanalyze, happ] using hptr
+            have hloaded : ∃ tv,
+                volatile_load (Genv.to_senv (Genv.globalenv prog)) chunk tm loc ofs tr tv ∧
+                  Val.lessdef value tv := by
+              cases hload with
+              | volatile_load_vol symbol event loaded hvol hsymbol hevent =>
+                  exact ⟨_, volatile_load_vol _ _ _ _ _ _ _ hvol hsymbol hevent, Val.lessdef_refl _⟩
+              | volatile_load_nonvol loaded hvol hload =>
+                  obtain ⟨tv, htload, hv⟩ := magree_load _ _ _ _ _ _ _ hm' hload hbytes
+                  exact ⟨tv, volatile_load_nonvol _ _ _ _ _ hvol htload, hv⟩
+            obtain ⟨tv, htload, hv⟩ := hloaded
+            apply hkeep [Vptr loc ofs] tv tm htarget
+              (list_forall2.cons _ _ htarg (list_forall2_nil _))
+              (volatile_load_sem_intro _ _ _ _ _ htload) he' hv
+            apply magree_monotone _ _ _ _ hm'
+            exact fun loc index hlive => incl_nmem_add _ _ _ _ _ _ _ hlive
+    | EF_vstore chunk =>
+        cases hargs with
+        | nil => cases hcall
+        | cons arg1 value1 harg1 htail =>
+          cases htail with
+          | nil => cases hcall
+          | cons arg2 value2 harg2 htail =>
+            have hvalues := hcall
+            cases hvalues
+            cases htail
+            obtain ⟨tvptr, htarg1, hvptr, he1, hm1⟩ := transfer_builtin_arg_sound
+              prog bc e te sp m tm arg1 _ harg1 All
+              (transfer_builtin_arg (store_argument chunk) (kill_builtin_res res ne, nm) arg2).1
+              (transfer_builtin_arg (store_argument chunk) (kill_builtin_res res ne, nm) arg2).2
+              _ _ rfl henv hmem hge hsp
+            obtain ⟨tvvalue, htarg2, hvvalue, he2, hm2⟩ := transfer_builtin_arg_sound
+              prog bc e te sp m tm arg2 value2 harg2 (store_argument chunk)
+              (kill_builtin_res res ne) nm _ _ rfl he1 hm1 hge hsp
+            obtain ⟨_, tm', htstore, hm'⟩ := transf_volatile_store prog _ _ _ _ _ _ chunk sp nm
+              tr _ result hcall hvptr hvvalue hm2
+            exact hkeep [tvptr, tvvalue] Vundef tm' htarget
+              (list_forall2.cons _ _ htarg1
+                (list_forall2.cons _ _ htarg2 (list_forall2_nil _)))
+              htstore he2 (Val.lessdef_refl _) hm'
+    | EF_memcpy size align =>
+        cases hcall with
+        | extcall_memcpy_sem_intro dstBlock dstOfs srcBlock srcOfs _ bytes _
+            halign hsize hsizealign hsrcalign hdstalign hdisjoint hload hstore =>
+          cases hargs with
+          | cons dst _ hdst htail =>
+            cases htail with
+            | cons src _ hsrc htail =>
+              cases htail
+              let dstAddr := aaddr_arg cfg (PMap.get pc (vanalyze cfg cu f)) dst
+              let srcAddr := aaddr_arg cfg (PMap.get pc (vanalyze cfg cu f)) src
+              have hdstptr : pmatch bc dstBlock dstOfs dstAddr := by
+                simpa only [dstAddr, vanalyze, happ] using
+                  aaddr_arg_sound_1 cfg bc e ae m (romem_for cfg cu) am
+                    (Genv.globalenv prog) sp dst dstBlock dstOfs hem hrom hmm hge hsp hdst
+              have hsrcptr : pmatch bc srcBlock srcOfs srcAddr := by
+                simpa only [srcAddr, vanalyze, happ] using
+                  aaddr_arg_sound_1 cfg bc e ae m (romem_for cfg cu) am
+                    (Genv.globalenv prog) sp src srcBlock srcOfs hem hrom hmm hge hsp hsrc
+              have hlength : zOfNat bytes.length = size := by
+                rw [Mem.loadbytes_length _ _ _ _ _ hload]
+                exact ZArith.Znat.Z2Nat.id size hsize
+              by_cases hcontains : nmem_contains nm dstAddr size = true
+              · dsimp only [dstAddr] at hcontains
+                have hbefore : Deadcode.transfer_builtin cfg (PMap.get pc (vanalyze cfg cu f))
+                    (.EF_memcpy size align) [dst, src] res ne nm =
+                    transfer_builtin_args
+                      (kill_builtin_res res ne, nmem_add (nmem_remove nm dstAddr size) srcAddr size)
+                      [dst, src] := by
+                  change (if nmem_contains nm dstAddr size then
+                    transfer_builtin_args
+                      (kill_builtin_res res ne, nmem_add (nmem_remove nm dstAddr size) srcAddr size)
+                      [dst, src] else (ne, nm)) = _
+                  exact if_pos hcontains
+                rw [hbefore] at henv hmem
+                obtain ⟨tvargs, htargs, hvargs, he', hm'⟩ := transfer_builtin_args_sound
+                  prog e sp m te tm bc [dst, src] [Vptr dstBlock dstOfs, Vptr srcBlock srcOfs]
+                  (list_forall2.cons _ _ hdst (list_forall2.cons _ _ hsrc (list_forall2_nil _)))
+                  (kill_builtin_res res ne)
+                  (nmem_add (nmem_remove nm dstAddr size) srcAddr size) _ _ rfl henv hmem hge hsp
+                obtain ⟨tv1, tv2, rfl, hv1, hv2⟩ := deadcode_lessdef_two hvargs
+                cases hv1
+                cases hv2
+                obtain ⟨tbytes, htload, hbytes⟩ := magree_loadbytes m tm _ srcBlock
+                  (Ptrofs.unsigned srcOfs) size bytes hm' hload
+                  (fun index hrange => nlive_add _ _ bc srcBlock srcOfs srcAddr _ size index
+                    hge hsp hsrcptr hrange)
+                have hremoved : magree m tm (nlive (Genv.globalenv prog) sp (nmem_remove nm dstAddr size)) :=
+                  magree_monotone _ _ _ _ hm'
+                    (fun loc index hlive => incl_nmem_add _ _ _ _ _ _ _ hlive)
+                obtain ⟨tm', htstore, hmresult⟩ := magree_storebytes_parallel m tm _
+                  (nlive (Genv.globalenv prog) sp nm) dstBlock (Ptrofs.unsigned dstOfs)
+                  bytes result tbytes hremoved hstore (by
+                    intro loc index hlive hrange
+                    rw [hlength] at hrange
+                    exact nlive_remove _ _ bc dstBlock dstOfs dstAddr nm size loc index
+                      hge hsp hdstptr hlive hrange) hbytes
+                apply hkeep [Vptr dstBlock dstOfs, Vptr srcBlock srcOfs] Vundef tm' _ htargs
+                  (extcall_memcpy_sem_intro _ _ _ _ _ _ _ halign hsize hsizealign
+                    hsrcalign hdstalign hdisjoint htload htstore)
+                  he' (Val.lessdef_refl _) hmresult
+                simpa [Deadcode.transf_instr, hanpc, hcontains] using htarget
+              · dsimp only [dstAddr] at hcontains
+                have hbefore : Deadcode.transfer_builtin cfg (PMap.get pc (vanalyze cfg cu f))
+                    (.EF_memcpy size align) [dst, src] res ne nm = (ne, nm) := by
+                  change (if nmem_contains nm dstAddr size then
+                    transfer_builtin_args
+                      (kill_builtin_res res ne, nmem_add (nmem_remove nm dstAddr size) srcAddr size)
+                      [dst, src] else (ne, nm)) = _
+                  exact if_neg hcontains
+                rw [hbefore] at henv hmem
+                apply hfinish te tm
+                · apply RTL.exec_Inop
+                  simpa [Deadcode.transf_instr, hanpc, hcontains] using htarget
+                · cases res with
+                  | BR targetReg => exact eagree_set_undef _ _ _ _ henv
+                  | _ => exact henv
+                · apply magree_storebytes_left m tm _ dstBlock (Ptrofs.unsigned dstOfs) bytes result hmem hstore
+                  intro index hrange
+                  rw [hlength] at hrange
+                  exact nlive_contains _ _ bc dstBlock dstOfs dstAddr nm size index
+                    hge hsp hdstptr (Bool.eq_false_iff.mpr hcontains) hrange
+    | EF_annot kind text types =>
+        obtain ⟨tvargs, htargs, hvargs, he', hm'⟩ := transfer_builtin_args_sound
+          prog e sp m te tm bc args vargs hargs (kill_builtin_res res ne) nm
+          _ _ rfl henv hmem hge hsp
+        cases hcall with
+        | extcall_annot_sem_intro events hevents =>
+            exact hkeep tvargs Vundef tm htarget htargs
+              (extcall_annot_sem_intro _ _ _ (eventval_list_match_lessdef _ _ _ _ hevents _ hvargs))
+              he' (Val.lessdef_refl _) hm'
+    | EF_annot_val kind text typ =>
+        obtain ⟨tvargs, htargs, hvargs, he', hm'⟩ := transfer_builtin_args_sound
+          prog e sp m te tm bc args vargs hargs (kill_builtin_res res ne) nm
+          _ _ rfl henv hmem hge hsp
+        cases hcall with
+        | extcall_annot_val_sem_intro _ _ event hevent =>
+            obtain ⟨tv, rfl, hv⟩ := deadcode_lessdef_one hvargs
+            exact hkeep [tv] tv tm htarget htargs
+              (extcall_annot_val_sem_intro _ _ _ (eventval_match_lessdef _ _ _ _ _ hevent hv)) he' hv hm'
+    | EF_debug kind symbol types =>
+        cases hcall
+        obtain ⟨tvargs, htargs⟩ := can_eval_builtin_args cfg prog tprog hprog sp e m te tm _ hmem args vargs hargs
+        apply hfinish (regmap_setres res Vundef te) tm
+          (RTL.exec_Ibuiltin _ _ _ _ _ _ _ _ _ _ _ _ _ _ htarget htargs (extcall_debug_sem_intro ..))
+          (eagree_set_res _ _ _ _ _ _ (Val.lessdef_refl _) henv) hmem
+    | EF_builtin name sig =>
+        have htcode : PTree.get pc tf.fn_code = some
+            (match lookup_builtin_function name sig, builtin_res_dead res ne with
+            | some _, true => .Inop next
+            | _, _ => .Ibuiltin (.EF_builtin name sig) args res next) := by
+          have htarget' := htarget
+          change PTree.get pc tf.fn_code = some
+            (match lookup_builtin_function name sig, builtin_res_dead res (PMap.get pc an).1 with
+            | some _, true => .Inop next
+            | _, _ => .Ibuiltin (.EF_builtin name sig) args res next) at htarget'
+          simpa only [hanpc] using htarget'
+        change eagree e te
+          ((match lookup_builtin_function name sig with
+            | some _ => if builtin_res_dead res ne then (ne, nm)
+              else transfer_builtin_args (kill_builtin_res res ne, nm) args
+            | none => transfer_builtin_args (kill_builtin_res res ne, nmem_all) args) : NA.t).1 at henv
+        change magree m tm (nlive (Genv.globalenv prog) sp
+          ((match lookup_builtin_function name sig with
+            | some _ => if builtin_res_dead res ne then (ne, nm)
+              else transfer_builtin_args (kill_builtin_res res ne, nm) args
+            | none => transfer_builtin_args (kill_builtin_res res ne, nmem_all) args) : NA.t).2) at hmem
+        cases hlookup : lookup_builtin_function name sig with
+        | none =>
+            apply hother
+            · simpa only [hlookup] using htcode
+            · simpa only [hlookup] using henv
+            · simpa only [hlookup] using hmem
+        | some bf =>
+            simp only [external_call, builtin_or_external_sem, hlookup] at hcall
+            by_cases hdead : builtin_res_dead res ne = true
+            · simp only [hlookup, hdead, ↓reduceIte] at henv hmem
+              cases hcall with
+              | known_builtin_sem_intro _ _ heval =>
+                  apply hfinish te tm
+                  · apply RTL.exec_Inop
+                    simpa only [hlookup, hdead] using htcode
+                  · cases res with
+                    | BR targetReg => exact eagree_update_dead _ _ _ _ _ (deadcode_dead hdead) henv
+                    | _ => exact henv
+                  · exact hmem
+            · simp only [hlookup, hdead, ↓reduceIte] at henv hmem
+              obtain ⟨tvargs, htargs, hvargs, he', hm'⟩ := transfer_builtin_args_sound
+                prog e sp m te tm bc args vargs hargs (kill_builtin_res res ne) nm
+                _ _ rfl henv hmem hge hsp
+              obtain ⟨tv, htcall, hv⟩ := known_builtin_sem_lessdef bf _ _ _ _ _ _ _ _ _ hcall hvargs
+              cases hcall with
+              | known_builtin_sem_intro _ _ heval =>
+                  apply hkeep tvargs tv tm _ htargs _ he' hv hm'
+                  · simpa only [hlookup, Bool.eq_false_iff.mpr hdead] using htcode
+                  · simpa only [external_call, builtin_or_external_sem, hlookup] using htcall
+
+set_option maxHeartbeats 2000000 in
+theorem step_simulation : ∀ cfg, step_simulationStatement cfg := by
+  intro cfg prog tprog hprog xi source tr result hstep target hmatch hsound
+  cases hmatch with
+  | match_regular_states s f sp pc e m ts tf te tm cu an
+      hstacks hlink hfun han henv hmem =>
+    cases hstep with
+    | exec_Inop _ _ _ _ _ _ next hcode =>
+        have htarget := transf_function_at cfg cu f tf an pc _ hfun han hcode
+        simp only [Deadcode.transfer, hcode] at henv hmem
+        refine Or.inl ⟨_, RTL.exec_Inop _ _ _ _ _ _ _ htarget, ?_⟩
+        exact match_succ_states cfg prog s f sp pc e m ts tf te tm an next cu (.Inop next)
+          _ _ hlink hstacks hfun han hcode (by simp [RTL.successors_instr]) rfl henv hmem
+    | exec_Iop _ _ _ _ _ _ op args res next value hcode heval =>
+        exact Or.inl (deadcode_step_op cfg prog tprog xi s ts f tf sp pc next e te m tm cu an
+          op args res value hprog hstacks hlink hfun han hcode heval henv hmem)
+    | exec_Iload _ _ _ _ _ _ chunk addr args dst next address value hcode haddr hload =>
+        exact Or.inl (deadcode_step_load cfg prog tprog xi s ts f tf sp pc next e te m tm cu an
+          chunk addr args dst address value hprog hstacks hlink hfun han hcode haddr hload hsound henv hmem)
+    | exec_Istore _ _ _ _ _ _ chunk addr args src next address result hcode haddr hstore =>
+        exact Or.inl (deadcode_step_store cfg prog tprog xi s ts f tf sp pc next e te m tm result cu an
+          chunk addr args src address hprog hstacks hlink hfun han hcode haddr hstore hsound henv hmem)
+    | exec_Icall _ _ _ _ _ _ sig ros args res next fd hcode hfind hsig =>
+        exact deadcode_step_call cfg prog tprog xi s ts f tf sp pc next e te m tm cu an
+          sig ros args res fd hprog hstacks hlink hfun han hcode hfind hsig henv hmem
+    | exec_Itailcall _ _ _ _ _ _ sig ros args fd result hcode hfind hsig hfree =>
+        have htarget := transf_function_at cfg cu f tf an pc _ hfun han hcode
+        simp only [Deadcode.transfer, hcode] at henv hmem
+        have hargs := add_needs_all_lessdef args e te _ henv
+        have hros := deadcode_add_needs_all_eagree args e te _ henv
+        obtain ⟨cu', tfd, htfind, htfun, htlink⟩ :=
+          find_function_translated cfg prog tprog hprog ros e fd te _ hfind hros
+        obtain ⟨tm', htfree, hm'⟩ := magree_free m tm _ (nlive (Genv.globalenv prog) sp nmem_all)
+          sp .Z0 f.fn_stacksize result hmem hfree
+          (fun loc index _ hrange => nlive_dead_stack _ _ _ _ _ hrange)
+        refine Or.inl ⟨Callstate ts tfd (args.map (fun arg => Regmap.get arg te)) tm', ?_, ?_⟩
+        · apply RTL.exec_Itailcall _ _ _ _ _ _ _ _ _ _ _ htarget htfind
+            ((sig_function_translated cfg _ _ _ _ htfun).trans hsig)
+          simpa only [stacksize_translated cfg _ _ _ _ hfun] using htfree
+        · exact match_call_states _ _ _ _ _ _ _ _ cu' hstacks htlink htfun hargs
+            (magree_extends _ _ _ (nlive_all _ sp) hm')
+    | exec_Ibuiltin _ _ _ _ _ _ ef args res next vargs tr value result hcode hargs hcall =>
+        exact Or.inl (deadcode_step_builtin cfg prog tprog xi s ts f tf sp pc next e te m tm result cu an
+          ef args res vargs tr value hprog hstacks hlink hfun han hcode hargs hcall hsound henv hmem)
+    | exec_Icond _ _ _ _ _ _ cond args ifso ifnot choice next hcode heval hnext =>
+        have htarget := transf_function_at cfg cu f tf an pc _ hfun han hcode
+        simp only [Deadcode.transfer, hcode] at henv hmem
+        have hsucc : next ∈ RTL.successors_instr (.Icond cond args ifso ifnot) := by
+          cases choice <;> simp_all [RTL.successors_instr]
+        have hfinish := match_succ_states cfg prog s f sp pc e m ts tf te tm an next cu
+          (.Icond cond args ifso ifnot) (PMap.get pc an).1 (PMap.get pc an).2
+          hlink hstacks hfun han hcode hsucc rfl
+        cases hpeq : peq ifso ifnot with
+        | left heq =>
+            simp only [hpeq] at henv hmem
+            have hnext' : next = ifso := by simp [hnext, heq]
+            refine Or.inl ⟨State ts tf (Vptr sp Ptrofs.zero) next te tm, ?_, hfinish henv hmem⟩
+            rw [hnext']
+            apply RTL.exec_Inop
+            simpa only [Deadcode.transf_instr, hpeq] using htarget
+        | right hne =>
+            simp only [hpeq] at henv hmem
+            refine Or.inl ⟨State ts tf (Vptr sp Ptrofs.zero) next te tm, ?_, ?_⟩
+            · apply RTL.exec_Icond _ _ _ _ _ _ cond args ifso ifnot choice next
+              · simpa only [Deadcode.transf_instr, hpeq] using htarget
+              · exact needs_of_condition_sound m tm hmem.ma_perm cond _ choice _ heval
+                  (add_needs_vagree args (needs_of_condition cond) e te _ henv)
+              · exact hnext
+            · exact hfinish (deadcode_add_needs_eagree args (needs_of_condition cond) e te _ henv) hmem
+    | exec_Ijumptable _ _ _ _ _ _ arg table index next hcode harg hnth =>
+        have htarget := transf_function_at cfg cu f tf an pc _ hfun han hcode
+        simp only [Deadcode.transfer, hcode] at henv hmem
+        have hvalue := add_need_all_lessdef e te arg _ henv
+        rw [harg] at hvalue
+        have htarg : Regmap.get arg te = Vint index := by
+          generalize htv : Regmap.get arg te = tv at hvalue
+          cases hvalue
+          rfl
+        refine Or.inl ⟨_, RTL.exec_Ijumptable _ _ _ _ _ _ _ _ _ _ htarget htarg hnth, ?_⟩
+        exact match_succ_states cfg prog s f sp pc e m ts tf te tm an next cu
+          (.Ijumptable arg table) _ _ hlink hstacks hfun han hcode
+          (list_nth_z_in _ _ _ _ hnth) rfl (add_need_all_eagree _ _ _ _ henv) hmem
+    | exec_Ireturn _ _ _ _ _ _ opt result hcode hfree =>
+        have htarget := transf_function_at cfg cu f tf an pc _ hfun han hcode
+        simp only [Deadcode.transfer, hcode] at henv hmem
+        obtain ⟨tm', htfree, hm'⟩ := magree_free m tm _ (nlive (Genv.globalenv prog) sp nmem_all)
+          sp .Z0 f.fn_stacksize result hmem hfree
+          (fun loc index _ hrange => nlive_dead_stack _ _ _ _ _ hrange)
+        refine Or.inl ⟨Returnstate ts (regmap_optget opt Vundef te) tm', ?_, ?_⟩
+        · apply RTL.exec_Ireturn _ _ _ _ _ _ opt tm' htarget
+          simpa only [stacksize_translated cfg _ _ _ _ hfun] using htfree
+        · refine match_return_states _ _ _ _ _ _ hstacks ?_
+            (magree_extends _ _ _ (nlive_all _ sp) hm')
+          cases opt with
+          | none => exact Val.lessdef_refl _
+          | some arg => exact add_need_all_lessdef _ _ _ _ henv
+  | match_call_states s fd args m ts tfd targs tm cu hstacks hlink hfun hargs hmem =>
+    cases hstep with
+    | exec_function_internal _ f _ _ result sp htypes halloc =>
+        cases han : Deadcode.analyze cfg f (prog_defmap cu) (vanalyze cfg cu f) with
+        | none =>
+            simp [Deadcode.transf_fundef, transf_partial_fundef, Deadcode.transf_function,
+              vanalyze] at han hfun
+            rw [han] at hfun
+            contradiction
+        | some an =>
+            have htf := hfun
+            simp only [Deadcode.transf_fundef, transf_partial_fundef, Deadcode.transf_function] at htf
+            have han' := han
+            unfold vanalyze at han'
+            rw [han'] at htf
+            cases htf
+            obtain ⟨tm', htalloc, hm'⟩ := deadcode_alloc_extends m tm .Z0 f.fn_stacksize result sp hmem halloc
+            refine Or.inl ⟨_, RTL.exec_function_internal _ _ _ _ _ _
+              (Val.has_argtype_list_lessdef _ _ _ htypes hargs) htalloc, ?_⟩
+            apply match_regular_states _ _ _ _ _ _ _ _ _ _ cu an hstacks hlink
+            · simp only [Deadcode.transf_function, han']
+            · exact han
+            · exact eagree_init_regs _ _ _ _ hargs
+            · exact mextends_agree _ _ _ hm'
+    | exec_function_external _ ef _ value tr resultMem result hcall =>
+        have htfd : tfd = .External ef := (Common.Errors.res.OK.inj hfun).symm
+        subst tfd
+        obtain ⟨tv, tm', htcall, hv, hm'⟩ :=
+          deadcode_call_extends xi ef _ args m tr value result tm targs hcall hmem hargs
+        refine Or.inl ⟨_, RTL.exec_function_external _ _ _ _ _ _ _
+          (deadcode_symbols xi ef _ _ _ _ _ _ _ (senv_preserved cfg prog tprog hprog) htcall), ?_⟩
+        exact match_return_states _ _ _ _ _ _ hstacks hv hm'
+  | match_return_states s value m ts tv tm hstacks hv hm =>
+      cases hstep
+      cases hstacks with
+      | cons sourceFrame targetFrame hframe hframes =>
+        cases hframe with
+        | match_stackframes_intro res f sp next e tf te cu an hlink hfun han he =>
+            refine Or.inl ⟨_, RTL.exec_return _ _ _ _ _ _ _ _, ?_⟩
+            exact match_regular_states _ _ _ _ _ _ _ _ _ _ cu an hframes hlink hfun han
+              (he _ _ hv) (mextends_agree _ _ _ hm)
+
+end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Backend.ValueAnalysis CompCert4Lean.Common.Smallstep
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem transf_program_correct : ∀ cfg, transf_program_correctStatement cfg := by
+  intro cfg prog tprog xi hprog
+  apply forward_simulation_eventually_plus (RTL.semantics xi prog) (RTL.semantics xi tprog)
+    (fun source target => match_states cfg prog source target ∧ sound_state cfg prog source)
+  · exact (senv_preserved cfg prog tprog hprog).2.1
+  · intro source hinitial
+    obtain ⟨target, htinitial, hmatch⟩ := transf_initial_states cfg prog tprog hprog source hinitial
+    exact ⟨target, htinitial, hmatch, sound_initial cfg prog source hinitial⟩
+  · intro source target result hmatch hfinal
+    exact transf_final_states cfg prog source target result hmatch.1 hfinal
+  · intro source tr result hstep target hmatch
+    have hsound := sound_step cfg prog xi source tr result hstep hmatch.2
+    rcases step_simulation cfg prog tprog hprog xi source tr result hstep target
+        hmatch.1 hmatch.2 with hsingle | heventual
+    · obtain ⟨target', htstep, hmatched⟩ := hsingle
+      exact ⟨0, target', plus_one _ _ _ _ _ _ _ htstep,
+        CompCert4Lean.Common.Smallstep.eventually.eventually_now _ _ ⟨hmatched, hsound⟩⟩
+    · obtain ⟨target', count, htsteps, heventual⟩ := heventual
+      refine ⟨count, target', htsteps, ?_⟩
+      exact eventually_and_invariant _ _ _ _ _ (sound_state cfg prog) count result
+        (fun source' => match_states cfg prog source' target')
+        (sound_step cfg prog xi) heventual hsound
+
+end CompCert4Lean.Backend.Deadcodeproof

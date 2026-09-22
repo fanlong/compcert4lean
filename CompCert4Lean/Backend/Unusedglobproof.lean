@@ -5228,3 +5228,329 @@ theorem transfSelectionLink_certificate_proof : TransfSelectionLink_Certificate 
     match_prog link_match_program_proof
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+theorem external_call_inject
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    external_call_injectStatement := by
+  intro providers source target used valid matched external args memory trace result
+    memoryAfter injection targetMemory targetArgs globals called injected arguments
+  exact CompCert4Lean.Common.Events.external_call_mem_inject_gen_proof
+    providers external _ _ args memory trace result memoryAfter injection targetMemory
+    targetArgs (globals_symbols_inject source target used valid matched injection globals)
+    called injected arguments
+
+end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.Unusedglob
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.X86.Op
+
+private theorem ug_step_pointer (injection : Val.meminj) (source target : block)
+    (mapped : injection source = some (target, z0)) :
+    Val.inject injection (Vptr source Ptrofs.zero) (Vptr target Ptrofs.zero) :=
+  .inject_ptr source Ptrofs.zero target Ptrofs.zero z0 mapped rfl
+
+private theorem ug_step_fresh_bounds (injection extended : Val.meminj)
+    (memory targetMemory : mem) (bound targetBound : block)
+    (sourceBound : Ple bound memory.nextblock)
+    (targetBoundProof : Ple targetBound targetMemory.nextblock)
+    (separated : inject_separated injection extended memory targetMemory) :
+    ∀ source target delta, injection source = none →
+      extended source = some (target, delta) →
+      Ple bound source ∧ Ple targetBound target := by
+  intro source target delta unmapped mapped
+  have fresh := separated source target delta unmapped mapped
+  simp only [Mem.valid_block, Plt, PArith.BinPos.Pos.lt] at fresh
+  simp only [Ple, PArith.BinPos.Pos.le] at sourceBound targetBoundProof ⊢
+  omega
+
+private theorem ug_step_operation
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (source target : program) (used : IS.t) (injection : Val.meminj)
+    (memory targetMemory : mem) (sourceSp targetSp : block)
+    (registers targetRegisters : regset) (operation : operation)
+    (args : List reg) (result : val)
+    (globals : meminj_preserves_globals source target used injection)
+    (memoryInjected : Mem.inject injection memory targetMemory)
+    (spInjected : injection sourceSp = some (targetSp, z0))
+    (registersInjected : regset_inject injection registers targetRegisters)
+    (references : ∀ identifier, identifier ∈ globals_operation operation → kept used identifier)
+    (evaluated : eval_operation (Genv.globalenv source) (Vptr sourceSp Ptrofs.zero)
+      operation (args.map (fun register => Regmap.get register registers)) memory = some result) :
+    ∃ targetResult, eval_operation (Genv.globalenv target) (Vptr targetSp Ptrofs.zero)
+      operation (args.map (fun register => Regmap.get register targetRegisters)) targetMemory =
+      some targetResult ∧ Val.inject injection result targetResult := by
+  apply eval_operation_inj fundef fundef Unit Unit _ _ injection memory targetMemory
+    ?_ ?_ ?_ ?_ operation _ _ _ _ result ?_
+    (ug_step_pointer injection sourceSp targetSp spInjected)
+    (regs_inject injection registers targetRegisters registersInjected args) evaluated
+  · intro sourceBlock offset targetBlock delta mapped pointer
+    exact Mem.valid_pointer_inject_val injection memory targetMemory _ _ _ _
+      memoryInjected pointer (.inject_ptr _ _ _ _ delta mapped rfl)
+  · intro sourceBlock offset targetBlock delta mapped pointer
+    exact Mem.weak_valid_pointer_inject_val injection memory targetMemory _ _ _ _
+      memoryInjected pointer (.inject_ptr _ _ _ _ delta mapped rfl)
+  · intro sourceBlock offset targetBlock delta mapped pointer
+    exact Mem.weak_valid_pointer_inject_no_overflow injection memory targetMemory
+      sourceBlock offset targetBlock delta memoryInjected pointer mapped
+  · intro first offsetFirst second offsetSecond targetFirst deltaFirst targetSecond deltaSecond
+      distinct firstValid secondValid firstMapped secondMapped
+    exact Mem.different_pointers_inject injection memory targetMemory first offsetFirst
+      second offsetSecond targetFirst deltaFirst targetSecond deltaSecond memoryInjected
+      distinct firstValid secondValid firstMapped secondMapped
+  · intro identifier offset referenced
+    exact symbol_address_inject source target used injection identifier offset globals
+      (references identifier referenced)
+
+theorem step_simulation
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    step_simulationStatement := by
+  intro providers source target used valid matched initial trace final transition
+    targetInitial states
+  cases states with
+  | match_states_regular stack func stackBlock point registers memory targetStack targetBlock
+      targetRegisters targetMemory injection stacks references stackInjected registersInjected memoryInjected =>
+    have globals := match_stacks_preserves_globals source target used injection _ _ _ _ stacks
+    have sourceValid := Mem.valid_block_inject_1 injection memory targetMemory _ _ _
+      stackInjected memoryInjected
+    have targetValid := Mem.valid_block_inject_2 injection memory targetMemory _ _ _
+      stackInjected memoryInjected
+    cases transition with
+    | exec_Inop _ _ _ _ _ _ next code =>
+      refine ⟨_, .exec_Inop _ _ _ _ _ _ next code, ?_⟩
+      exact .match_states_regular _ _ _ _ _ _ _ _ _ _ injection stacks references
+        stackInjected registersInjected memoryInjected
+    | exec_Iop _ _ _ _ _ _ operation args destination next result code evaluated =>
+      obtain ⟨targetResult, targetEvaluated, resultInjected⟩ :=
+        ug_step_operation source target used injection memory targetMemory _ _ _ _
+          operation args result globals memoryInjected stackInjected registersInjected
+          (fun identifier referenced => references identifier ⟨point, _, code, referenced⟩) evaluated
+      refine ⟨_, .exec_Iop _ _ _ _ _ _ operation args destination next targetResult
+        code targetEvaluated, ?_⟩
+      exact .match_states_regular _ _ _ _ _ _ _ _ _ _ injection stacks references
+        stackInjected (set_reg_inject injection _ _ destination _ _ registersInjected resultInjected)
+        memoryInjected
+    | exec_Iload _ _ _ _ _ _ chunk address args destination next pointer result code evaluated loaded =>
+      obtain ⟨targetPointer, targetEvaluated, pointerInjected⟩ :=
+        eval_addressing_inj fundef fundef Unit Unit _ _ injection address _ _ _ _ pointer
+          (fun identifier offset referenced => symbol_address_inject source target used injection
+            identifier offset globals (references identifier ⟨point, _, code, referenced⟩))
+          (ug_step_pointer injection _ _ stackInjected)
+          (regs_inject injection _ _ registersInjected args) evaluated
+      obtain ⟨targetResult, targetLoaded, resultInjected⟩ :=
+        Mem.loadv_inject injection memory targetMemory chunk pointer targetPointer result
+          memoryInjected loaded pointerInjected
+      refine ⟨_, .exec_Iload _ _ _ _ _ _ chunk address args destination next targetPointer
+        targetResult code targetEvaluated targetLoaded, ?_⟩
+      exact .match_states_regular _ _ _ _ _ _ _ _ _ _ injection stacks references stackInjected
+        (set_reg_inject injection _ _ destination _ _ registersInjected resultInjected) memoryInjected
+    | exec_Istore _ _ _ _ _ _ chunk address args storedRegister next pointer memoryAfter
+        code evaluated stored =>
+      obtain ⟨targetPointer, targetEvaluated, pointerInjected⟩ :=
+        eval_addressing_inj fundef fundef Unit Unit _ _ injection address _ _ _ _ pointer
+          (fun identifier offset referenced => symbol_address_inject source target used injection
+            identifier offset globals (references identifier ⟨point, _, code, referenced⟩))
+          (ug_step_pointer injection _ _ stackInjected)
+          (regs_inject injection _ _ registersInjected args) evaluated
+      obtain ⟨targetAfter, targetStored, afterInjected⟩ :=
+        Mem.storev_mapped_inject injection chunk memory pointer _ memoryAfter targetMemory
+          targetPointer _ memoryInjected stored pointerInjected (registersInjected storedRegister)
+      refine ⟨_, .exec_Istore _ _ _ _ _ _ chunk address args storedRegister next targetPointer
+        targetAfter code targetEvaluated targetStored, ?_⟩
+      exact .match_states_regular _ _ _ _ _ _ _ _ _ _ injection stacks references
+        stackInjected registersInjected afterInjected
+    | exec_Icall _ _ _ _ _ _ signature called args destination next definition code found signatureEq =>
+      obtain ⟨targetFound, definitionReferences⟩ := find_function_inject source target used
+        injection called registers definition targetRegisters globals found (by
+          cases called with
+          | inl register => exact registersInjected
+          | inr identifier => exact references identifier ⟨point, _, code, by simp [ref_instruction]⟩)
+      refine ⟨_, .exec_Icall _ _ _ _ _ _ signature called args destination next definition
+        code targetFound signatureEq, ?_⟩
+      exact .match_states_call _ _ _ _ _ _ _ injection
+        (.match_stacks_cons _ _ _ _ _ _ _ _ _ _ _ stacks references stackInjected
+          registersInjected sourceValid targetValid)
+        definitionReferences (regs_inject injection _ _ registersInjected args) memoryInjected
+    | exec_Itailcall _ _ _ _ _ _ signature called args definition memoryAfter code found
+        signatureEq freed =>
+      obtain ⟨targetFound, definitionReferences⟩ := find_function_inject source target used
+        injection called registers definition targetRegisters globals found (by
+          cases called with
+          | inl register => exact registersInjected
+          | inr identifier => exact references identifier ⟨point, _, code, by simp [ref_instruction]⟩)
+      obtain ⟨targetAfter, targetFreed, afterInjected⟩ :=
+        Mem.free_parallel_inject injection memory targetMemory stackBlock z0 func.fn_stacksize
+          memoryAfter targetBlock z0 memoryInjected freed stackInjected
+      have targetFreed' : Mem.free targetMemory targetBlock z0 func.fn_stacksize = some targetAfter := by
+        simpa only [zAdd, z0, ug_init_zadd_zero] using targetFreed
+      refine ⟨_, .exec_Itailcall _ _ _ _ _ _ signature called args definition targetAfter
+        code targetFound signatureEq targetFreed', ?_⟩
+      exact .match_states_call _ _ _ _ _ _ _ injection
+        (match_stacks_bound source target used injection _ _ _ _ _ _ stacks
+          (Plt_Ple _ _ (Mem.valid_block_inject_1 injection _ _ _ _ _ stackInjected afterInjected))
+          (Plt_Ple _ _ (Mem.valid_block_inject_2 injection _ _ _ _ _ stackInjected afterInjected)))
+        definitionReferences (regs_inject injection _ _ registersInjected args) afterInjected
+    | exec_Ibuiltin _ _ _ _ _ _ external args destination next values callTrace result memoryAfter
+        code evaluated called =>
+      obtain ⟨targetValues, targetEvaluated, valuesInjected⟩ :=
+        eval_builtin_args_inject source target used registers stackBlock memory injection
+          targetRegisters targetBlock targetMemory args values evaluated stackInjected globals
+          registersInjected memoryInjected
+          (fun identifier referenced => references identifier ⟨point, _, code, referenced⟩)
+      obtain ⟨extended, targetResult, targetAfter, targetCalled, resultInjected, afterInjected,
+        sourceUnchanged, targetUnchanged, increased, separated⟩ :=
+        external_call_inject providers source target used valid matched external values memory
+          trace result memoryAfter injection targetMemory targetValues globals called
+          memoryInjected valuesInjected
+      refine ⟨_, .exec_Ibuiltin _ _ _ _ _ _ external args destination next targetValues trace
+        targetResult targetAfter code targetEvaluated targetCalled, ?_⟩
+      exact .match_states_regular _ _ _ _ _ _ _ _ _ _ extended
+        (match_stacks_incr source target used injection extended increased _ _ _ _ stacks
+          (ug_step_fresh_bounds injection extended memory targetMemory _ _
+            (Plt_Ple _ _ sourceValid) (Plt_Ple _ _ targetValid) separated))
+        references (increased _ _ _ stackInjected)
+        (set_res_inject extended _ _ destination _ _
+          (regset_inject_incr injection extended _ _ registersInjected increased) resultInjected)
+        afterInjected
+    | exec_Icond _ _ _ _ _ _ condition args ifso ifnot outcome next code evaluated nextEq =>
+      have targetEvaluated := eval_condition_inject injection condition _ _ outcome memory targetMemory
+        (regs_inject injection _ _ registersInjected args) memoryInjected evaluated
+      refine ⟨_, .exec_Icond _ _ _ _ _ _ condition args ifso ifnot outcome next code
+        targetEvaluated nextEq, ?_⟩
+      exact .match_states_regular _ _ _ _ _ _ _ _ _ _ injection stacks references
+        stackInjected registersInjected memoryInjected
+    | exec_Ijumptable _ _ _ _ _ _ argument table index next code argumentEq selected =>
+      have indexInjected := registersInjected argument
+      rw [argumentEq] at indexInjected
+      have targetArgument : Regmap.get argument targetRegisters = Vint index := by
+        generalize Regmap.get argument targetRegisters = targetValue at indexInjected ⊢
+        cases indexInjected
+        rfl
+      refine ⟨_, .exec_Ijumptable _ _ _ _ _ _ argument table index next code targetArgument selected, ?_⟩
+      exact .match_states_regular _ _ _ _ _ _ _ _ _ _ injection stacks references
+        stackInjected registersInjected memoryInjected
+    | exec_Ireturn _ _ _ _ _ _ resultRegister memoryAfter code freed =>
+      obtain ⟨targetAfter, targetFreed, afterInjected⟩ :=
+        Mem.free_parallel_inject injection memory targetMemory stackBlock z0 func.fn_stacksize
+          memoryAfter targetBlock z0 memoryInjected freed stackInjected
+      have targetFreed' : Mem.free targetMemory targetBlock z0 func.fn_stacksize = some targetAfter := by
+        simpa only [zAdd, z0, ug_init_zadd_zero] using targetFreed
+      refine ⟨_, .exec_Ireturn _ _ _ _ _ _ resultRegister targetAfter code targetFreed', ?_⟩
+      refine .match_states_return _ _ _ _ _ _ injection
+        (match_stacks_bound source target used injection _ _ _ _ _ _ stacks
+          (Plt_Ple _ _ (Mem.valid_block_inject_1 injection _ _ _ _ _ stackInjected afterInjected))
+          (Plt_Ple _ _ (Mem.valid_block_inject_2 injection _ _ _ _ _ stackInjected afterInjected)))
+        ?_ afterInjected
+      cases resultRegister with
+      | none => exact .val_inject_undef _
+      | some register => exact registersInjected register
+  | match_states_call stack definition args memory targetStack targetArgs targetMemory injection
+      stacks references argumentsInjected memoryInjected =>
+    cases transition with
+    | exec_function_internal _ func _ _ memoryAfter stackBlock typed allocated =>
+      obtain ⟨extended, targetAfter, targetBlock, targetAllocated, afterInjected,
+        increased, stackInjected, unchanged⟩ :=
+        Mem.alloc_parallel_inject injection memory targetMemory z0 func.fn_stacksize memoryAfter
+          stackBlock z0 func.fn_stacksize memoryInjected allocated (by exact Int.le_refl _)
+          (by exact Int.le_refl _)
+      have sourceBlockEq := Mem.alloc_result memory z0 func.fn_stacksize memoryAfter stackBlock allocated
+      have targetBlockEq := Mem.alloc_result targetMemory z0 func.fn_stacksize targetAfter targetBlock
+        targetAllocated
+      have stacksExtended : match_stacks source target used extended stack targetStack
+          stackBlock targetBlock := by
+        rw [sourceBlockEq, targetBlockEq]
+        apply match_stacks_incr source target used injection extended increased _ _ _ _ stacks
+        intro sourceBlock targetNew delta unmapped mapped
+        by_cases same : sourceBlock = stackBlock
+        · subst sourceBlock
+          rw [stackInjected] at mapped
+          cases mapped
+          exact ⟨by rw [sourceBlockEq]; exact Ple_refl _, by rw [targetBlockEq]; exact Ple_refl _⟩
+        · rw [unchanged sourceBlock same, unmapped] at mapped
+          contradiction
+      refine ⟨_, .exec_function_internal _ func targetArgs targetMemory targetAfter targetBlock
+        (Val.has_argtype_list_inject injection args _ targetArgs typed argumentsInjected)
+        targetAllocated, ?_⟩
+      exact .match_states_regular _ _ _ _ _ _ _ _ _ _ extended stacksExtended references
+        stackInjected (init_regs_inject extended args targetArgs
+          (val_inject_list_incr injection extended _ _ increased argumentsInjected) func.fn_params)
+        afterInjected
+    | exec_function_external _ external _ result callTrace _ memoryAfter called =>
+      have globals := match_stacks_preserves_globals source target used injection _ _ _ _ stacks
+      obtain ⟨extended, targetResult, targetAfter, targetCalled, resultInjected, afterInjected,
+        sourceUnchanged, targetUnchanged, increased, separated⟩ :=
+        external_call_inject providers source target used valid matched external args memory
+          trace result memoryAfter injection targetMemory targetArgs globals called
+          memoryInjected argumentsInjected
+      refine ⟨_, .exec_function_external _ external targetArgs targetResult trace
+        targetMemory targetAfter targetCalled, ?_⟩
+      exact .match_states_return _ _ _ _ _ _ extended
+        (match_stacks_bound source target used extended _ _ _ _ _ _
+          (match_stacks_incr source target used injection extended increased _ _ _ _ stacks
+            (ug_step_fresh_bounds injection extended memory targetMemory _ _
+              (Ple_refl _) (Ple_refl _) separated))
+          (external_call_nextblock providers external _ args memory trace result memoryAfter called)
+          (external_call_nextblock providers external _ targetArgs targetMemory trace targetResult
+            targetAfter targetCalled)) resultInjected afterInjected
+  | match_states_return stack result memory targetStack targetResult targetMemory injection
+      stacks resultInjected memoryInjected =>
+    cases transition with
+    | exec_return destination func stackPointer point registers tail _ _ =>
+      cases stacks with
+      | match_stacks_cons _ _ stackBlock _ _ _ targetBlock targetRegisters targetTail _ _
+          tailStacks references stackInjected registersInjected sourceBound targetBound =>
+        refine ⟨_, .exec_return destination func _ point targetRegisters targetTail targetResult
+          targetMemory, ?_⟩
+        exact .match_states_regular _ _ _ _ _ _ _ _ _ _ injection tailStacks references
+          stackInjected (set_reg_inject injection _ _ destination _ _ registersInjected resultInjected)
+          memoryInjected
+
+end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+theorem transf_program_correct_1
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transf_program_correct_1Statement := by
+  intro providers source target used valid matched
+  exact CompCert4Lean.Common.Smallstep.forward_simulation_step
+    (RTL.semantics providers source) (RTL.semantics providers target)
+    (globals_symbols_inject source target used valid matched (init_meminj source target)
+      (init_meminj_preserves_globals source target used valid matched)).1
+    (match_states source target used)
+    (transf_initial_states source target used valid matched)
+    (transf_final_states source target used)
+    (step_simulation providers source target used valid matched)
+
+end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+theorem transf_program_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transf_program_correctStatement := by
+  intro providers source target matched
+  obtain ⟨used, valid, programs⟩ := matched
+  exact transf_program_correct_1 providers source target used valid programs
+
+end CompCert4Lean.Backend.Unusedglobproof

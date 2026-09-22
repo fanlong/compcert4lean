@@ -4212,3 +4212,5 @@ theorem storev_rule : storev_ruleStatement := by
   refine ⟨m', ?_, htarget⟩
   rw [Mem.storev, hrepr]
   exact hstore
+
+theorem store_rule : store_ruleStatement := scc085_store_rule_helper

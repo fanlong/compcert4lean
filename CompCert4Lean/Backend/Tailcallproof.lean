@@ -1291,3 +1291,308 @@ theorem find_function_translated : find_function_translatedStatement := by
           exact funct_ptr_translated cfg prog tprog hmatch b f hfind
 
 end CompCert4Lean.Backend.Tailcallproof
+
+namespace CompCert4Lean.Backend.Tailcallproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.Tailcall
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.X86.Op
+
+private theorem tailcall_empty_range (offset : Z) :
+    ¬ (ZArith.BinInt.Z.le .Z0 offset ∧ ZArith.BinInt.Z.lt offset .Z0) := by
+  change ¬ ((0 : Int) ≤ intOfZ offset ∧ intOfZ offset < 0)
+  omega
+
+variable
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+
+private theorem tailcall_step_normal
+    (cfg : CompilerConfig) (xi : ExternalCalls) (prog tprog : program)
+    (programMatch : match_prog cfg prog tprog)
+    (stack targetStack : List stackframe) (func : function) (pointer : block)
+    (pc : node) (registers targetRegisters : regset) (memory targetMemory : mem)
+    (events : trace) (next : state)
+    (transition : RTL.step xi (sourceGenv prog)
+      (State stack func (Vptr pointer Ptrofs.zero) pc registers memory) events next)
+    (stackMatch : match_stackframes cfg stack targetStack)
+    (registerMatch : regs_lessdef registers targetRegisters)
+    (memoryMatch : Mem.extends memory targetMemory) :
+    ∃ targetNext,
+      RTL.step xi (targetGenv tprog)
+        (State targetStack (Tailcall.transf_function cfg func)
+          (Vptr pointer Ptrofs.zero) pc targetRegisters targetMemory) events targetNext ∧
+      match_states cfg next targetNext := by
+  have symbols := symbols_preserved cfg prog tprog programMatch
+  cases transition with
+  | exec_Inop _ _ _ _ _ _ successor lookup =>
+      obtain ⟨instruction, targetLookup, specification⟩ :=
+        transf_instr_lookup cfg func pc _ lookup
+      cases specification
+      exact ⟨_, RTL.step.exec_Inop _ _ _ _ _ _ _ targetLookup,
+        .normal stackMatch registerMatch memoryMatch⟩
+  | exec_Iop _ _ _ _ _ _ operation arguments result successor value lookup evaluation =>
+      obtain ⟨instruction, targetLookup, specification⟩ :=
+        transf_instr_lookup cfg func pc _ lookup
+      cases specification
+      obtain ⟨targetValue, targetEvaluation, valueMatch⟩ :=
+        eval_operation_lessdef _ _ (sourceGenv prog) _ operation _ _ value _ _
+          (regs_lessdef_regs _ _ registerMatch arguments) memoryMatch evaluation
+      refine ⟨_, RTL.step.exec_Iop _ _ _ _ _ _ operation arguments result successor
+        targetValue targetLookup ?_, .normal stackMatch
+          (set_reg_lessdef _ _ _ _ _ valueMatch registerMatch) memoryMatch⟩
+      rw [eval_operation_preserved _ _ _ _ (sourceGenv prog) (targetGenv tprog) symbols]
+      exact targetEvaluation
+  | exec_Iload _ _ _ _ _ _ chunk addressing arguments result successor address value
+      lookup addressEvaluation load =>
+      obtain ⟨instruction, targetLookup, specification⟩ :=
+        transf_instr_lookup cfg func pc _ lookup
+      cases specification
+      obtain ⟨targetAddress, targetEvaluation, addressMatch⟩ :=
+        eval_addressing_lessdef _ _ (sourceGenv prog) _ addressing _ _ address
+          (regs_lessdef_regs _ _ registerMatch arguments) addressEvaluation
+      obtain ⟨targetValue, targetLoad, valueMatch⟩ :=
+        Mem.loadv_extends _ _ _ _ _ _ memoryMatch load addressMatch
+      refine ⟨_, RTL.step.exec_Iload _ _ _ _ _ _ chunk addressing arguments result
+        successor targetAddress targetValue targetLookup ?_ targetLoad,
+        .normal stackMatch (set_reg_lessdef _ _ _ _ _ valueMatch registerMatch) memoryMatch⟩
+      rw [eval_addressing_preserved _ _ _ _ (sourceGenv prog) (targetGenv tprog) symbols]
+      exact targetEvaluation
+  | exec_Istore _ _ _ _ _ _ chunk addressing arguments source successor address nextMemory
+      lookup addressEvaluation store =>
+      obtain ⟨instruction, targetLookup, specification⟩ :=
+        transf_instr_lookup cfg func pc _ lookup
+      cases specification
+      obtain ⟨targetAddress, targetEvaluation, addressMatch⟩ :=
+        eval_addressing_lessdef _ _ (sourceGenv prog) _ addressing _ _ address
+          (regs_lessdef_regs _ _ registerMatch arguments) addressEvaluation
+      obtain ⟨targetNextMemory, targetStore, nextMemoryMatch⟩ :=
+        Mem.storev_extends _ _ _ _ _ _ _ _ memoryMatch store addressMatch (registerMatch source)
+      refine ⟨_, RTL.step.exec_Istore _ _ _ _ _ _ chunk addressing arguments source
+        successor targetAddress targetNextMemory targetLookup ?_ targetStore,
+        .normal stackMatch registerMatch nextMemoryMatch⟩
+      rw [eval_addressing_preserved _ _ _ _ (sourceGenv prog) (targetGenv tprog) symbols]
+      exact targetEvaluation
+  | exec_Icall _ _ _ _ _ _ signature callee arguments result successor definition
+      lookup find signatureMatch =>
+      have targetFind := find_function_translated cfg prog tprog programMatch
+        callee registers targetRegisters definition find registerMatch
+      have targetSignature := (sig_preserved cfg definition).trans signatureMatch
+      obtain ⟨instruction, targetLookup, specification⟩ :=
+        transf_instr_lookup cfg func pc _ lookup
+      cases specification with
+      | transf_instr_tailcall emptyStack returnSequence =>
+          obtain ⟨freedMemory, free⟩ := Mem.range_perm_free targetMemory pointer .Z0 .Z0
+            (by intro offset range; exact (tailcall_empty_range offset range).elim)
+          have nextMemoryMatch : Mem.extends memory freedMemory :=
+            Mem.free_right_extends _ _ _ _ _ _ memoryMatch free
+              (by intro offset kind permission accessible range
+                  exact tailcall_empty_range offset range)
+          refine ⟨_, RTL.step.exec_Itailcall _ _ _ _ _ _ signature callee arguments
+            (Tailcall.transf_fundef cfg definition) freedMemory targetLookup targetFind
+            targetSignature ?_, .call
+              (.match_stackframes_tail _ _ _ _ _ _ _ stackMatch returnSequence emptyStack)
+              (regs_lessdef_regs _ _ registerMatch arguments) nextMemoryMatch⟩
+          simpa only [stacksize_preserved cfg func, emptyStack] using free
+      | unchanged =>
+          exact ⟨_, RTL.step.exec_Icall _ _ _ _ _ _ signature callee arguments result
+            successor (Tailcall.transf_fundef cfg definition) targetLookup targetFind targetSignature,
+            .call (.match_stackframes_normal _ _ _ _ _ _ _ _ stackMatch registerMatch)
+              (regs_lessdef_regs _ _ registerMatch arguments) memoryMatch⟩
+  | exec_Itailcall _ _ _ _ _ _ signature callee arguments definition nextMemory
+      lookup find signatureMatch free =>
+      obtain ⟨instruction, targetLookup, specification⟩ :=
+        transf_instr_lookup cfg func pc _ lookup
+      cases specification
+      obtain ⟨targetNextMemory, targetFree, nextMemoryMatch⟩ :=
+        Mem.free_parallel_extends _ _ _ _ _ _ memoryMatch free
+      refine ⟨_, RTL.step.exec_Itailcall _ _ _ _ _ _ signature callee arguments
+        (Tailcall.transf_fundef cfg definition) targetNextMemory targetLookup
+        (find_function_translated cfg prog tprog programMatch _ _ _ _ find registerMatch)
+        ((sig_preserved cfg definition).trans signatureMatch) ?_,
+        .call stackMatch (regs_lessdef_regs _ _ registerMatch arguments) nextMemoryMatch⟩
+      simpa only [stacksize_preserved cfg func] using targetFree
+  | exec_Ibuiltin _ _ _ _ _ _ external arguments result successor values events value
+      nextMemory lookup argumentsEvaluation call =>
+      obtain ⟨instruction, targetLookup, specification⟩ :=
+        transf_instr_lookup cfg func pc _ lookup
+      cases specification
+      obtain ⟨targetValues, targetArguments, argumentsMatch⟩ :=
+        eval_builtin_args_lessdef reg _ _ _ _ _ _ registerMatch memoryMatch
+          arguments values argumentsEvaluation
+      obtain ⟨targetValue, targetNextMemory, targetCall, valueMatch, nextMemoryMatch, unchanged⟩ :=
+        external_call_mem_extends_proof xi external _ _ _ _ _ _ _ _ call memoryMatch argumentsMatch
+      have preservedArguments := eval_builtin_args_preserved reg _ _ _ _
+        (sourceGenv prog) (targetGenv tprog) _ _ _ symbols _ _ targetArguments
+      have preservedCall := external_call_symbols_preserved_proof xi external _ _ _ _ _ _ _
+        (senv_preserved cfg prog tprog programMatch) targetCall
+      exact ⟨_, RTL.step.exec_Ibuiltin _ _ _ _ _ _ external arguments result successor
+        targetValues events targetValue targetNextMemory targetLookup preservedArguments preservedCall,
+        .normal stackMatch (set_res_lessdef _ _ _ _ _ valueMatch registerMatch) nextMemoryMatch⟩
+  | exec_Icond _ _ _ _ _ _ condition arguments ifso ifnot decision successor
+      lookup evaluation successorMatch =>
+      obtain ⟨instruction, targetLookup, specification⟩ :=
+        transf_instr_lookup cfg func pc _ lookup
+      cases specification
+      exact ⟨_, RTL.step.exec_Icond _ _ _ _ _ _ condition arguments ifso ifnot decision
+        successor targetLookup (eval_condition_lessdef _ _ _ _ _ _
+          (regs_lessdef_regs _ _ registerMatch arguments) memoryMatch evaluation) successorMatch,
+        .normal stackMatch registerMatch memoryMatch⟩
+  | exec_Ijumptable _ _ _ _ _ _ argument table index successor lookup argumentValue nth =>
+      obtain ⟨instruction, targetLookup, specification⟩ :=
+        transf_instr_lookup cfg func pc _ lookup
+      cases specification
+      have targetValue := registerMatch argument
+      rw [argumentValue] at targetValue
+      have targetEquality : Regmap.get argument targetRegisters = Vint index := by
+        generalize targetEquation : Regmap.get argument targetRegisters = target at targetValue
+        cases targetValue
+        rfl
+      exact ⟨_, RTL.step.exec_Ijumptable _ _ _ _ _ _ argument table index successor
+        targetLookup targetEquality nth, .normal stackMatch registerMatch memoryMatch⟩
+  | exec_Ireturn _ _ _ _ _ _ result nextMemory lookup free =>
+      obtain ⟨instruction, targetLookup, specification⟩ :=
+        transf_instr_lookup cfg func pc _ lookup
+      cases specification
+      obtain ⟨targetNextMemory, targetFree, nextMemoryMatch⟩ :=
+        Mem.free_parallel_extends _ _ _ _ _ _ memoryMatch free
+      refine ⟨_, RTL.step.exec_Ireturn _ _ _ _ _ _ result targetNextMemory targetLookup ?_,
+        .return stackMatch ?_ nextMemoryMatch⟩
+      · simpa only [stacksize_preserved cfg func] using targetFree
+      · cases result with
+        | none => exact .lessdef_refl _
+        | some register => exact registerMatch register
+
+private theorem tailcall_step_interm
+    (cfg : CompilerConfig) (xi : ExternalCalls) (prog : program)
+    (stack targetStack : List stackframe) (func : function) (pointer : block)
+    (pc : node) (registers : regset) (memory targetMemory : mem)
+    (result : reg) (targetValue : val) (events : trace) (next : state)
+    (transition : RTL.step xi (sourceGenv prog)
+      (State stack func (Vptr pointer Ptrofs.zero) pc registers memory) events next)
+    (stackMatch : match_stackframes cfg stack targetStack)
+    (memoryMatch : Mem.extends memory targetMemory)
+    (returnSequence : is_return_spec func pc result)
+    (emptyStack : func.fn_stacksize = .Z0)
+    (valueMatch : Val.lessdef (Regmap.get result registers) targetValue) :
+    measure next < measure (State stack func (Vptr pointer Ptrofs.zero) pc registers memory) ∧
+      events = E0 ∧ match_states cfg next (Returnstate targetStack targetValue targetMemory) := by
+  cases returnSequence with
+  | is_return_none returnLookup =>
+      cases transition <;> simp_all only [Option.some.injEq, reduceCtorEq]
+      case exec_Ireturn optionResult nextMemory lookup free =>
+        cases returnLookup
+        refine ⟨?_, trivial, .return stackMatch (.lessdef_undef _) ?_⟩
+        · simp only [measure]
+          omega
+        · exact Mem.free_left_extends _ _ _ _ _ _ memoryMatch free
+  | is_return_some returnLookup =>
+      cases transition <;> simp_all only [Option.some.injEq, reduceCtorEq]
+      case exec_Ireturn optionResult nextMemory lookup free =>
+        cases returnLookup
+        refine ⟨?_, trivial, .return stackMatch valueMatch ?_⟩
+        · simp only [measure]
+          omega
+        · exact Mem.free_left_extends _ _ _ _ _ _ memoryMatch free
+  | is_return_nop returnLookup remaining decreasing =>
+      cases transition <;> simp_all only [Option.some.injEq, reduceCtorEq]
+      case exec_Inop successor lookup =>
+        cases returnLookup
+        refine ⟨?_, trivial, .interm stackMatch memoryMatch remaining emptyStack valueMatch⟩
+        simp only [measure]
+        omega
+  | is_return_move returnLookup remaining decreasing =>
+      cases transition <;> simp_all only [Option.some.injEq, reduceCtorEq]
+      case exec_Iop operation arguments destination successor value lookup evaluation =>
+        cases returnLookup
+        have valueEquality : Regmap.get result registers = value :=
+          Option.some.inj evaluation
+        refine ⟨?_, trivial, .interm stackMatch memoryMatch remaining emptyStack ?_⟩
+        · simp only [measure]
+          omega
+        · unfold RTL.regset at registers
+          rw [Regmap.gss_proof, ← valueEquality]
+          exact valueMatch
+
+theorem transf_step_correct : transf_step_correctStatement := by
+  intro cfg xi prog tprog programMatch source events next transition target matching
+  cases matching with
+  | @normal stack pointer pc registers memory targetStack targetRegisters targetMemory
+      func stackMatch registerMatch memoryMatch =>
+      exact Or.inl (tailcall_step_normal cfg xi prog tprog programMatch _ _ _ _ _ _ _ _ _ _ _
+        transition stackMatch registerMatch memoryMatch)
+  | @call stack definition arguments memory targetStack targetArguments targetMemory
+      stackMatch argumentMatch memoryMatch =>
+      cases transition with
+      | exec_function_internal _ func _ _ nextMemory pointer argumentTypes allocation =>
+          obtain ⟨targetNextMemory, targetAllocation, nextMemoryMatch⟩ :=
+            Mem.alloc_extends _ _ _ _ _ _ .Z0 func.fn_stacksize memoryMatch allocation
+              (by exact Int.le_refl _) (by exact Int.le_refl _)
+          have fields :
+              (Tailcall.transf_function cfg func).fn_sig = func.fn_sig ∧
+              (Tailcall.transf_function cfg func).fn_entrypoint = func.fn_entrypoint ∧
+              (Tailcall.transf_function cfg func).fn_params = func.fn_params := by
+            unfold Tailcall.transf_function
+            split <;> exact ⟨rfl, rfl, rfl⟩
+          refine Or.inl ⟨_, RTL.step.exec_function_internal targetStack
+            (Tailcall.transf_function cfg func) targetArguments targetMemory targetNextMemory
+            pointer ?_ ?_, ?_⟩
+          · rw [fields.1]
+            exact Val.has_argtype_list_lessdef _ _ _ argumentTypes argumentMatch
+          · rw [stacksize_preserved cfg func]
+            exact targetAllocation
+          · rw [fields.2.1, fields.2.2]
+            exact .normal stackMatch (regs_lessdef_init_regs _ _ _ argumentMatch) nextMemoryMatch
+      | exec_function_external _ external _ value _ _ nextMemory call =>
+          obtain ⟨targetValue, targetNextMemory, targetCall, valueMatch, nextMemoryMatch, unchanged⟩ :=
+            external_call_mem_extends_proof xi external _ _ _ _ _ _ _ _ call memoryMatch argumentMatch
+          have preservedCall := external_call_symbols_preserved_proof xi external _ _ _ _ _ _ _
+            (senv_preserved cfg prog tprog programMatch) targetCall
+          exact Or.inl ⟨_, RTL.step.exec_function_external _ _ _ _ _ _ _ preservedCall,
+            .return stackMatch valueMatch nextMemoryMatch⟩
+  | @«return» stack value memory targetStack targetValue targetMemory
+      stackMatch valueMatch memoryMatch =>
+      cases transition with
+      | exec_return result func pointer pc registers callerStack returned memory =>
+          cases stackMatch with
+          | match_stackframes_normal _ _ _ _ _ _ targetRegisters _ remaining registerMatch =>
+              exact Or.inl ⟨_, RTL.step.exec_return _ _ _ _ _ _ _ _,
+                .normal remaining (set_reg_lessdef _ _ _ _ _ valueMatch registerMatch) memoryMatch⟩
+          | match_stackframes_tail _ _ _ _ _ _ _ remaining returnSequence emptyStack =>
+              refine Or.inr ⟨?_, rfl, .interm remaining memoryMatch returnSequence emptyStack ?_⟩
+              · have bounded := return_measure_bounds func.fn_code pc
+                simp only [measure, List.length_cons, Nat.add_mul, Nat.one_mul]
+                omega
+              · unfold RTL.regset at registers
+                rw [Regmap.gss_proof]
+                exact valueMatch
+  | @interm stack pointer pc registers memory targetStack targetMemory func result targetValue
+      stackMatch memoryMatch returnSequence emptyStack valueMatch =>
+      exact Or.inr (tailcall_step_interm cfg xi prog _ _ _ _ _ _ _ _ _ _ _ _ transition
+        stackMatch memoryMatch returnSequence emptyStack valueMatch)
+
+theorem transf_program_correct : transf_program_correctStatement := by
+  intro cfg xi prog tprog programMatch
+  exact CompCert4Lean.Common.Smallstep.forward_simulation_opt
+    (RTL.semantics xi prog) (RTL.semantics xi tprog)
+    (senv_preserved cfg prog tprog programMatch).2.1
+    (match_states cfg)
+    (transf_initial_states cfg prog tprog programMatch)
+    (transf_final_states cfg prog tprog programMatch)
+    measure (transf_step_correct cfg xi prog tprog programMatch)
+
+end CompCert4Lean.Backend.Tailcallproof

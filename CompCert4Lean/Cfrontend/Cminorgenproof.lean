@@ -6248,3 +6248,564 @@ theorem match_callstack_alloc_variables_rec : match_callstack_alloc_variables_re
   exact alloc_vars_rec_aux
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Switch
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Cfrontend.Cminorgen
+open CompCert4Lean.Backend
+
+section
+
+variable [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+  [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+variable (external : ExternalCalls) (source : CS.program) (target : CM.program)
+  {func : CS.function} {compiled : CM.function} {compileEnv : compilenv} {stackSize : Z}
+  {injection : meminj} {environment : CS.env} {temps : CS.temp_env} {targetTemps : CM.env}
+  {memory targetMemory : mem} {stackPointer lower upper : block} {stack : callstack}
+
+private theorem sprintSkipSequence
+    (bodyTranslated : transl_funbody compileEnv stackSize func = .OK compiled)
+    (injected : Mem.inject injection memory targetMemory)
+    (stackMatch : match_callstack source injection memory targetMemory
+      (Frame compileEnv compiled environment temps targetTemps stackPointer lower upper :: stack)
+      memory.nextblock targetMemory.nextblock)
+    {statement : CS.stmt} {continuation : CS.cont} {targetCont : CM.cont} {exits : exit_env}
+    (continuationMatch : match_cont (.Kseq statement continuation) targetCont compileEnv exits stack) :
+    ∃ next, plus (CM.step external) (targetGenv target)
+        (.State compiled .Sskip targetCont (.Vptr stackPointer Ptrofs.zero) targetTemps targetMemory) E0 next ∧
+      match_states source (.State func statement continuation environment temps memory) next := by
+  induction targetCont generalizing exits with
+  | Kstop => cases continuationMatch
+  | Kcall => cases continuationMatch
+  | Kseq targetStmt tail recursive =>
+    cases continuationMatch with
+    | seq translated tailMatch =>
+      refine ⟨_, ?_, .match_state bodyTranslated translated injected stackMatch tailMatch⟩
+      apply plus_one
+      exact Cminor.step.step_skip_seq _ _ _ _ _ _
+    | match_Kseq2 translated tailMatch =>
+      refine ⟨_, ?_, .match_state_seq bodyTranslated translated injected stackMatch tailMatch⟩
+      apply plus_one
+      exact Cminor.step.step_skip_seq _ _ _ _ _ _
+  | Kblock tail recursive =>
+    cases continuationMatch with
+    | match_Kblock2 tailMatch =>
+      obtain ⟨next, advanced, matched⟩ := recursive tailMatch
+      refine ⟨next, ?_, matched⟩
+      exact plus_left _ E0 (Cminor.step.step_skip_block _ _ _ _ _)
+        (plus_star _ _ _ _ _ _ _ advanced) rfl
+
+private theorem sprintSkipBlock
+    (bodyTranslated : transl_funbody compileEnv stackSize func = .OK compiled)
+    (injected : Mem.inject injection memory targetMemory)
+    (stackMatch : match_callstack source injection memory targetMemory
+      (Frame compileEnv compiled environment temps targetTemps stackPointer lower upper :: stack)
+      memory.nextblock targetMemory.nextblock)
+    {continuation : CS.cont} {targetCont : CM.cont} {exits : exit_env}
+    (continuationMatch : match_cont (.Kblock continuation) targetCont compileEnv exits stack) :
+    ∃ next, plus (CM.step external) (targetGenv target)
+        (.State compiled .Sskip targetCont (.Vptr stackPointer Ptrofs.zero) targetTemps targetMemory) E0 next ∧
+      match_states source (.State func .Sskip continuation environment temps memory) next := by
+  induction targetCont generalizing exits with
+  | Kstop => cases continuationMatch
+  | Kcall => cases continuationMatch
+  | Kseq => cases continuationMatch
+  | Kblock tail recursive =>
+    cases continuationMatch with
+    | block tailMatch =>
+      refine ⟨_, ?_, .match_state bodyTranslated rfl injected stackMatch tailMatch⟩
+      apply plus_one
+      exact Cminor.step.step_skip_block _ _ _ _ _
+    | match_Kblock2 tailMatch =>
+      obtain ⟨next, advanced, matched⟩ := recursive tailMatch
+      refine ⟨next, ?_, matched⟩
+      exact plus_left _ E0 (Cminor.step.step_skip_block _ _ _ _ _)
+        (plus_star _ _ _ _ _ _ _ advanced) rfl
+
+private theorem sprintExitSequence
+    (bodyTranslated : transl_funbody compileEnv stackSize func = .OK compiled)
+    (injected : Mem.inject injection memory targetMemory)
+    (stackMatch : match_callstack source injection memory targetMemory
+      (Frame compileEnv compiled environment temps targetTemps stackPointer lower upper :: stack)
+      memory.nextblock targetMemory.nextblock)
+    (level : Nat) {statement : CS.stmt} {continuation : CS.cont} {targetCont : CM.cont} {exits : exit_env}
+    (continuationMatch : match_cont (.Kseq statement continuation) targetCont compileEnv exits stack) :
+    ∃ next, plus (CM.step external) (targetGenv target)
+        (.State compiled (.Sexit (shift_exit exits level)) targetCont
+          (.Vptr stackPointer Ptrofs.zero) targetTemps targetMemory) E0 next ∧
+      match_states source (.State func (.Sexit level) continuation environment temps memory) next := by
+  induction targetCont generalizing exits statement with
+  | Kstop => cases continuationMatch
+  | Kcall => cases continuationMatch
+  | Kseq targetStmt tail recursive =>
+    cases continuationMatch with
+    | seq translated tailMatch =>
+      refine ⟨_, ?_, .match_state bodyTranslated rfl injected stackMatch tailMatch⟩
+      apply plus_one
+      exact Cminor.step.step_exit_seq _ _ _ _ _ _ _
+    | match_Kseq2 translated tailMatch =>
+      obtain ⟨next, advanced, matched⟩ := recursive tailMatch
+      refine ⟨next, ?_, matched⟩
+      exact plus_left _ E0 (Cminor.step.step_exit_seq _ _ _ _ _ _ _)
+        (plus_star _ _ _ _ _ _ _ advanced) rfl
+  | Kblock tail recursive =>
+    cases continuationMatch with
+    | match_Kblock2 tailMatch =>
+      obtain ⟨next, advanced, matched⟩ := recursive tailMatch
+      refine ⟨next, ?_, matched⟩
+      exact plus_left _ E0 (Cminor.step.step_exit_block_S _ _ _ _ _ _)
+        (plus_star _ _ _ _ _ _ _ advanced) rfl
+
+private theorem sprintExitBlock
+    (bodyTranslated : transl_funbody compileEnv stackSize func = .OK compiled)
+    (injected : Mem.inject injection memory targetMemory)
+    (stackMatch : match_callstack source injection memory targetMemory
+      (Frame compileEnv compiled environment temps targetTemps stackPointer lower upper :: stack)
+      memory.nextblock targetMemory.nextblock)
+    (level : Nat) {continuation : CS.cont} {targetCont : CM.cont} {exits : exit_env}
+    (continuationMatch : match_cont (.Kblock continuation) targetCont compileEnv exits stack) :
+    ∃ next, plus (CM.step external) (targetGenv target)
+        (.State compiled (.Sexit (shift_exit exits level)) targetCont
+          (.Vptr stackPointer Ptrofs.zero) targetTemps targetMemory) E0 next ∧
+      match_states source (.State func
+        (match level with | 0 => .Sskip | count + 1 => .Sexit count)
+        continuation environment temps memory) next := by
+  induction targetCont generalizing exits with
+  | Kstop => cases continuationMatch
+  | Kcall => cases continuationMatch
+  | Kseq => cases continuationMatch
+  | Kblock tail recursive =>
+    cases continuationMatch with
+    | block tailMatch =>
+      cases level with
+      | zero =>
+        refine ⟨_, ?_, .match_state bodyTranslated rfl injected stackMatch tailMatch⟩
+        apply plus_one
+        exact Cminor.step.step_exit_block_0 _ _ _ _ _
+      | succ count =>
+        refine ⟨_, ?_, .match_state bodyTranslated rfl injected stackMatch tailMatch⟩
+        apply plus_one
+        exact Cminor.step.step_exit_block_S _ _ _ _ _ _
+    | match_Kblock2 tailMatch =>
+      obtain ⟨next, advanced, matched⟩ := recursive tailMatch
+      refine ⟨next, ?_, matched⟩
+      exact plus_left _ E0 (Cminor.step.step_exit_block_S _ _ _ _ _ _)
+        (plus_star _ _ _ _ _ _ _ advanced) rfl
+
+private theorem sprintExternal
+    (programs : match_prog source target)
+    {operation : external_function} {arguments targetArguments : List val}
+    {events : trace} {result : val} {resultMemory : mem}
+    (called : external_call external operation (Genv.to_senv (sourceGenv source))
+      arguments memory events result resultMemory)
+    (injected : Mem.inject injection memory targetMemory)
+    (argumentsMatch : Val.inject_list injection arguments targetArguments)
+    (stackMatch : match_callstack source injection memory targetMemory stack
+      memory.nextblock targetMemory.nextblock) :
+    ∃ nextInjection targetResult nextMemory,
+      external_call external operation (Genv.to_senv (targetGenv target))
+        targetArguments targetMemory events targetResult nextMemory ∧
+      Val.inject nextInjection result targetResult ∧
+      Mem.inject nextInjection resultMemory nextMemory ∧
+      match_callstack source nextInjection resultMemory nextMemory stack
+        resultMemory.nextblock nextMemory.nextblock := by
+  obtain ⟨bound, globalMatch⟩ := match_callstack_match_globalenvs source _ _ _ _ _ _ stackMatch
+  obtain ⟨nextInjection, targetResult, nextMemory, targetCalled, resultMatch, memoriesMatch,
+      unmapped, unreachable, increasing, separated⟩ :=
+    external_call_mem_inject external operation _ _ (sourceGenv source) _ _ _ _ _ _ _ _
+      (inj_preserves_globals source _ _ globalMatch) called injected argumentsMatch
+  refine ⟨nextInjection, targetResult, nextMemory, ?_, resultMatch, memoriesMatch, ?_⟩
+  · exact external_call_symbols_preserved_proof external operation _ _ _ _ _ _ _
+      (senv_preserved source target programs) targetCalled
+  · apply match_callstack_incr_bound source _ _ _ _ _ _ _ _
+      (match_callstack_external_call source _ _ _ _ _ _ unmapped unreachable increasing separated
+        (fun address offset permission valid permitted =>
+          external_call_max_perm_proof external operation _ _ _ _ _ _ _ _ _ called valid permitted)
+        _ _ _ stackMatch (Ple_refl _) (Ple_refl _))
+    · exact external_call_nextblock external operation _ _ _ _ _ _ called
+    · exact external_call_nextblock external operation _ _ _ _ _ _ targetCalled
+
+private theorem sprintStore
+    {chunk : memory_chunk} {address value targetAddress targetValue : val}
+    {nextMemory nextTargetMemory : mem}
+    (stored : Mem.storev chunk memory address value = some nextMemory)
+    (targetStored : Mem.storev chunk targetMemory targetAddress targetValue = some nextTargetMemory)
+    (addressMatch : Val.inject injection address targetAddress)
+    (stackMatch : match_callstack source injection memory targetMemory stack
+      memory.nextblock targetMemory.nextblock) :
+    match_callstack source injection nextMemory nextTargetMemory stack
+      nextMemory.nextblock nextTargetMemory.nextblock := by
+  cases address <;> simp only [Mem.storev] at stored <;> try contradiction
+  case Vptr addressBlock offset =>
+    cases addressMatch with
+    | inject_ptr sourceBlock sourceOffset targetBlock targetOffset delta mapped shifted =>
+      change Mem.store chunk targetMemory targetBlock (Ptrofs.unsigned targetOffset) targetValue =
+        some nextTargetMemory at targetStored
+      rw [Mem.nextblock_store _ _ _ _ _ _ stored,
+        Mem.nextblock_store _ _ _ _ _ _ targetStored]
+      apply match_callstack_invariant source _ _ _ _ _ _ _ _ _ stackMatch
+      · intro address targetAddress delta mapped
+        exact mapped
+      · intro address offset permission bounded permitted
+        exact Mem.perm_store_2 _ _ _ _ _ _ stored _ _ _ _ permitted
+      · intro address offset bounded permitted
+        exact Mem.perm_store_1 _ _ _ _ _ _ targetStored _ _ _ _ permitted
+      · intros
+        rfl
+      · intro address targetAddress delta mapped bounded
+        exact mapped
+
+set_option maxHeartbeats 8000000 in
+theorem transl_step_correct : transl_step_correctStatement := by
+  intro external source target programs before events after stepped translated matched
+  cases stepped <;> cases matched
+  case step_skip_seq.match_state func statement continuation environment temps memory
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    cases stmtTranslated
+    exact Or.inl (sprintSkipSequence external source target bodyTranslated injected stackMatch continuationMatch)
+  case step_skip_block.match_state func continuation environment temps memory
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    cases stmtTranslated
+    exact Or.inl (sprintSkipBlock external source target bodyTranslated injected stackMatch continuationMatch)
+  case step_skip_call.match_state func continuation environment temps memory nextMemory callCont freed
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    cases stmtTranslated
+    obtain ⟨callTargetCont, advanced, targetCall, continuationMatch⟩ :=
+      match_is_call_cont external target compiled targetTemps (.Vptr stackPointer Ptrofs.zero)
+        targetMemory _ _ _ _ _ continuationMatch callCont
+    obtain ⟨nextTargetMemory, targetFreed, stackMatch, injected⟩ :=
+      match_callstack_freelist source _ _ _ _ _ _ _ _ _ _ _ _ _ injected freed stackMatch
+    refine Or.inl ⟨_, ?_, .returnstate injected stackMatch continuationMatch (Val.val_inject_undef _ .Vundef)⟩
+    apply plus_right
+    · exact advanced
+    · exact Cminor.step.step_skip_call _ _ _ _ _ _ targetCall targetFreed
+    · rfl
+  case step_set.match_state func name expression continuation environment temps memory value evaluated
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    simp only [transl_stmt] at stmtTranslated
+    split at stmtTranslated <;> try cases stmtTranslated
+    rename_i targetExpr exprTranslated
+    obtain ⟨targetValue, targetEvaluated, valueMatch⟩ :=
+      transl_expr_correct source target programs _ _ _ _ _ _ _ _ _ _ _ _ injected stackMatch
+        _ _ evaluated _ exprTranslated
+    refine Or.inl ⟨_, ?_, .match_state bodyTranslated rfl injected
+      (match_callstack_set_temp source _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ valueMatch stackMatch)
+      continuationMatch⟩
+    apply plus_one
+    exact Cminor.step.step_assign _ _ _ _ _ _ _ _ targetEvaluated
+  case step_store.match_state func chunk address value continuation environment temps memory
+      addressValue valueResult nextMemory addressEvaluated valueEvaluated stored
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    simp only [transl_stmt] at stmtTranslated
+    split at stmtTranslated <;> try cases stmtTranslated
+    rename_i targetAddress addressTranslated
+    split at stmtTranslated <;> try cases stmtTranslated
+    rename_i targetValue valueTranslated
+    obtain ⟨targetAddressValue, targetAddressEvaluated, addressMatch⟩ :=
+      transl_expr_correct source target programs _ _ _ _ _ _ _ _ _ _ _ _ injected stackMatch
+        _ _ addressEvaluated _ addressTranslated
+    obtain ⟨targetValueResult, targetValueEvaluated, valueMatch⟩ :=
+      transl_expr_correct source target programs _ _ _ _ _ _ _ _ _ _ _ _ injected stackMatch
+        _ _ valueEvaluated _ valueTranslated
+    obtain ⟨nextTargetMemory, targetStored, nextInjected⟩ :=
+      Mem.storev_mapped_inject _ _ _ _ _ _ _ _ _ injected stored addressMatch valueMatch
+    refine Or.inl ⟨_, ?_, .match_state bodyTranslated rfl nextInjected
+      (sprintStore source stored targetStored addressMatch stackMatch) continuationMatch⟩
+    apply plus_one
+    exact Cminor.step.step_store _ _ _ _ _ _ _ _ _ _ _
+      targetAddressEvaluated targetValueEvaluated targetStored
+  case step_call.match_state func resultId signature expression arguments continuation environment temps memory
+      functionValue argumentValues definition functionEvaluated argumentsEvaluated found signatureMatch
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    simp only [transl_stmt] at stmtTranslated
+    split at stmtTranslated <;> try cases stmtTranslated
+    rename_i targetExpr exprTranslated
+    split at stmtTranslated <;> try cases stmtTranslated
+    rename_i targetArguments argumentsTranslated
+    obtain ⟨targetDefinition, targetFound, definitionTranslated⟩ :=
+      functions_translated source target programs _ _ found
+    obtain ⟨targetFunctionValue, targetFunctionEvaluated, functionMatch⟩ :=
+      transl_expr_correct source target programs _ _ _ _ _ _ _ _ _ _ _ _ injected stackMatch
+        _ _ functionEvaluated _ exprTranslated
+    obtain ⟨bound, globalMatch⟩ := match_callstack_match_globalenvs source _ _ _ _ _ _ stackMatch
+    have sameFunction := val_inject_function_pointer source bound _ _ _ _ found globalMatch functionMatch
+    subst targetFunctionValue
+    obtain ⟨targetArgumentValues, targetArgumentsEvaluated, argumentsMatch⟩ :=
+      transl_exprlist_correct source target programs _ _ _ _ _ _ _ _ _ _ _ _ injected stackMatch
+        _ _ argumentsEvaluated _ argumentsTranslated
+    refine Or.inl ⟨_, ?_, .match_callstate definitionTranslated injected stackMatch
+      (.match_Kcall (cenv' := compileEnv) bodyTranslated continuationMatch) (by trivial) argumentsMatch⟩
+    apply plus_one
+    exact Cminor.step.step_call _ _ _ _ _ _ _ _ _ _ _ _ targetFunctionEvaluated
+      targetArgumentsEvaluated targetFound ((sig_preserved _ _ definitionTranslated).trans signatureMatch)
+  case step_builtin.match_state func resultId operation arguments continuation environment temps memory
+      argumentValues returned nextMemory argumentsEvaluated called
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    simp only [transl_stmt] at stmtTranslated
+    split at stmtTranslated <;> try cases stmtTranslated
+    rename_i targetArguments argumentsTranslated
+    obtain ⟨targetArgumentValues, targetArgumentsEvaluated, argumentsMatch⟩ :=
+      transl_exprlist_correct source target programs _ _ _ _ _ _ _ _ _ _ _ _ injected stackMatch
+        _ _ argumentsEvaluated _ argumentsTranslated
+    obtain ⟨nextInjection, targetResult, nextTargetMemory, targetCalled, resultMatch, nextInjected, nextStack⟩ :=
+      sprintExternal external source target programs called injected argumentsMatch stackMatch
+    refine Or.inl ⟨.State compiled .Sskip targetCont (.Vptr stackPointer Ptrofs.zero)
+      (Cminor.set_optvar resultId targetResult targetTemps) nextTargetMemory, ?_, ?_⟩
+    · apply plus_one
+      exact Cminor.step.step_builtin _ _ _ _ _ _ _ _ _ _ _ _ targetArgumentsEvaluated targetCalled
+    · cases resultId with
+      | none => exact .match_state bodyTranslated rfl nextInjected nextStack continuationMatch
+      | some name =>
+        exact .match_state bodyTranslated rfl nextInjected
+          (match_callstack_set_temp source _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ resultMatch nextStack)
+          continuationMatch
+  case step_seq.match_state func first second continuation environment temps memory
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    simp only [transl_stmt] at stmtTranslated
+    split at stmtTranslated <;> try cases stmtTranslated
+    rename_i targetFirst firstTranslated
+    split at stmtTranslated <;> try cases stmtTranslated
+    rename_i targetSecond secondTranslated
+    refine Or.inl ⟨_, ?_, .match_state bodyTranslated firstTranslated injected stackMatch
+      (.seq secondTranslated continuationMatch)⟩
+    apply plus_one
+    exact Cminor.step.step_seq _ _ _ _ _ _ _
+  case step_seq.match_state_seq func first second continuation environment temps memory
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    exact Or.inr ⟨by simp [measure, seq_left_depth], rfl,
+      .match_state bodyTranslated stmtTranslated injected stackMatch continuationMatch⟩
+  case step_ifthenelse.match_state func condition first second continuation environment temps memory
+      value choice evaluated boolean
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    simp only [transl_stmt] at stmtTranslated
+    split at stmtTranslated <;> try cases stmtTranslated
+    rename_i targetCondition conditionTranslated
+    split at stmtTranslated <;> try cases stmtTranslated
+    rename_i targetFirst firstTranslated
+    split at stmtTranslated <;> try cases stmtTranslated
+    rename_i targetSecond secondTranslated
+    obtain ⟨targetValue, targetEvaluated, valueMatch⟩ :=
+      transl_expr_correct source target programs _ _ _ _ _ _ _ _ _ _ _ _ injected stackMatch
+        _ _ evaluated _ conditionTranslated
+    refine Or.inl ⟨.State compiled (if choice then targetFirst else targetSecond) targetCont
+      (.Vptr stackPointer Ptrofs.zero) targetTemps targetMemory, ?_, ?_⟩
+    · apply plus_one
+      exact Cminor.step.step_ifthenelse _ _ _ _ _ _ _ _ _ _ targetEvaluated
+        (bool_of_val_inject _ _ _ _ boolean valueMatch)
+    · cases choice <;> exact .match_state bodyTranslated (by assumption) injected stackMatch continuationMatch
+  case step_loop.match_state func statement continuation environment temps memory
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    simp only [transl_stmt] at stmtTranslated
+    split at stmtTranslated <;> try cases stmtTranslated
+    rename_i targetBody loopTranslated
+    refine Or.inl ⟨_, ?_, .match_state bodyTranslated loopTranslated injected stackMatch
+      (.seq (by simp only [transl_stmt, loopTranslated]; rfl) continuationMatch)⟩
+    apply plus_one
+    exact Cminor.step.step_loop _ _ _ _ _ _
+  case step_block.match_state func statement continuation environment temps memory
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    simp only [transl_stmt] at stmtTranslated
+    split at stmtTranslated <;> try cases stmtTranslated
+    rename_i targetBody blockTranslated
+    refine Or.inl ⟨_, ?_, .match_state bodyTranslated blockTranslated injected stackMatch
+      (.block continuationMatch)⟩
+    apply plus_one
+    exact Cminor.step.step_block _ _ _ _ _ _
+  case step_exit_seq.match_state func level statement continuation environment temps memory
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    cases stmtTranslated
+    exact Or.inl (sprintExitSequence external source target bodyTranslated injected stackMatch level continuationMatch)
+  case step_exit_block_0.match_state func continuation environment temps memory
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    cases stmtTranslated
+    exact Or.inl (sprintExitBlock external source target bodyTranslated injected stackMatch 0 continuationMatch)
+  case step_exit_block_S.match_state func level continuation environment temps memory
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    cases stmtTranslated
+    exact Or.inl (sprintExitBlock external source target bodyTranslated injected stackMatch (level + 1) continuationMatch)
+  case step_return_0.match_state func continuation environment temps memory nextMemory freed
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    cases stmtTranslated
+    obtain ⟨nextTargetMemory, targetFreed, nextStack, nextInjected⟩ :=
+      match_callstack_freelist source _ _ _ _ _ _ _ _ _ _ _ _ _ injected freed stackMatch
+    refine Or.inl ⟨_, ?_, .returnstate nextInjected nextStack
+      (match_call_cont _ _ _ _ _ continuationMatch) (Val.val_inject_undef _ .Vundef)⟩
+    apply plus_one
+    exact Cminor.step.step_return_0 _ _ _ _ _ _ targetFreed
+  case step_return_1.match_state func expression continuation environment temps memory value nextMemory evaluated freed
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    simp only [transl_stmt] at stmtTranslated
+    split at stmtTranslated <;> try cases stmtTranslated
+    rename_i targetExpr exprTranslated
+    obtain ⟨targetValue, targetEvaluated, valueMatch⟩ :=
+      transl_expr_correct source target programs _ _ _ _ _ _ _ _ _ _ _ _ injected stackMatch
+        _ _ evaluated _ exprTranslated
+    obtain ⟨nextTargetMemory, targetFreed, nextStack, nextInjected⟩ :=
+      match_callstack_freelist source _ _ _ _ _ _ _ _ _ _ _ _ _ injected freed stackMatch
+    refine Or.inl ⟨_, ?_, .returnstate nextInjected nextStack
+      (match_call_cont _ _ _ _ _ continuationMatch) valueMatch⟩
+    apply plus_one
+    exact Cminor.step.step_return_1 _ _ _ _ _ _ _ _ targetEvaluated targetFreed
+  case step_label.match_state func name statement continuation environment temps memory
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    simp only [transl_stmt] at stmtTranslated
+    split at stmtTranslated <;> try cases stmtTranslated
+    rename_i targetBody labelTranslated
+    refine Or.inl ⟨_, ?_, .match_state bodyTranslated labelTranslated injected stackMatch continuationMatch⟩
+    apply plus_one
+    exact Cminor.step.step_label _ _ _ _ _ _ _
+  case step_goto.match_state func name continuation environment temps memory nextStmt nextCont found
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    cases stmtTranslated
+    obtain ⟨nextTargetStmt, nextTargetCont, nextExits, targetFound, stmtTranslated, continuationMatch⟩ :=
+      transl_find_label_body target _ _ _ _ _ _ _ _ _ _ _ bodyTranslated continuationMatch found
+    refine Or.inl ⟨_, ?_, .match_state bodyTranslated stmtTranslated injected stackMatch continuationMatch⟩
+    apply plus_one
+    exact Cminor.step.step_goto _ _ _ _ _ _ _ _ targetFound
+  case step_external_function.match_callstate operation arguments continuation memory returned nextMemory called
+      targetDefinition targetArguments targetCont targetMemory injection stack compileEnv definitionTranslated
+      argumentsMatch continuationMatch callCont injected stackMatch =>
+    cases definitionTranslated
+    obtain ⟨nextInjection, targetResult, nextTargetMemory, targetCalled, resultMatch, nextInjected, nextStack⟩ :=
+      sprintExternal external source target programs called injected argumentsMatch stackMatch
+    refine Or.inl ⟨_, ?_, .returnstate nextInjected nextStack continuationMatch resultMatch⟩
+    apply plus_one
+    exact Cminor.step.step_external_function _ _ _ _ _ _ _ targetCalled
+  case step_return.returnstate value resultId func environment temps continuation memory
+      targetValue targetCont targetMemory injection stack compileEnv valueMatch continuationMatch injected stackMatch =>
+    cases continuationMatch with
+    | match_Kcall bodyTranslated continuationMatch =>
+      refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (Cminor.step.step_return _ _ _ _ _ _ _), ?_⟩
+      cases resultId with
+      | none => exact .match_state bodyTranslated rfl injected stackMatch continuationMatch
+      | some name =>
+        exact .match_state bodyTranslated rfl injected
+          (match_callstack_set_temp source _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ valueMatch stackMatch)
+          continuationMatch
+  case step_switch.match_state func long condition labels continuation environment temps memory
+      value index evaluated argument
+      compiled targetStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+      lower upper stack stackSize bodyTranslated stmtTranslated continuationMatch injected stackMatch =>
+    simp only [transl_stmt] at stmtTranslated
+    cases tableEquation : switch_table labels 0 with
+    | mk table default =>
+      simp only [tableEquation] at stmtTranslated
+      split at stmtTranslated <;> try cases stmtTranslated
+      rename_i targetCondition conditionTranslated
+      obtain ⟨targetValue, targetEvaluated, valueMatch⟩ :=
+        transl_expr_correct source target programs _ _ _ _ _ _ _ _ _ _ _ _ injected stackMatch
+          _ _ evaluated _ conditionTranslated
+      have targetArgument : switch_argument long targetValue index := by
+        cases argument <;> cases valueMatch <;> constructor
+      have selected : lbl_stmt_tail labels (switch_target index default table) (CS.select_switch index labels) := by
+        simpa only [tableEquation] using switch_table_select index labels
+      obtain ⟨innerCont, labelsCont, descend⟩ :=
+        switch_descent external target _ _ _ _ _ _ stmtTranslated
+      obtain ⟨selectedCont, ascend, selectedMatch⟩ :=
+        switch_ascent external target compiled (.Vptr stackPointer Ptrofs.zero) targetTemps targetMemory
+          _ _ _ _ _ selected _ _ labelsCont
+      obtain ⟨selectedBody, selectedStmt, selectedTranslated⟩ :=
+        transl_lblstmt_suffix _ _ _ _ _ selected _ _ stmtTranslated
+      obtain ⟨next, finish, matched⟩ :=
+        switch_match_states external source target func continuation environment temps memory compiled
+          selectedStmt targetCont stackPointer targetTemps targetMemory compileEnv exits injection
+          lower upper stack stackSize (CS.select_switch index labels) selectedBody selectedCont
+          bodyTranslated selectedTranslated injected stackMatch continuationMatch selectedMatch
+      refine Or.inl ⟨next, ?_, matched⟩
+      apply plus_star_trans
+      · exact descend _ _ _ _
+      · refine star_step (t2 := E0) _ E0
+          (Cminor.step.step_switch _ _ _ _ _ _ _ _ _ _ _ targetEvaluated targetArgument) ?_ rfl
+        exact star_trans _ _ _ _ _ _ _ ascend _ _ _ (plus_star _ _ _ _ _ _ _ finish) rfl
+      · rfl
+  case step_internal_function.match_callstate func arguments continuation memory nextMemory environment temps
+      argumentTypes distinctVariables distinctParameters disjoint allocated bound
+      targetDefinition targetArguments targetCont targetMemory injection stack callerCompileEnv definitionTranslated
+      argumentsMatch continuationMatch callCont injected stackMatch =>
+    unfold transl_fundef transf_partial_fundef at definitionTranslated
+    cases functionTranslated : transl_function func with
+    | Error message => simp only [functionTranslated] at definitionTranslated; cases definitionTranslated
+    | OK compiled =>
+      simp only [functionTranslated] at definitionTranslated
+      cases definitionTranslated
+      unfold transl_function at functionTranslated
+      cases layout : build_compilenv func with
+      | mk compileEnv stackSize =>
+        rw [layout] at functionTranslated
+        dsimp only at functionTranslated
+        split at functionTranslated
+        next fits decision =>
+          have bodyTranslated := functionTranslated
+          unfold transl_funbody at functionTranslated
+          split at functionTranslated <;> try cases functionTranslated
+          rename_i targetBody bodyStmtTranslated
+          let entryFunction : CM.function :=
+            { fn_sig := func.fn_sig, fn_params := func.fn_params, fn_vars := func.fn_temps,
+              fn_stackspace := stackSize, fn_body := targetBody }
+          cases allocatedTarget : Mem.alloc targetMemory .Z0 stackSize with
+          | mk nextTargetMemory stackPointer =>
+            obtain ⟨nextInjection, nextStack, nextInjected⟩ :=
+              match_callstack_function_entry source func compileEnv entryFunction memory environment nextMemory
+                targetMemory nextTargetMemory stackPointer injection stack arguments targetArguments temps
+                layout fits distinctVariables distinctParameters disjoint allocated bound argumentsMatch
+                allocatedTarget stackMatch injected
+            have nextCont : match_cont continuation targetCont compileEnv [] stack := by
+              cases continuationMatch with
+              | stop => exact .stop
+              | seq => cases callCont
+              | match_Kseq2 => cases callCont
+              | match_Kcall outerTranslated outerMatch => exact .match_Kcall outerTranslated outerMatch
+            refine Or.inl ⟨_, ?_, .match_state bodyTranslated bodyStmtTranslated nextInjected nextStack nextCont⟩
+            apply plus_one
+            exact Cminor.step.step_internal_function _ _ _ _ _ _ _
+              (Val.has_argtype_list_inject _ _ _ _ argumentTypes argumentsMatch) allocatedTarget rfl
+        next tooLarge => cases functionTranslated
+
+end
+end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem transl_program_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_program_correctStatement := by
+  intro external source target programs
+  exact CompCert4Lean.Common.Smallstep.forward_simulation_star
+    (CS.semantics external source) (CM.semantics external target)
+    (senv_preserved source target programs).2.1 (match_states source)
+    (transl_initial_states source target programs) (transl_final_states source)
+    measure (transl_step_correct external source target programs)
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

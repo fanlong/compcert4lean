@@ -5384,3 +5384,574 @@ theorem transl_initial_states :
         exact match_cont.match_Kstop ce
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Common.Linking
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Cfrontend.SimplExprspec
+
+theorem transf_program_match
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transf_program_matchStatement := by
+  intro context source target success
+  let certificate := Ctypes.linker_program_certificate_proof
+  letI : Linker cprogram := Ctypes.Linker_program cfunction certificate
+  unfold SimplExpr.transl_program at success
+  cases translation : transform_partial_program
+      (SimplExpr.transl_fundef context source.prog_comp_env)
+      (Ctypes.program_of_program source) with
+  | Error message => simp [translation] at success
+  | OK translated =>
+    simp only [translation] at success
+    cases success
+    apply (pg3898_match_iff certificate _ _).mpr
+    refine ⟨?_, rfl⟩
+    apply match_transform_partial_program2
+      (LF := Ctypes.Linker_fundef cfunction) (LV := Ctypes.Linker_types) tr_fundef Eq
+      (fun _ definition => SimplExpr.transl_fundef context source.prog_comp_env definition)
+      (fun _ value => .OK value) source (Ctypes.program_of_program source) translated
+    · exact translation
+    · intro name definition translatedDefinition result
+      exact SimplExprspec.transl_fundef_spec context source definition translatedDefinition result
+    · intro name value translatedValue result
+      cases result
+      rfl
+
+end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Cfrontend.SimplExpr
+open CompCert4Lean.Cfrontend.SimplExprspec
+open CompCert4Lean.Lib.Maps
+
+section
+
+variable [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+  [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+set_option maxHeartbeats 8000000 in
+theorem sstep_simulation : sstep_simulationStatement := by
+  intro external source target programs before events after stepped translated matched
+  cases stepped <;> cases matched
+  case do₁ func expression continuation environment memory
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch with
+    | tr_do _ _ expressionMatch =>
+      cases expressionMatch with
+      | tr_expr_stmt_intro statements result temporaryNames expressionMatch =>
+        refine ⟨_, Or.inr ⟨push_seq external target _ _ _ _ _ _, ?_⟩, ?_⟩
+        · simp only [measure]
+          omega
+        · exact .match_exprstates _ _ _ _ _ _ _ _ temps _ _ _ unit linked functionMatch
+            (expressionMatch _ _ _ _) (.match_Kdo _ _ _ _ contMatch)
+  case do₂ func value exprType continuation environment memory
+      translatedFunc statements translatedCont temps destination result temporaryNames unit
+      linked functionMatch contMatch expressionMatch =>
+    cases contMatch with
+    | match_Kdo _ _ _ _ contMatch =>
+      cases expressionMatch with
+      | tr_top_base _ _ _ _ _ valueMatch =>
+        cases valueMatch
+        exact ⟨_, Or.inr ⟨star_refl _ _ _, by simp [measure, esize]⟩,
+          .match_regularstates _ _ _ _ _ _ _ _ temps unit linked functionMatch .tr_skip contMatch⟩
+  case sequence func first second continuation environment memory
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch with
+    | tr_seq _ _ translatedFirst translatedSecond firstMatch secondMatch =>
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch firstMatch (.match_Kseq _ _ _ _ _ secondMatch contMatch)⟩
+      apply plus_one
+      exact Clight.step_seq _ _ _ _ _ _ _
+  case skipSequence func statement continuation environment memory
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch
+    cases contMatch with
+    | match_Kseq _ _ _ _ _ stmtMatch contMatch =>
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch stmtMatch contMatch⟩
+      apply plus_one
+      exact Clight.step_skip_seq _ _ _ _ _ _
+  case continueSequence func statement continuation environment memory
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch
+    cases contMatch with
+    | match_Kseq _ _ _ _ _ stmtMatch contMatch =>
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch .tr_continue contMatch⟩
+      apply plus_one
+      exact Clight.step_continue_seq _ _ _ _ _ _
+  case breakSequence func statement continuation environment memory
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch
+    cases contMatch with
+    | match_Kseq _ _ _ _ _ stmtMatch contMatch =>
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch .tr_break contMatch⟩
+      apply plus_one
+      exact Clight.step_break_seq _ _ _ _ _ _
+  case ifStart func condition first second continuation environment memory
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch with
+    | tr_ifthenelse_empty _ _ result expressionMatch =>
+      cases expressionMatch with
+      | tr_expression_intro statements _ temporaryNames expressionMatch =>
+        refine ⟨_, Or.inl ?_, .match_exprstates _ _ _ _ _ _ _ _ temps _ _ _ unit linked
+          functionMatch (expressionMatch _ _ _ _) (.match_Kifthenelse_empty _ _ _ _ contMatch)⟩
+        exact plus_left _ E0 (Clight.step_seq _ _ _ _ _ _ _)
+          (push_seq external target _ _ _ _ _ _) rfl
+    | tr_ifthenelse _ _ _ _ result translatedFirst translatedSecond expressionMatch firstMatch secondMatch =>
+      cases expressionMatch with
+      | tr_expression_intro statements _ temporaryNames expressionMatch =>
+        refine ⟨_, Or.inl ?_, .match_exprstates _ _ _ _ _ _ _ _ temps _ _ _ unit linked
+          functionMatch (expressionMatch _ _ _ _)
+          (.match_Kifthenelse_1 _ _ _ _ _ _ _ _ firstMatch secondMatch contMatch)⟩
+        exact plus_left _ E0 (Clight.step_seq _ _ _ _ _ _ _)
+          (push_seq external target _ _ _ _ _ _) rfl
+  case ifFinish func value exprType first second continuation environment memory choice boolean
+      translatedFunc statements translatedCont temps destination result temporaryNames unit
+      linked functionMatch contMatch expressionMatch =>
+    cases contMatch with
+    | match_Kifthenelse_empty _ _ _ translatedCont contMatch =>
+      obtain ⟨rfl, typed, evaluated⟩ :=
+        tr_top_val_for_val_inv target _ _ _ _ _ _ _ _ _ expressionMatch
+      cases choice <;>
+        refine ⟨_, Or.inr ⟨?_, by simp [measure, esize]⟩,
+          .match_regularstates _ _ _ _ _ _ _ _ temps unit linked functionMatch .tr_skip contMatch⟩ <;>
+        apply star_one <;> exact Clight.step_skip_seq _ _ _ _ _ _
+    | match_Kifthenelse_1 _ _ _ _ _ translatedFirst translatedSecond translatedCont
+        firstMatch secondMatch contMatch =>
+      obtain ⟨rfl, typed, evaluated⟩ :=
+        tr_top_val_for_val_inv target _ _ _ _ _ _ _ _ _ expressionMatch
+      refine ⟨.State translatedFunc (if choice then translatedFirst else translatedSecond)
+        translatedCont environment temps memory, Or.inl ?_, ?_⟩
+      · apply plus_two
+        · exact Clight.step_skip_seq _ _ _ _ _ _
+        · exact Clight.step_ifthenelse _ _ _ _ _ _ _ _ _ _ evaluated (typed ▸ boolean)
+        · rfl
+      · cases choice <;> exact .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+          functionMatch (by assumption) contMatch
+  case whileStart func condition body continuation environment memory
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch with
+    | tr_while _ _ test translatedBody conditionMatch bodyMatch =>
+      cases conditionMatch with
+      | tr_if_intro statements result temporaryNames expressionMatch =>
+        let test := makeseq (statements ++ [makeif result .Sskip .Sbreak])
+        refine ⟨.State translatedFunc .Sskip
+          (Kseqlist (statements ++ [makeif result .Sskip .Sbreak])
+            (.Kseq translatedBody (.Kloop1 (.Ssequence test translatedBody) .Sskip translatedCont)))
+          environment temps memory, Or.inl ?_, ?_⟩
+        · exact plus_left _ E0 (Clight.step_loop _ _ _ _ _ _ _)
+            (star_step _ E0 (Clight.step_seq _ _ _ _ _ _ _)
+              (push_seq external target _ _ _ _ _ _) rfl) rfl
+        · rw [Kseqlist_app]
+          exact .match_exprstates _ _ _ _ _ _ _ _ temps _ _ _ unit linked functionMatch
+            (expressionMatch _ _ _ _)
+            (.match_Kwhile1 _ _ _ _ _ _ _ _
+              (.tr_if_intro _ _ _ _ _ _ expressionMatch) bodyMatch contMatch)
+  case whileFalse func value exprType condition body continuation environment memory boolean
+      translatedFunc statements translatedCont temps destination result temporaryNames unit
+      linked functionMatch contMatch expressionMatch =>
+    cases contMatch with
+    | match_Kwhile1 _ _ _ _ test _ translatedBody translatedCont conditionMatch bodyMatch contMatch =>
+      obtain ⟨rfl, typed, evaluated⟩ :=
+        tr_top_val_for_val_inv target _ _ _ _ _ _ _ _ _ expressionMatch
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch .tr_skip contMatch⟩
+      refine plus_left _ E0 (Clight.step_skip_seq _ _ _ _ _ _) ?_ rfl
+      apply star_trans
+      · exact step_makeif external target _ _ _ _ _ _ _ _ _ false evaluated
+          (by simpa only [typed] using boolean)
+      · apply star_two
+        · exact Clight.step_break_seq _ _ _ _ _ _
+        · exact Clight.step_break_loop1 _ _ _ _ _ _ _
+        · rfl
+      · rfl
+  case whileTrue func value exprType condition body continuation environment memory boolean
+      translatedFunc statements translatedCont temps destination result temporaryNames unit
+      linked functionMatch contMatch expressionMatch =>
+    cases contMatch with
+    | match_Kwhile1 _ _ _ _ test _ translatedBody translatedCont conditionMatch bodyMatch contMatch =>
+      obtain ⟨rfl, typed, evaluated⟩ :=
+        tr_top_val_for_val_inv target _ _ _ _ _ _ _ _ _ expressionMatch
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch bodyMatch (.match_Kwhile2 _ _ _ _ _ _ _ conditionMatch bodyMatch contMatch)⟩
+      refine plus_left _ E0 (Clight.step_skip_seq _ _ _ _ _ _) ?_ rfl
+      apply star_right
+      · exact step_makeif external target _ _ _ _ _ _ _ _ _ true evaluated
+          (by simpa only [typed] using boolean)
+      · exact Clight.step_skip_seq _ _ _ _ _ _
+      · rfl
+  case whileNext func statement condition body continuation environment memory finished
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    have translatedFinished : translatedStmt = .Sskip ∨ translatedStmt = .Scontinue := by
+      rcases finished with rfl | rfl <;> cases stmtMatch <;> simp
+    cases contMatch with
+    | match_Kwhile2 _ _ _ _ test translatedBody translatedCont conditionMatch bodyMatch contMatch =>
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch (.tr_while _ _ _ _ conditionMatch bodyMatch) contMatch⟩
+      apply plus_two
+      · exact Clight.step_skip_or_continue_loop1 _ _ _ _ _ _ _ _ translatedFinished
+      · exact Clight.step_skip_loop2 _ _ _ _ _ _ _
+      · rfl
+  case whileBreak func condition body continuation environment memory
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch
+    cases contMatch with
+    | match_Kwhile2 _ _ _ _ test translatedBody translatedCont conditionMatch bodyMatch contMatch =>
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch .tr_skip contMatch⟩
+      apply plus_one
+      exact Clight.step_break_loop1 _ _ _ _ _ _ _
+  case dowhileStart func condition body continuation environment memory
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch with
+    | tr_dowhile _ _ test translatedBody conditionMatch bodyMatch =>
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch bodyMatch (.match_Kdowhile1 _ _ _ _ _ _ _ conditionMatch bodyMatch contMatch)⟩
+      apply plus_one
+      exact Clight.step_loop _ _ _ _ _ _ _
+  case dowhileTest func statement condition body continuation environment memory finished
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    have translatedFinished : translatedStmt = .Sskip ∨ translatedStmt = .Scontinue := by
+      rcases finished with rfl | rfl <;> cases stmtMatch <;> simp
+    cases contMatch with
+    | match_Kdowhile1 _ _ _ _ test translatedBody translatedCont conditionMatch bodyMatch contMatch =>
+      cases conditionMatch with
+      | tr_if_intro statements result temporaryNames expressionMatch =>
+        let test := makeseq (statements ++ [makeif result .Sskip .Sbreak])
+        refine ⟨.State translatedFunc .Sskip
+          (Kseqlist (statements ++ [makeif result .Sskip .Sbreak])
+            (.Kloop2 translatedBody test translatedCont)) environment temps memory, Or.inl ?_, ?_⟩
+        · exact plus_left _ E0
+            (Clight.step_skip_or_continue_loop1 _ _ _ _ _ _ _ _ translatedFinished)
+            (push_seq external target _ _ _ _ _ _) rfl
+        · rw [Kseqlist_app]
+          exact .match_exprstates _ _ _ _ _ _ _ _ temps _ _ _ unit linked functionMatch
+            (expressionMatch _ _ _ _)
+            (.match_Kdowhile2 _ _ _ _ _ _ _ _
+              (.tr_if_intro _ _ _ _ _ _ expressionMatch) bodyMatch contMatch)
+  case dowhileFalse func value exprType condition body continuation environment memory boolean
+      translatedFunc statements translatedCont temps destination result temporaryNames unit
+      linked functionMatch contMatch expressionMatch =>
+    cases contMatch with
+    | match_Kdowhile2 _ _ _ _ test _ translatedBody translatedCont conditionMatch bodyMatch contMatch =>
+      obtain ⟨rfl, typed, evaluated⟩ :=
+        tr_top_val_for_val_inv target _ _ _ _ _ _ _ _ _ expressionMatch
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch .tr_skip contMatch⟩
+      refine plus_left _ E0 (Clight.step_skip_seq _ _ _ _ _ _) ?_ rfl
+      apply star_right
+      · exact step_makeif external target _ _ _ _ _ _ _ _ _ false evaluated
+          (by simpa only [typed] using boolean)
+      · exact Clight.step_break_loop2 _ _ _ _ _ _ _
+      · rfl
+  case dowhileTrue func value exprType condition body continuation environment memory boolean
+      translatedFunc statements translatedCont temps destination result temporaryNames unit
+      linked functionMatch contMatch expressionMatch =>
+    cases contMatch with
+    | match_Kdowhile2 _ _ _ _ test _ translatedBody translatedCont conditionMatch bodyMatch contMatch =>
+      obtain ⟨rfl, typed, evaluated⟩ :=
+        tr_top_val_for_val_inv target _ _ _ _ _ _ _ _ _ expressionMatch
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch (.tr_dowhile _ _ _ _ conditionMatch bodyMatch) contMatch⟩
+      refine plus_left _ E0 (Clight.step_skip_seq _ _ _ _ _ _) ?_ rfl
+      apply star_right
+      · exact step_makeif external target _ _ _ _ _ _ _ _ _ true evaluated
+          (by simpa only [typed] using boolean)
+      · exact Clight.step_skip_loop2 _ _ _ _ _ _ _
+      · rfl
+  case dowhileBreak func condition body continuation environment memory
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch
+    cases contMatch with
+    | match_Kdowhile1 _ _ _ _ test translatedBody translatedCont conditionMatch bodyMatch contMatch =>
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch .tr_skip contMatch⟩
+      apply plus_one
+      exact Clight.step_break_loop1 _ _ _ _ _ _ _
+  case forStart func initialization condition iteration body continuation environment memory nonempty
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch with
+    | tr_for_1 => exact False.elim (nonempty rfl)
+    | tr_for_2 _ _ _ _ test translatedInit translatedIteration translatedBody
+        conditionMatch nonempty initMatch iterationMatch bodyMatch =>
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch initMatch (.match_Kseq _ _ _ _ _
+          (.tr_for_1 _ _ _ _ _ _ conditionMatch iterationMatch bodyMatch) contMatch)⟩
+      apply plus_one
+      exact Clight.step_seq _ _ _ _ _ _ _
+  case forTest func condition iteration body continuation environment memory
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch with
+    | tr_for_2 _ _ _ _ _ _ _ _ _ nonempty => exact False.elim (nonempty rfl)
+    | tr_for_1 _ _ _ test translatedIteration translatedBody conditionMatch iterationMatch bodyMatch =>
+      cases conditionMatch with
+      | tr_if_intro statements result temporaryNames expressionMatch =>
+        let test := makeseq (statements ++ [makeif result .Sskip .Sbreak])
+        refine ⟨.State translatedFunc .Sskip
+          (Kseqlist (statements ++ [makeif result .Sskip .Sbreak])
+            (.Kseq translatedBody
+              (.Kloop1 (.Ssequence test translatedBody) translatedIteration translatedCont)))
+          environment temps memory, Or.inl ?_, ?_⟩
+        · exact plus_left _ E0 (Clight.step_loop _ _ _ _ _ _ _)
+            (star_step _ E0 (Clight.step_seq _ _ _ _ _ _ _)
+              (push_seq external target _ _ _ _ _ _) rfl) rfl
+        · rw [Kseqlist_app]
+          exact .match_exprstates _ _ _ _ _ _ _ _ temps _ _ _ unit linked functionMatch
+            (expressionMatch _ _ _ _)
+            (.match_Kfor2 _ _ _ _ _ _ _ _ _ _
+              (.tr_if_intro _ _ _ _ _ _ expressionMatch) iterationMatch bodyMatch contMatch)
+  case forFalse func value exprType condition iteration body continuation environment memory boolean
+      translatedFunc statements translatedCont temps destination result temporaryNames unit
+      linked functionMatch contMatch expressionMatch =>
+    cases contMatch with
+    | match_Kfor2 _ _ _ _ _ test _ translatedIteration translatedBody translatedCont
+        conditionMatch iterationMatch bodyMatch contMatch =>
+      obtain ⟨rfl, typed, evaluated⟩ :=
+        tr_top_val_for_val_inv target _ _ _ _ _ _ _ _ _ expressionMatch
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch .tr_skip contMatch⟩
+      refine plus_left _ E0 (Clight.step_skip_seq _ _ _ _ _ _) ?_ rfl
+      apply star_trans
+      · exact step_makeif external target _ _ _ _ _ _ _ _ _ false evaluated
+          (by simpa only [typed] using boolean)
+      · apply star_two
+        · exact Clight.step_break_seq _ _ _ _ _ _
+        · exact Clight.step_break_loop1 _ _ _ _ _ _ _
+        · rfl
+      · rfl
+  case forTrue func value exprType condition iteration body continuation environment memory boolean
+      translatedFunc statements translatedCont temps destination result temporaryNames unit
+      linked functionMatch contMatch expressionMatch =>
+    cases contMatch with
+    | match_Kfor2 _ _ _ _ _ test _ translatedIteration translatedBody translatedCont
+        conditionMatch iterationMatch bodyMatch contMatch =>
+      obtain ⟨rfl, typed, evaluated⟩ :=
+        tr_top_val_for_val_inv target _ _ _ _ _ _ _ _ _ expressionMatch
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch bodyMatch
+        (.match_Kfor3 _ _ _ _ _ _ _ _ _ conditionMatch iterationMatch bodyMatch contMatch)⟩
+      refine plus_left _ E0 (Clight.step_skip_seq _ _ _ _ _ _) ?_ rfl
+      apply star_right
+      · exact step_makeif external target _ _ _ _ _ _ _ _ _ true evaluated
+          (by simpa only [typed] using boolean)
+      · exact Clight.step_skip_seq _ _ _ _ _ _
+      · rfl
+  case forIter func statement condition iteration body continuation environment memory finished
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    have translatedFinished : translatedStmt = .Sskip ∨ translatedStmt = .Scontinue := by
+      rcases finished with rfl | rfl <;> cases stmtMatch <;> simp
+    cases contMatch with
+    | match_Kfor3 _ _ _ _ _ translatedIteration test translatedBody translatedCont
+        conditionMatch iterationMatch bodyMatch contMatch =>
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch iterationMatch
+        (.match_Kfor4 _ _ _ _ _ _ _ _ _ conditionMatch iterationMatch bodyMatch contMatch)⟩
+      apply plus_one
+      exact Clight.step_skip_or_continue_loop1 _ _ _ _ _ _ _ _ translatedFinished
+  case forBreak func condition iteration body continuation environment memory
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch
+    cases contMatch with
+    | match_Kfor3 _ _ _ _ _ translatedIteration test translatedBody translatedCont
+        conditionMatch iterationMatch bodyMatch contMatch =>
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch .tr_skip contMatch⟩
+      apply plus_one
+      exact Clight.step_break_loop1 _ _ _ _ _ _ _
+  case forNext func condition iteration body continuation environment memory
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch
+    cases contMatch with
+    | match_Kfor4 _ _ _ _ _ translatedIteration test translatedBody translatedCont
+        conditionMatch iterationMatch bodyMatch contMatch =>
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch (.tr_for_1 _ _ _ _ _ _ conditionMatch iterationMatch bodyMatch) contMatch⟩
+      apply plus_one
+      exact Clight.step_skip_loop2 _ _ _ _ _ _ _
+  case returnNone func continuation environment memory freedMemory freed
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch
+    refine ⟨_, Or.inl ?_, .match_returnstates _ _ _ _
+      (match_cont_call_cont source target _ _ _ contMatch)⟩
+    apply plus_one
+    exact Clight.step_return_0 _ _ _ _ _ _
+      (by rw [blocks_of_env_preserved source target programs environment]; exact freed)
+  case returnSome func expression continuation environment memory
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch with
+    | tr_return_some _ prelude result expressionMatch =>
+      cases expressionMatch with
+      | tr_expression_intro statements _ temporaryNames expressionMatch =>
+        refine ⟨_, Or.inl ?_, .match_exprstates _ _ _ _ _ _ _ _ temps _ _ _ unit linked
+          functionMatch (expressionMatch _ _ _ _) (.match_Kreturn _ _ _ _ contMatch)⟩
+        exact plus_left _ E0 (Clight.step_seq _ _ _ _ _ _ _)
+          (push_seq external target _ _ _ _ _ _) rfl
+  case returnValue func value exprType continuation environment memory resultValue freedMemory casted freed
+      translatedFunc statements translatedCont temps destination result temporaryNames unit
+      linked functionMatch contMatch expressionMatch =>
+    cases contMatch with
+    | match_Kreturn _ _ _ translatedCont contMatch =>
+      obtain ⟨rfl, typed, evaluated⟩ :=
+        tr_top_val_for_val_inv target _ _ _ _ _ _ _ _ _ expressionMatch
+      refine ⟨_, Or.inl ?_, .match_returnstates _ _ _ _
+        (match_cont_call_cont source target _ _ _ contMatch)⟩
+      apply plus_two
+      · exact Clight.step_skip_seq _ _ _ _ _ _
+      · exact Clight.step_return_1 _ _ _ _ _ _ _ _ _ evaluated
+          (by simpa only [typed, function_return_preserved _ _ _ functionMatch] using casted)
+          (by rw [blocks_of_env_preserved source target programs environment]; exact freed)
+      · rfl
+  case skipCall func continuation environment memory freedMemory callContinuation freed
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch
+    have translatedCall : Clight.is_call_cont translatedCont := by
+      cases contMatch <;> simp_all [Csem.is_call_cont, Clight.is_call_cont]
+    refine ⟨_, Or.inl ?_, .match_returnstates _ _ _ _
+      (match_cont_is_call_cont source target _ _ _ contMatch callContinuation)⟩
+    apply plus_one
+    exact Clight.step_skip_call _ _ _ _ _ _ translatedCall
+      (by rw [blocks_of_env_preserved source target programs environment]; exact freed)
+  case switchStart func expression labels continuation environment memory
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch with
+    | tr_switch _ _ prelude result translatedLabels expressionMatch labelsMatch =>
+      cases expressionMatch with
+      | tr_expression_intro statements _ temporaryNames expressionMatch =>
+        refine ⟨_, Or.inl ?_, .match_exprstates _ _ _ _ _ _ _ _ temps _ _ _ unit linked
+          functionMatch (expressionMatch _ _ _ _) (.match_Kswitch1 _ _ _ _ _ _ labelsMatch contMatch)⟩
+        exact plus_left _ E0 (Clight.step_seq _ _ _ _ _ _ _)
+          (push_seq external target _ _ _ _ _ _) rfl
+  case switchSelect func exprType labels continuation environment memory value index selected
+      translatedFunc statements translatedCont temps destination result temporaryNames unit
+      linked functionMatch contMatch expressionMatch =>
+    cases contMatch with
+    | match_Kswitch1 _ _ _ _ translatedLabels translatedCont labelsMatch contMatch =>
+      obtain ⟨rfl, typed, evaluated⟩ :=
+        tr_top_val_for_val_inv target _ _ _ _ _ _ _ _ _ expressionMatch
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked functionMatch
+        (tr_seq_of_labeled_statement _ _ _ (tr_select_switch _ _ _ _ labelsMatch))
+        (.match_Kswitch2 _ _ _ contMatch)⟩
+      apply plus_two
+      · exact Clight.step_skip_seq _ _ _ _ _ _
+      · exact Clight.step_switch _ _ _ _ _ _ _ _ _ evaluated (by simpa only [typed] using selected)
+      · rfl
+  case switchFinish func statement continuation environment memory finished
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    have translatedFinished : translatedStmt = .Sskip ∨ translatedStmt = .Sbreak := by
+      rcases finished with rfl | rfl <;> cases stmtMatch <;> simp
+    cases contMatch with
+    | match_Kswitch2 _ _ _ contMatch =>
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch .tr_skip contMatch⟩
+      apply plus_one
+      exact Clight.step_skip_break_switch _ _ _ _ _ _ translatedFinished
+  case switchContinue func continuation environment memory
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch
+    cases contMatch with
+    | match_Kswitch2 _ _ _ contMatch =>
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch .tr_continue contMatch⟩
+      apply plus_one
+      exact Clight.step_continue_switch _ _ _ _ _
+  case label func label body continuation environment memory
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch with
+    | tr_label _ _ translatedBody bodyMatch =>
+      refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+        functionMatch bodyMatch contMatch⟩
+      apply plus_one
+      exact Clight.step_label _ _ _ _ _ _ _
+  case goto func label continuation environment memory nextBody nextCont found
+      translatedFunc translatedStmt translatedCont temps unit linked functionMatch stmtMatch contMatch =>
+    cases stmtMatch
+    have bodyMatch : tr_stmt unit.prog_comp_env func.fn_body translatedFunc.fn_body := by
+      cases functionMatch
+      assumption
+    have labelMatch := tr_find_label source target unit.prog_comp_env label
+      func.fn_body (Csem.call_cont continuation) translatedFunc.fn_body (Clight.call_cont translatedCont)
+      bodyMatch (match_cont_call_cont source target _ _ _ contMatch _)
+    rw [found] at labelMatch
+    obtain ⟨translatedBody, nextTranslatedCont, targetFound, stmtMatch, nextContMatch⟩ := labelMatch
+    refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _ temps unit linked
+      functionMatch stmtMatch nextContMatch⟩
+    apply plus_one
+    exact Clight.step_goto _ _ _ _ _ _ _ _ targetFound
+  case internalFunction func arguments continuation memory environment allocatedMemory boundMemory
+      distinct allocated bound translatedDefinition translatedCont unit linked definitionMatch contMatch =>
+    cases definitionMatch with
+    | tr_internal _ translatedFunc functionMatch =>
+      have preserved := functionMatch
+      cases functionMatch with
+      | tr_function_intro bodyMatch returnMatch conventionMatch parametersMatch variablesMatch =>
+        refine ⟨_, Or.inl ?_, .match_regularstates _ _ _ _ _ _ _ _
+          (Clight.create_undef_temps translatedFunc.fn_temps) unit linked preserved bodyMatch (contMatch _)⟩
+        apply plus_one
+        apply Clight.step_internal_function
+        apply Clight.function_entry1.intro allocatedMemory
+        · simpa only [parametersMatch, variablesMatch, Clight.var_names, Csyntax.var_names] using distinct
+        · simpa only [parametersMatch, variablesMatch, Csem.empty_env, Clight.empty_env] using
+            alloc_variables_preserved source target programs _ _ _ _ _ allocated
+        · simpa only [parametersMatch] using
+            bind_parameters_preserved source target programs _ _ _ _ _ bound
+        · rfl
+  case externalFunction externalFunc argumentTypes returnType convention arguments continuation memory
+      returned freedMemory called translatedDefinition translatedCont unit linked definitionMatch contMatch =>
+    cases definitionMatch
+    refine ⟨_, Or.inl ?_, .match_returnstates _ _ _ _ contMatch⟩
+    apply plus_one
+    exact Clight.step_external_function _ _ _ _ _ _ _ _ _ _
+      (pg4376_external external externalFunc _ _ _ _ _ _ _
+        (senv_preserved source target programs) called)
+  case returnstate value func environment context exprType continuation memory translatedCont contMatch =>
+    have callMatch := contMatch (PTree.empty _)
+    cases callMatch with
+    | match_Kcall _ _ _ _ _ resultId translatedFunc temps statements translatedCont
+        result destination temporaryNames unit _ linked functionMatch contextMatch expressionMatch expressionContMatch =>
+      refine ⟨_, Or.inl ?_, .match_exprstates _ _ _ _ _ _ _ _ _ _ _ _ unit linked
+        functionMatch (expressionMatch value memory) expressionContMatch⟩
+      apply plus_one
+      exact Clight.step_returnstate _ _ _ _ _ _ _
+
+end
+end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+theorem simulation
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    simulationStatement := by
+  intro external source target programs before events after stepped translated matched
+  rcases stepped with expressionStep | statementStep
+  · exact estep_simulation external source target programs _ _ _ expressionStep _ matched
+  · exact sstep_simulation external source target programs _ _ _ statementStep _ matched
+
+end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+theorem transl_program_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_program_correctStatement := by
+  intro external source target programs
+  exact CompCert4Lean.Common.Smallstep.forward_simulation_star_wf
+    (Cstrategy.semantics external source) (Clight.semantics1 external target)
+    (senv_preserved source target programs).2.1
+    (match_states source target) (transl_initial_states source target programs)
+    (transl_final_states source target) (fun next previous => measure next < measure previous)
+    (InvImage.wf measure Nat.lt_wfRel.wf) (simulation external source target programs)
+
+end CompCert4Lean.Cfrontend.SimplExprproof

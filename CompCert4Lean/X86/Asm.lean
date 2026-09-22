@@ -1168,3 +1168,142 @@ theorem gso_proof : gso := by
 end Pregmap
 
 end CompCert4Lean.X86.Asm
+
+namespace CompCert4Lean.X86.Asm
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+
+theorem semantics_determinate_proof
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    semantics_determinateStatement := by
+  intro configuration providers assembly
+  constructor
+  · intro source traceFirst targetFirst traceSecond targetSecond firstStep secondStep
+    cases firstStep with
+    | exec_step_internal blockFirst offsetFirst functionFirst instructionFirst registers memory
+        registersFirst memoryFirst pcFirst functionFoundFirst instructionFoundFirst executedFirst =>
+        cases secondStep with
+        | exec_step_internal blockSecond offsetSecond functionSecond instructionSecond
+            _ _ registersSecond memorySecond pcSecond functionFoundSecond
+            instructionFoundSecond executedSecond =>
+            cases pcFirst.symm.trans pcSecond
+            cases functionFoundFirst.symm.trans functionFoundSecond
+            cases instructionFoundFirst.symm.trans instructionFoundSecond
+            cases executedFirst.symm.trans executedSecond
+            exact ⟨.match_traces_E0, fun _ => rfl⟩
+        | exec_step_builtin blockSecond offsetSecond functionSecond external arguments result
+            _ _ values traceSecond valueSecond registersSecond memorySecond pcSecond
+            functionFoundSecond instructionFoundSecond argumentsSecond callSecond registersEqualSecond =>
+            cases pcFirst.symm.trans pcSecond
+            cases functionFoundFirst.symm.trans functionFoundSecond
+            cases instructionFoundFirst.symm.trans instructionFoundSecond
+            cases executedFirst
+        | exec_step_external blockSecond external arguments valueSecond _ _ traceSecond
+            registersSecond memorySecond pcSecond functionFoundSecond argumentsSecond
+            callSecond registersEqualSecond =>
+            cases pcFirst.symm.trans pcSecond
+            cases functionFoundFirst.symm.trans functionFoundSecond
+    | exec_step_builtin blockFirst offsetFirst functionFirst externalFirst argumentsFirst resultFirst
+        registers memory valuesFirst traceFirst valueFirst registersFirst memoryFirst pcFirst
+        functionFoundFirst instructionFoundFirst argumentsEvaluatedFirst callFirst registersEqualFirst =>
+        cases secondStep with
+        | exec_step_internal blockSecond offsetSecond functionSecond instructionSecond
+            _ _ registersSecond memorySecond pcSecond functionFoundSecond
+            instructionFoundSecond executedSecond =>
+            cases pcFirst.symm.trans pcSecond
+            cases functionFoundFirst.symm.trans functionFoundSecond
+            cases instructionFoundFirst.symm.trans instructionFoundSecond
+            cases executedSecond
+        | exec_step_builtin blockSecond offsetSecond functionSecond externalSecond argumentsSecond
+            resultSecond _ _ valuesSecond traceSecond valueSecond registersSecond memorySecond
+            pcSecond functionFoundSecond instructionFoundSecond argumentsEvaluatedSecond
+            callSecond registersEqualSecond =>
+            cases pcFirst.symm.trans pcSecond
+            cases functionFoundFirst.symm.trans functionFoundSecond
+            cases instructionFoundFirst.symm.trans instructionFoundSecond
+            have argumentsEqual := eval_builtin_args_determ preg _ _ _ _ _ _
+              argumentsEvaluatedFirst _ argumentsEvaluatedSecond
+            cases argumentsEqual
+            obtain ⟨tracesMatch, resultsEqual⟩ :=
+              external_call_determ_proof providers _ _ _ _ _ _ _ _ _ _ callFirst callSecond
+            refine ⟨tracesMatch, ?_⟩
+            intro tracesEqual
+            obtain ⟨valuesEqual, memoryEqual⟩ := resultsEqual tracesEqual
+            cases valuesEqual
+            cases memoryEqual
+            cases registersEqualFirst
+            cases registersEqualSecond
+            rfl
+        | exec_step_external blockSecond externalSecond argumentsSecond valueSecond _ _ traceSecond
+            registersSecond memorySecond pcSecond functionFoundSecond argumentsEvaluatedSecond
+            callSecond registersEqualSecond =>
+            cases pcFirst.symm.trans pcSecond
+            cases functionFoundFirst.symm.trans functionFoundSecond
+    | exec_step_external blockFirst externalFirst argumentsFirst valueFirst registers memory
+        traceFirst registersFirst memoryFirst pcFirst functionFoundFirst argumentsEvaluatedFirst
+        callFirst registersEqualFirst =>
+        cases secondStep with
+        | exec_step_internal blockSecond offsetSecond functionSecond instructionSecond
+            _ _ registersSecond memorySecond pcSecond functionFoundSecond
+            instructionFoundSecond executedSecond =>
+            cases pcFirst.symm.trans pcSecond
+            cases functionFoundFirst.symm.trans functionFoundSecond
+        | exec_step_builtin blockSecond offsetSecond functionSecond externalSecond argumentsSecond
+            resultSecond _ _ valuesSecond traceSecond valueSecond registersSecond memorySecond
+            pcSecond functionFoundSecond instructionFoundSecond argumentsEvaluatedSecond
+            callSecond registersEqualSecond =>
+            cases pcFirst.symm.trans pcSecond
+            cases functionFoundFirst.symm.trans functionFoundSecond
+        | exec_step_external blockSecond externalSecond argumentsSecond valueSecond _ _ traceSecond
+            registersSecond memorySecond pcSecond functionFoundSecond argumentsEvaluatedSecond
+            callSecond registersEqualSecond =>
+            cases pcFirst.symm.trans pcSecond
+            cases functionFoundFirst.symm.trans functionFoundSecond
+            have argumentsEqual := extcall_arguments_determ_proof configuration _ _ _ _ _
+              argumentsEvaluatedFirst argumentsEvaluatedSecond
+            cases argumentsEqual
+            obtain ⟨tracesMatch, resultsEqual⟩ :=
+              external_call_determ_proof providers _ _ _ _ _ _ _ _ _ _ callFirst callSecond
+            refine ⟨tracesMatch, ?_⟩
+            intro tracesEqual
+            obtain ⟨valuesEqual, memoryEqual⟩ := resultsEqual tracesEqual
+            cases valuesEqual
+            cases memoryEqual
+            cases registersEqualFirst
+            cases registersEqualSecond
+            rfl
+  · intro source executionTrace target execution
+    cases execution with
+    | exec_step_internal => exact Nat.zero_le _
+    | exec_step_builtin _ _ _ external _ _ _ _ _ _ _ _ _ _ _ _ _ call _ =>
+        exact external_call_trace_length_proof providers external _ _ _ _ _ _ call
+    | exec_step_external _ external _ _ _ _ _ _ _ _ _ _ call _ =>
+        exact external_call_trace_length_proof providers external _ _ _ _ _ _ call
+  · intro firstInitial secondInitial firstStart secondStart
+    cases firstStart with
+    | initial_state_intro memoryFirst memoryInitializedFirst =>
+        cases secondStart with
+        | initial_state_intro memorySecond memoryInitializedSecond =>
+            cases memoryInitializedFirst.symm.trans memoryInitializedSecond
+            rfl
+  · intro final result finished executionTrace target execution
+    cases finished with
+    | final_state_intro registers memory result pcFinal resultFinal =>
+        cases execution
+        all_goals
+          have impossible : Vnullptr = val.Vptr _ _ :=
+            pcFinal.symm.trans (by assumption)
+          cases impossible
+  · intro final resultFirst resultSecond finishedFirst finishedSecond
+    cases finishedFirst with
+    | final_state_intro registers memory resultFirst pcFirst resultFoundFirst =>
+        cases finishedSecond with
+        | final_state_intro _ _ resultSecond pcSecond resultFoundSecond =>
+            exact val.Vint.inj (resultFoundFirst.symm.trans resultFoundSecond)
+
+end CompCert4Lean.X86.Asm

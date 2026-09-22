@@ -22,6 +22,7 @@ import CompCert4Lean.Lib.Coqlib
 import CompCert4Lean.Lib.Integers
 import CompCert4Lean.Lib.Maps
 import CompCert4Lean.X86.Op
+import CompCert4Lean.X86.CombineOpproof
 
 /-!
 # Correctness surface for common-subexpression elimination
@@ -4566,5 +4567,891 @@ theorem reduce_rec_sound
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
     reduce_rec_soundStatement := by
   exact reduce_rec_sound_aux_for_reduce_sound
+
+end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSE
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+
+theorem add_store_result_hold
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    ∀ cfg, add_store_result_holdStatement cfg := by
+  intro cfg valu ge sp regs after numbering addr args address_value chunk before
+    source classification environment approximation memory_approximation
+    holds address stored globals stack registers approximation_eq
+  subst approximation
+  unfold add_store_result
+  split
+  next inclusion =>
+    cases source_numbers : valnum_reg numbering source with
+    | mk numbered_source source_value =>
+      cases argument_numbers : valnum_regs numbered_source args with
+      | mk numbered_args argument_values =>
+        obtain ⟨source_valuation, source_holds, source_eq, source_agree,
+          source_bound, source_next⟩ :=
+          valnum_reg_holds valu ge (Vptr sp Ptrofs.zero) regs after numbering
+            source numbered_source source_value holds source_numbers
+        obtain ⟨argument_valuation, argument_holds, arguments_eq, arguments_agree,
+          argument_bounds, argument_next⟩ :=
+          valnum_regs_holds args source_valuation ge (Vptr sp Ptrofs.zero)
+            regs after numbered_source numbered_args argument_values
+            source_holds argument_numbers
+        simp only [argument_numbers]
+        refine ⟨argument_valuation, ⟨?_, ?_, argument_holds.num_holds_reg⟩⟩
+        · refine ⟨?_, argument_holds.num_holds_wf.wf_num_reg,
+            argument_holds.num_holds_wf.wf_num_val⟩
+          intro equation membership
+          rcases List.mem_cons.mp membership with equation_eq | old_equation
+          · subst equation
+            exact ⟨Nat.lt_of_lt_of_le source_bound argument_next, argument_bounds⟩
+          · exact argument_holds.num_holds_wf.wf_num_eqs equation old_equation
+        · intro equation membership
+          rcases List.mem_cons.mp membership with equation_eq | old_equation
+          · subst equation
+            cases address_value <;> simp [Mem.storev] at stored
+            rename_i address_block address_offset
+            have abstract_address : pmatch classification address_block address_offset
+                (aaddressing cfg (VA.State environment memory_approximation) addr args) := by
+              apply match_aptr_of_aval cfg classification address_block address_offset
+              exact CompCert4Lean.X86.ValueAOp.eval_static_addressing_64_sound
+                classification ge globals sp stack addr _ _ _ address
+                (aregs_sound classification regs environment args registers)
+            have numbered_address := address
+            rw [arguments_eq] at numbered_address
+            refine eq_holds_lessdef source_value _
+              (Val.load_result chunk (Regmap.get source regs)) ?_ ?_ ?_
+            · exact load_eval_to chunk addr argument_values
+                (Vptr address_block address_offset) _ _ numbered_address
+                (Mem.load_store_same chunk before address_block
+                  (Ptrofs.unsigned address_offset) (Regmap.get source regs) after stored)
+            · rw [arguments_agree source_value source_bound, ← source_eq]
+              exact store_normalized_range_sound classification chunk _
+                (vmatch_ge classification _ _ _ (vincl_ge _ _ inclusion)
+                  (registers source))
+            · exact load_valid sp chunk addr argument_values _ address_block
+                address_offset classification numbered_address abstract_address globals stack
+          · exact argument_holds.num_holds_eq equation old_equation
+  next excluded => exact ⟨valu, holds⟩
+
+end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSE
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+theorem transfer_builtin_holds
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    ∀ cfg, transfer_builtin_holdsStatement cfg := by
+  intro cfg providers globals body current external arguments destination successor
+    registers stack before values trace result after valu numbering definitions
+    approximations environment memory_approximation classification readonly
+    code evaluated called holds approximation environment_match readonly_match
+    memory_match global_match stack_match
+  simp only [CSE.transfer, code]
+  have empty : ∃ new_valuation,
+      numbering_holds new_valuation globals (Vptr stack Ptrofs.zero)
+        (regmap_setres destination result registers) after empty_numbering :=
+    ⟨valu, empty_numbering_holds valu globals (Vptr stack Ptrofs.zero)
+      (regmap_setres destination result registers) after⟩
+  have unchanged : after = before → ∃ new_valuation,
+      numbering_holds new_valuation globals (Vptr stack Ptrofs.zero)
+        (regmap_setres destination result registers) after
+        (set_res_unknown numbering destination) := by
+    intro memory_eq
+    subst after
+    exact ⟨valu, set_res_unknown_holds valu globals (Vptr stack Ptrofs.zero)
+      registers before numbering destination result holds⟩
+  have forget_loads : ∃ new_valuation,
+      numbering_holds new_valuation globals (Vptr stack Ptrofs.zero)
+        (regmap_setres destination result registers) after
+        (set_res_unknown (kill_all_loads numbering) destination) :=
+    ⟨valu, set_res_unknown_holds valu globals (Vptr stack Ptrofs.zero)
+      registers after (kill_all_loads numbering) destination result
+      (kill_all_loads_hold valu globals (Vptr stack Ptrofs.zero) registers
+        before numbering after holds)⟩
+  cases external <;> try exact empty
+  case EF_builtin name signature =>
+    cases lookup : lookup_builtin_function name signature with
+    | none => simpa only [lookup] using forget_loads
+    | some builtin =>
+        simp only [external_call, builtin_or_external_sem, lookup] at called
+        cases called
+        rename_i computed
+        simpa only [lookup] using
+          add_builtin_holds valu globals (Vptr stack Ptrofs.zero) registers
+            before numbering builtin arguments destination values result
+            holds evaluated computed
+  case EF_vload chunk =>
+    cases called
+    exact unchanged rfl
+  case EF_vstore chunk => exact forget_loads
+  case EF_annot kind text types =>
+    cases called
+    exact unchanged rfl
+  case EF_annot_val kind text type =>
+    cases called
+    exact unchanged rfl
+  case EF_debug kind text types =>
+    cases called
+    exact unchanged rfl
+  case EF_memcpy size alignment =>
+    cases arguments with
+    | nil => exact empty
+    | cons destination_arg remaining =>
+      cases remaining with
+      | nil => exact empty
+      | cons source_arg remaining =>
+        cases remaining with
+        | cons extra remaining => exact empty
+        | nil =>
+          cases called
+          rename_i destination_block destination_offset source_block source_offset bytes
+            aligned nonnegative size_aligned source_aligned destination_aligned
+            disjoint loaded stored
+          cases evaluated
+          rename_i destination_eval remaining
+          cases remaining
+          rename_i source_eval remaining
+          cases remaining
+          simp only [approximation]
+          have destination_match := aaddr_arg_sound_1 cfg classification registers
+            environment before readonly memory_approximation globals stack
+            destination_arg destination_block destination_offset environment_match
+            readonly_match memory_match global_match stack_match destination_eval
+          have source_match := aaddr_arg_sound_1 cfg classification registers
+            environment before readonly memory_approximation globals stack
+            source_arg source_block source_offset environment_match readonly_match
+            memory_match global_match stack_match source_eval
+          refine ⟨valu, set_res_unknown_holds valu globals (Vptr stack Ptrofs.zero)
+            registers after _ destination Vundef ?_⟩
+          apply add_memcpy_holds before source_block source_offset size bytes
+            destination_block destination_offset after valu globals stack registers
+            numbering _ classification _ _ loaded stored holds
+          · exact kill_loads_after_storebytes_holds valu globals stack registers
+              before numbering _ destination_block destination_offset bytes after
+              classification size holds destination_match stored global_match stack_match
+              (Mem.loadbytes_length before source_block _ size bytes loaded) nonnegative
+          · exact source_match
+          · exact destination_match
+          · exact stack_match
+          · exact Ple_refl _
+
+end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.CSE
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.CombineOp
+open CompCert4Lean.X86.CombineOpproof
+open CompCert4Lean.Flocq.IEEE754.Binary
+
+private theorem cse_transformed_code (body : RTL.function) (unit : RTL.program)
+    (approximations : PMap.t numbering) (current : node) (instruction : instruction)
+    (code : PTree.get current body.fn_code = some instruction) :
+    PTree.get current (transf_function' body unit approximations).fn_code =
+      some (transf_instr (prog_defmap unit) (PMap.get current approximations) instruction) := by
+  change PTree.get current (PTree.map
+    (fun index instruction => transf_instr (prog_defmap unit) (PMap.get index approximations) instruction)
+    body.fn_code) = _
+  have mapped := PTree.gmap
+    (fun index instruction => transf_instr (prog_defmap unit) (PMap.get index approximations) instruction)
+    current body.fn_code
+  rw [code] at mapped
+  exact mapped
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+
+private theorem cse_runtime_eventually
+    (providers : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (program : RTL.program) (frames : List stackframe) (body : RTL.function)
+    (stack : val) (successor : node) (registers : regset) (memory : mem)
+    (arguments : List reg) (destination : reg)
+    (name : CompCert4Lean.Foundation.RocqString.Rocq.Coq.Strings.String.string)
+    (signature : signature) (builtin : builtin_function)
+    (lookup : lookup_builtin_function name signature = some builtin)
+    (predicate : state → Prop)
+    (finish : ∀ result,
+      builtin_function_sem builtin (arguments.map (fun register => Regmap.get register registers)) =
+        some result →
+      predicate (State frames body stack successor (Regmap.set destination result registers) memory)) :
+    CSEproof.eventually program providers 2
+      (Callstate (Stackframe destination body stack successor registers :: frames)
+        (External (EF_runtime name signature))
+        (arguments.map (fun register => Regmap.get register registers)) memory) predicate := by
+  apply CompCert4Lean.Common.Smallstep.eventually_later
+  · intro result final
+    cases final
+  · intro trace target stepped
+    cases stepped
+    rename_i called
+    simp only [external_call, builtin_or_external_sem, lookup] at called
+    cases called
+    rfl
+  · intro trace target stepped
+    cases stepped
+    rename_i called
+    simp only [external_call, builtin_or_external_sem, lookup] at called
+    cases called
+    rename_i computed
+    apply CompCert4Lean.Common.Smallstep.eventually_later
+    · intro result final
+      cases final
+    · intro trace target returned
+      cases returned
+      rfl
+    · intro trace target returned
+      cases returned
+      exact CompCert4Lean.Common.Smallstep.eventually.eventually_now _ _ (finish _ computed)
+
+set_option maxHeartbeats 4000000 in
+theorem transf_step_correct : ∀ cfg, transf_step_correctStatement cfg := by
+  intro cfg providers program target_program programs source trace successor stepped
+    target matched sound
+  have symbols := symbols_preserved cfg program target_program programs
+  have environments := senv_preserved cfg program target_program programs
+  cases stepped <;> cases matched
+  case exec_Inop.intro =>
+    rename_i frames body stack current registers memory successor code
+      target_frames target_registers target_memory unit approximations linked frames_match
+      analyzed registers_extend memory_extends satisfied
+    have target_code := cse_transformed_code body unit approximations current _ code
+    refine Or.inl ⟨_, RTL.exec_Inop _ _ _ _ _ _ _ target_code, ?_⟩
+    refine match_states.intro _ _ _ _ _ _ _ _ _ unit approximations linked analyzed
+      ?_ registers_extend memory_extends frames_match
+    apply analysis_correct_1 cfg _ _ _ _ _ _ _ _ _ _ _ analyzed code
+      (by simp [successors_instr])
+    simpa only [CSE.transfer, code] using satisfied
+  case exec_Iop.intro =>
+    rename_i frames body stack current registers memory operation arguments destination
+      successor result code evaluated target_frames target_registers target_memory unit
+      approximations linked frames_match analyzed registers_extend memory_extends satisfied
+    have target_code := cse_transformed_code body unit approximations current _ code
+    have next_holds : ∃ valuation,
+        numbering_holds valuation (Genv.globalenv program) stack
+          (Regmap.set destination result registers) memory (PMap.get successor approximations) := by
+      apply analysis_correct_1 cfg _ _ _ _ _ _ _ _ _ _ _ analyzed code
+        (by simp [successors_instr])
+      obtain ⟨valuation, holds⟩ := satisfied
+      simpa only [CSE.transfer, code] using
+        add_op_holds valuation (Genv.globalenv program) stack registers memory
+          (PMap.get current approximations) operation arguments result destination holds evaluated
+    have finish : ∀ target_operation target_arguments,
+        PTree.get current (transf_function' body unit approximations).fn_code =
+          some (Iop target_operation target_arguments destination successor) →
+        (∃ intermediate,
+          eval_operation (Genv.globalenv program) stack target_operation
+            (target_arguments.map (fun register => Regmap.get register registers)) memory = some intermediate ∧
+          Val.lessdef result intermediate) →
+        ∃ target_successor,
+          RTL.step providers (Genv.globalenv target_program)
+            (State target_frames (transf_function' body unit approximations) stack current
+              target_registers target_memory) E0 target_successor ∧
+          match_states cfg program
+            (State frames body stack successor (Regmap.set destination result registers) memory)
+            target_successor := by
+      intro target_operation target_arguments target_code intermediate_exists
+      obtain ⟨intermediate, intermediate_eval, intermediate_lessdef⟩ := intermediate_exists
+      obtain ⟨target_result, target_eval, target_lessdef⟩ := eval_operation_lessdef _ _
+        (Genv.globalenv program) stack target_operation _ _ intermediate memory target_memory
+        (regs_lessdef_regs registers target_registers registers_extend target_arguments)
+        memory_extends intermediate_eval
+      refine ⟨_, RTL.exec_Iop _ _ _ _ _ _ _ _ _ _ target_result target_code ?_, ?_⟩
+      · rw [eval_operation_preserved _ _ _ _ _ _ symbols]
+        exact target_eval
+      · exact match_states.intro _ _ _ _ _ _ _ _ _ unit approximations linked analyzed
+          next_holds (set_reg_lessdef destination result target_result registers target_registers
+            (Val.lessdef_trans _ _ _ intermediate_lessdef target_lessdef) registers_extend)
+          memory_extends frames_match
+    apply Or.inl
+    simp only [transf_instr] at target_code
+    split at target_code
+    · exact finish operation arguments target_code ⟨result, evaluated, Val.lessdef_refl _⟩
+    · cases numbered : valnum_regs (PMap.get current approximations) arguments with
+      | mk numbered_arguments argument_values =>
+        simp only [numbered] at target_code
+        obtain ⟨valuation, holds⟩ := satisfied
+        obtain ⟨new_valuation, numbered_holds, arguments_eq, agreement, bounds, next_bound⟩ :=
+          valnum_regs_holds arguments valuation (Genv.globalenv program) stack registers memory
+            _ _ _ holds numbered
+        cases found : find_rhs numbered_arguments (.Op operation argument_values) with
+        | some register =>
+          simp only [found] at target_code
+          obtain ⟨found_result, found_eval, found_lessdef⟩ :=
+            find_rhs_sound numbered_arguments _ register new_valuation
+              (Genv.globalenv program) stack registers memory found numbered_holds
+          cases found_eval
+          rename_i found_eval
+          rw [← arguments_eq, evaluated] at found_eval
+          cases Option.some.inj found_eval
+          exact finish Omove [register] target_code
+            ⟨Regmap.get register registers, rfl, found_lessdef⟩
+        | none =>
+          simp only [found] at target_code
+          cases reduced : CSE.reduce combine_op numbered_arguments operation arguments argument_values with
+          | mk target_operation target_arguments =>
+            simp only [reduced] at target_code
+            apply finish target_operation target_arguments target_code
+            exact reduce_lessdef_sound X86.Op.operation combine_op (Genv.globalenv program) stack
+              registers memory (fun operation values => eval_operation (Genv.globalenv program) stack operation values memory)
+              (fun equations valuation operation arguments target_operation target_arguments result equations_sound reduced evaluated =>
+                combine_op_sound _ _ _ equations valuation equations_sound operation arguments target_operation target_arguments
+                  result reduced evaluated)
+              numbered_arguments new_valuation numbered_holds operation arguments argument_values
+              target_operation target_arguments result reduced arguments_eq.symm evaluated
+  case exec_Iload.intro =>
+    rename_i frames body stack current registers memory chunk addr arguments destination
+      successor address_value result code addressed loaded target_frames target_registers
+      target_memory unit approximations linked frames_match analyzed registers_extend memory_extends satisfied
+    have target_code := cse_transformed_code body unit approximations current _ code
+    have next_holds : ∃ valuation,
+        numbering_holds valuation (Genv.globalenv program) stack
+          (Regmap.set destination result registers) memory (PMap.get successor approximations) := by
+      apply analysis_correct_1 cfg _ _ _ _ _ _ _ _ _ _ _ analyzed code
+        (by simp [successors_instr])
+      obtain ⟨valuation, holds⟩ := satisfied
+      cases sound
+      rename_i sound_for_unit
+      cases sound_for_unit unit linked
+      rename_i stack environment memory_approximation classification global_match stack_match
+        abstract_at environment_match readonly_match memory_match stack_sound
+      cases address_value <;> simp [Mem.loadv] at loaded
+      rename_i address_block address_offset
+      simp only [CSE.transfer, code, CSE.vanalyze, abstract_at]
+      apply add_load_holds valuation (Genv.globalenv program) stack registers memory
+        _ addr arguments _ address_block address_offset chunk result destination classification
+        holds addressed loaded
+      · apply match_aptr_of_aval cfg classification address_block address_offset
+        exact X86.ValueAOp.eval_static_addressing_64_sound classification _ global_match
+          stack stack_match addr _ _ _ addressed
+          (aregs_sound classification registers environment arguments environment_match)
+      · exact global_match
+      · exact stack_match
+    obtain ⟨valuation, holds⟩ := satisfied
+    cases numbered : valnum_regs (PMap.get current approximations) arguments with
+    | mk numbered_arguments argument_values =>
+      obtain ⟨new_valuation, numbered_holds, arguments_eq, agreement, bounds, next_bound⟩ :=
+        valnum_regs_holds arguments valuation (Genv.globalenv program) stack registers memory
+          _ _ _ holds numbered
+      simp only [transf_instr, numbered] at target_code
+      cases found : find_rhs numbered_arguments (.Load chunk addr argument_values Ptop) with
+      | some register =>
+        simp only [found] at target_code
+        obtain ⟨found_result, found_eval, found_lessdef⟩ :=
+          find_rhs_sound numbered_arguments _ register new_valuation
+            (Genv.globalenv program) stack registers memory found numbered_holds
+        cases found_eval
+        rename_i found_address found_address_eval found_load
+        rw [← arguments_eq, addressed] at found_address_eval
+        cases Option.some.inj found_address_eval
+        rw [loaded] at found_load
+        cases Option.some.inj found_load
+        refine Or.inl ⟨_, RTL.exec_Iop _ _ _ _ _ _ Omove [register] destination successor
+          (Regmap.get register target_registers) target_code rfl, ?_⟩
+        exact match_states.intro _ _ _ _ _ _ _ _ _ unit approximations linked analyzed
+          next_holds (set_reg_lessdef destination result _ registers target_registers
+            (Val.lessdef_trans _ _ _ found_lessdef (registers_extend register)) registers_extend)
+          memory_extends frames_match
+      | none =>
+        simp only [found] at target_code
+        cases reduced : CSE.reduce combine_addr numbered_arguments addr arguments argument_values with
+        | mk target_address target_arguments =>
+          simp only [reduced] at target_code
+          have reduced_address := reduce_sound addressing combine_addr val (Genv.globalenv program) stack
+            registers memory (fun addr values => eval_addressing (Genv.globalenv program) stack addr values)
+            (fun equations valuation addr arguments target_address target_arguments equations_sound reduced =>
+              combine_addr_sound _ _ _ equations valuation equations_sound addr arguments target_address target_arguments reduced)
+            numbered_arguments new_valuation numbered_holds addr arguments argument_values
+            target_address target_arguments address_value reduced arguments_eq.symm addressed
+          obtain ⟨target_pointer, target_addressed, address_lessdef⟩ :=
+            eval_addressing_lessdef _ _ (Genv.globalenv program) stack target_address _ _ address_value
+              (regs_lessdef_regs registers target_registers registers_extend target_arguments) reduced_address
+          obtain ⟨target_result, target_loaded, result_lessdef⟩ :=
+            Mem.loadv_extends chunk memory target_memory address_value target_pointer result
+              memory_extends loaded address_lessdef
+          refine Or.inl ⟨_, RTL.exec_Iload _ _ _ _ _ _ chunk target_address target_arguments destination
+            successor target_pointer target_result target_code ?_ target_loaded, ?_⟩
+          · rw [eval_addressing_preserved _ _ _ _ _ _ symbols]
+            exact target_addressed
+          · exact match_states.intro _ _ _ _ _ _ _ _ _ unit approximations linked analyzed
+              next_holds (set_reg_lessdef destination result target_result registers target_registers
+                result_lessdef registers_extend) memory_extends frames_match
+  case exec_Istore.intro =>
+    rename_i frames body stack current registers memory chunk addr arguments source
+      successor address_value after code addressed stored target_frames target_registers
+      target_memory unit approximations linked frames_match analyzed registers_extend memory_extends satisfied
+    have target_code := cse_transformed_code body unit approximations current _ code
+    obtain ⟨valuation, holds⟩ := satisfied
+    cases numbered : valnum_regs (PMap.get current approximations) arguments with
+    | mk numbered_arguments argument_values =>
+      obtain ⟨new_valuation, numbered_holds, arguments_eq, agreement, bounds, next_bound⟩ :=
+        valnum_regs_holds arguments valuation (Genv.globalenv program) stack registers memory
+          _ _ _ holds numbered
+      cases reduced : CSE.reduce combine_addr numbered_arguments addr arguments argument_values with
+      | mk target_address target_arguments =>
+        simp only [transf_instr, numbered, reduced] at target_code
+        have reduced_address := reduce_sound addressing combine_addr val (Genv.globalenv program) stack
+          registers memory (fun addr values => eval_addressing (Genv.globalenv program) stack addr values)
+          (fun equations valuation addr arguments target_address target_arguments equations_sound reduced =>
+            combine_addr_sound _ _ _ equations valuation equations_sound addr arguments target_address target_arguments reduced)
+          numbered_arguments new_valuation numbered_holds addr arguments argument_values
+          target_address target_arguments address_value reduced arguments_eq.symm addressed
+        obtain ⟨target_pointer, target_addressed, address_lessdef⟩ :=
+          eval_addressing_lessdef _ _ (Genv.globalenv program) stack target_address _ _ address_value
+            (regs_lessdef_regs registers target_registers registers_extend target_arguments) reduced_address
+        obtain ⟨target_after, target_stored, after_extends⟩ :=
+          Mem.storev_extends chunk memory target_memory address_value (Regmap.get source registers)
+            after target_pointer (Regmap.get source target_registers) memory_extends stored address_lessdef
+            (registers_extend source)
+        refine Or.inl ⟨_, RTL.exec_Istore _ _ _ _ _ _ chunk target_address target_arguments source
+          successor target_pointer target_after target_code ?_ target_stored, ?_⟩
+        · rw [eval_addressing_preserved _ _ _ _ _ _ symbols]
+          exact target_addressed
+        · refine match_states.intro _ _ _ _ _ _ _ _ _ unit approximations linked analyzed
+            ?_ registers_extend after_extends frames_match
+          apply analysis_correct_1 cfg _ _ _ _ _ _ _ _ _ _ _ analyzed code
+            (by simp [successors_instr])
+          cases sound
+          rename_i sound_for_unit
+          cases sound_for_unit unit linked
+          rename_i stack environment memory_approximation classification global_match stack_match
+            abstract_at environment_match readonly_match memory_match stack_sound
+          simp only [CSE.transfer, code, CSE.vanalyze, abstract_at]
+          apply add_store_result_hold cfg valuation (Genv.globalenv program) stack registers after
+            _ addr arguments address_value chunk memory source classification environment _ memory_approximation
+          · exact kill_loads_after_store_holds cfg valuation _ stack registers memory _ addr arguments
+              address_value chunk _ after classification _ environment memory_approximation
+              holds addressed stored global_match stack_match environment_match rfl
+          · exact addressed
+          · exact stored
+          · exact global_match
+          · exact stack_match
+          · exact environment_match
+          · rfl
+  case exec_Icond.intro =>
+    rename_i frames body stack current registers memory condition arguments ifso ifnot
+      answer successor code evaluated successor_eq target_frames target_registers target_memory
+      unit approximations linked frames_match analyzed registers_extend memory_extends satisfied
+    have target_code := cse_transformed_code body unit approximations current _ code
+    have next_match : match_states cfg program (State frames body stack successor registers memory)
+        (State target_frames (transf_function' body unit approximations) stack successor target_registers target_memory) := by
+      refine match_states.intro _ _ _ _ _ _ _ _ _ unit approximations linked analyzed
+        ?_ registers_extend memory_extends frames_match
+      apply analysis_correct_1 cfg _ _ _ _ _ _ _ _ _ _ _ analyzed code
+      · cases answer <;> simp_all [successors_instr]
+      · simpa only [CSE.transfer, code] using satisfied
+    obtain ⟨valuation, holds⟩ := satisfied
+    cases numbered : valnum_regs (PMap.get current approximations) arguments with
+    | mk numbered_arguments argument_values =>
+      obtain ⟨new_valuation, numbered_holds, arguments_eq, agreement, bounds, next_bound⟩ :=
+        valnum_regs_holds arguments valuation (Genv.globalenv program) stack registers memory
+          _ _ _ holds numbered
+      simp only [transf_instr, numbered] at target_code
+      cases combined : combine_cond' condition argument_values with
+      | some combined_answer =>
+        have answer_eq := combine_cond'_sound memory new_valuation condition argument_values
+          answer combined_answer combined
+          ((congrArg (fun values => eval_condition condition values memory) arguments_eq).symm.trans evaluated)
+        subst combined_answer
+        simp only [combined, ← successor_eq] at target_code
+        exact Or.inl ⟨_, RTL.exec_Inop _ _ _ _ _ _ _ target_code, next_match⟩
+      | none =>
+        simp only [combined] at target_code
+        cases reduced : CSE.reduce combine_cond numbered_arguments condition arguments argument_values with
+        | mk target_condition target_arguments =>
+          simp only [reduced] at target_code
+          have reduced_condition := reduce_sound X86.Op.condition combine_cond Bool (Genv.globalenv program)
+            stack registers memory (fun condition values => eval_condition condition values memory)
+            (fun equations valuation condition arguments target_condition target_arguments equations_sound reduced =>
+              combine_cond_sound _ _ _ equations valuation equations_sound condition arguments target_condition target_arguments reduced)
+            numbered_arguments new_valuation numbered_holds condition arguments argument_values
+            target_condition target_arguments answer reduced arguments_eq.symm evaluated
+          exact Or.inl ⟨_, RTL.exec_Icond _ _ _ _ _ _ target_condition target_arguments ifso ifnot
+            answer successor target_code (eval_condition_lessdef target_condition _ _ answer memory target_memory
+              (regs_lessdef_regs registers target_registers registers_extend target_arguments)
+              memory_extends reduced_condition) successor_eq, next_match⟩
+  case exec_Ijumptable.intro =>
+    rename_i frames body stack current registers memory argument table index successor code
+      argument_eq selected target_frames target_registers target_memory unit approximations linked
+      frames_match analyzed registers_extend memory_extends satisfied
+    have target_code := cse_transformed_code body unit approximations current _ code
+    have target_argument := registers_extend argument
+    rw [argument_eq] at target_argument
+    have target_argument_eq : Regmap.get argument target_registers = Vint index := by
+      have concrete : ∀ value, Val.lessdef (Vint index) value → value = Vint index := by
+        intro value lessdef
+        cases lessdef
+        rfl
+      exact concrete _ target_argument
+    refine Or.inl ⟨_, RTL.exec_Ijumptable _ _ _ _ _ _ argument table index successor
+      target_code target_argument_eq selected, ?_⟩
+    refine match_states.intro _ _ _ _ _ _ _ _ _ unit approximations linked analyzed
+      ?_ registers_extend memory_extends frames_match
+    apply analysis_correct_1 cfg _ _ _ _ _ _ _ _ _ _ _ analyzed code
+      (list_nth_z_in _ table (Int.unsigned index) successor selected)
+    simpa only [CSE.transfer, code] using satisfied
+  case exec_Itailcall.intro =>
+    rename_i frames body stack current registers memory signature callee arguments function
+      after code found signature_eq freed target_frames target_registers target_memory
+      unit approximations linked frames_match analyzed registers_extend memory_extends satisfied
+    have target_code := cse_transformed_code body unit approximations current _ code
+    obtain ⟨callee_unit, target_function, target_found, transformed, callee_linked⟩ :=
+      find_function_translated cfg program target_program programs callee registers function
+        target_registers found registers_extend
+    obtain ⟨target_after, target_freed, after_extends⟩ :=
+      Mem.free_parallel_extends memory target_memory stack .Z0 body.fn_stacksize after memory_extends freed
+    refine Or.inl ⟨_, RTL.exec_Itailcall _ _ _ _ _ _ signature callee arguments target_function
+      target_after target_code target_found ?_ target_freed, ?_⟩
+    · exact (sig_preserved cfg _ _ function target_function transformed).trans signature_eq
+    · exact match_states.call _ _ _ _ _ _ _ _ callee_unit callee_linked frames_match transformed
+        (regs_lessdef_regs registers target_registers registers_extend arguments) after_extends
+  case exec_Ireturn.intro =>
+    rename_i frames body stack current registers memory result_register after code freed
+      target_frames target_registers target_memory unit approximations linked frames_match
+      analyzed registers_extend memory_extends satisfied
+    have target_code := cse_transformed_code body unit approximations current _ code
+    obtain ⟨target_after, target_freed, after_extends⟩ :=
+      Mem.free_parallel_extends memory target_memory stack .Z0 body.fn_stacksize after memory_extends freed
+    refine Or.inl ⟨_, RTL.exec_Ireturn _ _ _ _ _ _ result_register target_after target_code target_freed, ?_⟩
+    refine match_states.return _ _ _ _ _ _ frames_match ?_ after_extends
+    cases result_register with
+    | none => exact Val.lessdef_refl _
+    | some register => exact registers_extend register
+  case exec_function_external.call =>
+    rename_i frames external arguments result memory after called target_function target_frames
+      target_arguments target_memory unit linked frames_match transformed arguments_extend memory_extends
+    simp only [CSE.transf_fundef, transf_partial_fundef] at transformed
+    cases transformed
+    obtain ⟨target_result, target_after, target_called, result_lessdef, after_extends, unchanged⟩ :=
+      external_call_mem_extends_proof providers external (Genv.to_senv (Genv.globalenv program))
+        arguments memory trace result after target_memory target_arguments called memory_extends arguments_extend
+    refine Or.inl ⟨_, RTL.exec_function_external _ external target_arguments target_result trace
+      target_memory target_after ?_, ?_⟩
+    · exact external_call_symbols_preserved_proof providers external _ _ _ _ _ _ _ environments target_called
+    · exact match_states.return _ _ _ _ _ _ frames_match result_lessdef after_extends
+  case exec_function_internal.call =>
+    rename_i frames body arguments memory after stack types allocated target_function target_frames
+      target_arguments target_memory unit linked frames_match transformed arguments_extend memory_extends
+    simp only [CSE.transf_fundef, transf_partial_fundef] at transformed
+    cases body_transformed : CSE.transf_function cfg (prog_defmap unit) (romem_for cfg unit) body with
+    | Error message => simp [body_transformed] at transformed
+    | OK target_body =>
+      simp only [body_transformed] at transformed
+      cases transformed
+      unfold CSE.transf_function at body_transformed
+      change (match CSEproof.analyze cfg unit body with
+        | none => _
+        | some approximations => OK (transf_function' body unit approximations)) = OK target_body at body_transformed
+      cases analyzed : CSEproof.analyze cfg unit body with
+      | none => simp only [analyzed] at body_transformed; cases body_transformed
+      | some approximations =>
+        simp only [analyzed] at body_transformed
+        cases body_transformed
+        obtain ⟨target_after, target_allocated, after_extends⟩ :=
+          Mem.alloc_extends memory target_memory .Z0 body.fn_stacksize stack after .Z0 body.fn_stacksize
+            memory_extends allocated (ZArith.BinInt.Z.le_refl _) (ZArith.BinInt.Z.le_refl _)
+        refine Or.inl ⟨_, RTL.exec_function_internal _ _ target_arguments target_memory target_after stack
+          (Val.has_argtype_list_lessdef _ _ _ types arguments_extend) target_allocated, ?_⟩
+        refine match_states.intro _ _ _ _ _ _ _ _ _ unit approximations linked analyzed
+          ?_ (init_regs_lessdef body.fn_params arguments target_arguments arguments_extend) after_extends frames_match
+        exact analysis_correct_entry cfg _ _ _ _ _ _ _ _ analyzed
+  case exec_return.return =>
+    rename_i destination body stack successor registers frames result memory target_frames
+      target_result target_memory frames_match result_lessdef memory_extends
+    cases frames_match
+    rename_i target_registers target_frames unit approximations linked analyzed registers_extend
+      return_holds frames_match
+    refine Or.inl ⟨_, RTL.exec_return _ _ _ _ _ _ target_result target_memory, ?_⟩
+    exact match_states.intro _ _ _ _ _ _ _ _ _ unit approximations linked analyzed
+      (return_holds result memory) (set_reg_lessdef destination result target_result registers target_registers
+        result_lessdef registers_extend) memory_extends frames_match
+  case exec_Ibuiltin.intro =>
+    rename_i frames body stack current registers memory external arguments destination
+      successor values result after code evaluated called target_frames target_registers
+      target_memory unit approximations linked frames_match analyzed registers_extend memory_extends satisfied
+    have target_code := cse_transformed_code body unit approximations current _ code
+    have next_holds : ∃ valuation,
+        numbering_holds valuation (Genv.globalenv program) stack
+          (regmap_setres destination result registers) after (PMap.get successor approximations) := by
+      apply analysis_correct_1 cfg _ _ _ _ _ _ _ _ _ _ _ analyzed code
+        (by simp [successors_instr])
+      obtain ⟨valuation, holds⟩ := satisfied
+      cases sound
+      rename_i sound_for_unit
+      cases sound_for_unit unit linked
+      rename_i stack environment memory_approximation classification global_match stack_match
+        abstract_at environment_match readonly_match memory_match stack_sound
+      exact transfer_builtin_holds cfg providers (Genv.globalenv program) body current external
+        arguments destination successor registers stack memory values trace result after valuation
+        (PMap.get current approximations) (prog_defmap unit) _ environment memory_approximation
+        classification (romem_for cfg unit) code evaluated called holds abstract_at
+        environment_match readonly_match memory_match global_match stack_match
+    have default :
+        PTree.get current (transf_function' body unit approximations).fn_code =
+          some (Ibuiltin external arguments destination successor) →
+        ∃ target_successor,
+          RTL.step providers (Genv.globalenv target_program)
+            (State target_frames (transf_function' body unit approximations) stack current
+              target_registers target_memory) trace target_successor ∧
+          match_states cfg program
+            (State frames body stack successor (regmap_setres destination result registers) after)
+            target_successor := by
+      intro target_code
+      obtain ⟨target_values, target_evaluated, values_extend⟩ := eval_builtin_args_lessdef
+        reg (Genv.to_senv (Genv.globalenv program)) _ _ stack memory target_memory
+        registers_extend memory_extends arguments values evaluated
+      obtain ⟨target_result, target_after, target_called, result_lessdef, after_extends, unchanged⟩ :=
+        external_call_mem_extends_proof providers external (Genv.to_senv (Genv.globalenv program))
+          values memory trace result after target_memory target_values called memory_extends values_extend
+      refine ⟨_, RTL.exec_Ibuiltin _ _ _ _ _ _ external arguments destination successor
+        target_values trace target_result target_after target_code ?_ ?_, ?_⟩
+      · exact eval_builtin_args_preserved reg _ _ _ _ _ _ _ stack target_memory symbols
+          arguments target_values target_evaluated
+      · exact external_call_symbols_preserved_proof providers external _ _ _ _ _ _ _ environments target_called
+      · exact match_states.intro _ _ _ _ _ _ _ _ _ unit approximations linked analyzed
+          next_holds (Registers.set_res_lessdef destination result target_result registers target_registers
+            result_lessdef registers_extend) after_extends frames_match
+    apply Or.inl
+    cases external <;> try exact default target_code
+    case EF_builtin name signature =>
+      cases destination with
+      | BR_none => exact default target_code
+      | BR_splitlong high low => exact default target_code
+      | BR destination =>
+        cases lookup : lookup_builtin_function name signature with
+        | none => exact default (by simpa only [transf_instr, lookup] using target_code)
+        | some builtin =>
+          cases numbered : valnum_builtin_args (PMap.get current approximations) arguments with
+          | mk numbered_arguments argument_values =>
+            simp only [transf_instr, lookup, numbered] at target_code
+            cases found : find_rhs numbered_arguments (.Builtin builtin argument_values) with
+            | none => exact default (by simpa only [found] using target_code)
+            | some register =>
+              simp only [found] at target_code
+              simp only [external_call, builtin_or_external_sem, lookup] at called
+              cases called
+              rename_i computed
+              obtain ⟨valuation, holds⟩ := satisfied
+              obtain ⟨new_valuation, numbered_holds, numbered_evaluated, agreement, bounds, next_bound⟩ :=
+                valnum_builtin_args_holds (Genv.globalenv program) stack registers memory arguments values
+                  evaluated valuation _ _ _ holds numbered
+              obtain ⟨found_result, found_eval, found_lessdef⟩ :=
+                find_rhs_sound numbered_arguments _ register new_valuation
+                  (Genv.globalenv program) stack registers memory found numbered_holds
+              cases found_eval
+              rename_i found_values found_evaluated found_computed
+              have found_values_eq := eval_builtin_args_determ _ _ _ _ _ _ values
+                numbered_evaluated found_values found_evaluated
+              subst found_values
+              have found_result_eq := Option.some.inj (found_computed.symm.trans computed)
+              subst found_result
+              refine ⟨_, RTL.exec_Iop _ _ _ _ _ _ Omove [register] destination successor
+                (Regmap.get register target_registers) target_code rfl, ?_⟩
+              exact match_states.intro _ _ _ _ _ _ _ _ _ unit approximations linked analyzed
+                next_holds (set_reg_lessdef destination result _ registers target_registers
+                  (Val.lessdef_trans _ _ _ found_lessdef (registers_extend register)) registers_extend)
+                memory_extends frames_match
+  case exec_Icall.intro =>
+    rename_i frames body stack current registers memory signature callee arguments destination
+      successor function code found signature_eq target_frames target_registers target_memory
+      unit approximations linked frames_match analyzed registers_extend memory_extends satisfied
+    have target_code := cse_transformed_code body unit approximations current _ code
+    obtain ⟨callee_unit, target_function, target_found, transformed, callee_linked⟩ :=
+      find_function_translated cfg program target_program programs callee registers function
+        target_registers found registers_extend
+    have call_step :
+        PTree.get current (transf_function' body unit approximations).fn_code =
+          some (Icall signature callee arguments destination successor) →
+        RTL.step providers (Genv.globalenv target_program)
+          (State target_frames (transf_function' body unit approximations) stack current target_registers target_memory)
+          E0 (Callstate
+            (Stackframe destination (transf_function' body unit approximations) stack successor target_registers :: target_frames)
+            target_function (arguments.map (fun register => Regmap.get register target_registers)) target_memory) := by
+      intro target_code
+      exact RTL.exec_Icall _ _ _ _ _ _ signature callee arguments destination successor target_function
+        target_code target_found ((sig_preserved cfg _ _ function target_function transformed).trans signature_eq)
+    cases runtime : is_known_runtime_function (prog_defmap unit) callee with
+    | none =>
+      simp only [transf_instr, runtime] at target_code
+      refine Or.inl ⟨_, call_step target_code, ?_⟩
+      refine match_states.call _ _ _ _ _ _ _ _ callee_unit callee_linked ?_ transformed
+        (regs_lessdef_regs registers target_registers registers_extend arguments) memory_extends
+      refine match_stackframes_cons destination stack successor registers body frames target_registers
+        target_frames unit approximations linked analyzed ?_ registers_extend frames_match
+      intro result after
+      apply analysis_correct_1 cfg _ _ _ _ _ _ _ _ _ _ _ analyzed code
+        (by simp [successors_instr])
+      simp only [CSE.transfer, code, runtime]
+      exact ⟨fun _ => Vundef, empty_numbering_holds _ _ _ _ _⟩
+    | some builtin =>
+      obtain ⟨name, builtin_signature, function_eq, lookup⟩ :=
+        is_known_runtime_function_sound unit program callee builtin registers function runtime linked found
+      subst function
+      simp only [CSE.transf_fundef, transf_partial_fundef] at transformed
+      cases transformed
+      obtain ⟨valuation, holds⟩ := satisfied
+      have arguments_evaluated := eval_builtin_args_trivial (Genv.globalenv program) stack registers memory arguments
+      have finish : ∀ result target_result,
+          builtin_function_sem builtin (arguments.map (fun register => Regmap.get register registers)) = some result →
+          Val.lessdef result target_result →
+          match_states cfg program
+            (State frames body stack successor (Regmap.set destination result registers) memory)
+            (State target_frames (transf_function' body unit approximations) stack successor
+              (Regmap.set destination target_result target_registers) target_memory) := by
+        intro result target_result computed result_lessdef
+        refine match_states.intro _ _ _ _ _ _ _ _ _ unit approximations linked analyzed
+          ?_ (set_reg_lessdef destination result target_result registers target_registers result_lessdef registers_extend)
+          memory_extends frames_match
+        apply analysis_correct_1 cfg _ _ _ _ _ _ _ _ _ _ _ analyzed code
+          (by simp [successors_instr])
+        simp only [CSE.transfer, code, runtime]
+        exact add_builtin_holds valuation (Genv.globalenv program) stack registers memory
+          (kill_cheap_computations (PMap.get current approximations)) builtin
+          (arguments.map (fun register => BA register)) (BR destination) _ result
+          (kill_cheap_computations_hold valuation _ stack registers memory _ holds) arguments_evaluated computed
+      cases numbered : valnum_builtin_args (PMap.get current approximations)
+          (arguments.map (fun register => BA register)) with
+      | mk numbered_arguments argument_values =>
+        simp only [transf_instr, runtime, numbered] at target_code
+        cases rhs_found : find_rhs numbered_arguments (.Builtin builtin argument_values) with
+        | some register =>
+          simp only [rhs_found] at target_code
+          obtain ⟨new_valuation, numbered_holds, numbered_evaluated, agreement, bounds, next_bound⟩ :=
+            valnum_builtin_args_holds (Genv.globalenv program) stack registers memory _ _
+              arguments_evaluated valuation _ _ _ holds numbered
+          obtain ⟨found_result, found_eval, found_lessdef⟩ :=
+            find_rhs_sound numbered_arguments _ register new_valuation
+              (Genv.globalenv program) stack registers memory rhs_found numbered_holds
+          cases found_eval
+          rename_i found_values found_evaluated found_computed
+          have found_values_eq := eval_builtin_args_determ _ _ _ _ _ _ _
+            numbered_evaluated found_values found_evaluated
+          subst found_values
+          refine Or.inr ⟨_, 2, CompCert4Lean.Common.Smallstep.plus_one _ _ _ _ _ _ _
+            (RTL.exec_Iop _ _ _ _ _ _ Omove [register] destination successor
+              (Regmap.get register target_registers) target_code rfl), ?_⟩
+          apply cse_runtime_eventually providers program frames body stack successor registers memory
+            arguments destination name builtin_signature builtin lookup
+          intro result computed
+          have result_eq := Option.some.inj (computed.symm.trans found_computed)
+          subst result
+          exact finish found_result _ found_computed
+            (Val.lessdef_trans _ _ _ found_lessdef (registers_extend register))
+        | none =>
+          simp only [rhs_found] at target_code
+          cases computed : builtin_function_sem builtin
+              (arguments.map (fun register => Regmap.get register registers)) with
+          | none =>
+            refine Or.inr ⟨_, 2, CompCert4Lean.Common.Smallstep.plus_one _ _ _ _ _ _ _
+              (call_step target_code), ?_⟩
+            apply cse_runtime_eventually providers program frames body stack successor registers memory
+              arguments destination name builtin_signature builtin lookup
+            intro result successful
+            rw [computed] at successful
+            cases successful
+          | some result =>
+            obtain ⟨target_result, target_computed, result_lessdef⟩ :=
+              builtin_function_sem_lessdef builtin _ result _ computed
+                (regs_lessdef_regs registers target_registers registers_extend arguments)
+            refine Or.inr ⟨State target_frames (transf_function' body unit approximations) stack successor
+              (Regmap.set destination target_result target_registers) target_memory, 2, ?_, ?_⟩
+            · apply CompCert4Lean.Common.Smallstep.plus_three _ _ _ _ _ E0 _ E0 _ E0 _ E0
+              · exact call_step target_code
+              · apply RTL.exec_function_external
+                simp only [external_call, builtin_or_external_sem, lookup]
+                exact known_builtin_sem_intro _ _ _ target_computed
+              · exact RTL.exec_return _ _ _ _ _ _ target_result target_memory
+              · rfl
+            · apply cse_runtime_eventually providers program frames body stack successor registers memory
+                arguments destination name builtin_signature builtin lookup
+              intro future_result future_computed
+              have result_eq := Option.some.inj (future_computed.symm.trans computed)
+              subst future_result
+              exact finish result target_result computed result_lessdef
+
+end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Common.Globalenvs
+
+theorem transf_program_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    ∀ cfg, transf_program_correctStatement cfg := by
+  intro cfg providers program target_program programs
+  apply CompCert4Lean.Common.Smallstep.forward_simulation_eventually_plus
+    (RTL.semantics providers program) (RTL.semantics providers target_program)
+    (fun source target => match_states cfg program source target ∧ sound_state cfg program source)
+  · exact (senv_preserved cfg program target_program programs).2.1
+  · intro source initial
+    obtain ⟨target, target_initial, matched⟩ :=
+      transf_initial_states cfg program target_program programs source initial
+    exact ⟨target, target_initial, matched, sound_initial cfg program source initial⟩
+  · intro source target result matched final
+    exact transf_final_states cfg program source target result matched.1 final
+  · intro source trace successor stepped target matched
+    have successor_sound := sound_step cfg program providers source trace successor stepped matched.2
+    rcases transf_step_correct cfg providers program target_program programs source trace successor
+        stepped target matched.1 matched.2 with
+      ⟨target_successor, target_step, successor_match⟩ |
+      ⟨target_successor, delay, target_steps, successor_eventually⟩
+    · exact ⟨0, target_successor,
+        CompCert4Lean.Common.Smallstep.plus_one _ _ _ _ _ _ _ target_step,
+        CompCert4Lean.Common.Smallstep.eventually.eventually_now _ _
+          ⟨successor_match, successor_sound⟩⟩
+    · refine ⟨delay, target_successor, target_steps, ?_⟩
+      exact CompCert4Lean.Common.Smallstep.eventually_and_invariant _ _
+        (RTL.step providers) RTL.final_state (Genv.globalenv program)
+        (sound_state cfg program) delay successor (fun source => match_states cfg program source target_successor)
+        (fun before trace after step sound => sound_step cfg program providers before trace after step sound)
+        successor_eventually successor_sound
 
 end CompCert4Lean.Backend.CSEproof

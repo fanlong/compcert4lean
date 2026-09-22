@@ -4365,3 +4365,23 @@ theorem eval_mull
           (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))) rfl
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+theorem eval_mullimm_base
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_mullimm_baseStatement binary64_certificate binary32_certificate :=
+  mull_base_sound_aux
+
+end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+theorem eval_mullimm
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_mullimmStatement binary64_certificate binary32_certificate :=
+  mull_immediate_sound_aux
+
+end CompCert4Lean.X86.SelectLongproof

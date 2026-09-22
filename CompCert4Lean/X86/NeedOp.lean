@@ -548,3 +548,135 @@ theorem operation_is_redundant_sound
   | _ => simp [operation_is_redundant] at hred
 
 end CompCert4Lean.X86.NeedOp
+
+namespace CompCert4Lean.X86.NeedOp
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+
+private theorem needs_agree_cons {first : val} {rest args' : List val}
+    {need : nval} {needs : List nval}
+    (hagree : vagree_list (first :: rest) args' (need :: needs)) :
+    ∃ first' rest', args' = first' :: rest' ∧ vagree first first' need ∧
+      vagree_list rest rest' needs := by
+  cases hagree with
+  | vagree_list_cons first rest first' rest' need needs hfirst hrest =>
+      exact ⟨first', rest', rfl, hfirst, hrest⟩
+
+set_option maxHeartbeats 1600000 in
+theorem needs_of_operation_sound
+    [binary64_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    @needs_of_operation_soundStatement binary64_certificate binary32_certificate := by
+  intro ge sp memory memory' hperm op args result nv args' heval hagree hneeded
+  cases op with
+  | Olea addr =>
+      exact needs_of_addressing_32_sound ge sp addr args result nv args' heval hagree
+  | Oleal addr =>
+      exact needs_of_addressing_64_sound ge sp addr args result nv args' heval hagree
+  | Ocmp cond =>
+      change some (Val.of_optbool (eval_condition cond args memory)) = some result at heval
+      cases heval
+      refine ⟨_, rfl, ?_⟩
+      cases hcondition : eval_condition cond args memory with
+      | none => exact vagree_lessdef _ _ _ (Val.lessdef_undef _)
+      | some expected =>
+          have hnew := needs_of_condition_sound memory memory' hperm
+            cond args expected args' hcondition hagree
+          rw [hnew]
+          exact vagree_same _ _
+  | Osel cond ty =>
+      cases args with
+      | nil => change none = some result at heval; cases heval
+      | cons first rest =>
+          cases rest with
+          | nil => change none = some result at heval; cases heval
+          | cons second rest =>
+              obtain ⟨first', tail', rfl, hfirst, htail⟩ := needs_agree_cons hagree
+              obtain ⟨second', rest', rfl, hsecond, hrest⟩ := needs_agree_cons htail
+              change some (Val.select (eval_condition cond rest memory) first second ty) =
+                some result at heval
+              cases heval
+              refine ⟨_, rfl, ?_⟩
+              cases hcondition : eval_condition cond rest memory with
+              | none => exact vagree_lessdef _ _ _ (Val.lessdef_undef _)
+              | some expected =>
+                  have hnew := needs_of_condition_sound memory memory' hperm
+                    cond rest expected rest' hcondition hrest
+                  rw [hnew]
+                  exact select_sound _ _ _ _ _ _ _ hfirst hsecond
+  | _ =>
+      first
+      | exact default_needs_of_operation_sound ge sp memory memory' hperm
+          _ args result args' nv heval (Or.inl hagree) hneeded
+      | exact default_needs_of_operation_sound ge sp memory memory' hperm
+          _ args result args' nv heval (Or.inr (Or.inl hagree)) hneeded
+      | exact default_needs_of_operation_sound ge sp memory memory' hperm
+          _ args result args' nv heval (Or.inr (Or.inr (Or.inl hagree))) hneeded
+      | cases args with
+        | nil => cases heval
+        | cons first rest =>
+            cases rest with
+            | nil =>
+                cases heval
+                all_goals
+                  obtain ⟨first', rfl, hfirst⟩ := addressing32_agree_one hagree
+                  refine ⟨_, rfl, ?_⟩
+                  first
+                  | exact hfirst
+                  | exact sign_ext_sound _ _ _ _ hfirst
+                      (by change (0 : _root_.Int) < _; decide)
+                  | exact zero_ext_sound _ _ _ _ hfirst
+                      (by change (0 : _root_.Int) ≤ _; decide)
+                  | exact neg_sound _ _ _ hfirst
+                  | exact notint_sound _ _ _ hfirst
+                  | exact loword_sound _ _ _ hfirst
+                  | exact hiword_sound _ _ _ hfirst
+                  | exact longofint_sound _ _ _ hfirst
+                  | exact longofintu_sound _ _ _ hfirst
+                  | exact negl_sound _ _ _ hfirst
+                  | exact notl_sound _ _ _ hfirst
+                  | exact mul_sound _ _ _ _ _ hfirst (vagree_same _ _)
+                  | exact xor_sound _ _ _ _ _ hfirst (vagree_same _ _)
+                  | exact addl_sound _ _ _ _ _ hfirst (vagree_same _ _)
+                  | exact mull_sound _ _ _ _ _ hfirst (vagree_same _ _)
+                  | exact xorl_sound _ _ _ _ _ hfirst (vagree_same _ _)
+                  | exact andimm_sound _ _ _ _ hfirst
+                  | exact orimm_sound _ _ _ _ hfirst
+                  | exact shlimm_sound _ _ _ _ hfirst
+                  | exact shrimm_sound _ _ _ _ hfirst
+                  | exact shruimm_sound _ _ _ _ hfirst
+                  | exact ror_sound _ _ _ _ hfirst
+                  | exact andlimm_sound _ _ _ _ hfirst
+                  | exact orlimm_sound _ _ _ _ hfirst
+                  | exact shllimm_sound _ _ _ _ hfirst
+                  | exact shrlimm_sound _ _ _ _ hfirst
+                  | exact shrluimm_sound _ _ _ _ hfirst
+                  | exact rorl_sound _ _ _ _ hfirst
+            | cons second rest =>
+                cases rest with
+                | nil =>
+                    cases heval
+                    all_goals
+                      obtain ⟨first', tail', rfl, hfirst, htail⟩ := needs_agree_cons hagree
+                      obtain ⟨second', rest', rfl, hsecond, hrest⟩ := needs_agree_cons htail
+                      cases hrest
+                      refine ⟨_, rfl, ?_⟩
+                      first
+                      | exact mul_sound _ _ _ _ _ hfirst hsecond
+                      | exact and_sound _ _ _ _ _ hfirst hsecond
+                      | exact or_sound _ _ _ _ _ hfirst hsecond
+                      | exact xor_sound _ _ _ _ _ hfirst hsecond
+                      | exact makelong_sound _ _ _ _ _ hfirst hsecond
+                      | exact mull_sound _ _ _ _ _ hfirst hsecond
+                      | exact andl_sound _ _ _ _ _ hfirst hsecond
+                      | exact orl_sound _ _ _ _ _ hfirst hsecond
+                      | exact xorl_sound _ _ _ _ _ hfirst hsecond
+                | cons extra rest => cases heval
+
+end CompCert4Lean.X86.NeedOp

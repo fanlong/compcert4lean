@@ -846,3 +846,215 @@ theorem wt_returnstate_agree : wt_returnstate_agreeStatement := by
       exact And.intro AGCS UOUT
 
 end CompCert4Lean.Backend.Lineartyping
+
+namespace CompCert4Lean.Backend.Lineartyping
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Conventions CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.LTL CompCert4Lean.Backend.Linear
+open CompCert4Lean.X86.Machregs CompCert4Lean.X86.Op
+
+private theorem sprint_wt_code_cons (cfg : CompilerConfig) (funct : LinearFunction)
+    (instr : Linear.instruction) (code : LinearCode) :
+    wt_code cfg funct (instr :: code) = true ↔
+      wt_instr cfg funct instr = true ∧ wt_code cfg funct code = true := by
+  simp [wt_code, listForallb,
+    CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.forallb]
+
+private theorem sprint_return_agree (cfg : CompilerConfig) (caller callee : Locset) :
+    agree_callee_save cfg (LTL.return_regs cfg caller callee) caller := by
+  intro location saved
+  cases location with
+  | R register =>
+      change CompCert4Lean.X86.Conventions1.is_callee_save cfg register = true at saved
+      simp [LTL.return_regs, saved]
+  | S slot offset ty =>
+      cases slot <;> simp_all [callee_save_loc, LTL.return_regs]
+
+set_option maxHeartbeats 2000000 in
+theorem step_type_preservation
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    step_type_preservationStatement := by
+  intro cfg providers program typed_program before events after transition typed
+  cases transition with
+  | exec_Lgetstack stack funct pointer slot offset ty target code registers memory updated update =>
+      cases typed with
+      | wt_regular_state _ _ _ _ _ _ typed_stack typed_function typed_code typed_registers =>
+          obtain ⟨typed_instr, typed_tail⟩ := (sprint_wt_code_cons ..).mp typed_code
+          have parts : subtype ty (mreg_type target) = true ∧
+              slot_valid cfg funct slot offset ty = true := by
+            simpa [wt_instr] using typed_instr
+          subst updated
+          apply wt_regular_state _ _ _ _ _ _ typed_stack typed_function typed_tail
+          exact wt_setreg _ _ _ (Val.has_subtype _ _ _ parts.1
+            (typed_registers (S slot offset ty))) (wt_undef_regs _ _ typed_registers)
+  | exec_Lsetstack stack funct pointer source slot offset ty code registers memory updated update =>
+      cases typed with
+      | wt_regular_state _ _ _ _ _ _ typed_stack typed_function typed_code typed_registers =>
+          subst updated
+          exact wt_regular_state _ _ _ _ _ _ typed_stack typed_function
+            ((sprint_wt_code_cons ..).mp typed_code).2
+            (wt_setstack _ _ _ _ _ (wt_undef_regs _ _ typed_registers))
+  | exec_Lop stack funct pointer operation arguments target code registers memory value updated evaluate update =>
+      cases typed with
+      | wt_regular_state _ _ _ _ _ _ typed_stack typed_function typed_code typed_registers =>
+          obtain ⟨typed_instr, typed_tail⟩ := (sprint_wt_code_cons ..).mp typed_code
+          subst updated
+          apply wt_regular_state _ _ _ _ _ _ typed_stack typed_function typed_tail
+          apply wt_setreg _ _ _ _ (wt_undef_regs _ _ typed_registers)
+          cases moved : is_move_operation operation arguments with
+          | some source =>
+              obtain ⟨operation_eq, arguments_eq⟩ :=
+                is_move_operation_correct _ _ _ _ moved
+              subst operation
+              subst arguments
+              change some (registers (R source)) = some value at evaluate
+              have value_eq := Option.some.inj evaluate
+              subst value
+              exact Val.has_subtype _ _ _ (by simpa [wt_instr, moved, Loc.type] using typed_instr)
+                (typed_registers (R source))
+          | none =>
+              apply Val.has_subtype _ _ _ (by simpa [wt_instr, moved] using typed_instr)
+              apply type_of_operation_sound _ _ _ _ _ _ _ _ _ evaluate
+              intro operation_eq
+              subst operation
+              cases arguments with
+              | nil =>
+                  change none = some value at evaluate
+                  contradiction
+              | cons source rest =>
+                  cases rest with
+                  | nil => simp [is_move_operation] at moved
+                  | cons second rest =>
+                      change none = some value at evaluate
+                      contradiction
+  | exec_Lload stack funct pointer chunk address arguments target code registers memory location value updated address_eval load update =>
+      cases typed with
+      | wt_regular_state _ _ _ _ _ _ typed_stack typed_function typed_code typed_registers =>
+          obtain ⟨typed_instr, typed_tail⟩ := (sprint_wt_code_cons ..).mp typed_code
+          subst updated
+          apply wt_regular_state _ _ _ _ _ _ typed_stack typed_function typed_tail
+          apply wt_setreg _ _ _ _ (wt_undef_regs _ _ typed_registers)
+          apply Val.has_subtype _ _ _ typed_instr
+          cases location <;> simp only [Mem.loadv] at load
+          all_goals first | contradiction | exact Mem.load_type _ _ _ _ _ load
+  | exec_Lstore stack funct pointer chunk address arguments source code registers memory new_memory location updated address_eval store update =>
+      cases typed with
+      | wt_regular_state _ _ _ _ _ _ typed_stack typed_function typed_code typed_registers =>
+          subst updated
+          exact wt_regular_state _ _ _ _ _ _ typed_stack typed_function
+            ((sprint_wt_code_cons ..).mp typed_code).2 (wt_undef_regs _ _ typed_registers)
+  | exec_Lcall stack funct pointer signature target code registers memory callee find signature_eq =>
+      cases typed with
+      | wt_regular_state _ _ _ _ _ _ typed_stack typed_function typed_code typed_registers =>
+          apply wt_call_state
+          · exact wt_callstack_cons _ _ _ _ _ typed_stack typed_function
+              ((sprint_wt_code_cons ..).mp typed_code).2 typed_registers
+          · exact wt_find_function cfg program typed_program _ _ _ find
+          · exact typed_registers
+          · intro location saved; rfl
+          · intro ty offset argument; rfl
+  | exec_Ltailcall stack funct block signature target code registers memory updated callee new_memory update find signature_eq free =>
+      have zero := wt_state_tailcall cfg _ _ _ _ _ _ _ _ typed
+      cases typed with
+      | wt_regular_state _ _ _ _ _ _ typed_stack typed_function typed_code typed_registers =>
+          subst updated
+          apply wt_call_state _ _ _ _ typed_stack
+          · exact wt_find_function cfg program typed_program _ _ _ find
+          · exact wt_return_regs _ _ _ (wt_parent_locset _ _ typed_stack) typed_registers
+          · exact sprint_return_agree _ _ _
+          · intro ty offset argument
+            rw [← signature_eq] at argument
+            exact False.elim (zero_size_arguments_tailcall_possible cfg signature zero
+              (S .Outgoing offset ty) argument)
+  | exec_Lbuiltin stack funct pointer registers memory external arguments result code values events value updated new_memory arguments_eval call update =>
+      cases typed with
+      | wt_regular_state _ _ _ _ _ _ typed_stack typed_function typed_code typed_registers =>
+          obtain ⟨typed_instr, typed_tail⟩ := (sprint_wt_code_cons ..).mp typed_code
+          subst updated
+          apply wt_regular_state _ _ _ _ _ _ typed_stack typed_function typed_tail
+          have parts : wt_builtin_res (proj_sig_res (ef_sig external)) result = true ∧
+              listForallb (loc_valid cfg funct) (params_of_builtin_args arguments) = true := by
+            simpa [wt_instr] using typed_instr
+          exact wt_setres _ _ _ _ parts.1
+            (external_call_well_typed providers external _ _ _ _ _ _ call)
+            (wt_undef_regs _ _ typed_registers)
+  | exec_Llabel stack funct pointer label code registers memory =>
+      cases typed with
+      | wt_regular_state _ _ _ _ _ _ typed_stack typed_function typed_code typed_registers =>
+          exact wt_regular_state _ _ _ _ _ _ typed_stack typed_function
+            ((sprint_wt_code_cons ..).mp typed_code).2 typed_registers
+  | exec_Lgoto stack funct pointer label code registers memory target find =>
+      cases typed with
+      | wt_regular_state _ _ _ _ _ _ typed_stack typed_function typed_code typed_registers =>
+          exact wt_regular_state _ _ _ _ _ _ typed_stack typed_function
+            (wt_find_label cfg funct label target typed_function find) typed_registers
+  | exec_Lcond_true stack funct pointer condition arguments label code registers memory updated target evaluate update find =>
+      cases typed with
+      | wt_regular_state _ _ _ _ _ _ typed_stack typed_function typed_code typed_registers =>
+          subst updated
+          exact wt_regular_state _ _ _ _ _ _ typed_stack typed_function
+            (wt_find_label cfg funct label target typed_function find)
+            (wt_undef_regs _ _ typed_registers)
+  | exec_Lcond_false stack funct pointer condition arguments label code registers memory updated evaluate update =>
+      cases typed with
+      | wt_regular_state _ _ _ _ _ _ typed_stack typed_function typed_code typed_registers =>
+          subst updated
+          exact wt_regular_state _ _ _ _ _ _ typed_stack typed_function
+            ((sprint_wt_code_cons ..).mp typed_code).2 (wt_undef_regs _ _ typed_registers)
+  | exec_Ljumptable stack funct pointer argument table code registers memory index label target updated argument_eq nth find update =>
+      cases typed with
+      | wt_regular_state _ _ _ _ _ _ typed_stack typed_function typed_code typed_registers =>
+          subst updated
+          exact wt_regular_state _ _ _ _ _ _ typed_stack typed_function
+            (wt_find_label cfg funct label target typed_function find)
+            (wt_undef_regs _ _ typed_registers)
+  | exec_Lreturn stack funct block code registers memory new_memory free =>
+      cases typed with
+      | wt_regular_state _ _ _ _ _ _ typed_stack typed_function typed_code typed_registers =>
+          exact wt_return_state _ _ _ typed_stack
+            (wt_return_regs _ _ _ (wt_parent_locset _ _ typed_stack) typed_registers)
+            (sprint_return_agree _ _ _) (by intro ty offset; rfl)
+  | exec_function_internal stack funct registers memory updated new_memory block allocate update =>
+      cases typed with
+      | wt_call_state _ _ _ _ typed_stack typed_function typed_registers saved arguments =>
+          subst updated
+          exact wt_regular_state _ _ _ _ _ _ typed_stack typed_function typed_function
+            (wt_undef_regs _ _ (wt_call_regs _ typed_registers))
+  | exec_function_external stack external arguments value registers updated memory events new_memory arguments_eq call update =>
+      cases typed with
+      | wt_call_state _ _ _ _ typed_stack typed_function typed_registers saved arguments =>
+          subst updated
+          apply wt_return_state _ _ _ typed_stack
+          · exact wt_setpair _ _ _
+              (external_call_well_typed providers external _ _ _ _ _ _ call)
+              (wt_undef_caller_save_regs _ _ typed_registers)
+          · intro location callee_saved
+            apply (locmap_get_set_loc_result_callee_save cfg (ef_sig external) value
+              (LTL.undef_caller_save_regs cfg registers) location callee_saved).trans
+            apply Eq.trans _ (saved location callee_saved)
+            cases location with
+            | R register =>
+                change CompCert4Lean.X86.Conventions1.is_callee_save cfg register = true at callee_saved
+                simp [LTL.undef_caller_save_regs, callee_saved]
+            | S slot offset ty =>
+                cases slot <;> simp_all [callee_save_loc, LTL.undef_caller_save_regs]
+          · intro ty offset
+            exact locmap_get_set_loc_result cfg (ef_sig external) value
+              (LTL.undef_caller_save_regs cfg registers) (S .Outgoing offset ty) trivial
+  | exec_return stack funct pointer caller code registers memory =>
+      cases typed with
+      | wt_return_state _ _ _ typed_stack typed_registers saved outgoing =>
+          cases typed_stack with
+          | wt_callstack_cons _ _ _ _ _ tail_typed typed_function typed_code typed_caller =>
+              exact wt_regular_state _ _ _ _ _ _ tail_typed typed_function typed_code typed_registers
+
+end CompCert4Lean.Backend.Lineartyping

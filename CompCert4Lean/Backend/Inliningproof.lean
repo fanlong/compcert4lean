@@ -3937,3 +3937,809 @@ theorem transf_initial_states : transf_initial_statesStatement := by
         · exact Genv.initmem_inject fundef Unit prog m0 hmem
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.X86.Op
+
+private theorem il_step_add_zero (value : Z) : zAdd value zZero = value := by
+  unfold zAdd ZArith.BinInt.Z.add
+  rw [show intOfZ zZero = 0 from rfl, Int.add_zero]
+  exact zOfInt_intOfZ value
+
+private theorem il_step_max_bounds (size : Z) :
+    zLe size (ZArith.BinInt.Z.max size zZero) ∧
+    zLe zZero (ZArith.BinInt.Z.max size zZero) := by
+  unfold zLe ZArith.BinInt.Z.le ZArith.BinInt.Z.max
+  split <;> omega
+
+private theorem il_step_nonempty (memory : mem) (stackBlock : block) (offset : Z)
+    (kind : perm_kind) (permission : permission)
+    (permitted : Mem.perm memory stackBlock offset kind permission) :
+    Mem.perm memory stackBlock offset .Max .Nonempty := by
+  apply Mem.perm_max memory stackBlock offset kind .Nonempty
+  exact Mem.perm_implies memory stackBlock offset kind permission .Nonempty permitted
+    (by cases permission <;> constructor)
+
+private theorem il_step_inside_free (source : program) (injection : Val.meminj)
+    (memory targetMemory after : mem) (stack targetStack : List stackframe)
+    (targetFunction : function) (context : context) (targetBlock sourceBlock : block)
+    (registers : regset) (size : Z)
+    (stacks : match_stacks_inside source injection memory targetMemory stack targetStack
+      targetFunction context targetBlock registers)
+    (freed : Mem.free memory sourceBlock zZero size = some after) :
+    match_stacks_inside source injection after targetMemory stack targetStack
+      targetFunction context targetBlock registers := by
+  apply match_stacks_inside_invariant source injection memory targetMemory injection after targetMemory
+    (fun _ _ _ mapped => mapped) _ _ _ _ _ _ stacks registers
+    (fun _ _ => rfl) (fun _ _ _ mapped _ => mapped) ?_
+    (fun _ _ _ permitted => permitted) (fun _ _ _ _ _ permitted => permitted)
+  intro beforeBlock targetBlock delta offset mapped below permitted
+  exact Mem.perm_free_3 memory sourceBlock zZero size after freed beforeBlock offset .Max .Nonempty
+    permitted
+
+private theorem il_step_free_original (source : program) (injection : Val.meminj)
+    (memory targetMemory after : mem) (stack targetStack : List stackframe)
+    (sourceFunction targetFunction : function) (context : context) (environment : funenv)
+    (sourceBlock targetBlock : block) (registers : regset)
+    (stacks : match_stacks_inside source injection memory targetMemory stack targetStack
+      targetFunction context targetBlock registers)
+    (body : tr_funbody environment targetFunction.fn_stacksize context sourceFunction
+      targetFunction.fn_code)
+    (mapped : injection sourceBlock = some (targetBlock, context.dstk))
+    (injected : Mem.inject injection memory targetMemory)
+    (valid : Mem.valid_block targetMemory targetBlock)
+    (privateRange : range_private injection memory targetMemory targetBlock
+      (zAdd context.dstk context.mstk) targetFunction.fn_stacksize)
+    (returns : context.retinfo = none)
+    (freed : Mem.free memory sourceBlock zZero sourceFunction.fn_stacksize = some after) :
+    ∃ targetAfter, Mem.free targetMemory targetBlock zZero targetFunction.fn_stacksize =
+      some targetAfter ∧ Mem.inject injection after targetAfter ∧
+      match_stacks source injection after targetAfter stack targetStack targetAfter.nextblock := by
+  cases stacks with
+  | match_stacks_inside_inlined _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ returnInfo _ _ =>
+    simp [returns] at returnInfo
+  | match_stacks_inside_base _ _ _ _ _ _ originalStacks returnInfo offsetZero =>
+    have stackSize : context.mstk = ZArith.BinInt.Z.max sourceFunction.fn_stacksize zZero := by
+      cases body with
+      | tr_funbody_intro _ _ _ _ _ sizeEq _ _ _ => exact sizeEq
+    have privateAfter : range_private injection after targetMemory targetBlock
+        context.dstk targetFunction.fn_stacksize := by
+      apply range_private_free_left injection memory targetMemory targetBlock context.dstk
+        sourceFunction.fn_stacksize targetFunction.fn_stacksize sourceBlock after
+      · simpa only [stackSize] using privateRange
+      · exact freed
+      · exact mapped
+      · exact injected
+    have freeable : Mem.range_perm targetMemory targetBlock zZero targetFunction.fn_stacksize
+        .Cur .Freeable := by
+      intro offset bounds
+      by_cases inside : zLt offset sourceFunction.fn_stacksize
+      · have permission := Mem.perm_inject injection memory targetMemory sourceBlock targetBlock
+          context.dstk offset .Cur .Freeable mapped injected
+          (Mem.free_range_perm memory sourceBlock zZero sourceFunction.fn_stacksize after freed offset
+            ⟨bounds.1, inside⟩)
+        simpa only [offsetZero, il_step_add_zero] using permission
+      · apply (privateRange offset ?_).1
+        rw [offsetZero, stackSize]
+        have maxBounds := il_step_max_bounds sourceFunction.fn_stacksize
+        simp only [zLe, zLt, zAdd, ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt,
+          ZArith.BinInt.Z.add, intOfZ_zOfInt] at bounds inside maxBounds ⊢
+        unfold ZArith.BinInt.Z.max
+        split <;> simp only [zZero, intOfZ] at * <;> omega
+    obtain ⟨targetAfter, targetFreed⟩ :=
+      Mem.range_perm_free targetMemory targetBlock zZero targetFunction.fn_stacksize freeable
+    refine ⟨targetAfter, targetFreed, ?_, ?_⟩
+    · apply Mem.free_right_inject injection after targetMemory targetBlock zZero
+        targetFunction.fn_stacksize targetAfter
+        (Mem.free_left_inject injection memory targetMemory sourceBlock zZero
+          sourceFunction.fn_stacksize after injected freed) targetFreed
+      intro beforeBlock delta offset kind permission mappedBefore permitted bounds
+      have privateLocation := privateAfter (zAdd offset delta) (by simpa only [offsetZero] using bounds)
+      apply privateLocation.2 beforeBlock delta mappedBefore
+      rw [zsub_zadd_cancel_local]
+      exact il_step_nonempty after beforeBlock offset kind permission permitted
+    · have stacksAfter : match_stacks source injection after targetAfter stack targetStack targetBlock := by
+        apply match_stacks_invariant source injection memory targetMemory injection after targetAfter
+          (fun _ _ _ mapped => mapped) _ _ _ originalStacks
+          (fun _ _ _ mapped _ => mapped) ?_ ?_ ?_
+        · intro beforeBlock mappedBlock delta offset mappedBefore below permitted
+          exact Mem.perm_free_3 memory sourceBlock zZero sourceFunction.fn_stacksize after freed
+            beforeBlock offset .Max .Nonempty permitted
+        · intro beforeBlock offset below permitted
+          exact Mem.perm_free_1 targetMemory targetBlock zZero targetFunction.fn_stacksize targetAfter
+            targetFreed beforeBlock offset .Cur .Freeable
+            (Or.inl (Plt_ne _ _ below)) permitted
+        · intro beforeBlock offset kind permission below permitted
+          exact Mem.perm_free_3 targetMemory targetBlock zZero targetFunction.fn_stacksize targetAfter
+            targetFreed beforeBlock offset kind permission permitted
+      apply match_stacks_bound source injection after targetAfter _ _ targetBlock _ stacksAfter
+      rw [Mem.nextblock_free _ _ _ _ _ targetFreed]
+      exact Plt_Ple _ _ valid
+
+private theorem il_step_alloc_original
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (providers : ExternalCalls) (configuration : InliningConfig) (source target unit : program)
+    (stack targetStack : List stackframe) (sourceFunction : function) (targetDefinition : fundef)
+    (args targetArgs : List val) (memory targetMemory after : mem) (sourceBlock : block)
+    (injection : Val.meminj)
+    (stacks : match_stacks source injection memory targetMemory stack targetStack targetMemory.nextblock)
+    (linked : rtlLinkorder unit source)
+    (translated : transf_fundef (funenv_program configuration unit) (Internal sourceFunction) =
+      OK targetDefinition)
+    (arguments : Val.inject_list injection args targetArgs)
+    (injected : Mem.inject injection memory targetMemory)
+    (typed : Val.has_argtype_list args sourceFunction.fn_sig.sig_args)
+    (allocated : Mem.alloc memory zZero sourceFunction.fn_stacksize = (after, sourceBlock)) :
+    ∃ targetState,
+      RTL.step providers (Genv.globalenv target)
+        (Callstate targetStack targetDefinition targetArgs targetMemory) E0 targetState ∧
+      match_states configuration source
+        (State stack sourceFunction (Vptr sourceBlock Ptrofs.zero) sourceFunction.fn_entrypoint
+          (init_regs args sourceFunction.fn_params) after) targetState := by
+  unfold Inlining.transf_fundef transf_partial_fundef at translated
+  cases translation : Inlining.transf_function (funenv_program configuration unit) sourceFunction with
+  | Error message => simp [translation] at translated
+  | OK targetFunction =>
+    simp [translation] at translated
+    cases translated
+    have functionTranslated := tr_function_linkorder unit source sourceFunction targetFunction linked
+      (transf_function_spec configuration unit sourceFunction targetFunction translation)
+    cases functionTranslated with
+    | tr_function_intro environment _ _ context compatible body offsetZero returnNone
+        signatureEq paramsEq entryEq sizeBounds =>
+      have bodyFacts : (∀ register, register ∈ sourceFunction.fn_params → Ple register context.mreg) ∧
+          context.mstk = ZArith.BinInt.Z.max sourceFunction.fn_stacksize zZero ∧
+          zLe (zAdd context.dstk context.mstk) targetFunction.fn_stacksize := by
+        cases body with
+        | tr_funbody_intro _ _ _ params _ stackSize _ _ sizeBound => exact ⟨params, stackSize, sizeBound⟩
+      have sizes : zLe sourceFunction.fn_stacksize targetFunction.fn_stacksize := by
+        have lower := (il_step_max_bounds sourceFunction.fn_stacksize).1
+        have upper := bodyFacts.2.2
+        rw [offsetZero, bodyFacts.2.1] at upper
+        simp only [zLe, zAdd, ZArith.BinInt.Z.le, ZArith.BinInt.Z.add, intOfZ_zOfInt] at lower upper ⊢
+        change 0 + _ ≤ _ at upper
+        omega
+      obtain ⟨extended, targetAfter, targetBlock, targetAllocated, afterInjected,
+        increased, newMapping, unchanged⟩ :=
+        Mem.alloc_parallel_inject injection memory targetMemory zZero sourceFunction.fn_stacksize
+          after sourceBlock zZero targetFunction.fn_stacksize injected allocated (Int.le_refl _) sizes
+      have targetBlockEq := Mem.alloc_result _ _ _ _ _ targetAllocated
+      have originalMapping : ∀ beforeBlock mappedBlock delta,
+          extended beforeBlock = some (mappedBlock, delta) → Plt mappedBlock targetBlock →
+          injection beforeBlock = some (mappedBlock, delta) := by
+        intro beforeBlock mappedBlock delta mapped below
+        by_cases same : beforeBlock = sourceBlock
+        · subst beforeBlock
+          have equalBlocks := congrArg Prod.fst (Option.some.inj (newMapping.symm.trans mapped))
+          change targetBlock = mappedBlock at equalBlocks
+          exact False.elim (Plt_strict targetBlock (equalBlocks ▸ below))
+        · rw [unchanged beforeBlock same] at mapped
+          exact mapped
+      have updatedStacks : match_stacks source extended after targetAfter stack targetStack targetBlock := by
+        apply match_stacks_invariant source injection memory targetMemory extended after targetAfter
+          increased _ _ _ (by simpa only [targetBlockEq] using stacks) originalMapping ?_ ?_ ?_
+        · intro beforeBlock mappedBlock delta offset mapped below permitted
+          apply Mem.perm_alloc_4 memory zZero sourceFunction.fn_stacksize after sourceBlock allocated
+            beforeBlock offset .Max .Nonempty permitted
+          intro same
+          subst beforeBlock
+          have equalBlocks := congrArg Prod.fst (Option.some.inj (newMapping.symm.trans mapped))
+          change targetBlock = mappedBlock at equalBlocks
+          exact Plt_strict targetBlock (equalBlocks ▸ below)
+        · intro beforeBlock offset below permitted
+          exact Mem.perm_alloc_1 targetMemory zZero targetFunction.fn_stacksize targetAfter targetBlock
+            targetAllocated beforeBlock offset .Cur .Freeable permitted
+        · intro beforeBlock offset kind permission below permitted
+          exact Mem.perm_alloc_4 targetMemory zZero targetFunction.fn_stacksize targetAfter targetBlock
+            targetAllocated beforeBlock offset kind permission permitted (Plt_ne _ _ below)
+      have newPrivate : range_private extended after targetAfter targetBlock
+          (zAdd context.dstk context.mstk) targetFunction.fn_stacksize := by
+        intro offset bounds
+        have lower := (il_step_max_bounds sourceFunction.fn_stacksize)
+        have offsetBounds : zLe zZero offset ∧ zLe sourceFunction.fn_stacksize offset := by
+          rw [offsetZero, bodyFacts.2.1] at bounds
+          simp only [zLe, zLt, zAdd, ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt,
+            ZArith.BinInt.Z.add, intOfZ_zOfInt] at lower bounds ⊢
+          change 0 ≤ _ ∧ _ ≤ _
+          change _ ≤ _ ∧ 0 ≤ _ at lower
+          change (0 + _ ≤ _) ∧ _ at bounds
+          omega
+        refine ⟨Mem.perm_alloc_2 targetMemory zZero targetFunction.fn_stacksize targetAfter
+          targetBlock targetAllocated offset .Cur ⟨offsetBounds.1, bounds.2⟩, ?_⟩
+        intro beforeBlock delta mapped permitted
+        by_cases same : beforeBlock = sourceBlock
+        · subst beforeBlock
+          have deltaZero := congrArg Prod.snd (Option.some.inj (mapped.symm.trans newMapping))
+          change delta = zZero at deltaZero
+          subst delta
+          have sourceBounds := Mem.perm_alloc_3 memory zZero sourceFunction.fn_stacksize after
+            sourceBlock allocated (zSub offset zZero) .Max .Nonempty permitted
+          simp only [zLe, zLt, zSub, ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt,
+            ZArith.BinInt.Z.sub, intOfZ_zOfInt] at sourceBounds offsetBounds
+          change _ ∧ intOfZ offset - 0 < _ at sourceBounds
+          omega
+        · rw [unchanged beforeBlock same] at mapped
+          exact Mem.fresh_block_alloc targetMemory zZero targetFunction.fn_stacksize targetAfter
+            targetBlock targetAllocated (injected.mi_mappedblocks beforeBlock targetBlock delta mapped)
+      refine ⟨_, .exec_function_internal targetStack targetFunction targetArgs targetMemory targetAfter
+        targetBlock ?_ targetAllocated, ?_⟩
+      · rw [signatureEq]
+        exact Val.has_argtype_list_inject injection args _ targetArgs typed arguments
+      · rw [entryEq, paramsEq]
+        refine .match_regular_states _ _ _ _ _ _ _ _ _ _ _ extended environment context
+          (.match_stacks_inside_base _ _ _ _ _ _ updatedStacks returnNone offsetZero)
+          compatible body ?_ ?_ afterInjected
+          (Mem.valid_new_block _ _ _ _ _ targetAllocated) newPrivate sizeBounds ?_
+        · exact agree_regs_init_regs extended context sourceFunction.fn_params args targetArgs
+            (val_inject_list_incr injection extended _ _ increased arguments) bodyFacts.1
+        · rw [offsetZero]
+          exact newMapping
+        · intro offset permitted
+          have bounds := Mem.perm_alloc_3 targetMemory zZero targetFunction.fn_stacksize targetAfter
+            targetBlock targetAllocated offset .Max .Nonempty permitted
+          exact ⟨bounds.1, Int.le_of_lt bounds.2⟩
+
+private theorem il_step_alloc_inlined (environment : funenv) (sourceFunction targetFunction : function)
+    (context : context) (injection : Val.meminj) (memory targetMemory after : mem)
+    (sourceBlock targetBlock : block)
+    (body : tr_funbody environment targetFunction.fn_stacksize context sourceFunction targetFunction.fn_code)
+    (injected : Mem.inject injection memory targetMemory)
+    (valid : Mem.valid_block targetMemory targetBlock)
+    (privateRange : range_private injection memory targetMemory targetBlock
+      context.dstk targetFunction.fn_stacksize)
+    (sizeBounds : zLe zZero targetFunction.fn_stacksize ∧
+      zLt targetFunction.fn_stacksize Ptrofs.max_unsigned)
+    (permissions : ∀ offset, Mem.perm targetMemory targetBlock offset .Max .Nonempty →
+      zLe zZero offset ∧ zLe offset targetFunction.fn_stacksize)
+    (allocated : Mem.alloc memory zZero sourceFunction.fn_stacksize = (after, sourceBlock)) :
+    ∃ extended, Mem.inject extended after targetMemory ∧ inject_incr injection extended ∧
+      extended sourceBlock = some (targetBlock, context.dstk) ∧
+      ∀ beforeBlock, beforeBlock ≠ sourceBlock → extended beforeBlock = injection beforeBlock := by
+  have bodyFacts : context.mstk = ZArith.BinInt.Z.max sourceFunction.fn_stacksize zZero ∧
+      ZArith.BinInt.Z.divide (min_alignment sourceFunction.fn_stacksize) context.dstk ∧
+      zLe zZero context.dstk ∧ zLe (zAdd context.dstk context.mstk) targetFunction.fn_stacksize := by
+    cases body with
+    | tr_funbody_intro _ _ _ _ _ stackSize aligned nonnegative bounded =>
+      exact ⟨stackSize, aligned, nonnegative, bounded⟩
+  have maxBounds := il_step_max_bounds sourceFunction.fn_stacksize
+  have offsetBounds : zLe zZero context.dstk ∧ zLe context.dstk Ptrofs.max_unsigned := by
+    refine ⟨bodyFacts.2.2.1, ?_⟩
+    have bound := bodyFacts.2.2.2
+    rw [bodyFacts.1] at bound
+    simp only [zLe, zLt, zAdd, ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt,
+      ZArith.BinInt.Z.add, intOfZ_zOfInt] at bound maxBounds sizeBounds ⊢
+    change _ ≤ _ ∧ 0 ≤ _ at maxBounds
+    omega
+  apply Mem.alloc_left_mapped_inject injection memory targetMemory zZero sourceFunction.fn_stacksize
+    after sourceBlock targetBlock context.dstk injected allocated valid offsetBounds ?_ ?_ ?_ ?_
+  · intro offset kind permission permitted
+    have bounds := permissions offset (il_step_nonempty _ _ _ _ _ permitted)
+    exact Or.inr ⟨bounds.1, Int.lt_of_le_of_lt bounds.2 sizeBounds.2⟩
+  · intro offset kind permission bounds
+    apply Mem.perm_cur targetMemory targetBlock (zAdd offset context.dstk) kind permission
+    apply Mem.perm_implies targetMemory targetBlock (zAdd offset context.dstk) .Cur .Freeable permission
+      (privateRange (zAdd offset context.dstk) ?_).1 (by cases permission <;> constructor)
+    have bound := bodyFacts.2.2.2
+    rw [bodyFacts.1] at bound
+    simp only [zLe, zLt, zAdd, ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt,
+      ZArith.BinInt.Z.add, intOfZ_zOfInt] at bound bounds maxBounds ⊢
+    change (0 ≤ _) ∧ _ at bounds
+    omega
+  · have sizeEq : zSub sourceFunction.fn_stacksize zZero = sourceFunction.fn_stacksize := by
+      unfold zSub ZArith.BinInt.Z.sub
+      rw [show intOfZ zZero = 0 from rfl, Int.sub_zero]
+      exact zOfInt_intOfZ _
+    change Mem.inj_offset_aligned context.dstk (zSub sourceFunction.fn_stacksize zZero)
+    rw [sizeEq]
+    exact min_alignment_sound _ _ bodyFacts.2.1
+  · intro beforeBlock delta offset kind permission mapped permitted bounds
+    have bound := bodyFacts.2.2.2
+    rw [bodyFacts.1] at bound
+    have inRange : zLe context.dstk (zAdd offset delta) ∧
+        zLt (zAdd offset delta) targetFunction.fn_stacksize := by
+      simp only [zLe, zLt, zAdd, ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt,
+        ZArith.BinInt.Z.add, intOfZ_zOfInt] at bound bounds maxBounds ⊢
+      change (0 + _ ≤ _) ∧ _ at bounds
+      omega
+    have privateLocation := privateRange (zAdd offset delta) inRange
+    apply privateLocation.2 beforeBlock delta mapped
+    rw [zsub_zadd_cancel_local]
+    exact il_step_nonempty memory beforeBlock offset kind permission permitted
+
+private theorem il_step_arguments (injection : Val.meminj) (context : context)
+    (registers targetRegisters : regset) (args : List reg)
+    (agreed : agree_regs injection context registers targetRegisters) :
+    Val.inject_list injection (args.map (fun register => Regmap.get register registers))
+      ((sregs context args).map (fun register => Regmap.get register targetRegisters)) := by
+  simpa only [sregs, List.map_map, Function.comp_def] using
+    agree_val_regs injection context registers targetRegisters args agreed
+
+private theorem il_step_range_weaken (injection : Val.meminj) (memory targetMemory : mem)
+    (stackBlock : block) (lower upper newLower : Z)
+    (privateRange : range_private injection memory targetMemory stackBlock lower upper)
+    (below : zLe lower newLower) :
+    range_private injection memory targetMemory stackBlock newLower upper := by
+  intro offset bounds
+  exact privateRange offset ⟨Int.le_trans below bounds.1, bounds.2⟩
+
+private theorem il_step_range_join (injection : Val.meminj) (memory targetMemory : mem)
+    (stackBlock : block) (lower middle upper : Z)
+    (left : range_private injection memory targetMemory stackBlock lower middle)
+    (right : range_private injection memory targetMemory stackBlock middle upper) :
+    range_private injection memory targetMemory stackBlock lower upper := by
+  intro offset bounds
+  by_cases before : zLt offset middle
+  · exact left offset ⟨bounds.1, before⟩
+  · exact right offset ⟨Int.le_of_not_gt before, bounds.2⟩
+
+private theorem il_step_regular
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (providers : ExternalCalls) (configuration : InliningConfig) (source target : program)
+    (matched : match_prog configuration source target)
+    (stack targetStack : List stackframe) (func targetFunction : function)
+    (sourceBlock targetBlock : block) (point : node) (registers targetRegisters : regset)
+    (memory targetMemory : mem) (injection : Val.meminj) (environment : funenv) (context : context)
+    (stacks : match_stacks_inside source injection memory targetMemory stack targetStack
+      targetFunction context targetBlock targetRegisters)
+    (compatible : fenv_compat source environment)
+    (body : tr_funbody environment targetFunction.fn_stacksize context func targetFunction.fn_code)
+    (agreed : agree_regs injection context registers targetRegisters)
+    (mapped : injection sourceBlock = some (targetBlock, context.dstk))
+    (injected : Mem.inject injection memory targetMemory)
+    (valid : Mem.valid_block targetMemory targetBlock)
+    (privateRange : range_private injection memory targetMemory targetBlock
+      (zAdd context.dstk context.mstk) targetFunction.fn_stacksize)
+    (sizeBounds : zLe zZero targetFunction.fn_stacksize ∧ zLt targetFunction.fn_stacksize Ptrofs.max_unsigned)
+    (permissions : ∀ offset, Mem.perm targetMemory targetBlock offset .Max .Nonempty →
+      zLe zZero offset ∧ zLe offset targetFunction.fn_stacksize)
+    (trace : trace) (afterState : RTL.state)
+    (transition : RTL.step providers (Genv.globalenv source)
+      (State stack func (Vptr sourceBlock Ptrofs.zero) point registers memory) trace afterState) :
+    (∃ targetAfter, plus (RTL.step providers) (Genv.globalenv target)
+      (State targetStack targetFunction (Vptr targetBlock Ptrofs.zero) (spc context point)
+        targetRegisters targetMemory) trace targetAfter ∧
+      match_states configuration source afterState targetAfter) ∨
+    (measure afterState < 1 ∧ trace = E0 ∧ match_states configuration source afterState
+      (State targetStack targetFunction (Vptr targetBlock Ptrofs.zero) (spc context point)
+        targetRegisters targetMemory)) := by
+  have globals := match_stacks_inside_globals source injection memory targetMemory _ _ _ _ _ _ stacks
+  obtain ⟨globalBound, globalMatch⟩ :=
+    match_stacks_inside_globalenvs source injection memory targetMemory _ _ _ _ _ _ stacks
+  have preserved := symbols_preserved configuration source target matched
+  have stackSize : context.mstk = ZArith.BinInt.Z.max func.fn_stacksize zZero := by
+    cases body with
+    | tr_funbody_intro _ _ _ _ _ sizeEq _ _ _ => exact sizeEq
+  cases transition with
+  | exec_Inop _ _ _ _ _ _ next code =>
+    have instruction := tr_funbody_inv environment _ context func _ point _ body code
+    cases instruction with
+    | tr_nop _ _ _ _ targetCode =>
+      refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.exec_Inop _ _ _ _ _ _ _ targetCode), ?_⟩
+      exact .match_regular_states _ _ _ _ _ _ _ _ _ _ _ injection environment context
+        stacks compatible body agreed mapped injected valid privateRange sizeBounds permissions
+  | exec_Iop _ _ _ _ _ _ operation args destination next result code evaluated =>
+    have instruction := tr_funbody_inv environment _ context func _ point _ body code
+    cases instruction with
+    | tr_op _ _ _ _ _ _ _ resultBound targetCode =>
+      obtain ⟨targetResult, targetEvaluated, resultInjected⟩ :=
+        eval_operation_inject fundef Unit (Genv.globalenv source) injection globals sourceBlock
+          targetBlock context.dstk mapped operation _ _ result memory targetMemory
+          (il_step_arguments injection context registers targetRegisters args agreed) injected evaluated
+      have targetEval := (eval_operation_preserved fundef fundef Unit Unit _ _ preserved
+        (Vptr targetBlock Ptrofs.zero) (sop context operation) _ targetMemory).trans targetEvaluated
+      refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _
+        (.exec_Iop _ _ _ _ _ _ _ _ _ _ _ targetCode targetEval), ?_⟩
+      exact .match_regular_states _ _ _ _ _ _ _ _ _ _ _ injection environment context
+        (match_stacks_inside_set_reg source injection memory targetMemory _ _ _ _ _ _ destination
+          targetResult stacks) compatible body
+        (agree_set_reg injection context registers targetRegisters destination result targetResult
+          agreed resultInjected resultBound) mapped injected valid privateRange sizeBounds permissions
+  | exec_Iload _ _ _ _ _ _ chunk address args destination next pointer result code evaluated loaded =>
+    have instruction := tr_funbody_inv environment _ context func _ point _ body code
+    cases instruction with
+    | tr_load _ _ _ _ _ _ _ _ resultBound targetCode =>
+      obtain ⟨targetPointer, targetEvaluated, pointerInjected⟩ :=
+        eval_addressing_inject fundef Unit (Genv.globalenv source) injection globals sourceBlock
+          targetBlock context.dstk mapped address _ _ pointer
+          (il_step_arguments injection context registers targetRegisters args agreed) evaluated
+      have targetEval := (eval_addressing_preserved fundef fundef Unit Unit _ _ preserved
+        (Vptr targetBlock Ptrofs.zero) (saddr context address) _).trans targetEvaluated
+      obtain ⟨targetResult, targetLoaded, resultInjected⟩ := Mem.loadv_inject injection memory targetMemory
+        chunk pointer targetPointer result injected loaded pointerInjected
+      refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _
+        (.exec_Iload _ _ _ _ _ _ _ _ _ _ _ _ _ targetCode targetEval targetLoaded), ?_⟩
+      exact .match_regular_states _ _ _ _ _ _ _ _ _ _ _ injection environment context
+        (match_stacks_inside_set_reg source injection memory targetMemory _ _ _ _ _ _ destination
+          targetResult stacks) compatible body
+        (agree_set_reg injection context registers targetRegisters destination result targetResult
+          agreed resultInjected resultBound) mapped injected valid privateRange sizeBounds permissions
+  | exec_Istore _ _ _ _ _ _ chunk address args storedRegister next pointer after code evaluated stored =>
+    have instruction := tr_funbody_inv environment _ context func _ point _ body code
+    cases instruction with
+    | tr_store _ _ _ _ _ _ _ _ targetCode =>
+      obtain ⟨targetPointer, targetEvaluated, pointerInjected⟩ :=
+        eval_addressing_inject fundef Unit (Genv.globalenv source) injection globals sourceBlock
+          targetBlock context.dstk mapped address _ _ pointer
+          (il_step_arguments injection context registers targetRegisters args agreed) evaluated
+      have targetEval := (eval_addressing_preserved fundef fundef Unit Unit _ _ preserved
+        (Vptr targetBlock Ptrofs.zero) (saddr context address) _).trans targetEvaluated
+      obtain ⟨targetAfter, targetStored, afterInjected⟩ := Mem.storev_mapped_inject injection chunk memory
+        pointer _ after targetMemory targetPointer _ injected stored pointerInjected
+        (agree_val_reg injection context registers targetRegisters storedRegister agreed)
+      refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _
+        (.exec_Istore _ _ _ _ _ _ _ _ _ _ _ _ _ targetCode targetEval targetStored), ?_⟩
+      cases pointer <;> simp only [Mem.storev] at stored <;> try contradiction
+      rename_i storedBlock storedOffset
+      cases targetPointer <;> simp only [Mem.storev] at targetStored <;> try contradiction
+      rename_i targetStoredBlock targetStoredOffset
+      refine .match_regular_states _ _ _ _ _ _ _ _ _ _ _ injection environment context
+        (match_stacks_inside_store source injection memory targetMemory _ _ _ _ _ _ chunk storedBlock
+          (Ptrofs.unsigned storedOffset) _ after chunk targetStoredBlock
+          (Ptrofs.unsigned targetStoredOffset) _ targetAfter stacks stored targetStored)
+        compatible body agreed mapped afterInjected
+        (Mem.store_valid_block_1 _ _ _ _ _ _ targetStored targetBlock valid)
+        (range_private_store_local injection memory targetMemory after targetAfter targetBlock
+          _ _ chunk chunk storedBlock targetStoredBlock _ _ _ _ privateRange stored targetStored)
+        sizeBounds ?_
+      intro offset permitted
+      exact permissions offset (Mem.perm_store_2 _ _ _ _ _ _ targetStored _ _ _ _ permitted)
+  | exec_Icall _ _ _ _ _ _ signature called args destination next definition code found signatureEq =>
+    obtain ⟨unit, targetDefinition, targetFound, translated, linked⟩ :=
+      find_function_agree configuration source target matched called registers definition injection
+        context targetRegisters globalBound found agreed globalMatch
+    have instruction := tr_funbody_inv environment _ context func _ point _ body code
+    cases instruction with
+    | tr_call _ _ _ _ _ _ _ _ resultBound targetCode =>
+      refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.exec_Icall _ _ _ _ _ _ _ _ _ _ _ _
+        targetCode targetFound ((sig_function_translated configuration unit _ _ translated).trans signatureEq)), ?_⟩
+      exact .match_call_states _ _ _ _ _ _ _ _ unit injection
+        (.match_stacks_cons _ _ _ _ _ _ _ _ _ _ _ environment context stacks compatible body agreed
+          mapped privateRange sizeBounds permissions resultBound valid) linked translated
+        (il_step_arguments injection context registers targetRegisters args agreed) injected
+    | tr_call_inlined _ _ _ identifier _ _ _ _ callee intermediate nextContext resultBound foundInline
+        targetCode moves calleeBody returnInfo below stackSpace =>
+      have definitionEq := find_inlined_function source environment identifier registers definition callee
+        compatible found foundInline
+      subst definition
+      refine Or.inr ⟨by change 0 < 1; decide, rfl, ?_⟩
+      refine .match_call_regular_states _ _ _ _ _ _ _ _ _ injection environment nextContext context
+        _ intermediate args ?_ compatible calleeBody below targetCode moves
+        (agree_val_regs_gen injection context registers targetRegisters args agreed) injected valid
+        ?_ sizeBounds permissions
+      · exact .match_stacks_inside_inlined _ _ _ _ _ _ _ _ environment nextContext _ _ context stacks
+          compatible body agreed mapped
+          (fun offset bounds => privateRange offset ⟨bounds.1, Int.lt_of_lt_of_le bounds.2
+            (by cases calleeBody with
+                | tr_funbody_intro _ _ _ _ _ sizeEq _ _ bound =>
+                  have nonnegative := (il_step_max_bounds callee.fn_stacksize).2
+                  rw [← sizeEq] at nonnegative
+                  simp only [zLe, zLt, zAdd, ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt,
+                    ZArith.BinInt.Z.add, intOfZ_zOfInt] at bound nonnegative ⊢
+                  change 0 ≤ _ at nonnegative
+                  omega)⟩)
+          resultBound returnInfo below stackSpace
+      · exact il_step_range_weaken injection memory targetMemory targetBlock _ _ _ privateRange stackSpace.2
+  | exec_Itailcall _ _ _ _ _ _ signature called args definition after code found signatureEq freed =>
+    obtain ⟨unit, targetDefinition, targetFound, translated, linked⟩ :=
+      find_function_agree configuration source target matched called registers definition injection
+        context targetRegisters globalBound found agreed globalMatch
+    have privateAfter := range_private_free_left injection memory targetMemory targetBlock context.dstk
+      func.fn_stacksize targetFunction.fn_stacksize sourceBlock after
+      (by simpa only [stackSize] using privateRange) freed mapped injected
+    have insideAfter := il_step_inside_free source injection memory targetMemory after stack targetStack
+      targetFunction context targetBlock sourceBlock targetRegisters func.fn_stacksize stacks freed
+    have memoryAfter := Mem.free_left_inject injection memory targetMemory sourceBlock zZero
+      func.fn_stacksize after injected freed
+    have instruction := tr_funbody_inv environment _ context func _ point _ body code
+    cases instruction with
+    | tr_tailcall _ _ _ _ _ _ targetCode returnNone =>
+      obtain ⟨targetAfter, targetFreed, afterInjected, stacksAfter⟩ :=
+        il_step_free_original source injection memory targetMemory after stack targetStack func targetFunction
+          context environment sourceBlock targetBlock targetRegisters stacks body mapped injected valid
+          privateRange returnNone freed
+      refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.exec_Itailcall _ _ _ _ _ _ _ _ _ _ _
+        targetCode targetFound ((sig_function_translated configuration unit _ _ translated).trans signatureEq)
+        targetFreed), ?_⟩
+      exact .match_call_states _ _ _ _ _ _ _ _ unit injection stacksAfter linked translated
+        (il_step_arguments injection context registers targetRegisters args agreed) afterInjected
+    | tr_tailcall_call _ _ _ _ _ _ destination next targetCode returnInfo =>
+      refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.exec_Icall _ _ _ _ _ _ _ _ _ _ _ _
+        targetCode targetFound ((sig_function_translated configuration unit _ _ translated).trans signatureEq)), ?_⟩
+      exact .match_call_states _ _ _ _ _ _ _ _ unit injection
+        (.match_stacks_untailcall _ _ _ _ _ _ _ _ context insideAfter privateAfter sizeBounds
+          permissions returnInfo valid) linked translated
+        (il_step_arguments injection context registers targetRegisters args agreed) memoryAfter
+    | tr_tailcall_inlined _ _ _ identifier _ _ callee intermediate nextContext foundInline
+        targetCode moves calleeBody returnInfo below stackSpace =>
+      have definitionEq := find_inlined_function source environment identifier registers definition callee
+        compatible found foundInline
+      subst definition
+      refine Or.inr ⟨by change 0 < 1; decide, rfl, ?_⟩
+      exact .match_call_regular_states _ _ _ _ _ _ _ _ _ injection environment nextContext context
+        _ intermediate args
+        (match_stacks_inside_inlined_tailcall source environment injection after targetMemory
+          stack targetStack targetFunction context targetBlock targetRegisters nextContext callee
+          insideAfter below stackSpace returnInfo privateAfter calleeBody)
+        compatible calleeBody below targetCode moves
+        (agree_val_regs_gen injection context registers targetRegisters args agreed) memoryAfter valid
+        (il_step_range_weaken injection after targetMemory targetBlock _ _ _ privateAfter
+          (by rw [stackSpace]; exact align_le _ _ (min_alignment_pos _))) sizeBounds permissions
+  | exec_Ibuiltin _ _ _ _ _ _ external args destination next values callTrace result after
+      code evaluated called =>
+    have instruction := tr_funbody_inv environment _ context func _ point _ body code
+    cases instruction with
+    | tr_builtin _ _ _ _ _ _ _ resultBound targetCode =>
+      obtain ⟨targetValues, targetEvaluated, valuesInjected⟩ :=
+        tr_builtin_args configuration source target matched injection globalBound context registers
+          targetRegisters sourceBlock targetBlock memory targetMemory args values globalMatch agreed
+          mapped injected evaluated
+      obtain ⟨extended, targetResult, targetAfter, sameEnvCalled, resultInjected, afterInjected,
+        sourceUnchanged, targetUnchanged, increased, separated⟩ := external_call_mem_inject
+        providers external fundef Unit (Genv.globalenv source) values memory trace result after injection
+          targetMemory targetValues globals called injected valuesInjected
+      have targetCalled := external_call_symbols_preserved_proof providers external _ _ targetValues
+        targetMemory trace targetResult targetAfter (senv_preserved configuration source target matched)
+        sameEnvCalled
+      have sourcePermissions := fun beforeBlock offset permission =>
+        external_call_max_perm_proof providers external _ _ _ _ _ _ beforeBlock offset permission called
+      have targetPermissions := fun beforeBlock offset permission =>
+        external_call_max_perm_proof providers external _ _ _ _ _ _ beforeBlock offset permission targetCalled
+      refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.exec_Ibuiltin _ _ _ _ _ _ _ _ _ _ _ _ _ _
+        targetCode targetEvaluated targetCalled), ?_⟩
+      refine .match_regular_states _ _ _ _ _ _ _ _ _ _ _ extended environment context
+        (match_stacks_inside_set_res source extended after targetAfter _ _ _ _ _ _ destination targetResult
+          (match_stacks_inside_extcall source injection extended memory after targetMemory targetAfter
+            sourcePermissions targetPermissions targetUnchanged injected increased separated
+            _ _ _ _ _ _ stacks valid)) compatible body ?_ (increased _ _ _ mapped) afterInjected
+        (external_call_valid_block_proof providers external _ _ _ _ _ _ targetBlock targetCalled valid)
+        (range_private_extcall injection extended memory after targetMemory targetAfter targetBlock _ _
+          privateRange sourcePermissions targetUnchanged injected increased separated valid) sizeBounds ?_
+      · cases destination with
+        | BR register =>
+          exact agree_set_reg extended context registers targetRegisters register result
+            targetResult (agree_regs_incr injection context registers targetRegisters extended agreed increased)
+            resultInjected resultBound
+        | _ => exact agree_regs_incr injection context registers targetRegisters extended agreed increased
+      · intro offset permitted
+        exact permissions offset (targetPermissions targetBlock offset .Nonempty valid permitted)
+  | exec_Icond _ _ _ _ _ _ condition args ifso ifnot outcome next code evaluated nextEq =>
+    have instruction := tr_funbody_inv environment _ context func _ point _ body code
+    cases instruction with
+    | tr_cond _ _ _ _ _ _ _ targetCode =>
+      have targetEval := eval_condition_inject injection condition _ _ outcome memory targetMemory
+        (il_step_arguments injection context registers targetRegisters args agreed) injected evaluated
+      subst next
+      cases outcome <;>
+        exact Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.exec_Icond _ _ _ _ _ _ _ _ _ _ _ _
+          targetCode targetEval rfl), .match_regular_states _ _ _ _ _ _ _ _ _ _ _ injection environment
+          context stacks compatible body agreed mapped injected valid privateRange sizeBounds permissions⟩
+  | exec_Ijumptable _ _ _ _ _ _ argument table index next code argumentEq selected =>
+    have instruction := tr_funbody_inv environment _ context func _ point _ body code
+    cases instruction with
+    | tr_jumptable _ _ _ _ _ targetCode =>
+      have indexInjected := agree_val_reg injection context registers targetRegisters argument agreed
+      rw [argumentEq] at indexInjected
+      have targetIndex : Regmap.get (sreg context argument) targetRegisters = Vint index := by
+        generalize Regmap.get (sreg context argument) targetRegisters = targetValue at indexInjected ⊢
+        cases indexInjected
+        rfl
+      have targetSelected : list_nth_z (table.map (spc context)) (Int.unsigned index) =
+          some (spc context next) := by
+        rw [list_nth_z_map, selected]
+        rfl
+      exact Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.exec_Ijumptable _ _ _ _ _ _ _ _ _ _ targetCode
+        targetIndex targetSelected), .match_regular_states _ _ _ _ _ _ _ _ _ _ _ injection environment
+        context stacks compatible body agreed mapped injected valid privateRange sizeBounds permissions⟩
+  | exec_Ireturn _ _ _ _ _ _ resultRegister after code freed =>
+    have instruction := tr_funbody_inv environment _ context func _ point _ body code
+    cases instruction with
+    | tr_return _ _ _ _ targetCode returnNone =>
+      obtain ⟨targetAfter, targetFreed, afterInjected, stacksAfter⟩ :=
+        il_step_free_original source injection memory targetMemory after stack targetStack func targetFunction
+          context environment sourceBlock targetBlock targetRegisters stacks body mapped injected valid
+          privateRange returnNone freed
+      refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _
+        (.exec_Ireturn _ _ _ _ _ _ _ _ targetCode targetFreed), ?_⟩
+      refine .match_return_states _ _ _ _ _ _ injection stacksAfter ?_ afterInjected
+      cases resultRegister with
+      | none => exact .val_inject_undef _
+      | some register => exact agree_val_reg injection context registers targetRegisters register agreed
+    | tr_return_inlined _ _ _ _ returnInformation targetCode returnInfo =>
+      refine Or.inr ⟨by change 0 < 1; decide, rfl, ?_⟩
+      refine .match_return_regular_states _ _ _ _ _ _ _ _ injection context _ resultRegister
+        returnInformation (il_step_inside_free source injection memory targetMemory after stack targetStack
+          targetFunction context targetBlock sourceBlock targetRegisters func.fn_stacksize stacks freed)
+        returnInfo targetCode ?_
+        (Mem.free_left_inject injection memory targetMemory sourceBlock zZero func.fn_stacksize after
+          injected freed) valid
+        (range_private_free_left injection memory targetMemory targetBlock context.dstk func.fn_stacksize
+          targetFunction.fn_stacksize sourceBlock after (by simpa only [stackSize] using privateRange)
+          freed mapped injected) sizeBounds permissions
+      cases resultRegister with
+      | none => rfl
+      | some register => exact agree_val_reg injection context registers targetRegisters register agreed
+
+
+theorem step_simulation
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    step_simulationStatement := by
+  intro providers configuration source target matched initial trace after transition targetInitial states
+  cases states with
+  | match_regular_states stack func sourceBlock point registers memory targetStack targetFunction targetBlock
+      targetRegisters targetMemory injection environment context stacks compatible body agreed mapped injected
+      valid privateRange sizeBounds permissions =>
+    exact il_step_regular providers configuration source target matched stack targetStack func targetFunction
+      sourceBlock targetBlock point registers targetRegisters memory targetMemory injection environment context
+      stacks compatible body agreed mapped injected valid privateRange sizeBounds permissions trace after transition
+  | match_call_states stack definition args memory targetStack targetDefinition targetArgs targetMemory
+      unit injection stacks linked translated arguments injected =>
+    cases transition with
+    | exec_function_internal _ func _ _ memoryAfter sourceBlock typed allocated =>
+      obtain ⟨targetAfter, targetStep, statesAfter⟩ :=
+        il_step_alloc_original providers configuration source target unit stack targetStack func targetDefinition
+          args targetArgs memory targetMemory memoryAfter sourceBlock injection stacks linked translated arguments
+          injected typed allocated
+      exact Or.inl ⟨targetAfter, plus_one _ _ _ _ _ _ _ targetStep, statesAfter⟩
+    | exec_function_external _ external _ result callTrace _ memoryAfter called =>
+      obtain ⟨globalBound, globalMatch⟩ :=
+        match_stacks_globalenvs source injection memory targetMemory _ _ _ stacks
+      have globals := match_globalenvs_preserves_globals source injection globalBound globalMatch
+      obtain ⟨extended, targetResult, targetAfter, sameEnvCalled, resultInjected, afterInjected,
+        sourceUnchanged, targetUnchanged, increased, separated⟩ := external_call_mem_inject
+        providers external fundef Unit (Genv.globalenv source) args memory trace result memoryAfter injection
+          targetMemory targetArgs globals called injected arguments
+      have targetCalled := external_call_symbols_preserved_proof providers external _ _ targetArgs
+        targetMemory trace targetResult targetAfter (senv_preserved configuration source target matched)
+        sameEnvCalled
+      have sourcePermissions := fun beforeBlock offset permission =>
+        external_call_max_perm_proof providers external _ _ _ _ _ _ beforeBlock offset permission called
+      have targetPermissions := fun beforeBlock offset permission =>
+        external_call_max_perm_proof providers external _ _ _ _ _ _ beforeBlock offset permission targetCalled
+      simp [Inlining.transf_fundef, transf_partial_fundef] at translated
+      cases translated
+      refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _
+        (.exec_function_external _ _ _ _ _ _ _ targetCalled), ?_⟩
+      exact .match_return_states _ _ _ _ _ _ extended
+        (match_stacks_bound source extended memoryAfter targetAfter _ _ targetMemory.nextblock _
+          (match_stacks_extcall source injection extended memory memoryAfter targetMemory targetAfter
+            sourcePermissions targetPermissions targetUnchanged injected increased separated _ _ _ stacks
+            (Ple_refl _))
+          (external_call_nextblock providers external _ _ _ _ _ _ targetCalled)) resultInjected afterInjected
+  | match_call_regular_states stack func args memory targetStack targetFunction targetBlock targetRegisters
+      targetMemory injection environment context previousContext point next argumentRegisters stacks compatible
+      body below targetCode moves characterized injected valid privateRange sizeBounds permissions =>
+    cases transition with
+    | exec_function_internal _ _ _ _ memoryAfter sourceBlock typed allocated =>
+      obtain ⟨extended, afterInjected, increased, newMapping, unchanged⟩ :=
+        il_step_alloc_inlined environment func targetFunction context injection memory targetMemory memoryAfter
+          sourceBlock targetBlock body injected valid privateRange sizeBounds permissions allocated
+      have bodyFacts : (∀ register, register ∈ func.fn_params → Ple register context.mreg) ∧
+          context.mstk = ZArith.BinInt.Z.max func.fn_stacksize zZero := by
+        cases body with
+        | tr_funbody_intro _ _ _ params _ sizeEq _ _ _ => exact ⟨params, sizeEq⟩
+      obtain ⟨registersAfter, targetMoves, agreedAfter, unchangedRegisters⟩ :=
+        tr_moves_init_regs providers target injection targetStack targetFunction (Vptr targetBlock Ptrofs.zero)
+          targetMemory previousContext context below func.fn_params argumentRegisters args next
+          (spc context func.fn_entrypoint) targetRegisters moves bodyFacts.1 characterized
+      have insideChanged : match_stacks_inside source injection memory targetMemory stack targetStack
+          targetFunction context targetBlock registersAfter := by
+        exact match_stacks_inside_invariant source injection memory targetMemory injection memory targetMemory
+          (fun _ _ _ mapping => mapping) _ _ _ _ _ _ stacks registersAfter unchangedRegisters
+          (fun _ _ _ mapping _ => mapping) (fun _ _ _ _ _ _ permitted => permitted)
+          (fun _ _ _ permitted => permitted) (fun _ _ _ _ _ permitted => permitted)
+      refine Or.inl ⟨_, plus_left _ _ (.exec_Inop _ _ _ _ _ _ _ targetCode) targetMoves rfl, ?_⟩
+      refine .match_regular_states _ _ _ _ _ _ _ _ _ _ _ extended environment context
+        (match_stacks_inside_alloc_left source injection memory targetMemory _ _ _ _ _ _ insideChanged
+          func.fn_stacksize memoryAfter sourceBlock extended context.dstk allocated increased newMapping unchanged
+          (Int.le_refl _)) compatible body
+        (agree_regs_incr injection context _ _ extended agreedAfter increased) newMapping afterInjected valid
+        ?_ sizeBounds permissions
+      rw [bodyFacts.2]
+      exact range_private_alloc_left injection memory targetMemory targetBlock context.dstk
+        targetFunction.fn_stacksize func.fn_stacksize memoryAfter sourceBlock extended privateRange
+        allocated newMapping unchanged
+  | match_return_states stack result memory targetStack targetResult targetMemory injection stacks
+      resultInjected injected =>
+    cases transition with
+    | exec_return destination func sourcePointer point registers tail _ _ =>
+      cases stacks with
+      | match_stacks_cons _ _ sourceBlock _ _ _ targetFunction targetBlock targetRegisters targetTail _
+          environment context inside compatible body agreed mapped privateRange sizeBounds permissions
+          resultBound valid =>
+        refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.exec_return _ _ _ _ _ _ _ _), ?_⟩
+        exact .match_regular_states _ _ _ _ _ _ _ _ _ _ _ injection environment context
+          (match_stacks_inside_set_reg source injection memory targetMemory _ _ _ _ _ _ destination
+            targetResult inside) compatible body
+          (agree_set_reg injection context registers targetRegisters destination result targetResult agreed
+            resultInjected resultBound) mapped injected valid privateRange sizeBounds permissions
+      | match_stacks_untailcall _ returnRegister targetFunction targetBlock returnPoint targetRegisters targetTail
+          _ context inside privateRange sizeBounds permissions returnInfo valid =>
+        cases inside with
+        | match_stacks_inside_base _ _ _ _ _ _ originalStacks returnNone offsetZero =>
+          simp [returnNone] at returnInfo
+        | match_stacks_inside_inlined _ _ sourceBlock _ _ _ _ _ environment _ _ _ callerContext
+            outerStacks compatible body agreed mapped padding resultBound encodedReturn below stackSpace =>
+          have returnPair := Option.some.inj (returnInfo.symm.trans encodedReturn)
+          have returnPointEq := congrArg Prod.fst returnPair
+          have returnRegisterEq := congrArg Prod.snd returnPair
+          simp only [Prod.fst, Prod.snd] at returnPointEq returnRegisterEq
+          subst returnPoint
+          subst returnRegister
+          refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.exec_return _ _ _ _ _ _ _ _), ?_⟩
+          exact .match_regular_states _ _ _ _ _ _ _ _ _ _ _ injection environment callerContext
+            (match_stacks_inside_set_reg source injection memory targetMemory _ _ _ _ _ _ destination
+              targetResult outerStacks) compatible body
+            (agree_set_reg injection callerContext registers targetRegisters destination result targetResult
+              agreed resultInjected resultBound) mapped injected valid
+            (il_step_range_join injection memory targetMemory targetBlock _ _ _ padding privateRange)
+            sizeBounds permissions
+  | match_return_regular_states stack result memory targetStack targetFunction targetBlock targetRegisters
+      targetMemory injection context point resultRegister returnInformation inside returnInfo targetCode
+      resultMatch injected valid privateRange sizeBounds permissions =>
+    cases transition with
+    | exec_return destination func sourcePointer sourcePoint registers tail _ _ =>
+      cases inside with
+      | match_stacks_inside_base _ _ _ _ _ _ originalStacks returnNone offsetZero =>
+        simp [returnNone] at returnInfo
+      | match_stacks_inside_inlined _ _ sourceBlock _ _ _ _ _ environment _ _ _ callerContext
+          outerStacks compatible body agreed mapped padding resultBound encodedReturn below stackSpace =>
+        have returnPair := Option.some.inj (returnInfo.symm.trans encodedReturn)
+        rw [returnPair] at targetCode
+        have combinedRange := il_step_range_join injection memory targetMemory targetBlock _ _ _
+          padding privateRange
+        cases resultRegister with
+        | some register =>
+          refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _
+            (.exec_Iop _ _ _ _ _ _ .Omove _ _ _ _ targetCode rfl), ?_⟩
+          exact .match_regular_states _ _ _ _ _ _ _ _ _ _ _ injection environment callerContext
+            (match_stacks_inside_set_reg source injection memory targetMemory _ _ _ _ _ _ destination
+              (Regmap.get (sreg context register) targetRegisters) outerStacks) compatible body
+            (agree_set_reg injection callerContext registers targetRegisters destination result _ agreed
+              resultMatch resultBound) mapped injected valid combinedRange sizeBounds permissions
+        | none =>
+          change result = Vundef at resultMatch
+          subst result
+          refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.exec_Inop _ _ _ _ _ _ _ targetCode), ?_⟩
+          exact .match_regular_states _ _ _ _ _ _ _ _ _ _ _ injection environment callerContext
+            outerStacks compatible body (agree_set_reg_undef' injection callerContext registers
+              targetRegisters destination agreed) mapped injected valid combinedRange sizeBounds permissions
+
+end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+theorem transf_program_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transf_program_correctStatement := by
+  intro providers configuration source target matched
+  exact CompCert4Lean.Common.Smallstep.forward_simulation_star
+    (RTL.semantics providers source) (RTL.semantics providers target)
+    (senv_preserved configuration source target matched).2.1
+    (match_states configuration source)
+    (transf_initial_states configuration source target matched)
+    (transf_final_states configuration source) measure
+    (step_simulation providers configuration source target matched)
+
+end CompCert4Lean.Backend.Inliningproof

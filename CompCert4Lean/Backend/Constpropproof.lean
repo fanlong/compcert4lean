@@ -1,3 +1,4 @@
+import CompCert4Lean.X86.ConstpropOpproof
 import CompCert4Lean.Backend.Constprop
 import CompCert4Lean.Backend.RTL
 import CompCert4Lean.Backend.Registers
@@ -1916,5 +1917,461 @@ theorem senv_preserved
   exact @Genv.senv_match program fundef Unit fundef Unit
     (@Linker_prog fundef Unit (Linker_fundef function) Linker_unit)
     _ _ prog prog tprog hm
+
+end CompCert4Lean.Backend.Constpropproof
+
+namespace CompCert4Lean.Backend.Constpropproof
+
+open CompCert4Lean.Backend.Constprop
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.X86.ValueAOp
+
+open CompCert4Lean.Backend.Registers
+
+theorem match_successor_rec : ∀ cfg, match_successor_recStatement cfg := by
+  intro cfg func regs memory classification environment henv fuel
+  induction fuel with
+  | zero =>
+      intro pc
+      exact match_pc_base func regs memory 0 pc
+  | succ fuel inductionHypothesis =>
+      intro pc
+      cases hcode : PTree.get pc func.fn_code with
+      | none =>
+          simpa [successor_rec, hcode] using
+            match_pc_base func regs memory (fuel + 1) pc
+      | some instruction =>
+          cases instruction with
+          | Inop next =>
+              simpa [successor_rec, hcode] using
+                match_pc_nop func regs memory fuel pc next _ hcode
+                  (inductionHypothesis next)
+          | Icond condition arguments ifso ifnot =>
+              cases hbranch : resolve_branch
+                  (eval_static_condition cfg condition (aregs environment arguments)) with
+              | none =>
+                  simpa [successor_rec, hcode, hbranch] using
+                    match_pc_base func regs memory (fuel + 1) pc
+              | some chosen =>
+                  simp only [successor_rec, hcode, hbranch]
+                  apply match_pc_cond func regs memory fuel pc condition arguments
+                    ifso ifnot _ hcode
+                  intro actual heval
+                  have hsound := eval_static_condition_sound cfg classification condition
+                    (arguments.map (fun register => Regmap.get register regs)) memory
+                    (aregs environment arguments)
+                    (aregs_sound classification regs environment arguments henv)
+                  rw [heval] at hsound
+                  have hequal := resolve_branch_sound actual _ chosen hsound hbranch
+                  subst actual
+                  exact inductionHypothesis _
+          | _ =>
+              simpa [successor_rec, hcode] using
+                match_pc_base func regs memory (fuel + 1) pc
+
+end CompCert4Lean.Backend.Constpropproof
+
+namespace CompCert4Lean.Backend.Constpropproof
+
+theorem match_successor : ∀ cfg, match_successorStatement cfg := by
+  intro cfg func regs memory classification environment pc henv
+  exact match_successor_rec cfg func regs memory classification environment henv _ pc
+
+end CompCert4Lean.Backend.Constpropproof
+
+namespace CompCert4Lean.Backend.Constpropproof
+
+open CompCert4Lean.Backend.Constprop
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.X86.ConstpropOp
+open CompCert4Lean.X86.ConstpropOpproof
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ValueAOp
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+private theorem constprop_step_simulation
+    (operation_reduction : op_strength_reduction_correctStatement) :
+    ∀ cfg, transf_step_correctStatement cfg := by
+  intro cfg providers prog tprog hprog source events target hstep fuel translated hsound hmatch
+  cases hmatch with
+  | match_states_intro frames pointer pc regs memory func frames' targetPc regs' memory'
+      cunit fuel hlink hframes hpc hregs hmem =>
+      have hbase := sound_state_inv cfg prog _ cunit hsound hlink
+      cases hbase with
+      | sound_regular_state _ _ stack _ _ _ environment abstractMemory classification
+          hsoundStack hanalysis henv hreadonly hmemory hglobals hstack =>
+          cases hpc with
+          | match_pc_base fuel pc =>
+              cases hstep with
+              | exec_Inop _ _ _ _ _ _ next hcode =>
+                  have htranslated := transf_instr_at cfg (romem_for cfg cunit) func pc _ hcode
+                  simp only [transf_instr, hanalysis] at htranslated
+                  exact Or.inl ⟨0, _, exec_Inop _ _ _ _ _ _ _ htranslated,
+                    match_states_succ cfg prog _ _ _ _ _ _ _ _ _ _ hlink hframes hregs hmem⟩
+              | exec_Iop _ _ _ _ _ _ operation arguments destination next value hcode heval =>
+                  have habstract := eval_static_operation_sound cfg classification _ hglobals
+                    stack hstack operation _ memory value _ heval
+                    (aregs_sound classification regs environment arguments henv)
+                  have hupdated := ematch_update classification regs environment value _
+                    destination henv habstract
+                  have htranslated := transf_instr_at cfg (romem_for cfg cunit) func pc _ hcode
+                  simp only [transf_instr, hanalysis] at htranslated
+                  cases hconstant : const_for_result cfg cfg.relocation
+                      (eval_static_operation cfg operation (aregs environment arguments)) with
+                  | some constant =>
+                      rw [hconstant] at htranslated
+                      obtain ⟨result, hresult, hless⟩ := const_for_result_correct cfg prog tprog
+                        hprog _ constant classification value stack memory' hconstant
+                        habstract hstack hglobals
+                      refine Or.inl ⟨num_iter, _, exec_Iop _ _ _ _ _ _ _ _ _ _ _
+                        htranslated hresult, ?_⟩
+                      exact match_states_intro cfg prog _ _ _ _ _ _ _ _ _ _ cunit _ hlink
+                        hframes (match_successor cfg _ _ _ classification _ _ hupdated)
+                        (set_reg_lessdef destination value result regs regs' hless hregs) hmem
+                  | none =>
+                      rw [hconstant] at htranslated
+                      have hreduce := operation_reduction cfg classification _ hglobals stack
+                        hstack environment regs memory henv operation arguments
+                        (aregs environment arguments) value rfl heval
+                      cases hreduced : op_strength_reduction cfg operation arguments
+                          (aregs environment arguments) with
+                      | mk operation' arguments' =>
+                          rw [hreduced] at htranslated hreduce
+                          obtain ⟨reduced, hevaluated, hless⟩ := hreduce
+                          obtain ⟨result, hresult, hless'⟩ := eval_operation_lessdef _ _ _
+                            (Vptr stack Ptrofs.zero) operation' _ _ reduced memory memory'
+                            (regs_lessdef_regs regs regs' hregs arguments') hmem hevaluated
+                          have htarget := (eval_operation_preserved _ _ _ _ _ _
+                            (symbols_preserved cfg prog tprog hprog)
+                            (Vptr stack Ptrofs.zero) operation' _ memory').trans hresult
+                          refine Or.inl ⟨num_iter, _, exec_Iop _ _ _ _ _ _ _ _ _ _ _
+                            htranslated htarget, ?_⟩
+                          exact match_states_intro cfg prog _ _ _ _ _ _ _ _ _ _ cunit _ hlink
+                            hframes (match_successor cfg _ _ _ classification _ _ hupdated)
+                            (set_reg_lessdef destination value result regs regs'
+                              (Val.lessdef_trans _ _ _ hless hless') hregs) hmem
+              | exec_Iload _ _ _ _ _ _ chunk addressing arguments destination next address value
+                  hcode haddress hload =>
+                  have haddressMatch := eval_static_addressing_sound classification _ hglobals
+                    stack hstack addressing _ address _ haddress
+                    (aregs_sound classification regs environment arguments henv)
+                  have hvalueMatch := loadv_sound cfg classification chunk memory address value
+                    (romem_for cfg cunit) abstractMemory _ hload hreadonly hmemory haddressMatch
+                  have htranslated := transf_instr_at cfg (romem_for cfg cunit) func pc _ hcode
+                  simp only [transf_instr, hanalysis] at htranslated
+                  cases hconstant : const_for_result cfg cfg.relocation
+                      (loadv cfg chunk (romem_for cfg cunit) abstractMemory
+                        (eval_static_addressing addressing (aregs environment arguments))) with
+                  | some constant =>
+                      rw [hconstant] at htranslated
+                      obtain ⟨result, hresult, hless⟩ := const_for_result_correct cfg prog tprog
+                        hprog _ constant classification value stack memory' hconstant
+                        hvalueMatch hstack hglobals
+                      refine Or.inl ⟨0, _, exec_Iop _ _ _ _ _ _ _ _ _ _ _
+                        htranslated hresult, ?_⟩
+                      exact match_states_succ cfg prog _ _ _ _ _ _ _ _ _ _ hlink hframes
+                        (set_reg_lessdef destination value result regs regs' hless hregs) hmem
+                  | none =>
+                      rw [hconstant] at htranslated
+                      have hreduce := addr_strength_reduction_correct classification _ hglobals
+                        stack hstack environment regs henv addressing arguments
+                        (aregs environment arguments) address rfl haddress
+                      cases hreduced : addr_strength_reduction addressing arguments
+                          (aregs environment arguments) with
+                      | mk addressing' arguments' =>
+                          rw [hreduced] at htranslated hreduce
+                          obtain ⟨reduced, hevaluated, hless⟩ := hreduce
+                          obtain ⟨address', haddress', hless'⟩ := eval_addressing_lessdef _ _ _
+                            (Vptr stack Ptrofs.zero) addressing' _ _ reduced
+                            (regs_lessdef_regs regs regs' hregs arguments') hevaluated
+                          obtain ⟨result, hresult, hvalueLess⟩ := Mem.loadv_extends chunk
+                            memory memory' address address' value hmem hload
+                            (Val.lessdef_trans _ _ _ hless hless')
+                          have htarget := (eval_addressing_preserved _ _ _ _ _ _
+                            (symbols_preserved cfg prog tprog hprog)
+                            (Vptr stack Ptrofs.zero) addressing' _).trans haddress'
+                          refine Or.inl ⟨0, _, exec_Iload _ _ _ _ _ _ _ _ _ _ _ _ _
+                            htranslated htarget hresult, ?_⟩
+                          exact match_states_succ cfg prog _ _ _ _ _ _ _ _ _ _ hlink hframes
+                            (set_reg_lessdef destination value result regs regs' hvalueLess hregs) hmem
+              | exec_Istore _ _ _ _ _ _ chunk addressing arguments register next address after
+                  hcode haddress hstore =>
+                  have htranslated := transf_instr_at cfg (romem_for cfg cunit) func pc _ hcode
+                  simp only [transf_instr, hanalysis] at htranslated
+                  have hreduce := addr_strength_reduction_correct classification _ hglobals
+                    stack hstack environment regs henv addressing arguments
+                    (aregs environment arguments) address rfl haddress
+                  cases hreduced : addr_strength_reduction addressing arguments
+                      (aregs environment arguments) with
+                  | mk addressing' arguments' =>
+                      rw [hreduced] at htranslated hreduce
+                      obtain ⟨reduced, hevaluated, hless⟩ := hreduce
+                      obtain ⟨address', haddress', hless'⟩ := eval_addressing_lessdef _ _ _
+                        (Vptr stack Ptrofs.zero) addressing' _ _ reduced
+                        (regs_lessdef_regs regs regs' hregs arguments') hevaluated
+                      obtain ⟨after', hstore', hmem'⟩ := Mem.storev_extends chunk memory memory'
+                        address (Regmap.get register regs) after address' (Regmap.get register regs')
+                        hmem hstore (Val.lessdef_trans _ _ _ hless hless') (hregs register)
+                      have htarget := (eval_addressing_preserved _ _ _ _ _ _
+                        (symbols_preserved cfg prog tprog hprog)
+                        (Vptr stack Ptrofs.zero) addressing' _).trans haddress'
+                      refine Or.inl ⟨0, _, exec_Istore _ _ _ _ _ _ _ _ _ _ _ _ _
+                        htranslated htarget hstore', ?_⟩
+                      exact match_states_succ cfg prog _ _ _ _ _ _ _ _ _ _ hlink hframes hregs hmem'
+              | exec_Icall _ _ _ _ _ _ signature targetFunction arguments destination next called
+                  hcode hfind hsignature =>
+                  have htranslated := transf_instr_at cfg (romem_for cfg cunit) func pc _ hcode
+                  simp only [transf_instr, hanalysis] at htranslated
+                  obtain ⟨calleeUnit, hfind', hcalleeLink⟩ := transf_ros_correct cfg prog tprog
+                    hprog classification regs environment targetFunction called regs'
+                    hglobals henv hfind hregs
+                  refine Or.inl ⟨0, _, exec_Icall _ _ _ _ _ _ _ _ _ _ _ _
+                    htranslated hfind' ?_, ?_⟩
+                  · exact (sig_function_translated cfg _ _).trans hsignature
+                  · apply match_states_call cfg prog _ called _ memory _ _ memory' calleeUnit
+                      hcalleeLink
+                    · exact list_forall2.cons _ _
+                        (match_stackframe_intro cfg prog destination (Vptr stack Ptrofs.zero)
+                          next regs func regs' cunit hlink hregs) hframes
+                    · exact regs_lessdef_regs regs regs' hregs arguments
+                    · exact hmem
+              | exec_Itailcall _ _ _ _ _ _ signature targetFunction arguments called after
+                  hcode hfind hsignature hfree =>
+                  have htranslated := transf_instr_at cfg (romem_for cfg cunit) func pc _ hcode
+                  simp only [transf_instr, hanalysis] at htranslated
+                  obtain ⟨calleeUnit, hfind', hcalleeLink⟩ := transf_ros_correct cfg prog tprog
+                    hprog classification regs environment targetFunction called regs'
+                    hglobals henv hfind hregs
+                  obtain ⟨after', hfree', hmem'⟩ := Mem.free_parallel_extends memory memory'
+                    stack _ _ after hmem hfree
+                  refine Or.inl ⟨0, _, exec_Itailcall _ _ _ _ _ _ _ _ _ _ _
+                    htranslated hfind' ?_ hfree', ?_⟩
+                  · exact (sig_function_translated cfg _ _).trans hsignature
+                  · exact match_states_call cfg prog _ called _ after _ _ after' calleeUnit
+                      hcalleeLink hframes (regs_lessdef_regs regs regs' hregs arguments) hmem'
+              | exec_Ibuiltin _ _ _ _ _ _ external arguments result next values events value after
+                  hcode harguments hcall =>
+                  have htranslated := transf_instr_at cfg (romem_for cfg cunit) func pc _ hcode
+                  simp only [transf_instr, hanalysis] at htranslated
+                  have hdefault :
+                      PTree.get pc (Constprop.transf_function cfg (romem_for cfg cunit) func).fn_code =
+                        some (Ibuiltin external (builtin_strength_reduction cfg environment external arguments)
+                          result next) →
+                      ∃ nextFuel nextState,
+                        step providers (Genv.globalenv tprog)
+                          (State frames' (Constprop.transf_function cfg (romem_for cfg cunit) func)
+                            (Vptr stack Ptrofs.zero) pc regs' memory') events nextState ∧
+                        match_states cfg prog nextFuel
+                          (State frames func (Vptr stack Ptrofs.zero) next
+                            (regmap_setres result value regs) after) nextState := by
+                    intro hcode'
+                    obtain ⟨reduced, hreduced, hcallReduced⟩ := builtin_strength_reduction_correct
+                      cfg providers prog (Vptr stack Ptrofs.zero) classification environment regs
+                      external arguments values memory events value after henv harguments hcall
+                    obtain ⟨values', hvalues', hvaluesLess⟩ := eval_builtin_args_lessdef reg
+                      (Genv.to_senv (Genv.globalenv prog)) _ _ (Vptr stack Ptrofs.zero)
+                      memory memory' hregs hmem _ _ hreduced
+                    obtain ⟨value', after', hcall', hvalueLess, hmem', hunchanged⟩ :=
+                      external_call_mem_extends_proof providers external _ _ _ _ _ _ _ _
+                        hcallReduced hmem hvaluesLess
+                    refine ⟨0, _, exec_Ibuiltin _ _ _ _ _ _ _ _ _ _ values' events value' after'
+                      hcode' ?_ ?_, ?_⟩
+                    · exact eval_builtin_args_preserved reg _ _ _ _ _ _ _ _ _
+                        (symbols_preserved cfg prog tprog hprog) _ _ hvalues'
+                    · exact external_call_symbols_preserved_proof providers external _ _ _ _ _ _ _
+                        (senv_preserved cfg prog tprog hprog) hcall'
+                    · exact match_states_succ cfg prog _ _ _ _ _ _ _ _ _ _ hlink hframes
+                        (set_res_lessdef result value value' regs regs' hvalueLess hregs) hmem'
+                  apply Or.inl
+                  cases external with
+                  | EF_builtin name signature =>
+                      cases result with
+                      | BR destination =>
+                          cases hlookup : lookup_builtin_function name signature with
+                          | none => exact hdefault (by simpa only [hlookup] using htranslated)
+                          | some builtin =>
+                              cases hstatic : eval_static_builtin_function cfg environment abstractMemory
+                                  (romem_for cfg cunit) builtin arguments with
+                              | none => exact hdefault (by simpa only [hlookup, hstatic] using htranslated)
+                              | some abstractValue =>
+                                  cases hconstant : const_for_result cfg cfg.relocation abstractValue with
+                                  | none =>
+                                      exact hdefault (by simpa only [hlookup, hstatic, hconstant] using htranslated)
+                                  | some constant =>
+                                      simp only [hlookup, hstatic, hconstant] at htranslated
+                                      simp only [external_call, builtin_or_external_sem, hlookup] at hcall
+                                      cases hcall with
+                                      | known_builtin_sem_intro values value heval =>
+                                          have hvalueMatch := eval_static_builtin_function_sound cfg
+                                            classification _ regs stack memory environment (romem_for cfg cunit)
+                                            abstractMemory builtin arguments values value abstractValue
+                                            henv hreadonly hmemory hglobals hstack harguments hstatic heval
+                                          obtain ⟨value', heval', hvalueLess⟩ := const_for_result_correct
+                                            cfg prog tprog hprog abstractValue constant classification value
+                                            stack memory' hconstant hvalueMatch hstack hglobals
+                                          refine ⟨0, _, exec_Iop _ _ _ _ _ _ _ _ _ _ _ htranslated heval', ?_⟩
+                                          exact match_states_succ cfg prog _ _ _ _ _ _ _ _ _ _ hlink hframes
+                                            (set_reg_lessdef destination value value' regs regs' hvalueLess hregs) hmem
+                      | _ => exact hdefault htranslated
+                  | _ => exact hdefault htranslated
+              | exec_Icond _ _ _ _ _ _ condition arguments ifso ifnot choice next hcode heval hnext =>
+                  subst next
+                  have htranslated := transf_instr_at cfg (romem_for cfg cunit) func pc _ hcode
+                  simp only [transf_instr, hanalysis] at htranslated
+                  have hcondition := eval_static_condition_sound cfg classification condition
+                    _ memory _ (aregs_sound classification regs environment arguments henv)
+                  rw [heval] at hcondition
+                  refine Or.inl ⟨0, State frames' _ (Vptr stack Ptrofs.zero)
+                    (if choice then ifso else ifnot) regs' memory', ?_,
+                    match_states_succ cfg prog _ _ _ _ _ _ _ _ _ _ hlink hframes hregs hmem⟩
+                  cases hbranch : resolve_branch
+                      (eval_static_condition cfg condition (aregs environment arguments)) with
+                  | some chosen =>
+                      have hequal := resolve_branch_sound choice _ chosen hcondition hbranch
+                      subst chosen
+                      rw [hbranch] at htranslated
+                      cases choice <;> exact exec_Inop _ _ _ _ _ _ _ htranslated
+                  | none =>
+                      rw [hbranch] at htranslated
+                      have hreduce := cond_strength_reduction_correct classification environment
+                        regs memory henv condition arguments (aregs environment arguments) rfl
+                      cases hreduced : cond_strength_reduction condition arguments
+                          (aregs environment arguments) with
+                      | mk condition' arguments' =>
+                          rw [hreduced] at htranslated hreduce
+                          apply exec_Icond _ _ _ _ _ _ condition' arguments'
+                            ifso ifnot choice _ htranslated
+                          · exact eval_condition_lessdef condition' _ _ choice memory memory'
+                              (regs_lessdef_regs regs regs' hregs arguments') hmem
+                              (hreduce.trans heval)
+                          · rfl
+              | exec_Ijumptable _ _ _ _ _ _ register table number next hcode hregister hnth =>
+                  have htranslated := transf_instr_at cfg (romem_for cfg cunit) func pc _ hcode
+                  simp only [transf_instr, hanalysis] at htranslated
+                  have hregister' : Regmap.get register regs' = Vint number := by
+                    have hless := hregs register
+                    rw [hregister] at hless
+                    generalize htarget : Regmap.get register regs' = targetValue at hless ⊢
+                    cases hless
+                    rfl
+                  refine Or.inl ⟨0, State frames' _ (Vptr stack Ptrofs.zero) next regs' memory', ?_,
+                    match_states_succ cfg prog _ _ _ _ _ _ _ _ _ _ hlink hframes hregs hmem⟩
+                  have habstract := henv register
+                  change vmatch classification (Regmap.get register regs) (areg environment register) at habstract
+                  cases hvalue : areg environment register with
+                  | I constant =>
+                      rw [hregister, hvalue] at habstract
+                      cases habstract
+                      simp only [hvalue, hnth] at htranslated
+                      exact exec_Inop _ _ _ _ _ _ _ htranslated
+                  | _ =>
+                      simp only [hvalue] at htranslated
+                      exact exec_Ijumptable _ _ _ _ _ _ _ _ _ _ htranslated hregister' hnth
+              | exec_Ireturn _ _ _ _ _ _ result after hcode hfree =>
+                  obtain ⟨after', hfree', hmem'⟩ := Mem.free_parallel_extends memory memory'
+                    stack _ _ after hmem hfree
+                  have htranslated := transf_instr_at cfg (romem_for cfg cunit) func pc _ hcode
+                  simp only [transf_instr, hanalysis] at htranslated
+                  refine Or.inl ⟨0, _, exec_Ireturn _ _ _ _ _ _ _ _
+                    htranslated hfree', ?_⟩
+                  apply match_states_return cfg prog _ _ _ _ _ _ hframes _ hmem' hframes
+                  cases result with
+                  | none => exact Val.lessdef_refl _
+                  | some register => exact hregs register
+          | match_pc_nop remaining current next finalPc hcode hnext =>
+              cases hstep <;> simp_all only [Option.some.injEq, reduceCtorEq]
+              cases hcode
+              exact Or.inr ⟨remaining, Nat.lt_succ_self _, True.intro,
+                match_states_intro cfg prog _ _ _ _ _ _ _ _ _ _ cunit _ hlink hframes
+                  hnext hregs hmem⟩
+          | match_pc_cond remaining current condition arguments ifso ifnot finalPc hcode hnext =>
+              cases hstep <;> simp_all only [Option.some.injEq, reduceCtorEq]
+              cases hcode
+              rename_i choice actualPc hbranch hactual heval
+              exact Or.inr ⟨remaining, Nat.lt_succ_self _, True.intro,
+                match_states_intro cfg prog _ _ _ _ _ _ _ _ _ _ cunit _ hlink hframes
+                  (hnext choice hactual) hregs hmem⟩
+  | match_states_call frames called arguments memory frames' arguments' memory' cunit
+      hlink hframes hargs hmem =>
+      cases hstep with
+      | exec_function_internal _ func _ _ after stack htypes halloc =>
+          obtain ⟨after', halloc', hmem'⟩ := Mem.alloc_extends memory memory'
+            _ _ stack after _ _ hmem halloc (by exact _root_.Int.le_refl _) (by exact _root_.Int.le_refl _)
+          refine Or.inl ⟨0, _, exec_function_internal _ _ _ _ _ _
+            (Val.has_argtype_list_lessdef _ _ _ htypes hargs) halloc', ?_⟩
+          exact match_states_succ cfg prog _ _ _ _ _ _ _ _ _ _ hlink hframes
+            (init_regs_lessdef _ _ _ hargs) hmem'
+      | exec_function_external _ external _ value events _ after hcall =>
+          obtain ⟨value', after', hcall', hvalue, hmem', hunchanged⟩ :=
+            external_call_mem_extends_proof providers external _ _ _ _ _ _ _ _ hcall hmem hargs
+          refine Or.inl ⟨0, _, exec_function_external _ _ _ _ _ _ _ ?_,
+            match_states_return cfg prog _ _ _ _ _ _ hframes hvalue hmem' hframes⟩
+          exact external_call_symbols_preserved_proof providers external _ _ _ _ _ _ _
+            (senv_preserved cfg prog tprog hprog) hcall'
+  | match_states_return frames value memory frames' value' memory' hframes hvalue hmem hframes' =>
+      cases hstep
+      cases hframes
+      rename_i destination func pointer pc regs rest frame' rest' hframe hrest
+      cases hframe
+      rename_i regs' cunit hlink hregs
+      refine Or.inl ⟨0, _, exec_return _ _ _ _ _ _ _ _, ?_⟩
+      exact match_states_succ cfg prog _ _ _ _ _ _ _ _ _ _ hlink hrest
+        (set_reg_lessdef destination value value' regs regs' hvalue hregs) hmem
+
+theorem transf_step_correct : ∀ cfg, transf_step_correctStatement cfg :=
+  constprop_step_simulation op_strength_reduction_correct
+
+end CompCert4Lean.Backend.Constpropproof
+
+namespace CompCert4Lean.Backend.Constpropproof
+
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Common.Smallstep
+
+theorem transf_program_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    ∀ cfg, transf_program_correctStatement cfg := by
+  intro cfg providers prog tprog hprog
+  refine Forward_simulation Nat.lt
+    (fun index source target => sound_state cfg prog source ∧
+      match_states cfg prog index source target) ?_
+  refine ⟨Nat.lt_wfRel.wf, ?_, ?_, ?_, ?_⟩
+  · intro source hinitial
+    obtain ⟨index, target, hinitial', hmatched⟩ :=
+      transf_initial_states cfg prog tprog hprog source hinitial
+    exact ⟨index, target, hinitial', sound_initial cfg prog source hinitial, hmatched⟩
+  · intro index source target result hmatched hfinal
+    exact transf_final_states cfg prog index source target result hmatched.2 hfinal
+  · intro source events source' hstep index target hmatched
+    have hsound' := sound_step cfg prog providers source events source' hstep hmatched.1
+    rcases transf_step_correct cfg providers prog tprog hprog source events source'
+        hstep index target hmatched.1 hmatched.2 with hprogress | hskip
+    · obtain ⟨index', target', hstep', hmatched'⟩ := hprogress
+      exact ⟨index', target', Or.inl (plus_one _ _ _ _ _ _ _ hstep'), hsound', hmatched'⟩
+    · obtain ⟨index', hdecreases, hsilent, hmatched'⟩ := hskip
+      subst events
+      exact ⟨index', target, Or.inr ⟨star_refl _ _ _, hdecreases⟩, hsound', hmatched'⟩
+  · exact (senv_preserved cfg prog tprog hprog).2.1
 
 end CompCert4Lean.Backend.Constpropproof
