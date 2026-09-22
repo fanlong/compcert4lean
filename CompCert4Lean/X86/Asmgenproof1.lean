@@ -4583,3 +4583,47 @@ theorem transl_addressing_mode_64_correct : transl_addressing_mode_64_correctSta
   exact transl_addressing_mode_correct
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+
+theorem divls_modls_exists : divls_modls_existsStatement := by
+  intro numerator denominator defined
+  cases numerator <;> cases denominator <;>
+    simp only [Val.divls, Val.modls] at defined ⊢
+  all_goals try { simp at defined }
+  case Vlong.Vlong numerator denominator =>
+    have nonzero : denominator ≠ CompCert4Lean.Lib.Integers.Int64.zero := by
+      intro equal
+      subst denominator
+      simp [CompCert4Lean.Lib.Integers.Int64.eq, WordCore.eq] at defined
+    have safe : numerator ≠ CompCert4Lean.Lib.Integers.Int64.repr CompCert4Lean.Lib.Integers.Int64.min_signed ∨ denominator ≠ CompCert4Lean.Lib.Integers.Int64.mone := by
+      by_cases equal : numerator = CompCert4Lean.Lib.Integers.Int64.repr CompCert4Lean.Lib.Integers.Int64.min_signed
+      · right
+        intro overflow
+        subst numerator
+        subst denominator
+        simp [CompCert4Lean.Lib.Integers.Int64.eq, WordCore.eq] at defined
+      · exact Or.inl equal
+    have guard_false : (CompCert4Lean.Lib.Integers.Int64.eq denominator CompCert4Lean.Lib.Integers.Int64.zero ||
+        CompCert4Lean.Lib.Integers.Int64.eq numerator (CompCert4Lean.Lib.Integers.Int64.repr CompCert4Lean.Lib.Integers.Int64.min_signed) &&
+        CompCert4Lean.Lib.Integers.Int64.eq denominator CompCert4Lean.Lib.Integers.Int64.mone) = false := by
+      apply Bool.eq_false_iff.mpr
+      intro guard_true
+      simp [guard_true] at defined
+    have shifted : Val.shrl (.Vlong numerator) (.Vint (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.of_nat 63))) =
+        .Vlong (if CompCert4Lean.Lib.Integers.Int64.lt numerator CompCert4Lean.Lib.Integers.Int64.zero then CompCert4Lean.Lib.Integers.Int64.mone else CompCert4Lean.Lib.Integers.Int64.zero) := by
+      simp only [Val.shrl, show CompCert4Lean.Lib.Integers.Int.ltu (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.of_nat 63))
+        CompCert4Lean.Lib.Integers.Int64.iwordsize' = true by decide, if_true]
+      congr 1
+      change CompCert4Lean.Lib.Integers.Int64.shr numerator (CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.of_nat 63)) = _
+      exact CompCert4Lean.Lib.Integers.Int64.shr_lt_zero_proof numerator
+    simp only [guard_false, Bool.false_eq_true, if_false]
+    refine ⟨_, numerator, denominator, CompCert4Lean.Lib.Integers.Int64.divs numerator denominator,
+      CompCert4Lean.Lib.Integers.Int64.mods numerator denominator, shifted, rfl, rfl, ?_, rfl, rfl⟩
+    exact CompCert4Lean.Lib.Integers.Int64.divmods2_divs_mods_proof numerator denominator nonzero safe
+
+end CompCert4Lean.X86.Asmgenproof1
