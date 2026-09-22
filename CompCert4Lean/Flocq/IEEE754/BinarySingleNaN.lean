@@ -6059,3 +6059,632 @@ theorem Bdiv_correct :
     exact (B2SF_SF2B _ auxiliary.1).trans auxiliary.2
 
 end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals
+
+private theorem manual_finite_comparison (ctx : ExactRealContext)
+    (sign : Bool) (mantissa : positive) (exponent : Z) :
+    Exact.Rcompare ctx
+      (Exact.F2R ctx (Float radix2 (cond_Zopp sign (Zpos mantissa)) exponent))
+      (Exact.R0 ctx) = if sign then Lt else Gt := by
+  cases sign
+  · exact Raux.Rcompare_Gt ctx _ _ (manual_positive_value ctx mantissa exponent)
+  · exact Raux.Rcompare_Lt ctx _ _ (manual_negative_value ctx mantissa exponent)
+
+private theorem manual_cancelled_signs (ctx : ExactRealContext)
+    (signLeft signRight : Bool) (mantissaLeft mantissaRight : positive)
+    (exponentLeft exponentRight : Z)
+    (zeroSum : Exact.Rplus ctx
+      (Exact.F2R ctx (Float radix2 (cond_Zopp signLeft (Zpos mantissaLeft)) exponentLeft))
+      (Exact.F2R ctx (Float radix2 (cond_Zopp signRight (Zpos mantissaRight)) exponentRight)) =
+        Exact.R0 ctx) : signLeft = !signRight := by
+  cases signLeft <;> cases signRight
+  · have positiveSum := RIneq.Rplus_lt_compat ctx _ _ _ _
+      (manual_positive_value ctx mantissaLeft exponentLeft)
+      (manual_positive_value ctx mantissaRight exponentRight)
+    change ctx.spec.add
+      (Exact.F2R ctx (Float radix2 (Zpos mantissaLeft) exponentLeft))
+      (Exact.F2R ctx (Float radix2 (Zpos mantissaRight) exponentRight)) = ctx.spec.zero at zeroSum
+    change ctx.spec.lt (ctx.spec.add ctx.spec.zero ctx.spec.zero) (ctx.spec.add _ _) at positiveSum
+    rw [zeroSum, ctx.certificate.orderedField.add_zero] at positiveSum
+    exact False.elim (ctx.certificate.orderedField.lt_irrefl _ positiveSum)
+  · rfl
+  · rfl
+  · have negativeSum := RIneq.Rplus_lt_compat ctx _ _ _ _
+      (manual_negative_value ctx mantissaLeft exponentLeft)
+      (manual_negative_value ctx mantissaRight exponentRight)
+    change ctx.spec.add
+      (Exact.F2R ctx (Float radix2 (Zopp (Zpos mantissaLeft)) exponentLeft))
+      (Exact.F2R ctx (Float radix2 (Zopp (Zpos mantissaRight)) exponentRight)) = ctx.spec.zero at zeroSum
+    change ctx.spec.lt (ctx.spec.add _ _) (ctx.spec.add ctx.spec.zero ctx.spec.zero) at negativeSum
+    rw [zeroSum, ctx.certificate.orderedField.add_zero] at negativeSum
+    exact False.elim (ctx.certificate.orderedField.lt_irrefl _ negativeSum)
+
+theorem Bplus_correct :
+    ∀ {prec emax : Z} (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+      [FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax],
+      Bplus_correctStatement (prec := prec) (emax := emax) ctx magnitude := by
+  intro prec emax ctx magnitude precision exponentLimit rounding left right
+    validLeft validRight finiteLeft finiteRight
+  have unchanged (value : binary_float prec emax) (valid : BinaryFloatCertificate value) :
+      Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+        (Exact.round_mode ctx rounding) (Exact.B2R ctx value) = Exact.B2R ctx value :=
+    Generic_fmt.round_generic ctx magnitude radix2 _ _
+      (valid_rnd_round_mode_proof ctx rounding) _
+      (generic_format_B2R ctx magnitude value valid)
+  have small (value : binary_float prec emax) (valid : BinaryFloatCertificate value) :
+      Exact.Rlt_bool ctx (Exact.Rabs ctx (Exact.B2R ctx value))
+        (Exact.bpow ctx radix2 emax) = true :=
+    Raux.Rlt_bool_true ctx _ _ (abs_B2R_lt_emax ctx value valid)
+  have zeroLeft (value : Exact.R ctx) : Exact.Rplus ctx (Exact.R0 ctx) value = value :=
+    ctx.certificate.orderedField.zero_add value
+  have zeroRight (value : Exact.R ctx) : Exact.Rplus ctx value (Exact.R0 ctx) = value :=
+    ctx.certificate.orderedField.add_zero value
+  cases left <;> cases right <;>
+    simp only [is_finite, Bool.false_eq_true] at finiteLeft finiteRight
+  · rename_i signLeft signRight
+    have compared : Exact.Rcompare ctx (Exact.R0 ctx) (Exact.R0 ctx) = Eq :=
+      Raux.Rcompare_Eq ctx _ _ rfl
+    cases signLeft <;> cases signRight <;> cases rounding <;>
+      simp [Bplus, Exact.B2R, zeroLeft, manual_round_zero,
+        manual_zero_small, compared, is_finite, Bsign]
+  · rename_i signLeft signRight mantissaRight exponentRight
+    have fixed := unchanged (.B754_finite signRight mantissaRight exponentRight) validRight
+    have boundedValue := small (.B754_finite signRight mantissaRight exponentRight) validRight
+    simp only [Exact.B2R] at fixed boundedValue
+    simp only [Exact.B2R, zeroLeft, fixed, boundedValue, if_true,
+      Bplus, is_finite, Bsign, manual_finite_comparison]
+    cases signRight <;> simp
+  · rename_i signLeft mantissaLeft exponentLeft signRight
+    have fixed := unchanged (.B754_finite signLeft mantissaLeft exponentLeft) validLeft
+    have boundedValue := small (.B754_finite signLeft mantissaLeft exponentLeft) validLeft
+    simp only [Exact.B2R] at fixed boundedValue
+    simp only [Exact.B2R, zeroRight, fixed, boundedValue, if_true,
+      Bplus, is_finite, Bsign, manual_finite_comparison]
+    cases signLeft <;> simp
+  · rename_i signLeft mantissaLeft exponentLeft signRight mantissaRight exponentRight
+    clear unchanged small zeroLeft zeroRight finiteLeft finiteRight
+    let exponent := ZArith.BinInt.Z.min exponentLeft exponentRight
+    have lowerLeft : Zle exponent exponentLeft := by
+      change intOfZ (ZArith.BinInt.Z.min _ _) ≤ _
+      rw [binary_min_integer]
+      exact Int.min_le_left _ _
+    have lowerRight : Zle exponent exponentRight := by
+      change intOfZ (ZArith.BinInt.Z.min _ _) ≤ _
+      rw [binary_min_integer]
+      exact Int.min_le_right _ _
+    have sumValue := Fplus_naive_correct ctx signLeft mantissaLeft exponentLeft
+      signRight mantissaRight exponentRight exponent lowerLeft lowerRight
+    dsimp only at sumValue
+    have normalized := binary_normalize_correct (prec := prec) (emax := emax)
+      ctx magnitude rounding
+      (Fplus_naive signLeft mantissaLeft exponentLeft signRight mantissaRight exponentRight exponent)
+      exponent (match rounding with | .mode_DN => true | _ => false)
+    dsimp only at normalized
+    rw [sumValue] at normalized
+    change (if _ then _ else _)
+    split <;> rename_i condition
+    · simp only [Exact.B2R] at condition
+      rw [if_pos condition] at normalized
+      refine ⟨normalized.1, normalized.2.1, ?_⟩
+      change Bsign (binary_normalize _ _ _ _) = _
+      rw [normalized.2.2]
+      dsimp only [Exact.B2R, Bsign]
+      split <;> try rfl
+      rename_i compared
+      have zeroSum := Raux.Rcompare_Eq_inv ctx _ _ compared
+      have signs := manual_cancelled_signs ctx signLeft signRight mantissaLeft mantissaRight
+        exponentLeft exponentRight zeroSum
+      cases signLeft <;> cases signRight <;> cases rounding <;>
+        simp [Bsign] at signs ⊢
+    · simp only [Exact.B2R] at condition
+      rw [if_neg condition] at normalized
+      have noSmall := Raux.Rlt_bool_spec ctx
+        (Exact.Rabs ctx (Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx rounding)
+          (Exact.Rplus ctx
+            (Exact.F2R ctx (Float radix2 (cond_Zopp signLeft (Zpos mantissaLeft)) exponentLeft))
+            (Exact.F2R ctx (Float radix2 (cond_Zopp signRight (Zpos mantissaRight)) exponentRight)))))
+        (Exact.bpow ctx radix2 emax)
+      have isFalse : Exact.Rlt_bool ctx
+        (Exact.Rabs ctx (Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx rounding)
+          (Exact.Rplus ctx
+            (Exact.F2R ctx (Float radix2 (cond_Zopp signLeft (Zpos mantissaLeft)) exponentLeft))
+            (Exact.F2R ctx (Float radix2 (cond_Zopp signRight (Zpos mantissaRight)) exponentRight)))))
+        (Exact.bpow ctx radix2 emax) = false := Bool.eq_false_iff.mpr condition
+      change Raux.Exact.Rlt_bool ctx _ _ = false at isFalse
+      rw [isFalse] at noSmall
+      cases noSmall with
+      | Rlt_bool_false_ lower =>
+        have signs := sign_plus_overflow (prec := prec) (emax := emax) ctx magnitude rounding
+          signLeft mantissaLeft exponentLeft signRight mantissaRight exponentRight
+          validLeft validRight lower
+        exact ⟨normalized.trans (congrArg (binary_overflow (prec := prec) (emax := emax) rounding)
+          signs.1.symm), signs.2⟩
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+open CompCert4Lean.Flocq.Core
+
+theorem Bminus_correct :
+    ∀ {prec emax : Z} (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+      [FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax],
+      Bminus_correctStatement (prec := prec) (emax := emax) ctx magnitude := by
+  intro prec emax ctx magnitude precision exponentLimit rounding left right
+    validLeft validRight finiteLeft finiteRight
+  have validOpposite : BinaryFloatCertificate (Bopp right) := by
+    cases right <;> exact validRight
+  have finiteOpposite : is_finite (Bopp right) = true :=
+    (is_finite_Bopp right validRight).trans finiteRight
+  have notNan : is_nan right = false := by
+    cases right <;> simp_all [is_finite, is_nan]
+  have subtractAsPlus : Bminus rounding left right = Bplus rounding left (Bopp right) := by
+    cases left <;> cases right <;> rfl
+  have addition := Bplus_correct ctx magnitude rounding left (Bopp right)
+    validLeft validOpposite finiteLeft finiteOpposite
+  rw [← subtractAsPlus, B2R_Bopp ctx right validRight,
+    Bsign_Bopp right validRight notNan] at addition
+  exact addition
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.Calc
+
+private theorem sqrt_int_add (left right : Z) :
+    intOfZ (Zadd left right) = intOfZ left + intOfZ right := intOfZ_zOfInt _
+
+private theorem sqrt_int_mul (left right : Z) :
+    intOfZ (Zmul left right) = intOfZ left * intOfZ right := intOfZ_zOfInt _
+
+private theorem sqrt_int_sub (left right : Z) :
+    intOfZ (Zsub left right) = intOfZ left - intOfZ right := intOfZ_zOfInt _
+
+private theorem sqrt_ofZ_mul (ctx : ExactRealContext) (left right : Z) :
+    ctx.spec.ofZ (Zmul left right) = ctx.spec.mul (ctx.spec.ofZ left) (ctx.spec.ofZ right) :=
+  RIneq.mult_IZR ctx left right
+
+private theorem sqrt_ofZ_compare (ctx : ExactRealContext) (left right : Z) :
+    Raux.Exact.Rcompare ctx (ctx.spec.ofZ left) (ctx.spec.ofZ right) = Zaux.Zcompare left right :=
+  Raux.Rcompare_IZR ctx left right
+
+private theorem sqrt_square_lt (ctx : ExactRealContext) (left right : ctx.spec.carrier)
+    (squares : ctx.spec.lt (ctx.spec.mul left left) (ctx.spec.mul right right))
+    (left_nonnegative : ctx.spec.le ctx.spec.zero left)
+    (right_nonnegative : ctx.spec.le ctx.spec.zero right) : ctx.spec.lt left right := by
+  apply R_sqr.Rsqr_incrst_0 ctx left right squares
+  · change ctx.spec.le (ctx.spec.ofZ Z0) left
+    rw [ctx.certificate.sourceLaws.ofZ_zero]
+    exact left_nonnegative
+  · change ctx.spec.le (ctx.spec.ofZ Z0) right
+    rw [ctx.certificate.sourceLaws.ofZ_zero]
+    exact right_nonnegative
+
+private theorem sqrt_integer_nonnegative (ctx : ExactRealContext) (integer : Z)
+    (nonnegative : Zle Z0 integer) : ctx.spec.le ctx.spec.zero (ctx.spec.ofZ integer) := by
+  have result := RIneq.IZR_le ctx Z0 integer nonnegative
+  change ctx.spec.le (ctx.spec.ofZ Z0) (ctx.spec.ofZ integer) at result
+  simpa only [ctx.certificate.sourceLaws.ofZ_zero] using result
+
+private theorem sqrt_square (ctx : ExactRealContext) (value : ctx.spec.carrier)
+    (nonnegative : ctx.spec.le ctx.spec.zero value) :
+    ctx.spec.mul (Exact.sqrt ctx value) (Exact.sqrt ctx value) = value := by
+  apply R_sqrt.Rsqr_sqrt ctx value
+  change ctx.spec.le (ctx.spec.ofZ Z0) value
+  simpa only [ctx.certificate.sourceLaws.ofZ_zero] using nonnegative
+
+private theorem sqrt_square_root (ctx : ExactRealContext) (value : ctx.spec.carrier)
+    (nonnegative : ctx.spec.le ctx.spec.zero value) :
+    Exact.sqrt ctx (ctx.spec.mul value value) = value := by
+  apply R_sqrt.sqrt_Rsqr ctx value
+  change ctx.spec.le (ctx.spec.ofZ Z0) value
+  simpa only [ctx.certificate.sourceLaws.ofZ_zero] using nonnegative
+
+private theorem sqrt_integer_between (ctx : ExactRealContext) (number root remainder : Z)
+    (number_nonnegative : Zle Z0 number)
+    (decomposition : number = Zadd (Zmul root root) remainder)
+    (remainder_nonnegative : Zle Z0 remainder)
+    (remainder_bound : Zle remainder (Zmul Ztwo root)) :
+    Bracket.inbetween_int ctx root (Exact.sqrt ctx (ctx.spec.ofZ number))
+      (if Zeq_bool remainder Z0 then loc_Exact
+       else loc_Inexact (if Zle_bool remainder root then Lt else Gt)) := by
+  have remainder_lower : (0 : Int) ≤ intOfZ remainder := remainder_nonnegative
+  have remainder_upper : intOfZ remainder ≤ 2 * intOfZ root := by
+    change intOfZ remainder ≤ intOfZ (Zmul Ztwo root) at remainder_bound
+    simpa only [sqrt_int_mul, show intOfZ Ztwo = 2 by rfl] using remainder_bound
+  have root_nonnegative : Zle Z0 root := by
+    change (0 : Int) ≤ intOfZ root
+    omega
+  have next_nonnegative : Zle Z0 (Zadd root Zone) := by
+    change (0 : Int) ≤ intOfZ (Zadd root Zone)
+    rw [sqrt_int_add, show intOfZ Zone = 1 by rfl]
+    change (0 : Int) ≤ intOfZ root at root_nonnegative
+    omega
+  have real_nonnegative := sqrt_integer_nonnegative ctx number number_nonnegative
+  have root_real_nonnegative := sqrt_integer_nonnegative ctx root root_nonnegative
+  have next_real_nonnegative := sqrt_integer_nonnegative ctx (Zadd root Zone) next_nonnegative
+  have square_root_nonnegative : ctx.spec.le ctx.spec.zero
+      (Exact.sqrt ctx (ctx.spec.ofZ number)) := Raux.sqrt_ge_0 ctx _
+  have square_value := sqrt_square ctx (ctx.spec.ofZ number) real_nonnegative
+  have decomposition_int := congrArg intOfZ decomposition
+  simp only [sqrt_int_add, sqrt_int_mul] at decomposition_int
+  by_cases exact_remainder : remainder = Z0
+  · subst remainder
+    simp only [Zeq_bool, Zaux.Zeq_bool, ZArith.Zbool.Zeq_bool]
+    apply Bracket.inbetween_Exact
+    have square_number : number = Zmul root root := by
+      apply intOfZ_injective
+      rw [sqrt_int_mul]
+      change intOfZ number = intOfZ root * intOfZ root + 0 at decomposition_int
+      omega
+    rw [square_number]
+    have real_square : ctx.spec.ofZ (Zmul root root) =
+        ctx.spec.mul (ctx.spec.ofZ root) (ctx.spec.ofZ root) := RIneq.mult_IZR ctx _ _
+    rw [real_square]
+    exact sqrt_square_root ctx _ root_real_nonnegative
+  · have remainder_bool : Zeq_bool remainder Z0 = false := by
+      simp [Zeq_bool, Zaux.Zeq_bool, ZArith.Zbool.Zeq_bool, exact_remainder]
+    rw [remainder_bool]
+    apply Bracket.inbetween_Inexact
+    · constructor
+      · apply sqrt_square_lt ctx
+          (ctx.spec.ofZ root) (Exact.sqrt ctx (ctx.spec.ofZ number))
+        · change ctx.spec.lt (ctx.spec.mul (ctx.spec.ofZ root) (ctx.spec.ofZ root))
+            (ctx.spec.mul (Exact.sqrt ctx (ctx.spec.ofZ number))
+              (Exact.sqrt ctx (ctx.spec.ofZ number)))
+          rw [square_value, ← sqrt_ofZ_mul ctx root root]
+          apply RIneq.IZR_lt ctx
+          change intOfZ (Zmul root root) < intOfZ number
+          rw [sqrt_int_mul]
+          have remainder_ne : intOfZ remainder ≠ 0 := by
+            intro equal
+            exact exact_remainder (intOfZ_injective equal)
+          omega
+        · exact root_real_nonnegative
+        · exact square_root_nonnegative
+      · apply sqrt_square_lt ctx
+          (Exact.sqrt ctx (ctx.spec.ofZ number)) (ctx.spec.ofZ (Zadd root Zone))
+        · change ctx.spec.lt
+            (ctx.spec.mul (Exact.sqrt ctx (ctx.spec.ofZ number))
+              (Exact.sqrt ctx (ctx.spec.ofZ number)))
+            (ctx.spec.mul (ctx.spec.ofZ (Zadd root Zone)) (ctx.spec.ofZ (Zadd root Zone)))
+          rw [square_value, ← sqrt_ofZ_mul ctx (Zadd root Zone) (Zadd root Zone)]
+          apply RIneq.IZR_lt ctx
+          change intOfZ number < intOfZ (Zmul (Zadd root Zone) (Zadd root Zone))
+          simp only [sqrt_int_mul, sqrt_int_add, show intOfZ Zone = 1 by rfl,
+            Int.add_mul, Int.mul_add, Int.one_mul, Int.mul_one]
+          omega
+        · exact square_root_nonnegative
+        · exact next_real_nonnegative
+    · change Raux.Exact.Rcompare ctx (Exact.sqrt ctx (ctx.spec.ofZ number))
+        (Raux.Exact.Rdiv ctx (ctx.spec.add (ctx.spec.ofZ root)
+          (ctx.spec.ofZ (Zadd root Zone))) (Raux.Exact.Rtwo ctx)) = _
+      rw [Raux.Rcompare_half_r ctx]
+      have two_real : Raux.Exact.Rtwo ctx = ctx.spec.ofZ Ztwo := by
+        rw [show Ztwo = Zadd Zone Zone by rfl, ctx.certificate.sourceLaws.ofZ_add,
+          ctx.certificate.sourceLaws.ofZ_one]
+        rfl
+      rw [two_real, ← ctx.certificate.sourceLaws.ofZ_add]
+      let doubled_root := ctx.spec.mul (ctx.spec.ofZ Ztwo)
+        (Exact.sqrt ctx (ctx.spec.ofZ number))
+      let midpoint_sum := Zadd root (Zadd root Zone)
+      have doubled_nonnegative : ctx.spec.le ctx.spec.zero doubled_root := by
+        rw [← ctx.certificate.sourceLaws.ofZ_zero]
+        apply RIneq.Rmult_le_pos ctx
+        · exact RIneq.IZR_le ctx Z0 Ztwo (by change (0 : Int) ≤ 2; omega)
+        · change ctx.spec.le (ctx.spec.ofZ Z0) (Exact.sqrt ctx (ctx.spec.ofZ number))
+          rw [ctx.certificate.sourceLaws.ofZ_zero]
+          exact square_root_nonnegative
+      have sum_nonnegative : ctx.spec.le ctx.spec.zero (ctx.spec.ofZ midpoint_sum) := by
+        apply sqrt_integer_nonnegative
+        change (0 : Int) ≤ intOfZ (Zadd root (Zadd root Zone))
+        simp only [sqrt_int_add, show intOfZ Zone = 1 by rfl]
+        change (0 : Int) ≤ intOfZ root at root_nonnegative
+        omega
+      have compare_squares := Raux.Rcompare_sqr ctx doubled_root (ctx.spec.ofZ midpoint_sum)
+      change Raux.Exact.Rcompare ctx (ctx.spec.mul doubled_root doubled_root)
+          (ctx.spec.mul (ctx.spec.ofZ midpoint_sum) (ctx.spec.ofZ midpoint_sum)) =
+        Raux.Exact.Rcompare ctx (ctx.spec.abs doubled_root)
+          (ctx.spec.abs (ctx.spec.ofZ midpoint_sum)) at compare_squares
+      rw [ctx.certificate.sourceLaws.abs_nonnegative _ doubled_nonnegative,
+        ctx.certificate.sourceLaws.abs_nonnegative _ sum_nonnegative] at compare_squares
+      change Raux.Exact.Rcompare ctx doubled_root (ctx.spec.ofZ midpoint_sum) = _
+      rw [← compare_squares]
+      have doubled_square : ctx.spec.mul doubled_root doubled_root =
+          ctx.spec.ofZ (Zmul (Zmul Ztwo Ztwo) number) := by
+        have product_square := R_sqr.Rsqr_mult ctx (ctx.spec.ofZ Ztwo)
+          (Exact.sqrt ctx (ctx.spec.ofZ number))
+        change ctx.spec.mul doubled_root doubled_root =
+          ctx.spec.mul (ctx.spec.mul (ctx.spec.ofZ Ztwo) (ctx.spec.ofZ Ztwo))
+            (ctx.spec.mul (Exact.sqrt ctx (ctx.spec.ofZ number))
+              (Exact.sqrt ctx (ctx.spec.ofZ number))) at product_square
+        rw [product_square, square_value, ← sqrt_ofZ_mul ctx Ztwo Ztwo,
+          ← sqrt_ofZ_mul ctx (Zmul Ztwo Ztwo) number]
+      rw [doubled_square, ← sqrt_ofZ_mul ctx midpoint_sum midpoint_sum,
+        sqrt_ofZ_compare ctx]
+      have square_sum : intOfZ (Zmul midpoint_sum midpoint_sum) =
+          4 * (intOfZ root * intOfZ root) + 4 * intOfZ root + 1 := by
+        dsimp only [midpoint_sum]
+        simp only [sqrt_int_mul, sqrt_int_add, show intOfZ Zone = 1 by rfl,
+          Int.add_mul, Int.mul_add, Int.one_mul, Int.mul_one]
+        omega
+      change (if intOfZ (Zmul (Zmul Ztwo Ztwo) number) < intOfZ (Zmul midpoint_sum midpoint_sum)
+        then Lt else if intOfZ (Zmul (Zmul Ztwo Ztwo) number) =
+          intOfZ (Zmul midpoint_sum midpoint_sum) then Eq else Gt) = _
+      rw [square_sum]
+      simp only [sqrt_int_mul, show intOfZ Ztwo = 2 by rfl]
+      by_cases lower_half : Zle remainder root
+      · have location_lower : Zle_bool remainder root = true := Zaux.Zle_bool_true _ _ lower_half
+        rw [location_lower]
+        have comparison_lower : 2 * 2 * intOfZ number <
+            4 * (intOfZ root * intOfZ root) + 4 * intOfZ root + 1 := by
+          change intOfZ remainder ≤ intOfZ root at lower_half
+          omega
+        simp only [comparison_lower, ↓reduceIte]
+      · have location_upper : Zle_bool remainder root = false := by
+          apply Zaux.Zle_bool_false
+          change intOfZ root < intOfZ remainder
+          change ¬ intOfZ remainder ≤ intOfZ root at lower_half
+          omega
+        rw [location_upper]
+        have comparison_upper : 4 * (intOfZ root * intOfZ root) + 4 * intOfZ root + 1 <
+            2 * 2 * intOfZ number := by
+          change ¬ intOfZ remainder ≤ intOfZ root at lower_half
+          omega
+        have not_lower : ¬ 2 * 2 * intOfZ number <
+            4 * (intOfZ root * intOfZ root) + 4 * intOfZ root + 1 := by omega
+        have not_equal : 2 * 2 * intOfZ number ≠
+            4 * (intOfZ root * intOfZ root) + 4 * intOfZ root + 1 := by omega
+        simp only [not_lower, not_equal, Bool.false_eq_true, ↓reduceIte]
+
+private theorem manual_sqrt_core_correct (ctx : ExactRealContext) :
+    Calc.Sqrt.Fsqrt_core_correctStatement ctx := by
+  intro beta mantissa input_exponent output_exponent mantissa_positive exponent_bound
+  let shifted := Zmul mantissa (Zpower (beta : Z)
+    (Zsub input_exponent (Zmul Ztwo output_exponent)))
+  have shift_nonnegative : Zle Z0 (Zsub input_exponent (Zmul Ztwo output_exponent)) := by
+    change (0 : Int) ≤ intOfZ (Zsub input_exponent (Zmul Ztwo output_exponent))
+    rw [sqrt_int_sub]
+    change intOfZ (Zmul Ztwo output_exponent) ≤ intOfZ input_exponent at exponent_bound
+    omega
+  have shifted_nonnegative : Zle Z0 shifted := by
+    have power_positive := Zaux.Zpower_gt_0 beta _ shift_nonnegative
+    change (0 : Int) ≤ intOfZ (Zmul mantissa
+      (Zpower (beta : Z) (Zsub input_exponent (Zmul Ztwo output_exponent))))
+    rw [sqrt_int_mul]
+    exact Int.le_of_lt (Int.mul_pos mantissa_positive power_positive)
+  let scale := Raux.Exact.bpow ctx beta output_exponent
+  have scale_positive : ctx.spec.lt ctx.spec.zero scale := Raux.bpow_gt_0 ctx beta _
+  have scale_nonnegative : ctx.spec.le ctx.spec.zero scale :=
+    (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp scale_positive |>.1
+  have scale_square_nonnegative : ctx.spec.le ctx.spec.zero (ctx.spec.mul scale scale) := by
+    have square := RIneq.Rle_0_sqr ctx scale
+    change ctx.spec.le (ctx.spec.ofZ Z0) (ctx.spec.mul scale scale) at square
+    simpa only [ctx.certificate.sourceLaws.ofZ_zero] using square
+  have doubled_exponent : Zmul Ztwo output_exponent = Zadd output_exponent output_exponent := by
+    apply intOfZ_injective
+    simp only [sqrt_int_mul, sqrt_int_add, show intOfZ Ztwo = 2 by rfl]
+    omega
+  have power_square : Raux.Exact.bpow ctx beta (Zmul Ztwo output_exponent) =
+      ctx.spec.mul scale scale := by
+    rw [doubled_exponent]
+    exact Raux.bpow_plus ctx beta output_exponent output_exponent
+  have float_scaled : Exact.F2R ctx (Float beta mantissa input_exponent) =
+      ctx.spec.mul (ctx.spec.ofZ shifted) (ctx.spec.mul scale scale) := by
+    have changed := Float_prop.F2R_change_exp ctx beta (Zmul Ztwo output_exponent)
+      mantissa input_exponent exponent_bound
+    change Exact.F2R ctx (Float beta mantissa input_exponent) =
+      ctx.spec.mul (ctx.spec.ofZ shifted)
+        (Raux.Exact.bpow ctx beta (Zmul Ztwo output_exponent)) at changed
+    rw [power_square] at changed
+    exact changed
+  have square_root_scaled : Exact.sqrt ctx (Exact.F2R ctx (Float beta mantissa input_exponent)) =
+      ctx.spec.mul (Exact.sqrt ctx (ctx.spec.ofZ shifted)) scale := by
+    rw [float_scaled]
+    have product := R_sqrt.sqrt_mult ctx (ctx.spec.ofZ shifted) (ctx.spec.mul scale scale)
+      (RIneq.IZR_le ctx Z0 shifted shifted_nonnegative)
+      (by
+        change ctx.spec.le (ctx.spec.ofZ Z0) (ctx.spec.mul scale scale)
+        rw [ctx.certificate.sourceLaws.ofZ_zero]
+        exact scale_square_nonnegative)
+    change Exact.sqrt ctx (ctx.spec.mul (ctx.spec.ofZ shifted) (ctx.spec.mul scale scale)) =
+      ctx.spec.mul (Exact.sqrt ctx (ctx.spec.ofZ shifted))
+        (Exact.sqrt ctx (ctx.spec.mul scale scale)) at product
+    rw [product, sqrt_square_root ctx scale scale_nonnegative]
+  obtain ⟨decomposition, remainder_nonnegative, remainder_bound⟩ :=
+    ZArith.BinInt.Z.sqrtrem_spec shifted shifted_nonnegative
+  have between := sqrt_integer_between ctx shifted (ZArith.BinInt.Z.sqrtrem shifted).1
+    (ZArith.BinInt.Z.sqrtrem shifted).2 shifted_nonnegative decomposition
+    remainder_nonnegative remainder_bound
+  have scaled_between := Bracket.inbetween_mult_compat ctx _ _ _ _ scale
+    (by
+      change ctx.spec.lt (ctx.spec.ofZ Z0) scale
+      rw [ctx.certificate.sourceLaws.ofZ_zero]
+      exact scale_positive) between
+  change Bracket.inbetween_float ctx beta (ZArith.BinInt.Z.sqrtrem shifted).1 output_exponent
+    (Exact.sqrt ctx (Exact.F2R ctx (Float beta mantissa input_exponent)))
+    (if Zeq_bool (ZArith.BinInt.Z.sqrtrem shifted).2 Z0 then loc_Exact
+     else loc_Inexact (if Zle_bool (ZArith.BinInt.Z.sqrtrem shifted).2
+       (ZArith.BinInt.Z.sqrtrem shifted).1 then Lt else Gt))
+  rw [square_root_scaled]
+  exact scaled_between
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals
+
+private theorem manual_sqrt_exponent_bound (prec emax : Z)
+    (mantissa : positive) (inputExponent : Z) :
+    Zle (Zmul Ztwo (SFsqrt_core_binary prec emax (Zpos mantissa) inputExponent).1.2)
+      inputExponent := by
+  let magnitude := ZArith.BinInt.Z.div2
+    (Zadd (Zadd (Digits.Zdigits2 (Zpos mantissa)) inputExponent) Zone)
+  change intOfZ (Zmul Ztwo (ZArith.BinInt.Z.min (fexp0 prec emax magnitude)
+    (ZArith.BinInt.Z.div2 inputExponent))) ≤ intOfZ inputExponent
+  rw [sqrt_int_mul, binary_min_integer, binary_half_integer]
+  have lower := Int.min_le_right (intOfZ (fexp0 prec emax magnitude)) (intOfZ inputExponent / 2)
+  change (2 : Int) * min _ _ ≤ _
+  omega
+
+private theorem manual_binary_sqrt_core (prec emax : Z)
+    (mantissa : positive) (inputExponent : Z) :
+    let result := SFsqrt_core_binary prec emax (Zpos mantissa) inputExponent
+    Calc.Sqrt.Fsqrt_core radix2 (Zpos mantissa) inputExponent result.1.2 =
+      (result.1.1, result.2) := by
+  let magnitude := ZArith.BinInt.Z.div2
+    (Zadd (Zadd (Digits.Zdigits2 (Zpos mantissa)) inputExponent) Zone)
+  let exponent := ZArith.BinInt.Z.min (fexp0 prec emax magnitude)
+    (ZArith.BinInt.Z.div2 inputExponent)
+  let amount := Zsub inputExponent (Zmul Ztwo exponent)
+  have nonnegative : Zle Z0 amount := by
+    have bound := manual_sqrt_exponent_bound prec emax mantissa inputExponent
+    change intOfZ (Zmul Ztwo exponent) ≤ intOfZ inputExponent at bound
+    change (0 : Int) ≤ intOfZ (Zsub inputExponent (Zmul Ztwo exponent))
+    rw [sqrt_int_sub]
+    omega
+  change Calc.Sqrt.Fsqrt_core radix2 (Zpos mantissa) inputExponent exponent =
+    ((ZArith.BinInt.Z.sqrtrem (binary_shift_input mantissa amount)).1,
+      if Zeq_bool (ZArith.BinInt.Z.sqrtrem (binary_shift_input mantissa amount)).2 Z0 then loc_Exact
+      else loc_Inexact (if Zle_bool
+        (ZArith.BinInt.Z.sqrtrem (binary_shift_input mantissa amount)).2
+        (ZArith.BinInt.Z.sqrtrem (binary_shift_input mantissa amount)).1 then Lt else Gt))
+  rw [manual_binary_shift_value mantissa amount nonnegative]
+  rfl
+
+private theorem manual_sqrt_round_bounded {prec emax : Z}
+    (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    [FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax]
+    (rounding : mode) (mantissa : positive) (exponent : Z)
+    (valid : bounded (prec := prec) (emax := emax) mantissa exponent = true) :
+    Exact.Rlt_bool ctx
+      (Exact.Rabs ctx (Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+        (Exact.round_mode ctx rounding)
+        (Exact.sqrt ctx (Exact.F2R ctx (Float radix2 (Zpos mantissa) exponent)))))
+      (Exact.bpow ctx radix2 emax) = true := by
+  let value := Exact.F2R ctx (Float radix2 (Zpos mantissa) exponent)
+  let upperExponent := Zsub emax Zone
+  let upper := Exact.bpow ctx radix2 upperExponent
+  have precisionPositive : (0 : Int) < intOfZ prec := FLX.prec_gt_0 prec
+  have precisionBelow : intOfZ prec < intOfZ emax := prec_lt_emax
+  have upperExponentValue : intOfZ upperExponent = intOfZ emax - 1 := by
+    rw [sqrt_int_sub]
+    rfl
+  have minimumExponentValue : intOfZ (emin0 prec emax) = 3 - intOfZ emax - intOfZ prec := by
+    change intOfZ (Zsub (Zsub (Zpos (.xI .xH)) emax) prec) = _
+    rw [sqrt_int_sub, sqrt_int_sub]
+    rfl
+  have upperGeneric := FLT.generic_format_FLT_bpow ctx magnitude radix2
+    (emin0 prec emax) prec (h := inferInstance) upperExponent (by
+      change intOfZ (emin0 prec emax) ≤ intOfZ upperExponent
+      rw [minimumExponentValue, upperExponentValue]
+      omega)
+  have valuePositive : Exact.Rlt ctx (Exact.R0 ctx) value := manual_positive_value ctx mantissa exponent
+  have valueNonnegative := (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp valuePositive |>.1
+  have rootNonnegative : ctx.spec.le ctx.spec.zero (Exact.sqrt ctx value) := Raux.sqrt_ge_0 ctx value
+  have upperPositive : ctx.spec.lt ctx.spec.zero upper := Raux.bpow_gt_0 ctx radix2 upperExponent
+  have upperNonnegative := (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp upperPositive |>.1
+  have squareUpper : ctx.spec.mul upper upper =
+      Exact.bpow ctx radix2 (Zadd upperExponent upperExponent) :=
+    (Raux.bpow_plus ctx radix2 upperExponent upperExponent).symm
+  have inputBound : Exact.Rlt ctx value (Exact.bpow ctx radix2 emax) :=
+    bounded_lt_emax ctx mantissa exponent valid
+  have powersOrdered := Raux.bpow_le ctx radix2 emax (Zadd upperExponent upperExponent) (by
+    change intOfZ emax ≤ intOfZ (Zadd upperExponent upperExponent)
+    rw [sqrt_int_add, upperExponentValue]
+    omega)
+  have rootBound : ctx.spec.lt (Exact.sqrt ctx value) upper := by
+    apply sqrt_square_lt ctx _ _
+    · rw [sqrt_square ctx value valueNonnegative, squareUpper]
+      exact RIneq.Rlt_le_trans ctx _ _ _ inputBound powersOrdered
+    · exact rootNonnegative
+    · exact upperNonnegative
+  have validExponent := FLT.FLT_exp_valid (emin0 prec emax) prec (h := inferInstance)
+  have validRound := valid_rnd_round_mode_proof ctx rounding
+  have roundedUpper := Generic_fmt.round_le_generic ctx magnitude radix2
+    (fexp (prec := prec) (emax := emax)) validExponent (Exact.round_mode ctx rounding)
+    validRound (Exact.sqrt ctx value) upper upperGeneric
+    ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp rootBound |>.1)
+  have roundedNonnegative := Generic_fmt.round_ge_generic ctx magnitude radix2
+    (fexp (prec := prec) (emax := emax)) validExponent (Exact.round_mode ctx rounding)
+    validRound (Exact.R0 ctx) (Exact.sqrt ctx value)
+    (Generic_fmt.generic_format_0 ctx magnitude radix2 _) rootNonnegative
+  apply Raux.Rlt_bool_true ctx
+  change ctx.spec.lt (ctx.spec.abs _) (Exact.bpow ctx radix2 emax)
+  rw [ctx.certificate.sourceLaws.abs_nonnegative _ roundedNonnegative]
+  apply RIneq.Rle_lt_trans ctx _ _ _ roundedUpper
+  exact Raux.bpow_lt ctx radix2 upperExponent emax (by
+    change intOfZ upperExponent < intOfZ emax
+    rw [upperExponentValue]
+    omega)
+
+theorem Bsqrt_correct_aux :
+    ∀ {prec emax : Z} (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+      [FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax],
+      Bsqrt_correct_auxStatement (prec := prec) (emax := emax) ctx magnitude := by
+  intro prec emax ctx magnitude precision exponentLimit rounding mantissa exponent valid
+  let value := Exact.F2R ctx (Float radix2 (Zpos mantissa) exponent)
+  let result := SFsqrt_core_binary prec emax (Zpos mantissa) exponent
+  have valuePositive : ctx.spec.lt ctx.spec.zero value := manual_positive_value ctx mantissa exponent
+  have rootPositive : ctx.spec.lt ctx.spec.zero (Exact.sqrt ctx value) := by
+    have strict := R_sqrt.sqrt_lt_R0 ctx value (by
+      change ctx.spec.lt (ctx.spec.ofZ Z0) value
+      rw [ctx.certificate.sourceLaws.ofZ_zero]
+      exact valuePositive)
+    change ctx.spec.lt (ctx.spec.ofZ Z0) (Exact.sqrt ctx value) at strict
+    simpa only [ctx.certificate.sourceLaws.ofZ_zero] using strict
+  have rootNonnegative := (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp rootPositive |>.1
+  have rootNonzero : Exact.sqrt ctx value ≠ Exact.R0 ctx := by
+    intro equality
+    change Exact.sqrt ctx value = ctx.spec.zero at equality
+    rw [equality] at rootPositive
+    exact ctx.certificate.orderedField.lt_irrefl _ rootPositive
+  have rawBracket := manual_sqrt_core_correct ctx radix2 (Zpos mantissa) exponent result.1.2
+    (Int.natCast_pos.mpr (posToNat_positive mantissa))
+    (manual_sqrt_exponent_bound prec emax mantissa exponent)
+  dsimp only at rawBracket
+  rw [manual_binary_sqrt_core prec emax mantissa exponent] at rawBracket
+  have bracket : Calc.Bracket.inbetween_float ctx radix2 result.1.1 result.1.2
+      (Exact.Rabs ctx (Exact.sqrt ctx value)) result.2 := by
+    change Calc.Bracket.inbetween_float ctx radix2 result.1.1 result.1.2
+      (ctx.spec.abs (Exact.sqrt ctx value)) result.2
+    rw [ctx.certificate.sourceLaws.abs_nonnegative _ rootNonnegative]
+    exact rawBracket
+  have rootMagnitude := Calc.Sqrt.mag_sqrt_F2R ctx magnitude radix2 (Zpos mantissa) exponent
+    (Int.natCast_pos.mpr (posToNat_positive mantissa))
+  have exponentBound : Zle result.1.2
+      (Exact.cexp magnitude radix2 (fexp (prec := prec) (emax := emax)) (Exact.sqrt ctx value)) := by
+    change Zle result.1.2 (fexp0 prec emax (Exact.mag magnitude radix2 (Exact.sqrt ctx value)))
+    change Exact.mag magnitude radix2 (Exact.sqrt ctx value) = _ at rootMagnitude
+    rw [rootMagnitude]
+    have digits : Calc.Sqrt.Zdigits radix2 (Zpos mantissa) = Digits.Zdigits2 (Zpos mantissa) :=
+      (Digits.Zdigits2_Zdigits _).symm
+    rw [digits]
+    change intOfZ (ZArith.BinInt.Z.min _ _) ≤ intOfZ _
+    rw [binary_min_integer]
+    exact Int.min_le_left _ _
+  have rounded := binary_round_aux_correct' (prec := prec) (emax := emax)
+    ctx magnitude rounding (Exact.sqrt ctx value) result.1.1 result.1.2 result.2
+    rootNonzero bracket exponentBound
+  dsimp only at rounded
+  have sign : Exact.Rlt_bool ctx (Exact.sqrt ctx value) (Exact.R0 ctx) = false :=
+    Raux.Rlt_bool_false ctx _ _ rootNonnegative
+  have small := manual_sqrt_round_bounded ctx magnitude rounding mantissa exponent valid
+  rw [sign, small] at rounded
+  exact rounded
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN

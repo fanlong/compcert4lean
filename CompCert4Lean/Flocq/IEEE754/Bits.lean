@@ -1689,3 +1689,140 @@ theorem binary_float_of_bits_aux_correct : binary_float_of_bits_aux_correctState
 
 
 end CompCert4Lean.Flocq.IEEE754.Bits
+
+namespace CompCert4Lean.Flocq.IEEE754.Bits
+
+open CompCert4Lean.Flocq.Core
+
+theorem binary_float_of_bits_of_binary_float :
+    binary_float_of_bits_of_binary_floatStatement := by
+  intro mw ew positiveMw positiveEw formatBound float
+  have splitCorrect := split_bits_of_binary_float_correct mw ew positiveMw positiveEw float
+  unfold binary_float_of_bits_unchecked binary_float_of_bits_aux
+  rw [splitCorrect]
+  have oneInt : bits_intOfZ Zone = 1 := rfl
+  have maxExponentNonzero : Zeq_bool (Zsub (Zpower Ztwo ew) Zone) Z0 = false := by
+    apply Zaux.Zeq_bool_false
+    intro equalZero
+    have powerBound := Zaux.Zpower_gt_1 Zaux.radix2 ew positiveEw
+    have equalInt := congrArg bits_intOfZ equalZero
+    rw [bits_zsub_int, oneInt] at equalInt
+    change 1 < bits_intOfZ (Zpower Ztwo ew) at powerBound
+    change bits_intOfZ (Zpower Ztwo ew) - 1 = 0 at equalInt
+    omega
+  rcases float with ⟨raw, certificate⟩
+  cases raw with
+  | B754_zero sign => rfl
+  | B754_infinity sign =>
+      simp only [split_bits_of_binary_float, maxExponentNonzero, Bool.false_eq_true,
+        ↓reduceIte, Zaux.Zeq_bool_true _ _ rfl, Binary.FF2B_unchecked]
+  | B754_nan sign payload =>
+      simp only [split_bits_of_binary_float, maxExponentNonzero, Bool.false_eq_true,
+        ↓reduceIte, Zaux.Zeq_bool_true _ _ rfl, Binary.FF2B_unchecked]
+  | B754_finite sign mantissa exponent =>
+      change (BinarySingleNaN.canonical_mantissa0 (prec mw) (emax ew) mantissa exponent &&
+        Zle_bool exponent (Zsub (emax ew) (prec mw))) = true at certificate
+      have parts := Bool.and_eq_true_iff.mp certificate
+      have canonical : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max
+          (Zsub (Zadd (Zpos (BinarySingleNaN.digits2_pos mantissa)) exponent) (prec mw))
+          (emin mw ew) = exponent := of_decide_eq_true parts.1
+      have minimumExponent : Zle (emin mw ew) exponent := by
+        rw [← canonical]
+        exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le_max_r _ _
+      have maximumExponent : Zle exponent (Zsub (emax ew) (prec mw)) := by
+        have bound := parts.2
+        change (if bits_intOfZ exponent ≤ bits_intOfZ (Zsub (emax ew) (prec mw))
+          then true else false) = true at bound
+        split at bound
+        · assumption
+        · contradiction
+      by_cases normal : Zle_bool Z0 (Zsub (Zpos mantissa) (Zpower Ztwo mw)) = true
+      · simp only [split_bits_of_binary_float, normal, ↓reduceIte]
+        have encodedNonzero : Zeq_bool (Zadd (Zsub exponent (emin mw ew)) Zone) Z0 = false := by
+          apply Zaux.Zeq_bool_false
+          intro equalZero
+          have equalInt := congrArg bits_intOfZ equalZero
+          rw [bits_zadd_int, bits_zsub_int, oneInt] at equalInt
+          change bits_intOfZ (emin mw ew) ≤ bits_intOfZ exponent at minimumExponent
+          change bits_intOfZ exponent - bits_intOfZ (emin mw ew) + 1 = 0 at equalInt
+          omega
+        have exponentPower : bits_intOfZ (Zpower Ztwo ew) = 2 * bits_intOfZ (emax ew) := by
+          have exponentIdentity : Zadd (Zsub ew Zone) Zone = ew := by
+            apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+            change bits_intOfZ (Zadd (Zsub ew Zone) Zone) = bits_intOfZ ew
+            rw [bits_zadd_int, bits_zsub_int]
+            omega
+          have previousNonnegative : Zle Z0 (Zsub ew Zone) := by
+            change 0 ≤ bits_intOfZ (Zsub ew Zone)
+            rw [bits_zsub_int, oneInt]
+            change 0 < bits_intOfZ ew at positiveEw
+            omega
+          have powerSuccessor := test_pow_succ (Zsub ew Zone) previousNonnegative
+          rw [exponentIdentity] at powerSuccessor
+          exact powerSuccessor
+        have minimumFormula : bits_intOfZ (emin mw ew) =
+            3 - bits_intOfZ (emax ew) - bits_intOfZ (prec mw) := by
+          change bits_intOfZ (Zsub (Zsub (Z_of_nat 3) (emax ew)) (prec mw)) = _
+          rw [bits_zsub_int, bits_zsub_int]
+          rfl
+        have encodedNotMax : Zeq_bool (Zadd (Zsub exponent (emin mw ew)) Zone)
+            (Zsub (Zpower Ztwo ew) Zone) = false := by
+          apply Zaux.Zeq_bool_false
+          intro equalMax
+          have equalInt := congrArg bits_intOfZ equalMax
+          rw [bits_zadd_int, bits_zsub_int, bits_zsub_int, oneInt,
+            exponentPower, minimumFormula] at equalInt
+          change bits_intOfZ exponent ≤ bits_intOfZ (Zsub (emax ew) (prec mw)) at maximumExponent
+          rw [bits_zsub_int] at maximumExponent
+          omega
+        have mantissaIdentity : Zadd (Zsub (Zpos mantissa) (Zpower Ztwo mw))
+            (Zpower Ztwo mw) = Zpos mantissa := by
+          apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+          change bits_intOfZ (Zadd (Zsub (Zpos mantissa) (Zpower Ztwo mw))
+            (Zpower Ztwo mw)) = bits_intOfZ (Zpos mantissa)
+          rw [bits_zadd_int, bits_zsub_int]
+          omega
+        have exponentIdentity : Zsub (Zadd (Zadd (Zsub exponent (emin mw ew)) Zone)
+            (emin mw ew)) Zone = exponent := by
+          apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+          change bits_intOfZ (Zsub (Zadd (Zadd (Zsub exponent (emin mw ew)) Zone)
+            (emin mw ew)) Zone) = bits_intOfZ exponent
+          rw [bits_zsub_int, bits_zadd_int, bits_zadd_int, bits_zsub_int]
+          omega
+        simp only [encodedNonzero, encodedNotMax, Bool.false_eq_true, ↓reduceIte,
+          mantissaIdentity, exponentIdentity, Binary.FF2B_unchecked]
+      · simp only [split_bits_of_binary_float, normal, Bool.false_eq_true, ↓reduceIte,
+          Zaux.Zeq_bool_true _ _ rfl, Binary.FF2B_unchecked]
+        have smallMantissa : Zlt (Zpos mantissa) (Zpower Ztwo mw) := by
+          change ¬ (if 0 ≤ bits_intOfZ (Zsub (Zpos mantissa) (Zpower Ztwo mw))
+            then true else false) = true at normal
+          have negativeDifference : bits_intOfZ (Zsub (Zpos mantissa) (Zpower Ztwo mw)) < 0 := by
+            split at normal
+            · contradiction
+            · omega
+          rw [bits_zsub_int] at negativeDifference
+          exact Int.lt_of_sub_neg negativeDifference
+        have digitBound := test_digit_le mw mantissa smallMantissa
+        have firstLess : Zlt
+            (Zsub (Zadd (Zpos (BinarySingleNaN.digits2_pos mantissa)) exponent) (prec mw))
+            exponent := by
+          change bits_intOfZ (Zsub (Zadd (Zpos (BinarySingleNaN.digits2_pos mantissa)) exponent)
+            (prec mw)) < bits_intOfZ exponent
+          rw [bits_zsub_int, bits_zadd_int]
+          change bits_intOfZ (Zpos (BinarySingleNaN.digits2_pos mantissa)) ≤ bits_intOfZ mw at digitBound
+          have precisionInt : bits_intOfZ (prec mw) = bits_intOfZ mw + 1 := by
+            rw [bits_zadd_int, oneInt]
+          rw [precisionInt]
+          omega
+        have exponentMinimum : emin mw ew = exponent := by
+          unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max at canonical
+          split at canonical
+          · exact canonical
+          · have equalInt := congrArg bits_intOfZ canonical
+            change bits_intOfZ
+              (Zsub (Zadd (Zpos (BinarySingleNaN.digits2_pos mantissa)) exponent) (prec mw)) <
+                bits_intOfZ exponent at firstLess
+            omega
+        rw [exponentMinimum]
+
+end CompCert4Lean.Flocq.IEEE754.Bits

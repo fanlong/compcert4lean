@@ -1,4 +1,5 @@
 import CompCert4Lean.Flocq.IEEE754.Binary
+import CompCert4Lean.Flocq.Prop.Sterbenz
 
 /-!
 # Additional IEEE-754 operations
@@ -5935,5 +5936,1533 @@ theorem BofZ_finite :
     Raux.Rlt_bool_true ctx _ _ noOverflow
   rw [small] at result
   exact result
+
+end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.IEEE754
+
+theorem Bconv_correct :
+    ∀ {prec1 emax1 prec2 emax2 : Z}
+      [Prec_gt_0 prec2] [Prec_lt_emax prec2 emax2]
+      [Binary.BinaryNormalizeCertificate prec2 emax2],
+      Bconv_correctStatement (prec1 := prec1) (emax1 := emax1)
+        (prec2 := prec2) (emax2 := emax2) := by
+  intro prec1 emax1 prec2 emax2 precision2 maximum2 certificate
+    ctx magnitude nan rounding value finite
+  rcases value with ⟨value, valid⟩
+  cases value with
+  | B754_nan sign payload => cases finite
+  | B754_infinity sign => cases finite
+  | B754_zero sign =>
+      change (if Exact.Rlt_bool ctx
+        (Exact.Rabs ctx (Exact.round magnitude Zaux.radix2 (fexp prec2 emax2)
+          (Exact.round_mode ctx rounding) (Exact.R0 ctx)))
+        (Exact.bpow ctx Zaux.radix2 emax2) then _ else _)
+      have roundZero : Exact.round magnitude Zaux.radix2 (fexp prec2 emax2)
+          (Exact.round_mode ctx rounding) (Exact.R0 ctx) = Exact.R0 ctx :=
+        Generic_fmt.round_0 ctx magnitude Zaux.radix2 (fexp prec2 emax2)
+          (Exact.round_mode ctx rounding) (BinarySingleNaN.valid_rnd_round_mode_proof ctx rounding)
+      rw [roundZero]
+      have absoluteZero : Exact.Rabs ctx (Exact.R0 ctx) = Exact.R0 ctx :=
+        ctx.certificate.sourceLaws.abs_nonnegative _ (ctx.certificate.orderedField.le_refl _)
+      have small : Exact.Rlt_bool ctx (Exact.R0 ctx)
+          (Exact.bpow ctx Zaux.radix2 emax2) = true :=
+        Raux.Rlt_bool_true ctx _ _ (Raux.bpow_gt_0 ctx Zaux.radix2 emax2)
+      rw [absoluteZero, small]
+      exact ⟨roundZero.symm, rfl, rfl⟩
+  | B754_finite sign mantissa exponent =>
+      exact BinarySingleNaN.IEEEManualRounding.ieee_normalize_signed
+        (prec := prec2) (emax := emax2) ctx magnitude rounding sign mantissa exponent sign
+
+end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.IEEE754
+
+theorem Bconv_BofZ :
+    ∀ {prec1 emax1 prec2 emax2 : Z}
+      [Prec_gt_0 prec1] [Prec_gt_0 prec2]
+      [Prec_lt_emax prec1 emax1] [Prec_lt_emax prec2 emax2]
+      [Binary.BinaryNormalizeCertificate prec1 emax1]
+      [Binary.BinaryNormalizeCertificate prec2 emax2],
+      Bconv_BofZStatement (prec1 := prec1) (emax1 := emax1)
+        (prec2 := prec2) (emax2 := emax2) := by
+  intro prec1 emax1 prec2 emax2 precision1 precision2 maximum1 maximum2 certificate1 certificate2
+    ctx magnitude nan integer representable sourceValid targetValid
+  have source := BofZ_representable (prec := prec1) (emax := emax1)
+    ctx magnitude integer representable
+  have conversion := Bconv_correct (prec1 := prec1) (emax1 := emax1)
+    (prec2 := prec2) (emax2 := emax2) ctx magnitude nan mode_NE
+    ⟨BofZ integer, sourceValid⟩ source.2.1
+  have target := BofZ_correct (prec := prec2) (emax := emax2) ctx magnitude integer
+  dsimp only at conversion target
+  rw [source.1] at conversion
+  by_cases small : Exact.Rlt_bool ctx
+      (Exact.Rabs ctx (Exact.round magnitude Zaux.radix2 (fexp prec2 emax2)
+        (Exact.round_mode ctx mode_NE) (Exact.IZR ctx integer)))
+      (Exact.bpow ctx Zaux.radix2 emax2) = true
+  · rw [if_pos small] at conversion target
+    exact Binary.B2R_Bsign_inj ctx
+      ⟨_, Bconv_result_obligation_proof nan mode_NE ⟨_, sourceValid⟩⟩
+      ⟨_, targetValid⟩ conversion.2.1 target.2.1
+      (conversion.1.trans target.1.symm)
+      (conversion.2.2.trans (source.2.2.trans target.2.2.symm))
+  · rw [if_neg small] at conversion target
+    apply Binary.B2FF_inj
+      ⟨_, Bconv_result_obligation_proof nan mode_NE ⟨_, sourceValid⟩⟩ ⟨_, targetValid⟩
+    exact conversion.trans ((congrArg (Binary.binary_overflow mode_NE) source.2.2).trans target.symm)
+
+end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.IEEE754
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem ieee_lift_non_nan {prec emax : Z}
+    (nan : {value : binary_float prec emax // Binary.is_nan value = true})
+    (value : BinarySingleNaN.binary_float prec emax)
+    (notNan : BinarySingleNaN.is_nan value = false) :
+    Binary.BSN2B nan value = Binary.BSN2B' value notNan := by
+  cases value <;> first | rfl | cases notNan
+
+private theorem ieee_integer_sign (ctx : ExactRealContext) (integer : Z) :
+    (match Exact.Rcompare ctx (Exact.IZR ctx integer) (Exact.R0 ctx) with
+      | .Eq => false | .Lt => true | .Gt => false) = Zlt_bool integer Z0 := by
+  have zero : Exact.IZR ctx Z0 = Exact.R0 ctx := ctx.certificate.sourceLaws.ofZ_zero
+  have comparison : Exact.Rcompare ctx (Exact.IZR ctx integer) (Exact.IZR ctx Z0) =
+      Raux.Zcompare integer Z0 := Raux.Rcompare_IZR ctx integer Z0
+  rw [← zero, comparison]
+  change (match (if intOfZ integer < 0 then Raux.Lt else
+      if intOfZ integer = 0 then Raux.Eq else Raux.Gt) with
+      | .Eq => false | .Lt => true | .Gt => false) =
+    (if intOfZ integer < 0 then true else false)
+  by_cases negative : intOfZ integer < 0
+  · simp [negative]
+  · by_cases zeroInteger : intOfZ integer = 0 <;> simp [negative, zeroInteger]
+
+private theorem ieee_normalize_integer {prec emax : Z}
+    [Prec_gt_0 prec] [Prec_lt_emax prec emax]
+    [Binary.BinaryNormalizeCertificate prec emax]
+    (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    (mantissa exponent integer : Z)
+    (value : Binary.Exact.F2R ctx (Binary.Float Zaux.radix2 mantissa exponent) =
+      Exact.IZR ctx integer) :
+    Binary.binary_normalize (prec := prec) (emax := emax) mode_NE mantissa exponent false =
+      BofZ integer := by
+  have normalized := Binary.binary_normalize_correct (prec := prec) (emax := emax)
+    ctx magnitude mode_NE mantissa exponent false
+  have target := BofZ_correct (prec := prec) (emax := emax) ctx magnitude integer
+  dsimp only at normalized target
+  rw [value] at normalized
+  change (if Exact.Rlt_bool ctx
+    (Exact.Rabs ctx (Exact.round magnitude Zaux.radix2 (fexp prec emax)
+      (Exact.round_mode ctx mode_NE) (Exact.IZR ctx integer)))
+    (Exact.bpow ctx Zaux.radix2 emax) then _ else _) at normalized
+  have sign : (match Binary.Exact.Rcompare ctx (Exact.IZR ctx integer) (Binary.Exact.R0 ctx) with
+      | .Eq => false | .Lt => true | .Gt => false) = Zlt_bool integer Z0 :=
+    ieee_integer_sign ctx integer
+  have negative : Binary.Exact.Rlt_bool ctx (Exact.IZR ctx integer) (Binary.Exact.R0 ctx) =
+      Zlt_bool integer Z0 := by
+    change (match Exact.Rcompare ctx (Exact.IZR ctx integer) (Exact.R0 ctx) with
+      | .Lt => true | _ => false) = _
+    cases comparison : Exact.Rcompare ctx (Exact.IZR ctx integer) (Exact.R0 ctx) <;>
+      simpa only [comparison] using sign
+  by_cases small : Exact.Rlt_bool ctx
+      (Exact.Rabs ctx (Exact.round magnitude Zaux.radix2 (fexp prec emax)
+        (Exact.round_mode ctx mode_NE) (Exact.IZR ctx integer)))
+      (Exact.bpow ctx Zaux.radix2 emax) = true
+  · rw [if_pos small] at normalized target
+    exact Binary.B2R_Bsign_inj ctx
+      ⟨_, Binary.binary_normalize_result_obligation_proof mode_NE mantissa exponent false⟩
+      ⟨_, BofZ_result_obligation_proof integer⟩ normalized.2.1 target.2.1
+      (normalized.1.trans target.1.symm)
+      (normalized.2.2.trans (sign.trans target.2.2.symm))
+  · rw [if_neg small] at normalized target
+    exact Binary.B2FF_inj
+      ⟨_, Binary.binary_normalize_result_obligation_proof mode_NE mantissa exponent false⟩
+      ⟨_, BofZ_result_obligation_proof integer⟩
+      (normalized.trans ((congrArg (Binary.binary_overflow mode_NE) negative).trans target.symm))
+
+theorem BofZ_plus :
+    ∀ {prec emax : Z} [Prec_gt_0 prec] [Prec_lt_emax prec emax]
+      [Binary.BinaryNormalizeCertificate prec emax],
+      BofZ_plusStatement (prec := prec) (emax := emax) := by
+  intro prec emax precision maximum certificate ctx magnitude nan leftInteger rightInteger
+    leftRepresentable rightRepresentable
+  have left := BofZ_representable (prec := prec) (emax := emax)
+    ctx magnitude leftInteger leftRepresentable
+  have right := BofZ_representable (prec := prec) (emax := emax)
+    ctx magnitude rightInteger rightRepresentable
+  have zeroInteger (integer : Z) (value : Exact.R0 ctx = Exact.IZR ctx integer) : integer = Z0 :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.eq_IZR ctx integer Z0
+      (value.symm.trans ctx.certificate.sourceLaws.ofZ_zero.symm)
+  have addZero (integer : Z) : Zadd integer Z0 = integer := by
+    apply intOfZ_injective
+    change intOfZ (zOfInt (intOfZ integer + 0)) = intOfZ integer
+    simp [intOfZ_zOfInt]
+  have zeroAdd (integer : Z) : Zadd Z0 integer = integer := by
+    apply intOfZ_injective
+    change intOfZ (zOfInt (0 + intOfZ integer)) = intOfZ integer
+    simp [intOfZ_zOfInt]
+  generalize leftEquation : BofZ (prec := prec) (emax := emax) leftInteger = leftValue at left ⊢
+  generalize rightEquation : BofZ (prec := prec) (emax := emax) rightInteger = rightValue at right ⊢
+  cases leftValue with
+  | B754_nan sign payload => cases left.2.1
+  | B754_infinity sign => cases left.2.1
+  | B754_zero sign =>
+      have integerZero := zeroInteger leftInteger left.1
+      subst leftInteger
+      have signFalse : sign = false := left.2.2
+      subst sign
+      rw [zeroAdd]
+      cases rightValue with
+      | B754_nan sign payload => cases right.2.1
+      | B754_infinity sign => cases right.2.1
+      | B754_zero sign =>
+          have integerZero := zeroInteger rightInteger right.1
+          subst rightInteger
+          have signFalse : sign = false := right.2.2
+          subst sign
+          rfl
+      | B754_finite sign mantissa exponent => exact rightEquation.symm
+  | B754_finite signLeft mantissaLeft exponentLeft =>
+      cases rightValue with
+      | B754_nan sign payload => cases right.2.1
+      | B754_infinity sign => cases right.2.1
+      | B754_zero sign =>
+          have integerZero := zeroInteger rightInteger right.1
+          subst rightInteger
+          have signFalse : sign = false := right.2.2
+          subst sign
+          rw [addZero]
+          exact leftEquation.symm
+      | B754_finite signRight mantissaRight exponentRight =>
+          let exponent := ZArith.BinInt.Z.min exponentLeft exponentRight
+          let mantissa := BinarySingleNaN.Fplus_naive signLeft mantissaLeft exponentLeft
+            signRight mantissaRight exponentRight exponent
+          change Binary.BSN2B _ (BinarySingleNaN.binary_normalize mode_NE mantissa exponent false) = _
+          rw [ieee_lift_non_nan _ _
+            (certificate.is_nan_binary_normalize mode_NE mantissa exponent false)]
+          change Binary.binary_normalize mode_NE mantissa exponent false = _
+          apply ieee_normalize_integer ctx magnitude
+          have boundLeft : Zle exponent exponentLeft := by
+            change intOfZ (ZArith.BinInt.Z.min exponentLeft exponentRight) ≤ intOfZ exponentLeft
+            unfold ZArith.BinInt.Z.min
+            split <;> omega
+          have boundRight : Zle exponent exponentRight := by
+            change intOfZ (ZArith.BinInt.Z.min exponentLeft exponentRight) ≤ intOfZ exponentRight
+            unfold ZArith.BinInt.Z.min
+            split <;> omega
+          have sum := BinarySingleNaN.Fplus_naive_correct ctx signLeft mantissaLeft exponentLeft
+            signRight mantissaRight exponentRight exponent boundLeft boundRight
+          exact sum.trans ((congrArg (fun value => Exact.Rplus ctx value
+            (Exact.B2R ctx (.B754_finite signRight mantissaRight exponentRight))) left.1).trans
+            ((congrArg (Exact.Rplus ctx (Exact.IZR ctx leftInteger)) right.1).trans
+            (ctx.certificate.sourceLaws.ofZ_add leftInteger rightInteger).symm))
+
+end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.IEEE754
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals
+
+private theorem ieee_magnitude_exists (ctx : ExactRealContext) : Nonempty (Exact.Magnitude ctx) := by
+  classical
+  refine ⟨{ value := fun beta value => ?_ }⟩
+  by_cases zero : value = Exact.R0 ctx
+  · exact ⟨Z0, fun nonzero => False.elim (nonzero zero)⟩
+  have basePositive : ctx.spec.lt ctx.spec.zero (ctx.spec.ofZ beta.radix_val) :=
+    Raux.radix_pos ctx beta
+  have baseLarge : ctx.spec.lt ctx.spec.one (ctx.spec.ofZ beta.radix_val) := by
+    have bound := RIneq.IZR_lt ctx Zone beta.radix_val (Zaux.radix_gt_1 beta)
+    change ctx.spec.lt (ctx.spec.ofZ Zone) (ctx.spec.ofZ beta.radix_val) at bound
+    rw [ctx.certificate.sourceLaws.ofZ_one] at bound
+    exact bound
+  let logarithm := ctx.spec.ln (ctx.spec.ofZ beta.radix_val)
+  have logPositive : ctx.spec.lt ctx.spec.zero logarithm := by
+    rcases ctx.certificate.total_order logarithm ctx.spec.zero with (less | equal) | greater
+    · have bound := Raux.exp_le ctx logarithm ctx.spec.zero (RIneq.Rlt_le ctx _ _ less)
+      change ctx.spec.le (ctx.spec.exp logarithm) (ctx.spec.exp ctx.spec.zero) at bound
+      rw [ctx.certificate.exp.zero] at bound
+      change ctx.spec.le (ctx.spec.exp (ctx.spec.ln (ctx.spec.ofZ beta.radix_val))) _ at bound
+      rw [ctx.certificate.ln.exp_ln _ basePositive] at bound
+      exact False.elim ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp baseLarge |>.2 bound)
+    · have contradiction := ctx.certificate.ln.exp_ln (ctx.spec.ofZ beta.radix_val) basePositive
+      change ctx.spec.exp logarithm = _ at contradiction
+      rw [equal, ctx.certificate.exp.zero] at contradiction
+      rw [← contradiction] at baseLarge
+      exact False.elim (ctx.certificate.orderedField.lt_irrefl _ baseLarge)
+    · exact greater
+  have logNonzero : logarithm ≠ ctx.spec.zero := by
+    intro equal
+    rw [equal] at logPositive
+    exact ctx.certificate.orderedField.lt_irrefl _ logPositive
+  have absPositive : ctx.spec.lt ctx.spec.zero (ctx.spec.abs value) := by
+    have bound := Rbasic_fun.Rabs_pos_lt ctx value (fun equal =>
+      zero (equal.trans ctx.certificate.sourceLaws.ofZ_zero))
+    change ctx.spec.lt (ctx.spec.ofZ Z0) (ctx.spec.abs value) at bound
+    rw [ctx.certificate.sourceLaws.ofZ_zero] at bound
+    exact bound
+  let ratio := ctx.spec.mul (ctx.spec.ln (ctx.spec.abs value)) (ctx.spec.inv logarithm)
+  let lower := Exact.Zfloor ctx ratio
+  let exponent := Zadd lower Zone
+  have product : ctx.spec.mul ratio logarithm = ctx.spec.ln (ctx.spec.abs value) := by
+    dsimp only [ratio]
+    rw [ctx.certificate.orderedField.mul_assoc,
+      ctx.certificate.orderedField.inv_mul_cancel _ logNonzero,
+      ctx.certificate.orderedField.mul_one]
+  have logPositiveCast : ctx.spec.lt (ctx.spec.ofZ Z0) logarithm := by
+    rw [ctx.certificate.sourceLaws.ofZ_zero]
+    exact logPositive
+  have lowerBound := RIneq.Rmult_le_compat_r ctx logarithm (Exact.IZR ctx lower) ratio
+    (RIneq.Rlt_le ctx _ _ logPositiveCast) (Raux.Zfloor_lb ctx ratio)
+  have floorUpper : ctx.spec.lt ratio (ctx.spec.ofZ exponent) := by
+    have result := Raux.Zfloor_ub ctx ratio
+    change ctx.spec.lt ratio (ctx.spec.add (ctx.spec.ofZ lower) ctx.spec.one) at result
+    change ctx.spec.lt ratio (ctx.spec.ofZ (Zadd lower Zone))
+    rw [ctx.certificate.sourceLaws.ofZ_add, ctx.certificate.sourceLaws.ofZ_one]
+    exact result
+  have upperBound := RIneq.Rmult_lt_compat_r ctx logarithm ratio (Exact.IZR ctx exponent)
+    logPositiveCast floorUpper
+  change ctx.spec.le (ctx.spec.mul (ctx.spec.ofZ lower) logarithm)
+    (ctx.spec.mul ratio logarithm) at lowerBound
+  change ctx.spec.lt (ctx.spec.mul ratio logarithm)
+    (ctx.spec.mul (ctx.spec.ofZ exponent) logarithm) at upperBound
+  rw [product] at lowerBound upperBound
+  have realLog : Raux.Exact.ln ctx (Exact.IZR ctx beta.radix_val) = logarithm := by
+    change CompCert4Lean.Foundation.FlocqReal.ExactReal.ln ctx.spec
+      (ctx.spec.ofZ beta.radix_val) = _
+    unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.ln
+    cases decision : ctx.spec.lt_dec ctx.spec.zero (ctx.spec.ofZ beta.radix_val) with
+    | left proof => rfl
+    | right proof => exact False.elim (proof basePositive)
+  have power (powerExponent : Z) : Exact.bpow ctx beta powerExponent =
+      ctx.spec.exp (ctx.spec.mul (ctx.spec.ofZ powerExponent) logarithm) := by
+    have equation := Raux.bpow_exp ctx beta powerExponent
+    change Exact.bpow ctx beta powerExponent =
+      ctx.spec.exp (ctx.spec.mul (ctx.spec.ofZ powerExponent)
+        (Raux.Exact.ln ctx (Exact.IZR ctx beta.radix_val))) at equation
+    rw [realLog] at equation
+    exact equation
+  refine ⟨exponent, fun _ => ⟨?_, ?_⟩⟩
+  · have predecessor : Zsub exponent Zone = lower := by
+      apply intOfZ_injective
+      simp only [exponent, Zadd, Zsub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+      omega
+    change ctx.spec.le (Exact.bpow ctx beta (Zsub exponent Zone)) (ctx.spec.abs value)
+    rw [predecessor, power]
+    have result := Raux.exp_le ctx _ _ lowerBound
+    change ctx.spec.le _ (ctx.spec.exp (ctx.spec.ln (ctx.spec.abs value))) at result
+    rw [ctx.certificate.ln.exp_ln _ absPositive] at result
+    exact result
+  · change ctx.spec.lt (ctx.spec.abs value) (Exact.bpow ctx beta exponent)
+    rw [power]
+    have result := ctx.certificate.exp.strict_monotone _ _ upperBound
+    rw [ctx.certificate.ln.exp_ln _ absPositive] at result
+    exact result
+
+end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.IEEE754
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals
+
+private theorem ieee_subtract_finite {prec emax : Z}
+    [Prec_gt_0 prec] [Prec_lt_emax prec emax]
+    [certificate : Binary.BinaryNormalizeCertificate prec emax]
+    (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    (nan : binary_float prec emax → binary_float prec emax → NaNResult prec emax)
+    (rounding : mode) (sign : Bool) (mantissaLeft : positive) (exponentLeft : Z)
+    (mantissaRight : positive) (exponentRight : Z)
+    (exactDifference : Exact.generic_format magnitude Zaux.radix2 (fexp prec emax)
+      (Exact.Rminus ctx
+        (Exact.B2R ctx (Binary.B754_finite sign mantissaLeft exponentLeft : binary_float prec emax))
+        (Exact.B2R ctx (Binary.B754_finite false mantissaRight exponentRight : binary_float prec emax))))
+    (smallDifference : Exact.Rlt ctx
+      (Exact.Rabs ctx (Exact.Rminus ctx
+        (Exact.B2R ctx (Binary.B754_finite sign mantissaLeft exponentLeft : binary_float prec emax))
+        (Exact.B2R ctx (Binary.B754_finite false mantissaRight exponentRight : binary_float prec emax))))
+      (Exact.bpow ctx Zaux.radix2 emax)) :
+    Exact.B2R ctx (Binary.Bminus nan rounding
+      (.B754_finite sign mantissaLeft exponentLeft)
+      (.B754_finite false mantissaRight exponentRight)) =
+      Exact.Rminus ctx
+        (Exact.B2R ctx (Binary.B754_finite sign mantissaLeft exponentLeft : binary_float prec emax))
+        (Exact.B2R ctx (Binary.B754_finite false mantissaRight exponentRight : binary_float prec emax)) ∧
+    Binary.is_finite (Binary.Bminus nan rounding
+      (.B754_finite sign mantissaLeft exponentLeft)
+      (.B754_finite false mantissaRight exponentRight)) = true := by
+  let exponent := ZArith.BinInt.Z.min exponentLeft exponentRight
+  let mantissa := BinarySingleNaN.Fplus_naive sign mantissaLeft exponentLeft
+    true mantissaRight exponentRight exponent
+  let zeroSign := match rounding with | .mode_DN => true | _ => false
+  have boundLeft : Zle exponent exponentLeft := by
+    change intOfZ (ZArith.BinInt.Z.min exponentLeft exponentRight) ≤ intOfZ exponentLeft
+    unfold ZArith.BinInt.Z.min
+    split <;> omega
+  have boundRight : Zle exponent exponentRight := by
+    change intOfZ (ZArith.BinInt.Z.min exponentLeft exponentRight) ≤ intOfZ exponentRight
+    unfold ZArith.BinInt.Z.min
+    split <;> omega
+  have encoding : Binary.Exact.F2R ctx (Binary.Float Zaux.radix2 mantissa exponent) =
+      Exact.Rminus ctx
+        (Exact.B2R ctx (Binary.B754_finite sign mantissaLeft exponentLeft : binary_float prec emax))
+        (Exact.B2R ctx (Binary.B754_finite false mantissaRight exponentRight : binary_float prec emax)) := by
+    have sum := BinarySingleNaN.Fplus_naive_correct ctx sign mantissaLeft exponentLeft
+      true mantissaRight exponentRight exponent boundLeft boundRight
+    dsimp only at sum
+    exact sum.trans (congrArg (Exact.Rplus ctx _) (Float_prop.F2R_Zopp ctx Zaux.radix2
+      (Zpos mantissaRight) exponentRight))
+  have normalized := Binary.binary_normalize_correct (prec := prec) (emax := emax)
+    ctx magnitude rounding mantissa exponent zeroSign
+  dsimp only at normalized
+  rw [encoding] at normalized
+  have roundExact : Exact.round magnitude Zaux.radix2 (fexp prec emax)
+      (Exact.round_mode ctx rounding)
+      (Exact.Rminus ctx
+        (Exact.B2R ctx (Binary.B754_finite sign mantissaLeft exponentLeft : binary_float prec emax))
+        (Exact.B2R ctx (Binary.B754_finite false mantissaRight exponentRight : binary_float prec emax))) =
+      Exact.Rminus ctx
+        (Exact.B2R ctx (Binary.B754_finite sign mantissaLeft exponentLeft : binary_float prec emax))
+        (Exact.B2R ctx (Binary.B754_finite false mantissaRight exponentRight : binary_float prec emax)) :=
+    Generic_fmt.round_generic ctx magnitude Zaux.radix2 (fexp prec emax)
+      (Exact.round_mode ctx rounding) (BinarySingleNaN.valid_rnd_round_mode_proof ctx rounding)
+      _ exactDifference
+  change (if Exact.Rlt_bool ctx
+    (Exact.Rabs ctx (Exact.round magnitude Zaux.radix2 (fexp prec emax)
+      (Exact.round_mode ctx rounding) _)) (Exact.bpow ctx Zaux.radix2 emax) then _ else _) at normalized
+  rw [roundExact] at normalized
+  have small : Exact.Rlt_bool ctx
+      (Exact.Rabs ctx (Exact.Rminus ctx
+        (Exact.B2R ctx (Binary.B754_finite sign mantissaLeft exponentLeft : binary_float prec emax))
+        (Exact.B2R ctx (Binary.B754_finite false mantissaRight exponentRight : binary_float prec emax))))
+      (Exact.bpow ctx Zaux.radix2 emax) = true := Raux.Rlt_bool_true ctx _ _ smallDifference
+  rw [small] at normalized
+  have operation : Binary.Bminus nan rounding
+      (.B754_finite sign mantissaLeft exponentLeft) (.B754_finite false mantissaRight exponentRight) =
+      Binary.binary_normalize rounding mantissa exponent zeroSign :=
+    ieee_lift_non_nan _ _ (certificate.is_nan_binary_normalize rounding mantissa exponent zeroSign)
+  rw [operation]
+  exact ⟨normalized.1.trans roundExact, normalized.2.1⟩
+
+theorem ZofB_minus :
+    ∀ {prec emax : Z} [Prec_gt_0 prec] [Prec_lt_emax prec emax]
+      [Binary.BinaryNormalizeCertificate prec emax],
+      ZofB_minusStatement (prec := prec) (emax := emax) := by
+  intro prec emax precision maximum certificate nan rounding value integer offset converted range
+    offsetBound ctx below
+  classical
+  let magnitude := Classical.choice (ieee_magnitude_exists ctx)
+  have integerNonnegative : 0 ≤ intOfZ integer := range.1
+  have integerBound : intOfZ integer < 2 * intOfZ offset := by
+    have bound := range.2
+    change intOfZ integer < intOfZ (Zmul Ztwo offset) at bound
+    simp only [Zmul, ZArith.BinInt.Z.mul, intOfZ_zOfInt] at bound
+    exact bound
+  have offsetPositive : Zlt Z0 offset := by
+    change 0 < intOfZ offset
+    omega
+  have offsetBounds : Zle (Zopp (Zpower Ztwo prec)) offset ∧ Zle offset (Zpower Ztwo prec) := by
+    refine ⟨?_, offsetBound⟩
+    change intOfZ (Zopp (Zpower Ztwo prec)) ≤ intOfZ offset
+    simp only [Zopp, ZArith.BinInt.Z.opp, intOfZ_zOfInt]
+    change intOfZ offset ≤ intOfZ (Zpower Ztwo prec) at offsetBound
+    change 0 < intOfZ offset at offsetPositive
+    omega
+  have offsetValue := BofZ_exact (prec := prec) (emax := emax) ctx offset offsetBounds
+  have castZero : Exact.IZR ctx Z0 = Exact.R0 ctx := ctx.certificate.sourceLaws.ofZ_zero
+  have offsetRealPositive : Exact.Rlt ctx (Exact.R0 ctx) (Exact.IZR ctx offset) := by
+    have positive := RIneq.IZR_lt ctx Z0 offset offsetPositive
+    change Exact.Rlt ctx (Exact.IZR ctx Z0) (Exact.IZR ctx offset) at positive
+    rw [castZero] at positive
+    exact positive
+  have valuePositive : Exact.Rlt ctx (Exact.R0 ctx) (Exact.B2R ctx value.1) :=
+    RIneq.Rlt_le_trans ctx _ _ _ offsetRealPositive below
+  have valueNonnegative : Exact.Rle ctx (Exact.R0 ctx) (Exact.B2R ctx value.1) :=
+    RIneq.Rlt_le ctx _ _ valuePositive
+  have finite : Binary.is_finite value.1 = true := by
+    rcases value with ⟨value, valid⟩
+    cases value <;> first | rfl | cases converted
+  have upperInteger : Zle (Zadd integer Zone) (Zmul Ztwo offset) := by
+    change intOfZ (Zadd integer Zone) ≤ intOfZ (Zmul Ztwo offset)
+    simp only [Zadd, Zmul, ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+    change intOfZ integer + 1 ≤ 2 * intOfZ offset
+    omega
+  have twice : Exact.IZR ctx (Zmul Ztwo offset) =
+      Exact.Rplus ctx (Exact.IZR ctx offset) (Exact.IZR ctx offset) := by
+    have twiceInteger : Zmul Ztwo offset = Zadd offset offset := by
+      apply intOfZ_injective
+      simp only [Zadd, Zmul, ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+      change 2 * intOfZ offset = intOfZ offset + intOfZ offset
+      omega
+    rw [twiceInteger]
+    exact ctx.certificate.sourceLaws.ofZ_add offset offset
+  have upper : Exact.Rlt ctx (Exact.B2R ctx value.1)
+      (Exact.Rplus ctx (Exact.IZR ctx offset) (Exact.IZR ctx offset)) := by
+    have result := RIneq.Rlt_le_trans ctx _ _ _
+      (ZofB_range_nonneg value integer converted range.1 ctx).2
+      (RIneq.IZR_le ctx _ _ upperInteger)
+    change Exact.Rlt ctx (Exact.B2R ctx value.1) (Exact.IZR ctx (Zmul Ztwo offset)) at result
+    rw [twice] at result
+    exact result
+  have differenceNonnegative : Exact.Rle ctx (Exact.R0 ctx)
+      (Exact.Rminus ctx (Exact.B2R ctx value.1) (Exact.IZR ctx offset)) := by
+    have result := RIneq.Rge_minus ctx (Exact.B2R ctx value.1) (Exact.IZR ctx offset) below
+    change Exact.Rle ctx (Exact.IZR ctx Z0) _ at result
+    rw [castZero] at result
+    exact result
+  have differenceSmall : Exact.Rlt ctx
+      (Exact.Rminus ctx (Exact.B2R ctx value.1) (Exact.IZR ctx offset)) (Exact.IZR ctx offset) := by
+    have result := RIneq.Rplus_lt_compat_r ctx (Exact.Ropp ctx (Exact.IZR ctx offset)) _ _ upper
+    change ctx.spec.lt (ctx.spec.add _ (ctx.spec.neg (ctx.spec.ofZ offset)))
+      (ctx.spec.add (ctx.spec.add (ctx.spec.ofZ offset) (ctx.spec.ofZ offset))
+        (ctx.spec.neg (ctx.spec.ofZ offset))) at result
+    rw [ctx.certificate.orderedField.add_assoc,
+      ctx.certificate.orderedField.add_comm (ctx.spec.ofZ offset) (ctx.spec.neg (ctx.spec.ofZ offset)),
+      ctx.certificate.orderedField.neg_add_cancel, ctx.certificate.orderedField.add_zero] at result
+    exact result
+  have powerBound : Exact.Rlt ctx (Exact.IZR ctx offset) (Exact.bpow ctx Zaux.radix2 emax) := by
+    have precisionNonnegative : Zle Z0 prec := by
+      have positive : 0 < intOfZ prec := precision
+      change 0 ≤ intOfZ prec
+      omega
+    have power : Exact.IZR ctx (Zpower Ztwo prec) = Exact.bpow ctx Zaux.radix2 prec :=
+      Raux.IZR_Zpower ctx Zaux.radix2 prec precisionNonnegative
+    have bound := RIneq.IZR_le ctx offset (Zpower Ztwo prec) offsetBound
+    change Exact.Rle ctx (Exact.IZR ctx offset) (Exact.IZR ctx (Zpower Ztwo prec)) at bound
+    rw [power] at bound
+    exact RIneq.Rle_lt_trans ctx _ _ _ bound
+      (Raux.bpow_lt ctx Zaux.radix2 prec emax maximum.prec_lt_emax)
+  have absoluteSmall : Exact.Rlt ctx
+      (Exact.Rabs ctx (Exact.Rminus ctx (Exact.B2R ctx value.1) (Exact.IZR ctx offset)))
+      (Exact.bpow ctx Zaux.radix2 emax) := by
+    have absolute : Exact.Rabs ctx (Exact.Rminus ctx (Exact.B2R ctx value.1) (Exact.IZR ctx offset)) =
+        Exact.Rminus ctx (Exact.B2R ctx value.1) (Exact.IZR ctx offset) :=
+      ctx.certificate.sourceLaws.abs_nonnegative _ differenceNonnegative
+    rw [absolute]
+    exact ctx.certificate.orderedField.lt_trans _ _ _ differenceSmall powerBound
+  have exactDifference : Exact.generic_format magnitude Zaux.radix2 (fexp prec emax)
+      (Exact.Rminus ctx (Exact.B2R ctx value.1) (Exact.IZR ctx offset)) := by
+    apply CompCert4Lean.Flocq.Prop.Sterbenz.sterbenz_aux ctx magnitude Zaux.radix2 (fexp prec emax)
+      (FLT.FLT_exp_valid (emin prec emax) prec (h := precision))
+      (FLT.FLT_exp_monotone (emin prec emax) prec)
+    · exact Binary.generic_format_B2R ctx magnitude value
+    · exact (integer_representable_n (prec := prec) (emax := emax) ctx magnitude offset offsetBounds).2
+    · refine ⟨below, ?_⟩
+      have twiceReal : Generic_fmt.Exact.Rmult ctx (Generic_fmt.Exact.Rtwo ctx) (Exact.IZR ctx offset) =
+          Exact.Rplus ctx (Exact.IZR ctx offset) (Exact.IZR ctx offset) := by
+        change ctx.spec.mul (ctx.spec.add ctx.spec.one ctx.spec.one) (ctx.spec.ofZ offset) = _
+        rw [ctx.certificate.orderedField.mul_comm, ctx.certificate.orderedField.left_distrib,
+          ctx.certificate.orderedField.mul_one]
+        rfl
+      rw [twiceReal]
+      exact RIneq.Rlt_le ctx _ _ upper
+  have subtraction : Exact.B2R ctx (Binary.Bminus nan rounding value.1 (BofZ offset)) =
+      Exact.Rminus ctx (Exact.B2R ctx value.1) (Exact.IZR ctx offset) ∧
+      Binary.is_finite (Binary.Bminus nan rounding value.1 (BofZ offset)) = true := by
+    rcases value with ⟨value, valid⟩
+    cases value with
+    | B754_zero sign => exact False.elim (ctx.certificate.orderedField.lt_irrefl _ valuePositive)
+    | B754_infinity sign => cases converted
+    | B754_nan sign payload => cases converted
+    | B754_finite sign mantissa exponent =>
+        generalize equation : BofZ (prec := prec) (emax := emax) offset = offsetFloat at offsetValue ⊢
+        cases offsetFloat with
+        | B754_zero sign =>
+            have zeroValue : Exact.R0 ctx = Exact.IZR ctx offset := offsetValue.1
+            rw [← zeroValue] at offsetRealPositive
+            exact False.elim (ctx.certificate.orderedField.lt_irrefl _ offsetRealPositive)
+        | B754_infinity sign => cases offsetValue.2.1
+        | B754_nan sign payload => cases offsetValue.2.1
+        | B754_finite offsetSign offsetMantissa offsetExponent =>
+            have signFalse : offsetSign = false := by
+              have negative : Zlt_bool offset Z0 = false := by
+                change (if intOfZ offset < 0 then true else false) = false
+                have positive : 0 < intOfZ offset := offsetPositive
+                exact if_neg (by omega)
+              exact offsetValue.2.2.trans negative
+            subst offsetSign
+            have format := exactDifference
+            have bound := absoluteSmall
+            rw [← offsetValue.1] at format bound
+            have result := ieee_subtract_finite ctx magnitude nan rounding sign mantissa exponent
+              offsetMantissa offsetExponent format bound
+            rw [offsetValue.1] at result
+            exact result
+  have original := ZofB_correct value ctx
+  change ZofB value.1 = (if Binary.is_finite value.1 then
+    some (Exact.Ztrunc ctx (Exact.B2R ctx value.1)) else none) at original
+  rw [finite] at original
+  have originalTruncation : Exact.Ztrunc ctx (Exact.B2R ctx value.1) = integer :=
+    Option.some.inj (original.symm.trans converted)
+  have truncation : Exact.Ztrunc ctx (Exact.Rminus ctx (Exact.B2R ctx value.1) (Exact.IZR ctx offset)) =
+      Zsub integer offset := by
+    have differenceFloor : Exact.Ztrunc ctx
+        (Exact.Rminus ctx (Exact.B2R ctx value.1) (Exact.IZR ctx offset)) =
+        Exact.Zfloor ctx (Exact.Rminus ctx (Exact.B2R ctx value.1) (Exact.IZR ctx offset)) :=
+      Raux.Ztrunc_floor ctx _ differenceNonnegative
+    have originalFloor : Exact.Ztrunc ctx (Exact.B2R ctx value.1) =
+        Exact.Zfloor ctx (Exact.B2R ctx value.1) := Raux.Ztrunc_floor ctx _ valueNonnegative
+    rw [differenceFloor, Zfloor_minus ctx, ← originalFloor, originalTruncation]
+  have result := ZofB_correct
+    ⟨_, Binary.Bminus_result_obligation_proof nan rounding value
+      ⟨_, BofZ_result_obligation_proof offset⟩⟩ ctx
+  change ZofB (Binary.Bminus nan rounding value.1 (BofZ offset)) =
+    (if Binary.is_finite (Binary.Bminus nan rounding value.1 (BofZ offset)) then
+      some (Exact.Ztrunc ctx (Exact.B2R ctx (Binary.Bminus nan rounding value.1 (BofZ offset))))
+      else none) at result
+  rw [subtraction.2, subtraction.1, truncation] at result
+  exact result
+
+end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.IEEE754
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem ZofB_range_minus :
+    ∀ {prec emax : Z} [Prec_gt_0 prec] [Prec_lt_emax prec emax]
+      [Binary.BinaryNormalizeCertificate prec emax],
+      ZofB_range_minusStatement (prec := prec) (emax := emax) := by
+  intro prec emax precision maximum certificate nan rounding value integer offset converted bound ctx below
+  obtain ⟨lower, upper, convertedInteger⟩ :=
+    ZofB_range_inversion value Z0 (Zsub (Zmul Ztwo offset) Zone) integer converted
+  have upperStrict : Zlt integer (Zmul Ztwo offset) := by
+    change intOfZ integer ≤ intOfZ (Zsub (Zmul Ztwo offset) Zone) at upper
+    simp only [Zsub, ZArith.BinInt.Z.sub, intOfZ_zOfInt] at upper
+    change intOfZ integer < intOfZ (Zmul Ztwo offset)
+    change intOfZ integer ≤ intOfZ (Zmul Ztwo offset) - 1 at upper
+    omega
+  have subtracted := ZofB_minus nan rounding value integer offset convertedInteger
+    ⟨lower, upperStrict⟩ bound ctx below
+  have lowerTest : Zle_bool (Zopp offset) (Zsub integer offset) = true := by
+    change (if intOfZ (Zopp offset) ≤ intOfZ (Zsub integer offset) then true else false) = true
+    apply if_pos
+    simp only [Zopp, Zsub, ZArith.BinInt.Z.opp, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    change 0 ≤ intOfZ integer at lower
+    omega
+  have upperTest : Zle_bool (Zsub integer offset) (Zsub offset Zone) = true := by
+    change (if intOfZ (Zsub integer offset) ≤ intOfZ (Zsub offset Zone) then true else false) = true
+    apply if_pos
+    simp only [Zsub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    change intOfZ integer ≤ intOfZ (Zsub (Zmul Ztwo offset) Zone) at upper
+    simp only [Zsub, Zmul, ZArith.BinInt.Z.sub, ZArith.BinInt.Z.mul, intOfZ_zOfInt] at upper
+    change intOfZ integer ≤ 2 * intOfZ offset - 1 at upper
+    change intOfZ integer - intOfZ offset ≤ intOfZ offset - 1
+    omega
+  unfold ZofB_range
+  rw [subtracted]
+  change (if Zle_bool (Zopp offset) (Zsub integer offset) &&
+    Zle_bool (Zsub integer offset) (Zsub offset Zone) then some (Zsub integer offset) else none) = _
+  rw [lowerTest, upperTest]
+  rfl
+
+end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.IEEE754
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Flocq.IEEE754.BinarySingleNaN.IEEEManualRounding
+
+private theorem ieee_scaled_iteration (base scaled : positive) (count shift : Nat)
+    (scale : posToNat scaled = posToNat base * 2 ^ shift) :
+    Zaux.iter_nat BinarySingleNaN.shr_1 (count + shift)
+      (BinarySingleNaN.shr_record_of_loc (Zpos scaled) BinarySingleNaN.loc_Exact) =
+    Zaux.iter_nat BinarySingleNaN.shr_1 count
+      (BinarySingleNaN.shr_record_of_loc (Zpos base) BinarySingleNaN.loc_Exact) := by
+  have scaledResult := manual_iter_encoding (count + shift)
+    (BinarySingleNaN.shr_record_of_loc (Zpos scaled) BinarySingleNaN.loc_Exact)
+    (Int.natCast_nonneg (posToNat scaled))
+  have baseResult := manual_iter_encoding count
+    (BinarySingleNaN.shr_record_of_loc (Zpos base) BinarySingleNaN.loc_Exact)
+    (Int.natCast_nonneg (posToNat base))
+  have integerScale : (posToNat scaled : Int) = (posToNat base : Int) * (2 : Int) ^ shift := by
+    rw [scale, Int.natCast_mul, Int.natCast_pow]
+    rfl
+  have powerPositive : 0 < (2 : Int) ^ shift := Int.pow_pos (by decide)
+  have encoding : manual_shift_encoding
+      (BinarySingleNaN.shr_record_of_loc (Zpos scaled) BinarySingleNaN.loc_Exact) =
+      manual_shift_encoding
+        (BinarySingleNaN.shr_record_of_loc (Zpos base) BinarySingleNaN.loc_Exact) * (2 : Int) ^ shift := by
+    change 2 * (posToNat scaled : Int) + 0 = (2 * (posToNat base : Int) + 0) * (2 : Int) ^ shift
+    rw [integerScale]
+    simp only [Int.add_zero, Int.mul_assoc]
+  apply manual_record_ext
+  · rw [scaledResult.2.1, baseResult.2.1, encoding, Int.pow_add]
+    exact Int.mul_ediv_mul_of_pos_left _ _ powerPositive
+  · rw [scaledResult.2.2, baseResult.2.2, encoding, Int.pow_add]
+    simp only [← Int.dvd_iff_emod_eq_zero,
+      Int.mul_dvd_mul_iff_right (Int.ne_of_gt powerPositive)]
+    rfl
+
+private theorem ieee_shr_fexp_scaled (prec emax : Z)
+    (base scaled : positive) (baseExponent scaledExponent : Z) (shift : Nat)
+    (scale : posToNat scaled = posToNat base * 2 ^ shift)
+    (exponents : intOfZ baseExponent = intOfZ scaledExponent + shift)
+    (aligned : Zle baseExponent
+      (fexp prec emax (Zadd (Zpos (Digits.digits2_pos base)) baseExponent))) :
+    BinarySingleNaN.shr_fexp (prec := prec) (emax := emax)
+        (Zpos scaled) scaledExponent BinarySingleNaN.loc_Exact =
+      BinarySingleNaN.shr_fexp (prec := prec) (emax := emax)
+        (Zpos base) baseExponent BinarySingleNaN.loc_Exact := by
+  have width : Zadd (Zpos (Digits.digits2_pos scaled)) scaledExponent =
+      Zadd (Zpos (Digits.digits2_pos base)) baseExponent := by
+    apply intOfZ_injective
+    simp only [ieee_manual_add_int]
+    change (posToNat (Digits.digits2_pos scaled) : Int) + intOfZ scaledExponent =
+      (posToNat (Digits.digits2_pos base) : Int) + intOfZ baseExponent
+    rw [ieee_manual_digits_nat, ieee_manual_digits_nat, scale,
+      ieee_manual_log2_shift _ _ (posToNat_positive base)]
+    omega
+  let target := fexp prec emax (Zadd (Zpos (Digits.digits2_pos base)) baseExponent)
+  have baseNonnegative : Zle Z0 (Zsub target baseExponent) := by
+    change 0 ≤ intOfZ (Zsub target baseExponent)
+    rw [ieee_manual_sub_int]
+    exact Int.sub_nonneg_of_le aligned
+  have scaledNonnegative : Zle Z0 (Zsub target scaledExponent) := by
+    change 0 ≤ intOfZ (Zsub target scaledExponent)
+    rw [ieee_manual_sub_int]
+    change intOfZ baseExponent ≤ intOfZ target at aligned
+    omega
+  change BinarySingleNaN.shr _ scaledExponent
+      (Zsub (fexp prec emax (Zadd (Zpos (Digits.digits2_pos scaled)) scaledExponent)) scaledExponent) =
+    BinarySingleNaN.shr _ baseExponent (Zsub target baseExponent)
+  rw [width]
+  rw [BinarySingleNaN.shr_nat _ _ _ scaledNonnegative,
+    BinarySingleNaN.shr_nat _ _ _ baseNonnegative]
+  apply Prod.ext
+  · have count : ZArith.BinInt.Z.to_nat (Zsub target scaledExponent) =
+        ZArith.BinInt.Z.to_nat (Zsub target baseExponent) + shift := by
+      change (intOfZ (Zsub target scaledExponent)).toNat =
+        (intOfZ (Zsub target baseExponent)).toNat + shift
+      rw [ieee_manual_sub_int, ieee_manual_sub_int]
+      change intOfZ baseExponent ≤ intOfZ target at aligned
+      omega
+    dsimp only
+    rw [count]
+    exact ieee_scaled_iteration base scaled _ shift scale
+  · apply intOfZ_injective
+    simp only [ieee_manual_add_int, ieee_manual_sub_int]
+    omega
+
+private theorem ieee_round_aux_scaled (prec emax : Z)
+    (rounding : mode) (sign : Bool)
+    (base scaled : positive) (baseExponent scaledExponent : Z) (shift : Nat)
+    (scale : posToNat scaled = posToNat base * 2 ^ shift)
+    (exponents : intOfZ baseExponent = intOfZ scaledExponent + shift)
+    (aligned : Zle baseExponent
+      (fexp prec emax (Zadd (Zpos (Digits.digits2_pos base)) baseExponent))) :
+    BinarySingleNaN.binary_round_aux (prec := prec) (emax := emax) rounding sign
+      (Zpos scaled) scaledExponent BinarySingleNaN.loc_Exact =
+    BinarySingleNaN.binary_round_aux (prec := prec) (emax := emax) rounding sign
+      (Zpos base) baseExponent BinarySingleNaN.loc_Exact := by
+  unfold BinarySingleNaN.binary_round_aux
+  rw [ieee_shr_fexp_scaled prec emax base scaled baseExponent scaledExponent shift scale exponents aligned]
+
+private theorem ieee_round_aligned (prec emax : Z) (rounding : mode) (sign : Bool)
+    (mantissa : positive) (exponent : Z)
+    (aligned : Zle exponent (fexp prec emax (Zadd (Zpos (Digits.digits2_pos mantissa)) exponent))) :
+    BinarySingleNaN.binary_round (prec := prec) (emax := emax) rounding sign mantissa exponent =
+      BinarySingleNaN.binary_round_aux (prec := prec) (emax := emax)
+        rounding sign (Zpos mantissa) exponent BinarySingleNaN.loc_Exact := by
+  have alignment : BinarySingleNaN.shl_align_fexp (prec := prec) (emax := emax) mantissa exponent =
+      (mantissa, exponent) := by
+    change (match Zsub (fexp prec emax (Zadd (Zpos (Digits.digits2_pos mantissa)) exponent)) exponent with
+      | .Zneg amount => _ | _ => _) = _
+    cases difference : Zsub (fexp prec emax (Zadd (Zpos (Digits.digits2_pos mantissa)) exponent)) exponent with
+    | Z0 => rfl
+    | Zpos amount => rfl
+    | Zneg amount =>
+        have integerDifference := congrArg intOfZ difference
+        rw [ieee_manual_sub_int] at integerDifference
+        change _ = -(posToNat amount : Int) at integerDifference
+        have positive := posToNat_positive amount
+        change intOfZ exponent ≤ intOfZ _ at aligned
+        omega
+  unfold BinarySingleNaN.binary_round
+  rw [alignment]
+
+end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.IEEE754
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem ieee_align_nat (mantissa : positive) (exponent target : Z)
+    (ordered : Zle target exponent) :
+    posToNat (BinarySingleNaN.shl_align mantissa exponent target).1 =
+      posToNat mantissa * 2 ^ (intOfZ exponent - intOfZ target).toNat := by
+  change posToNat (match Zsub target exponent with
+    | .Zneg amount => (ZArith.Zpower.shift_pos amount mantissa, target)
+    | _ => (mantissa, exponent)).1 = _
+  cases difference : Zsub target exponent with
+  | Z0 =>
+      have integerDifference := congrArg intOfZ difference
+      rw [ieee_manual_sub_int] at integerDifference
+      change _ = 0 at integerDifference
+      rw [show intOfZ exponent - intOfZ target = 0 by omega]
+      simp
+  | Zpos amount =>
+      have integerDifference := congrArg intOfZ difference
+      rw [ieee_manual_sub_int] at integerDifference
+      change _ = (posToNat amount : Int) at integerDifference
+      have positive := posToNat_positive amount
+      change intOfZ target ≤ intOfZ exponent at ordered
+      omega
+  | Zneg amount =>
+      have integerDifference := congrArg intOfZ difference
+      rw [ieee_manual_sub_int] at integerDifference
+      change _ = -(posToNat amount : Int) at integerDifference
+      change posToNat (posOfNat (posToNat mantissa * 2 ^ posToNat amount)) = _
+      rw [posToNat_posOfNat (Nat.mul_pos (posToNat_positive mantissa) (Nat.two_pow_pos _))]
+      congr 2
+      omega
+
+private theorem ieee_bofz_two {prec emax : Z}
+    [Prec_gt_0 prec] [Prec_lt_emax prec emax]
+    [Binary.BinaryNormalizeCertificate prec emax] :
+    BofZ (prec := prec) (emax := emax) Ztwo =
+      Binary.B754_finite false (posOfNat (2 ^ ((intOfZ prec).toNat - 1))) (Zsub Ztwo prec) := by
+  have precision : 0 < intOfZ prec := FLX.prec_gt_0 prec
+  have maximum : intOfZ prec < intOfZ emax := BinarySingleNaN.prec_lt_emax
+  let mantissa := posOfNat (2 ^ ((intOfZ prec).toNat - 1))
+  let exponent := Zsub Ztwo prec
+  have mantissaValue : posToNat mantissa = 2 ^ ((intOfZ prec).toNat - 1) :=
+    posToNat_posOfNat (Nat.two_pow_pos _)
+  have exponentValue : intOfZ exponent = 2 - intOfZ prec := ieee_manual_sub_int Ztwo prec
+  have target : fexp prec emax (Zadd (Zpos (Digits.digits2_pos (.xO .xH))) Z0) = exponent := by
+    apply intOfZ_injective
+    rw [ieee_manual_fexp_int, ieee_manual_add_int, exponentValue]
+    change max (2 + 0 - intOfZ prec) (3 - intOfZ emax - intOfZ prec) = 2 - intOfZ prec
+    omega
+  have canonical : fexp prec emax (Zadd (Zpos (Digits.digits2_pos mantissa)) exponent) = exponent := by
+    apply intOfZ_injective
+    rw [ieee_manual_fexp_int, ieee_manual_add_int, exponentValue]
+    change max ((posToNat (Digits.digits2_pos mantissa) : Int) + (2 - intOfZ prec) - intOfZ prec)
+      (3 - intOfZ emax - intOfZ prec) = 2 - intOfZ prec
+    rw [ieee_manual_digits_nat, mantissaValue, Nat.log2_two_pow]
+    omega
+  have bounded : Zle exponent (Zsub emax prec) := by
+    change intOfZ exponent ≤ intOfZ (Zsub emax prec)
+    rw [exponentValue, ieee_manual_sub_int]
+    omega
+  have rounded : BinarySingleNaN.binary_round (prec := prec) (emax := emax)
+      mode_NE false (.xO .xH) Z0 = BinarySingleNaN.S754_finite false mantissa exponent := by
+    by_cases oneBit : intOfZ prec = 1
+    · have mantissaOne : mantissa = .xH := by
+        apply posToNat_injective
+        rw [mantissaValue, oneBit]
+        rfl
+      have exponentOne : exponent = Zone := by
+        apply intOfZ_injective
+        rw [exponentValue, oneBit]
+        rfl
+      have alignment : BinarySingleNaN.shl_align_fexp (prec := prec) (emax := emax) (.xO .xH) Z0 =
+          (.xO .xH, Z0) := by
+        change BinarySingleNaN.shl_align (.xO .xH) Z0
+          (fexp prec emax (Zadd (Zpos (Digits.digits2_pos (.xO .xH))) Z0)) = _
+        rw [target, exponentOne]
+        rfl
+      have first : BinarySingleNaN.shr_fexp (prec := prec) (emax := emax)
+          (Zpos (.xO .xH)) Z0 BinarySingleNaN.loc_Exact =
+          (BinarySingleNaN.shr_record_of_loc (Zpos mantissa) BinarySingleNaN.loc_Exact, exponent) := by
+        change BinarySingleNaN.shr _ Z0
+          (Zsub (fexp prec emax (Zadd (Zpos (Digits.digits2_pos (.xO .xH))) Z0)) Z0) = _
+        rw [target, exponentOne, mantissaOne]
+        rfl
+      have second : BinarySingleNaN.shr_fexp (prec := prec) (emax := emax)
+          (Zpos mantissa) exponent BinarySingleNaN.loc_Exact =
+          (BinarySingleNaN.shr_record_of_loc (Zpos mantissa) BinarySingleNaN.loc_Exact, exponent) := by
+        change BinarySingleNaN.shr _ exponent
+          (Zsub (fexp prec emax (Zadd (Zpos (Digits.digits2_pos mantissa)) exponent)) exponent) = _
+        rw [canonical, show Zsub exponent exponent = Z0 by
+          apply intOfZ_injective
+          rw [ieee_manual_sub_int]
+          change intOfZ exponent - intOfZ exponent = 0
+          omega]
+        rfl
+      unfold BinarySingleNaN.binary_round
+      rw [alignment]
+      dsimp only
+      unfold BinarySingleNaN.binary_round_aux
+      rw [first]
+      change (match BinarySingleNaN.shr_m (BinarySingleNaN.shr_fexp (prec := prec) (emax := emax)
+          (Zpos mantissa) exponent BinarySingleNaN.loc_Exact).1 with
+        | .Z0 => BinarySingleNaN.S754_zero false
+        | .Zpos result => BinarySingleNaN.binary_fit_aux (prec := prec) (emax := emax)
+          mode_NE false result (BinarySingleNaN.shr_fexp (prec := prec) (emax := emax)
+            (Zpos mantissa) exponent BinarySingleNaN.loc_Exact).2
+        | .Zneg _ => BinarySingleNaN.S754_nan) = _
+      rw [second]
+      change (if Zle_bool exponent (Zsub emax prec) then _ else _) = _
+      have test : Zle_bool exponent (Zsub emax prec) = true := if_pos bounded
+      rw [test]
+      rfl
+    · have exponentNonpositive : Zle exponent Z0 := by
+        change intOfZ exponent ≤ 0
+        rw [exponentValue]
+        omega
+      have alignment : BinarySingleNaN.shl_align_fexp (prec := prec) (emax := emax) (.xO .xH) Z0 =
+          (mantissa, exponent) := by
+        change BinarySingleNaN.shl_align (.xO .xH) Z0
+          (fexp prec emax (Zadd (Zpos (Digits.digits2_pos (.xO .xH))) Z0)) = _
+        rw [target]
+        apply Prod.ext
+        · apply posToNat_injective
+          rw [ieee_align_nat _ _ _ exponentNonpositive, mantissaValue, exponentValue]
+          change 2 * 2 ^ (0 - (2 - intOfZ prec)).toNat = 2 ^ ((intOfZ prec).toNat - 1)
+          have power : (intOfZ prec).toNat - 1 = (0 - (2 - intOfZ prec)).toNat + 1 := by omega
+          rw [power, Nat.pow_succ, Nat.mul_comm]
+        · exact ieee_manual_align_exponent _ _ _ exponentNonpositive
+      unfold BinarySingleNaN.binary_round
+      rw [alignment]
+      exact ieee_manual_round_canonical mode_NE false mantissa exponent canonical bounded
+  apply ieee_manual_lift_finite
+  change BinarySingleNaN.SF2B (BinarySingleNaN.binary_round mode_NE false (.xO .xH) Z0) = _
+  rw [rounded]
+  rfl
+
+end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.IEEE754
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem ieee_double_mult_round {prec emax : Z}
+    [Prec_gt_0 prec] [Prec_lt_emax prec emax]
+    (rounding : mode) (sign : Bool) (mantissa : positive) (exponent : Z)
+    (valid : Binary.bounded (prec := prec) (emax := emax) mantissa exponent = true) :
+    BinarySingleNaN.binary_round_aux (prec := prec) (emax := emax) rounding sign
+      (Zpos (PArith.BinPos.Pos.mul mantissa (posOfNat (2 ^ ((intOfZ prec).toNat - 1)))))
+      (Zadd exponent (Zsub Ztwo prec)) BinarySingleNaN.loc_Exact =
+    BinarySingleNaN.binary_round_aux (prec := prec) (emax := emax) rounding sign
+      (Zpos (.xO mantissa)) exponent BinarySingleNaN.loc_Exact := by
+  have precision : 0 < intOfZ prec := FLX.prec_gt_0 prec
+  have canonical : fexp prec emax (Zadd (Zpos (Digits.digits2_pos mantissa)) exponent) = exponent :=
+    ZArith.Zbool.Zeq_bool_eq _ _ (Bool.and_eq_true_iff.mp valid).1
+  have doubleDigits : intOfZ (Zpos (Digits.digits2_pos (.xO mantissa))) =
+      intOfZ (Zpos (Digits.digits2_pos mantissa)) + 1 := by
+    change (posToNat (PArith.BinPos.Pos.succ (Digits.digits2_pos mantissa)) : Int) = _
+    rw [PArith.BinPos.Pos.posToNat_succ]
+    rfl
+  have aligned : Zle exponent (fexp prec emax (Zadd (Zpos (Digits.digits2_pos (.xO mantissa))) exponent)) := by
+    have previous := congrArg intOfZ canonical
+    rw [ieee_manual_fexp_int, ieee_manual_add_int] at previous
+    change intOfZ exponent ≤ intOfZ _
+    rw [ieee_manual_fexp_int, ieee_manual_add_int, doubleDigits]
+    omega
+  by_cases oneBit : intOfZ prec = 1
+  · have oneMantissa : posOfNat (2 ^ ((intOfZ prec).toNat - 1)) = .xH := by rw [oneBit]; rfl
+    have product : PArith.BinPos.Pos.mul mantissa .xH = mantissa := by
+      apply posToNat_injective
+      change posToNat (posOfNat (posToNat mantissa * 1)) = posToNat mantissa
+      rw [Nat.mul_one, posToNat_posOfNat (posToNat_positive mantissa)]
+    have exponentOne : Zsub Ztwo prec = Zone := by
+      apply intOfZ_injective
+      rw [ieee_manual_sub_int, oneBit]
+      rfl
+    rw [oneMantissa, product, exponentOne]
+    have alignedOne : Zle (Zadd exponent Zone)
+        (fexp prec emax (Zadd (Zpos (Digits.digits2_pos mantissa)) (Zadd exponent Zone))) := by
+      change intOfZ (Zadd exponent Zone) ≤ intOfZ _
+      rw [ieee_manual_fexp_int, ieee_manual_add_int, ieee_manual_add_int, oneBit]
+      simp only [ieee_manual_add_int]
+      have digitsPositive := posToNat_positive (Digits.digits2_pos mantissa)
+      change intOfZ exponent + 1 ≤
+        max ((posToNat (Digits.digits2_pos mantissa) : Int) + (intOfZ exponent + 1) - 1)
+          (3 - intOfZ emax - 1)
+      omega
+    exact (ieee_round_aux_scaled prec emax rounding sign mantissa (.xO mantissa)
+      (Zadd exponent Zone) exponent 1 (by change 2 * posToNat mantissa = posToNat mantissa * 2; omega)
+      (by rw [ieee_manual_add_int]; rfl) alignedOne).symm
+  · apply ieee_round_aux_scaled prec emax rounding sign (.xO mantissa)
+      (PArith.BinPos.Pos.mul mantissa (posOfNat (2 ^ ((intOfZ prec).toNat - 1))))
+      exponent (Zadd exponent (Zsub Ztwo prec)) ((intOfZ prec).toNat - 2)
+    · have product : posToNat (PArith.BinPos.Pos.mul mantissa
+          (posOfNat (2 ^ ((intOfZ prec).toNat - 1)))) =
+          posToNat mantissa * 2 ^ ((intOfZ prec).toNat - 1) := by
+        change posToNat (posOfNat (posToNat mantissa * posToNat (posOfNat _))) = _
+        rw [posToNat_posOfNat (Nat.mul_pos (posToNat_positive mantissa)
+          (posToNat_positive _)), posToNat_posOfNat (Nat.two_pow_pos _)]
+      rw [product]
+      have power : (intOfZ prec).toNat - 1 = ((intOfZ prec).toNat - 2) + 1 := by omega
+      rw [power, Nat.pow_succ]
+      change posToNat mantissa * (2 ^ ((intOfZ prec).toNat - 2) * 2) =
+        (2 * posToNat mantissa) * 2 ^ ((intOfZ prec).toNat - 2)
+      simp only [Nat.mul_assoc, Nat.mul_comm, Nat.mul_left_comm]
+    · rw [ieee_manual_add_int, ieee_manual_sub_int]
+      change intOfZ exponent = intOfZ exponent + (2 - intOfZ prec) + _
+      omega
+    · exact aligned
+
+theorem Bmult2_Bplus :
+    ∀ {prec emax : Z} [Prec_gt_0 prec] [Prec_lt_emax prec emax]
+      [Binary.BinaryNormalizeCertificate prec emax],
+      Bmult2_BplusStatement (prec := prec) (emax := emax) := by
+  intro prec emax precision maximum certificate plusNan multNan rounding value sameNan
+  have two := ieee_bofz_two (prec := prec) (emax := emax)
+  have twoValid := BofZ_result_obligation_proof (prec := prec) (emax := emax) Ztwo
+  have twoFinite : Binary.is_finite (BofZ (prec := prec) (emax := emax) Ztwo) = true := by
+    rw [two]
+    rfl
+  rcases value with ⟨value, valid⟩
+  cases value with
+  | B754_zero sign => rw [two]; cases sign <;> cases rounding <;> rfl
+  | B754_infinity sign => rw [two]; cases sign <;> rfl
+  | B754_nan sign payload =>
+      have providers := sameNan ⟨.B754_nan sign payload, valid⟩ ⟨_, twoValid⟩ rfl twoFinite
+      dsimp only at providers
+      change Binary.BSN2B _ BinarySingleNaN.B754_nan = _
+      unfold Binary.Bmult
+      rw [two]
+      change Binary.build_nan ⟨(plusNan (.B754_nan sign payload) (.B754_nan sign payload)).1, _⟩ =
+        Binary.build_nan ⟨(multNan (.B754_nan sign payload)
+          (.B754_finite false (posOfNat (2 ^ ((intOfZ prec).toNat - 1))) (Zsub Ztwo prec))).1, _⟩
+      rw [two] at providers
+      exact congrArg (fun result : NaNResult prec emax => Binary.build_nan ⟨result.1, result.2.1⟩) providers
+  | B754_finite sign mantissa exponent =>
+      have sameExponent : ZArith.BinInt.Z.min exponent exponent = exponent := if_pos (Int.le_refl _)
+      have sameAlignment : BinarySingleNaN.shl_align mantissa exponent exponent = (mantissa, exponent) := by
+        change (match Zsub exponent exponent with | .Zneg _ => _ | _ => _) = _
+        rw [show Zsub exponent exponent = Z0 by
+          apply intOfZ_injective
+          rw [ieee_manual_sub_int]
+          change intOfZ exponent - intOfZ exponent = 0
+          omega]
+      have doubleMantissa : BinarySingleNaN.Fplus_naive sign mantissa exponent sign mantissa exponent exponent =
+          Zaux.cond_Zopp sign (Zpos (.xO mantissa)) := by
+        change Zadd (Zaux.cond_Zopp sign (Zpos (BinarySingleNaN.shl_align mantissa exponent exponent).1))
+          (Zaux.cond_Zopp sign (Zpos (BinarySingleNaN.shl_align mantissa exponent exponent).1)) = _
+        rw [sameAlignment]
+        apply intOfZ_injective
+        cases sign with
+        | false =>
+            change intOfZ (zOfInt ((posToNat mantissa : Int) + posToNat mantissa)) =
+              ((2 * posToNat mantissa : Nat) : Int)
+            rw [intOfZ_zOfInt]
+            omega
+        | true =>
+            change intOfZ (zOfInt (intOfZ (zOfInt (-(posToNat mantissa : Int))) +
+              intOfZ (zOfInt (-(posToNat mantissa : Int))))) =
+              intOfZ (zOfInt (-((2 * posToNat mantissa : Nat) : Int)))
+            simp only [intOfZ_zOfInt]
+            omega
+      have doubleDigits : intOfZ (Zpos (Digits.digits2_pos (.xO mantissa))) =
+          intOfZ (Zpos (Digits.digits2_pos mantissa)) + 1 := by
+        change (posToNat (PArith.BinPos.Pos.succ (Digits.digits2_pos mantissa)) : Int) = _
+        rw [PArith.BinPos.Pos.posToNat_succ]
+        rfl
+      have canonical : fexp prec emax (Zadd (Zpos (Digits.digits2_pos mantissa)) exponent) = exponent :=
+        ZArith.Zbool.Zeq_bool_eq _ _ (Bool.and_eq_true_iff.mp valid).1
+      have aligned : Zle exponent (fexp prec emax (Zadd (Zpos (Digits.digits2_pos (.xO mantissa))) exponent)) := by
+        have previous := congrArg intOfZ canonical
+        rw [ieee_manual_fexp_int, ieee_manual_add_int] at previous
+        change intOfZ exponent ≤ intOfZ _
+        rw [ieee_manual_fexp_int, ieee_manual_add_int, doubleDigits]
+        omega
+      have normalized : BinarySingleNaN.binary_normalize (prec := prec) (emax := emax) rounding
+          (Zaux.cond_Zopp sign (Zpos (.xO mantissa))) exponent
+          (match rounding with | .mode_DN => true | _ => false) =
+          BinarySingleNaN.SF2B (BinarySingleNaN.binary_round (prec := prec) (emax := emax)
+            rounding sign (.xO mantissa) exponent) := by
+        cases sign with
+        | false => rfl
+        | true =>
+            have negative : Zaux.cond_Zopp true (Zpos (.xO mantissa)) = Zneg (.xO mantissa) := by
+              apply intOfZ_injective
+              exact intOfZ_zOfInt _
+            rw [negative]
+            rfl
+      have plusRaw : BinarySingleNaN.Bplus (prec := prec) (emax := emax) rounding
+          (.B754_finite sign mantissa exponent) (.B754_finite sign mantissa exponent) =
+          BinarySingleNaN.SF2B (BinarySingleNaN.binary_round_aux (prec := prec) (emax := emax)
+            rounding sign (Zpos (.xO mantissa)) exponent BinarySingleNaN.loc_Exact) := by
+        change BinarySingleNaN.binary_normalize rounding
+          (BinarySingleNaN.Fplus_naive sign mantissa exponent sign mantissa exponent
+            (ZArith.BinInt.Z.min exponent exponent)) (ZArith.BinInt.Z.min exponent exponent) _ = _
+        rw [sameExponent, doubleMantissa]
+        exact normalized.trans (congrArg (BinarySingleNaN.SF2B (prec := prec) (emax := emax))
+          (ieee_round_aligned prec emax rounding sign _ _ aligned))
+      have multRaw : BinarySingleNaN.Bmult (prec := prec) (emax := emax) rounding
+          (.B754_finite sign mantissa exponent)
+          (.B754_finite false (posOfNat (2 ^ ((intOfZ prec).toNat - 1))) (Zsub Ztwo prec)) =
+          BinarySingleNaN.SF2B (BinarySingleNaN.binary_round_aux (prec := prec) (emax := emax)
+            rounding sign (Zpos (.xO mantissa)) exponent BinarySingleNaN.loc_Exact) := by
+        unfold BinarySingleNaN.Bmult
+        simp only [Bool.xor_false]
+        rw [ieee_double_mult_round rounding sign mantissa exponent valid]
+      have notNan : BinarySingleNaN.is_nan
+          (BinarySingleNaN.Bplus (prec := prec) (emax := emax) rounding
+            (.B754_finite sign mantissa exponent) (.B754_finite sign mantissa exponent)) = false :=
+        certificate.is_nan_binary_normalize rounding _ _ _
+      rw [plusRaw] at notNan
+      rw [two]
+      unfold Binary.Bplus Binary.Bmult
+      change Binary.BSN2B _ (BinarySingleNaN.Bplus rounding
+        (.B754_finite sign mantissa exponent) (.B754_finite sign mantissa exponent)) =
+        Binary.BSN2B _ (BinarySingleNaN.Bmult rounding (.B754_finite sign mantissa exponent)
+          (.B754_finite false (posOfNat (2 ^ ((intOfZ prec).toNat - 1))) (Zsub Ztwo prec)))
+      rw [plusRaw, multRaw]
+      rw [ieee_lift_non_nan _ _ notNan, ieee_lift_non_nan _ _ notNan]
+
+end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.IEEE754
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Flocq.IEEE754.BinarySingleNaN.IEEEManualRounding
+open ManualValidity
+open CompCert4Lean.Flocq
+
+private theorem ieee_record_reconstruct (record : BinarySingleNaN.shr_record) :
+    BinarySingleNaN.shr_record_of_loc (BinarySingleNaN.shr_m record)
+      (BinarySingleNaN.loc_of_shr_record record) = record := by
+  rcases record with ⟨mantissa, rounding, sticky⟩
+  cases rounding <;> cases sticky <;> rfl
+
+private theorem ieee_shr_fexp_partial {prec emax : Z} [Prec_gt_0 prec]
+    (mantissa exponent intermediate : Z) (position : BinarySingleNaN.location) (count : Nat)
+    (nonnegative : Zle Z0 mantissa)
+    (exponents : intOfZ intermediate = intOfZ exponent + count)
+    (bounded : Zle intermediate (fexp prec emax (Zadd (Digits.Zdigits2 mantissa) exponent))) :
+    let record := Zaux.iter_nat BinarySingleNaN.shr_1 count
+      (BinarySingleNaN.shr_record_of_loc mantissa position)
+    BinarySingleNaN.shr_fexp (prec := prec) (emax := emax)
+        (BinarySingleNaN.shr_m record) intermediate (BinarySingleNaN.loc_of_shr_record record) =
+      BinarySingleNaN.shr_fexp (prec := prec) (emax := emax) mantissa exponent position := by
+  let record := Zaux.iter_nat BinarySingleNaN.shr_1 count
+    (BinarySingleNaN.shr_record_of_loc mantissa position)
+  let target := fexp prec emax (Zadd (Digits.Zdigits2 mantissa) exponent)
+  have recordMantissa : Binary.shr_m (BinarySingleNaN.shr_record_of_loc mantissa position) = mantissa :=
+    BinarySingleNaN.shr_m_shr_record_of_loc mantissa position
+  have width := binary_width_shr_iter (BinarySingleNaN.shr_record_of_loc mantissa position)
+    count (by rw [recordMantissa]; exact nonnegative)
+  rw [recordMantissa] at width
+  have precision := FLX.prec_gt_0 prec
+  change 0 < intOfZ prec at precision
+  have targetValue : intOfZ target =
+      max ((binary_width mantissa : Int) + intOfZ exponent - intOfZ prec)
+        (3 - intOfZ emax - intOfZ prec) := by
+    rw [ieee_manual_fexp_int, ieee_manual_add_int, binary_width_digits]
+  have targetSame : fexp prec emax (Zadd (Digits.Zdigits2 (BinarySingleNaN.shr_m record)) intermediate) =
+      target := by
+    apply intOfZ_injective
+    rw [ieee_manual_fexp_int, ieee_manual_add_int, binary_width_digits, targetValue]
+    change max ((binary_width (BinarySingleNaN.shr_m record) : Int) + intOfZ intermediate -
+      intOfZ prec) (3 - intOfZ emax - intOfZ prec) = _
+    rw [show binary_width (BinarySingleNaN.shr_m record) = binary_width mantissa - count from width.2]
+    change intOfZ intermediate ≤ intOfZ target at bounded
+    rw [targetValue] at bounded
+    omega
+  have afterNonnegative : Zle Z0 (Zsub target intermediate) := by
+    change 0 ≤ intOfZ (Zsub target intermediate)
+    rw [ieee_manual_sub_int]
+    exact Int.sub_nonneg_of_le bounded
+  have beforeNonnegative : Zle Z0 (Zsub target exponent) := by
+    change 0 ≤ intOfZ (Zsub target exponent)
+    rw [ieee_manual_sub_int]
+    change intOfZ intermediate ≤ intOfZ target at bounded
+    omega
+  change BinarySingleNaN.shr (BinarySingleNaN.shr_record_of_loc (BinarySingleNaN.shr_m record)
+    (BinarySingleNaN.loc_of_shr_record record)) intermediate
+    (Zsub (fexp prec emax (Zadd (Digits.Zdigits2 (BinarySingleNaN.shr_m record)) intermediate)) intermediate) =
+    BinarySingleNaN.shr (BinarySingleNaN.shr_record_of_loc mantissa position) exponent (Zsub target exponent)
+  rw [ieee_record_reconstruct, targetSame, BinarySingleNaN.shr_nat _ _ _ afterNonnegative,
+    BinarySingleNaN.shr_nat _ _ _ beforeNonnegative]
+  apply Prod.ext
+  · have counts : ZArith.BinInt.Z.to_nat (Zsub target exponent) =
+        ZArith.BinInt.Z.to_nat (Zsub target intermediate) + count := by
+      change (intOfZ (Zsub target exponent)).toNat =
+        (intOfZ (Zsub target intermediate)).toNat + count
+      rw [ieee_manual_sub_int, ieee_manual_sub_int]
+      change intOfZ intermediate ≤ intOfZ target at bounded
+      omega
+    dsimp only
+    rw [counts, Zaux.iter_nat_plus]
+  · apply intOfZ_injective
+    simp only [ieee_manual_add_int, ieee_manual_sub_int]
+    omega
+
+private theorem ieee_binary_new_location (divisor remainder : Z) :
+    Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.new_location divisor remainder =
+      Calc.Bracket.new_location divisor remainder BinarySingleNaN.loc_Exact := by
+  unfold Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.new_location Calc.Bracket.new_location
+  split
+  · change (if ZArith.Zbool.Zeq_bool remainder Z0 then BinarySingleNaN.loc_Exact
+      else BinarySingleNaN.loc_Inexact (ZArith.BinInt.Z.compare (Zmul Ztwo remainder) divisor)) =
+      (if ZArith.Zbool.Zeq_bool remainder Z0 then BinarySingleNaN.loc_Exact else BinarySingleNaN.loc_Inexact
+        (match ZArith.BinInt.Z.compare (Zmul Ztwo remainder) divisor with | .Lt => .Lt | .Eq => .Eq | .Gt => .Gt))
+    split
+    · rfl
+    · cases ZArith.BinInt.Z.compare (Zmul Ztwo remainder) divisor <;> rfl
+  · unfold Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.new_location_odd Calc.Bracket.new_location_odd
+    split
+    · rfl
+    · change BinarySingleNaN.loc_Inexact
+          (match ZArith.BinInt.Z.compare (Zadd (Zmul Ztwo remainder) Zone) divisor with
+          | .Eq => .Lt | choice => choice) =
+        BinarySingleNaN.loc_Inexact
+          (match ZArith.BinInt.Z.compare (Zadd (Zmul Ztwo remainder) Zone) divisor with
+          | .Lt => .Lt | .Eq => .Lt | .Gt => .Gt)
+      cases ZArith.BinInt.Z.compare (Zadd (Zmul Ztwo remainder) Zone) divisor <;> rfl
+
+private theorem ieee_division_record (mantissa : positive) (count : Nat) :
+    BinarySingleNaN.shr_record_of_loc
+      (ZArith.BinInt.Z.div (Zpos mantissa) (zOfInt ((2 : Int) ^ count)))
+      (Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.new_location (zOfInt ((2 : Int) ^ count))
+        (ZArith.BinInt.Z.modulo (Zpos mantissa) (zOfInt ((2 : Int) ^ count)))) =
+      Zaux.iter_nat BinarySingleNaN.shr_1 count
+        (BinarySingleNaN.shr_record_of_loc (Zpos mantissa) BinarySingleNaN.loc_Exact) := by
+  rw [ieee_binary_new_location]
+  cases count with
+  | zero =>
+      rw [show (2 : Int) ^ 0 = 1 from rfl]
+      have quotient : ZArith.BinInt.Z.div (Zpos mantissa) (zOfInt 1) = Zpos mantissa := by
+        exact (manual_source_div (Zpos mantissa) 1 (by decide)).trans
+          (by rw [Int.ediv_one, zOfInt_intOfZ])
+      have remainder : ZArith.BinInt.Z.modulo (Zpos mantissa) (zOfInt 1) = Z0 := by
+        exact (manual_source_mod (Zpos mantissa) 1 (by decide)).trans
+          (by rw [Int.emod_one]; rfl)
+      rw [quotient, remainder]
+      rfl
+  | succ count =>
+      exact (manual_iter_record (count + 1) (by omega)
+        (BinarySingleNaN.shr_record_of_loc (Zpos mantissa) BinarySingleNaN.loc_Exact)
+        (Int.natCast_nonneg _)).symm
+
+private theorem ieee_shr_fexp_common (prec emax : Z)
+    (base left right : positive) (leftExponent rightExponent : Z)
+    (leftShift rightShift : Nat)
+    (leftScale : posToNat left = posToNat base * 2 ^ leftShift)
+    (rightScale : posToNat right = posToNat base * 2 ^ rightShift)
+    (exponents : intOfZ leftExponent + leftShift = intOfZ rightExponent + rightShift)
+    (leftAligned : Zle leftExponent
+      (fexp prec emax (Zadd (Zpos (Digits.digits2_pos left)) leftExponent)))
+    (rightAligned : Zle rightExponent
+      (fexp prec emax (Zadd (Zpos (Digits.digits2_pos right)) rightExponent))) :
+    BinarySingleNaN.shr_fexp (prec := prec) (emax := emax)
+        (Zpos left) leftExponent BinarySingleNaN.loc_Exact =
+      BinarySingleNaN.shr_fexp (prec := prec) (emax := emax)
+        (Zpos right) rightExponent BinarySingleNaN.loc_Exact := by
+  let common := posOfNat (posToNat base * 2 ^ (leftShift + rightShift))
+  let commonExponent := zOfInt (intOfZ leftExponent - rightShift)
+  have commonValue : posToNat common = posToNat base * 2 ^ (leftShift + rightShift) :=
+    posToNat_posOfNat (Nat.mul_pos (posToNat_positive base) (Nat.two_pow_pos _))
+  have leftEquality := ieee_shr_fexp_scaled prec emax left common leftExponent commonExponent rightShift
+    (by rw [commonValue, leftScale, Nat.pow_add, Nat.mul_assoc])
+    (by change _ = intOfZ (zOfInt _) + _; rw [intOfZ_zOfInt]; omega) leftAligned
+  have rightEquality := ieee_shr_fexp_scaled prec emax right common rightExponent commonExponent leftShift
+    (by rw [commonValue, rightScale, Nat.pow_add]; simp only [Nat.mul_assoc, Nat.mul_comm, Nat.mul_left_comm])
+    (by change _ = intOfZ (zOfInt _) + _; rw [intOfZ_zOfInt]; omega) rightAligned
+  exact leftEquality.symm.trans rightEquality
+
+private theorem ieee_scaled_digits (base scaled : positive) (shift : Nat)
+    (scale : posToNat scaled = posToNat base * 2 ^ shift) :
+    intOfZ (Digits.Zdigits2 (Zpos scaled)) = intOfZ (Digits.Zdigits2 (Zpos base)) + shift := by
+  change (posToNat (Digits.digits2_pos scaled) : Int) =
+    (posToNat (Digits.digits2_pos base) : Int) + shift
+  rw [ieee_manual_digits_nat, ieee_manual_digits_nat, scale,
+    ieee_manual_log2_shift _ _ (posToNat_positive base)]
+  omega
+
+private theorem ieee_inverse_round {prec emax : Z} [Prec_gt_0 prec] [Prec_lt_emax prec emax]
+    (rounding : mode) (sign : Bool) (mantissa : positive) (exponent divisorExponent : Z) :
+    let divisor := Bexact_inverse_mantissa (prec := prec)
+    let result := BinarySingleNaN.SFdiv_core_binary prec emax
+      (Zpos mantissa) exponent (Zpos divisor) divisorExponent
+    BinarySingleNaN.binary_round_aux (prec := prec) (emax := emax)
+        rounding sign result.1.1 result.1.2 result.2 =
+      BinarySingleNaN.binary_round_aux (prec := prec) (emax := emax) rounding sign
+        (Zpos (PArith.BinPos.Pos.mul mantissa divisor))
+        (Zadd exponent (Zsub (Zopp divisorExponent) (Zmul (Zsub prec Zone) Ztwo)))
+        BinarySingleNaN.loc_Exact := by
+  let divisor := Bexact_inverse_mantissa (prec := prec)
+  let half := (intOfZ prec - 1).toNat
+  have precision := FLX.prec_gt_0 prec
+  change 0 < intOfZ prec at precision
+  have halfValue : (half : Int) = intOfZ prec - 1 := by omega
+  have divisorValue : Zpos divisor = zOfInt ((2 : Int) ^ half) := by
+    have value := Bexact_inverse_mantissa_value (prec := prec)
+    change Zpos divisor = Zpower Ztwo (Zsub prec Zone) at value
+    rw [value]
+    change (if intOfZ (Zsub prec Zone) < 0 then Z0
+      else zOfInt ((2 : Int) ^ (intOfZ (Zsub prec Zone)).toNat)) = _
+    rw [ieee_manual_sub_int]
+    change (if intOfZ prec - 1 < 0 then Z0 else zOfInt ((2 : Int) ^ half)) = _
+    rw [if_neg (by omega)]
+  have divisorScale : posToNat divisor = 2 ^ half := by
+    have value := congrArg intOfZ divisorValue
+    rw [intOfZ_zOfInt] at value
+    change (posToNat divisor : Int) = (2 : Int) ^ half at value
+    exact_mod_cast value
+  have divisorDigits : Digits.Zdigits2 (Zpos divisor) = prec :=
+    Bexact_inverse_mantissa_digits2_pos (prec := prec) (emax := emax)
+  let delta := Zsub exponent divisorExponent
+  let magnitude := Zsub (Zadd (Digits.Zdigits2 (Zpos mantissa)) exponent)
+    (Zadd (Digits.Zdigits2 (Zpos divisor)) divisorExponent)
+  let divisionExponent := ZArith.BinInt.Z.min (fexp prec emax magnitude) delta
+  have deltaValue : intOfZ delta = intOfZ exponent - intOfZ divisorExponent := ieee_manual_sub_int _ _
+  have divisionValue : intOfZ divisionExponent =
+      min (max (intOfZ (Digits.Zdigits2 (Zpos mantissa)) + intOfZ delta - 2 * intOfZ prec)
+        (3 - intOfZ emax - intOfZ prec)) (intOfZ delta) := by
+    have minimum (left right : Z) : intOfZ (ZArith.BinInt.Z.min left right) = min (intOfZ left) (intOfZ right) := by
+      unfold ZArith.BinInt.Z.min
+      split <;> omega
+    rw [minimum, ieee_manual_fexp_int]
+    dsimp only [magnitude]
+    rw [ieee_manual_sub_int, ieee_manual_add_int, ieee_manual_add_int, divisorDigits]
+    congr 2
+    omega
+  let shift := (intOfZ delta - intOfZ divisionExponent).toNat
+  have shiftValue : (shift : Int) = intOfZ delta - intOfZ divisionExponent := by
+    rw [divisionValue]
+    dsimp only [shift]
+    rw [divisionValue]
+    omega
+  let shifted := posOfNat (posToNat mantissa * 2 ^ shift)
+  have shiftedScale : posToNat shifted = posToNat mantissa * 2 ^ shift :=
+    posToNat_posOfNat (Nat.mul_pos (posToNat_positive mantissa) (Nat.two_pow_pos _))
+  let shiftedExponent := zOfInt (intOfZ divisionExponent - half)
+  have shiftedExponentValue : intOfZ shiftedExponent = intOfZ divisionExponent - half := intOfZ_zOfInt _
+  let product := PArith.BinPos.Pos.mul mantissa divisor
+  let productExponent := Zadd exponent (Zsub (Zopp divisorExponent) (Zmul (Zsub prec Zone) Ztwo))
+  have productExponentValue : intOfZ productExponent = intOfZ delta - 2 * half := by
+    simp only [productExponent, Zadd, Zsub, Zopp, Zmul, ZArith.BinInt.Z.add,
+      ZArith.BinInt.Z.sub, ZArith.BinInt.Z.opp, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+    change intOfZ exponent + (-intOfZ divisorExponent - (intOfZ prec - 1) * 2) = _
+    omega
+  have productScale : posToNat product = posToNat mantissa * 2 ^ half := by
+    change posToNat (posOfNat (posToNat mantissa * posToNat divisor)) = _
+    rw [posToNat_posOfNat (Nat.mul_pos (posToNat_positive _) (posToNat_positive _)), divisorScale]
+  have shiftedDigits := ieee_scaled_digits mantissa shifted shift shiftedScale
+  have productDigits := ieee_scaled_digits mantissa product half productScale
+  have mantissaDigitsPositive : 0 < intOfZ (Digits.Zdigits2 (Zpos mantissa)) :=
+    Int.natCast_pos.mpr (posToNat_positive _)
+  have divisionBelow : Zle divisionExponent
+      (fexp prec emax (Zadd (Digits.Zdigits2 (Zpos shifted)) shiftedExponent)) := by
+    change intOfZ divisionExponent ≤ intOfZ _
+    rw [ieee_manual_fexp_int, ieee_manual_add_int, shiftedDigits, shiftedExponentValue]
+    rw [divisionValue] at shiftValue ⊢
+    omega
+  have shiftedAligned : Zle shiftedExponent
+      (fexp prec emax (Zadd (Digits.Zdigits2 (Zpos shifted)) shiftedExponent)) := by
+    change intOfZ shiftedExponent ≤ intOfZ _
+    exact Int.le_trans (by rw [shiftedExponentValue]; omega) divisionBelow
+  have productAligned : Zle productExponent
+      (fexp prec emax (Zadd (Digits.Zdigits2 (Zpos product)) productExponent)) := by
+    change intOfZ productExponent ≤ intOfZ _
+    rw [ieee_manual_fexp_int, ieee_manual_add_int (Digits.Zdigits2 (Zpos product)) productExponent,
+      productDigits, productExponentValue]
+    omega
+  have common := ieee_shr_fexp_common prec emax mantissa shifted product shiftedExponent productExponent
+    shift half shiftedScale productScale (by rw [shiftedExponentValue, productExponentValue]; omega)
+    shiftedAligned productAligned
+  have partialShift := ieee_shr_fexp_partial (prec := prec) (emax := emax)
+    (Zpos shifted) shiftedExponent divisionExponent BinarySingleNaN.loc_Exact half
+    (Int.natCast_nonneg _) (by rw [shiftedExponentValue]; omega) divisionBelow
+  have shiftInput : (match Zsub delta divisionExponent with
+      | .Zpos _ => ZArith.BinInt.Z.shiftl (Zpos mantissa) (Zsub delta divisionExponent)
+      | .Z0 => Zpos mantissa
+      | .Zneg _ => Z0) = Zpos shifted := by
+    have amountValue : intOfZ (Zsub delta divisionExponent) = (shift : Int) := by
+      rw [ieee_manual_sub_int]
+      omega
+    cases amount : Zsub delta divisionExponent with
+    | Z0 =>
+        have zero : shift = 0 := by rw [amount] at amountValue; change 0 = _ at amountValue; omega
+        apply intOfZ_injective
+        change (posToNat mantissa : Int) = (posToNat shifted : Int)
+        rw [shiftedScale, zero, Nat.pow_zero, Nat.mul_one]
+    | Zpos count =>
+        rw [amount] at amountValue
+        change (posToNat count : Int) = (shift : Int) at amountValue
+        change (if 0 ≤ (posToNat count : Int)
+          then zOfInt ((posToNat mantissa : Int) * (2 : Int) ^ posToNat count)
+          else _) = Zpos shifted
+        rw [if_pos (Int.natCast_nonneg _)]
+        apply intOfZ_injective
+        rw [intOfZ_zOfInt]
+        change _ = (posToNat shifted : Int)
+        rw [shiftedScale, show posToNat count = shift by omega, Int.natCast_mul, Int.natCast_pow]
+        rfl
+    | Zneg count =>
+        rw [amount] at amountValue
+        change -(posToNat count : Int) = (shift : Int) at amountValue
+        have positive := posToNat_positive count
+        omega
+  have core : BinarySingleNaN.SFdiv_core_binary prec emax
+      (Zpos mantissa) exponent (Zpos divisor) divisorExponent =
+      ((ZArith.BinInt.Z.div (Zpos shifted) (zOfInt ((2 : Int) ^ half)), divisionExponent),
+        Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.new_location (zOfInt ((2 : Int) ^ half))
+          (ZArith.BinInt.Z.modulo (Zpos shifted) (zOfInt ((2 : Int) ^ half)))) := by
+    change (((ZArith.BinInt.Z.div_eucl
+      (match Zsub delta divisionExponent with
+        | .Zpos _ => ZArith.BinInt.Z.shiftl (Zpos mantissa) (Zsub delta divisionExponent)
+        | .Z0 => Zpos mantissa | .Zneg _ => Z0) (Zpos divisor)).1, divisionExponent),
+      Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.new_location (Zpos divisor)
+        (ZArith.BinInt.Z.div_eucl
+          (match Zsub delta divisionExponent with
+            | .Zpos _ => ZArith.BinInt.Z.shiftl (Zpos mantissa) (Zsub delta divisionExponent)
+            | .Z0 => Zpos mantissa | .Zneg _ => Z0) (Zpos divisor)).2) = _
+    rw [shiftInput, divisorValue]
+    rfl
+  let quotient := ZArith.BinInt.Z.div (Zpos shifted) (zOfInt ((2 : Int) ^ half))
+  let location := Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.new_location (zOfInt ((2 : Int) ^ half))
+    (ZArith.BinInt.Z.modulo (Zpos shifted) (zOfInt ((2 : Int) ^ half)))
+  have divisionRecord : BinarySingleNaN.shr_record_of_loc quotient location =
+      Zaux.iter_nat BinarySingleNaN.shr_1 half
+        (BinarySingleNaN.shr_record_of_loc (Zpos shifted) BinarySingleNaN.loc_Exact) :=
+    ieee_division_record shifted half
+  dsimp only at partialShift
+  rw [← divisionRecord, BinarySingleNaN.shr_m_shr_record_of_loc,
+    BinarySingleNaN.loc_of_shr_record_of_loc] at partialShift
+  change BinarySingleNaN.binary_round_aux rounding sign
+    (BinarySingleNaN.SFdiv_core_binary prec emax (Zpos mantissa) exponent (Zpos divisor) divisorExponent).1.1
+    (BinarySingleNaN.SFdiv_core_binary prec emax (Zpos mantissa) exponent (Zpos divisor) divisorExponent).1.2
+    (BinarySingleNaN.SFdiv_core_binary prec emax (Zpos mantissa) exponent (Zpos divisor) divisorExponent).2 = _
+  rw [core]
+  change BinarySingleNaN.binary_round_aux rounding sign quotient divisionExponent location =
+    BinarySingleNaN.binary_round_aux rounding sign (Zpos product) productExponent BinarySingleNaN.loc_Exact
+  unfold BinarySingleNaN.binary_round_aux
+  rw [partialShift, common]
+
+private theorem ieee_round_aux_non_nan (prec emax : Z)
+    (rounding : mode) (sign : Bool) (mantissa exponent : Z) (position : BinarySingleNaN.location)
+    (nonnegative : Zle Z0 mantissa) :
+    BinarySingleNaN.is_nan (BinarySingleNaN.SF2B (prec := prec) (emax := emax)
+      (BinarySingleNaN.binary_round_aux (prec := prec) (emax := emax)
+        rounding sign mantissa exponent position)) = false := by
+  have shiftNonnegative (value power : Z) (place : BinarySingleNaN.location)
+      (positive : Zle Z0 value) :
+      Zle Z0 (BinarySingleNaN.shr_m
+        (BinarySingleNaN.shr_fexp (prec := prec) (emax := emax) value power place).1) := by
+    have recordMantissa : BinarySingleNaN.shr_m (BinarySingleNaN.shr_record_of_loc value place) = value :=
+      BinarySingleNaN.shr_m_shr_record_of_loc value place
+    change Zle Z0 (BinarySingleNaN.shr_m (BinarySingleNaN.shr
+      (BinarySingleNaN.shr_record_of_loc value place) power
+      (Zsub (fexp prec emax (Zadd (Digits.Zdigits2 value) power)) power)).1)
+    cases amount : Zsub (fexp prec emax (Zadd (Digits.Zdigits2 value) power)) power with
+    | Z0 =>
+        change Zle Z0 (BinarySingleNaN.shr_m (BinarySingleNaN.shr_record_of_loc value place))
+        rw [recordMantissa]
+        exact positive
+    | Zneg count =>
+        change Zle Z0 (BinarySingleNaN.shr_m (BinarySingleNaN.shr_record_of_loc value place))
+        rw [recordMantissa]
+        exact positive
+    | Zpos count =>
+        rw [BinarySingleNaN.shr_nat _ _ (Zpos count) (Int.natCast_nonneg _)]
+        exact (binary_width_shr_iter (BinarySingleNaN.shr_record_of_loc value place) (posToNat count)
+          (by change Zle Z0 (BinarySingleNaN.shr_m _); rw [recordMantissa]; exact positive)).1
+  let first := BinarySingleNaN.shr_fexp (prec := prec) (emax := emax) mantissa exponent position
+  have firstNonnegative := shiftNonnegative mantissa exponent position nonnegative
+  let chosen := BinarySingleNaN.choice_mode rounding sign
+    (BinarySingleNaN.shr_m first.1) (BinarySingleNaN.loc_of_shr_record first.1)
+  have chosenNonnegative : Zle Z0 chosen :=
+    Int.le_trans firstNonnegative (binary_choice_increases rounding sign _ _)
+  let second := BinarySingleNaN.shr_fexp (prec := prec) (emax := emax)
+    chosen first.2 BinarySingleNaN.loc_Exact
+  have secondNonnegative := shiftNonnegative chosen first.2 BinarySingleNaN.loc_Exact chosenNonnegative
+  change BinarySingleNaN.is_nan (BinarySingleNaN.SF2B
+    (match BinarySingleNaN.shr_m second.1 with
+      | .Z0 => .S754_zero sign
+      | .Zpos result => BinarySingleNaN.binary_fit_aux (prec := prec) (emax := emax) rounding sign result second.2
+      | .Zneg _ => .S754_nan)) = false
+  cases resultValue : BinarySingleNaN.shr_m second.1 with
+  | Z0 => rfl
+  | Zpos resultMantissa =>
+      change BinarySingleNaN.is_nan (BinarySingleNaN.SF2B
+        (BinarySingleNaN.binary_fit_aux (prec := prec) (emax := emax) rounding sign resultMantissa second.2)) = false
+      unfold BinarySingleNaN.binary_fit_aux
+      split
+      · rfl
+      · unfold BinarySingleNaN.binary_overflow
+        split <;> rfl
+  | Zneg resultMantissa =>
+      change Zle Z0 (BinarySingleNaN.shr_m second.1) at secondNonnegative
+      rw [resultValue] at secondNonnegative
+      change 0 ≤ -(posToNat resultMantissa : Int) at secondNonnegative
+      have positive := posToNat_positive resultMantissa
+      omega
+
+theorem Bdiv_mult_inverse :
+    ∀ {prec emax : Z} [Prec_gt_0 prec] [Prec_lt_emax prec emax],
+      Bdiv_mult_inverseStatement (prec := prec) (emax := emax) := by
+  intro prec emax precision maximum certificate divNan multNan rounding numerator denominator inverse sameNan found
+  rcases denominator with ⟨denominator, denominatorValid⟩
+  rcases inverse with ⟨inverse, inverseValid⟩
+  cases denominator with
+  | B754_zero sign => simp [Bexact_inverse] at found
+  | B754_infinity sign => simp [Bexact_inverse] at found
+  | B754_nan sign payload => simp [Bexact_inverse] at found
+  | B754_finite sign mantissa exponent =>
+      by_cases correctMantissa : mantissa = Bexact_inverse_mantissa (prec := prec)
+      · let inverseExponent := Zsub (Zopp exponent) (Zmul (Zsub prec Zone) Ztwo)
+        cases lower : ZArith.ZArith_dec.Z_le_dec (emin prec emax) inverseExponent with
+        | right below => simp [Bexact_inverse, correctMantissa, inverseExponent, lower] at found
+        | left lowerBound =>
+            cases upper : ZArith.ZArith_dec.Z_le_dec inverseExponent emax with
+            | right above => simp [Bexact_inverse, correctMantissa, inverseExponent, lower, upper] at found
+            | left upperBound =>
+                have inverseValue : inverse = Binary.B754_finite sign mantissa inverseExponent := by
+                  simpa [Bexact_inverse, correctMantissa, inverseExponent, lower, upper] using found.symm
+                subst inverse
+                subst mantissa
+                rcases numerator with ⟨numerator, numeratorValid⟩
+                cases numerator with
+                | B754_zero numeratorSign => rfl
+                | B754_infinity numeratorSign => rfl
+                | B754_nan numeratorSign payload =>
+                    have providers := sameNan ⟨.B754_nan numeratorSign payload, numeratorValid⟩
+                      ⟨.B754_finite sign (Bexact_inverse_mantissa (prec := prec)) exponent, denominatorValid⟩
+                      ⟨.B754_finite sign (Bexact_inverse_mantissa (prec := prec)) inverseExponent, inverseValid⟩
+                      rfl rfl rfl
+                    exact congrArg (fun result : NaNResult prec emax => Binary.build_nan ⟨result.1, result.2.1⟩)
+                      providers
+                | B754_finite numeratorSign numeratorMantissa numeratorExponent =>
+                    have rounded := ieee_inverse_round (prec := prec) (emax := emax)
+                      rounding (numeratorSign ^^ sign) numeratorMantissa numeratorExponent exponent
+                    dsimp only at rounded
+                    unfold Binary.Bdiv Binary.Bmult
+                    change Binary.BSN2B _ (BinarySingleNaN.SF2B
+                      (BinarySingleNaN.binary_round_aux rounding (numeratorSign ^^ sign)
+                        (BinarySingleNaN.SFdiv_core_binary prec emax (Zpos numeratorMantissa) numeratorExponent
+                          (Zpos (Bexact_inverse_mantissa (prec := prec))) exponent).1.1
+                        (BinarySingleNaN.SFdiv_core_binary prec emax (Zpos numeratorMantissa) numeratorExponent
+                          (Zpos (Bexact_inverse_mantissa (prec := prec))) exponent).1.2
+                        (BinarySingleNaN.SFdiv_core_binary prec emax (Zpos numeratorMantissa) numeratorExponent
+                          (Zpos (Bexact_inverse_mantissa (prec := prec))) exponent).2)) =
+                      Binary.BSN2B _ (BinarySingleNaN.SF2B
+                        (BinarySingleNaN.binary_round_aux rounding (numeratorSign ^^ sign)
+                          (Zpos (PArith.BinPos.Pos.mul numeratorMantissa (Bexact_inverse_mantissa (prec := prec))))
+                          (Zadd numeratorExponent inverseExponent) BinarySingleNaN.loc_Exact))
+                    rw [rounded]
+                    have notNan := ieee_round_aux_non_nan prec emax rounding (numeratorSign ^^ sign)
+                      (Zpos (PArith.BinPos.Pos.mul numeratorMantissa (Bexact_inverse_mantissa (prec := prec))))
+                      (Zadd numeratorExponent inverseExponent) BinarySingleNaN.loc_Exact (Int.natCast_nonneg _)
+                    rw [ieee_lift_non_nan _ _ notNan, ieee_lift_non_nan _ _ notNan]
+      · simp [Bexact_inverse, correctMantissa] at found
 
 end CompCert4Lean.Lib.IEEE754_extra

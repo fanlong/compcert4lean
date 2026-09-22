@@ -2761,3 +2761,25 @@ theorem round_trunc_sign_any_correct : ∀ (ctx : ExactRealContext)
   exact hcaseAbs'
 
 end CompCert4Lean.Flocq.Calc.Round
+
+namespace CompCert4Lean.Flocq.Calc.Round
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem inbetween_int_NE_sign (ctx : ExactRealContext) :
+    inbetween_int_NE_signStatement ctx := by
+  intro value mantissa position between
+  have parity : Bool.not (Bool.not (Zeven (Zopp (Zadd mantissa Zone)))) =
+      Bool.not (Zeven mantissa) := by
+    rw [Bool.not_not]
+    change ZArith.BinInt.Z.even (ZArith.BinInt.Z.opp (ZArith.BinInt.Z.add mantissa Zone)) = _
+    rw [ZArith.BinInt.Z.even_opp, ZArith.BinInt.Z.even_add]
+    change CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.eqb
+      (Zeven mantissa) false = Bool.not (Zeven mantissa)
+    cases Zeven mantissa <;> rfl
+  have rounded := inbetween_int_N_sign ctx (fun integer => Bool.not (Zeven integer))
+    value mantissa position between
+  rw [parity] at rounded
+  simpa only [ite_self] using rounded
+
+end CompCert4Lean.Flocq.Calc.Round

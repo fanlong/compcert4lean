@@ -2263,3 +2263,400 @@ theorem bounded_canonical_lt_emax :
   exact BinarySingleNaN.bounded_canonical_lt_emax (prec := prec) (emax := emax) ctx magnitude
 
 end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+private theorem binary_payload_fields {prec emax : Z}
+    (ctx : ExactRealContext) (nan : CertifiedNaNResult prec emax)
+    (value : BinarySingleNaN.binary_float prec emax) :
+    Exact.B2R ctx (BSN2B ⟨nan.1, nan.2.1⟩ value) = BinarySingleNaN.Exact.B2R ctx value ∧
+    is_finite (BSN2B ⟨nan.1, nan.2.1⟩ value) = BinarySingleNaN.is_finite value ∧
+    is_nan (BSN2B ⟨nan.1, nan.2.1⟩ value) = BinarySingleNaN.is_nan value ∧
+    FF2SF (B2FF (BSN2B ⟨nan.1, nan.2.1⟩ value)) = BinarySingleNaN.B2SF value ∧
+    (BinarySingleNaN.is_nan value = false →
+      Bsign (BSN2B ⟨nan.1, nan.2.1⟩ value) = BinarySingleNaN.Bsign value) := by
+  rcases nan with ⟨nan, nanShape, nanValid⟩
+  cases nan <;> simp only [is_nan, Bool.false_eq_true] at nanShape
+  cases value <;> simp [BSN2B, build_nan, Exact.B2R, B2BSN, BinarySingleNaN.Exact.B2R,
+    is_finite, is_nan, FF2SF, B2FF, BinarySingleNaN.B2SF,
+    BinarySingleNaN.is_finite, BinarySingleNaN.is_nan, Bsign, BinarySingleNaN.Bsign]
+
+private theorem binary_input_nan {prec emax : Z} (value : binary_float prec emax) :
+    BinarySingleNaN.is_nan (B2BSN value) = is_nan value := by
+  cases value <;> rfl
+
+private theorem binary_mult_signs {prec emax : Z}
+    [Core.FLX.Prec_gt_0 prec] [BinarySingleNaN.Prec_lt_emax prec emax]
+    (rounding : BinarySingleNaN.mode) (left right : CertifiedBinaryFloat prec emax)
+    (notNan : BinarySingleNaN.is_nan
+      (BinarySingleNaN.Bmult rounding (B2BSN left.1) (B2BSN right.1)) = false) :
+    (BinarySingleNaN.Bsign (B2BSN left.1) ^^ BinarySingleNaN.Bsign (B2BSN right.1)) =
+      (Bsign left.1 ^^ Bsign right.1) := by
+  have leftNotNan : is_nan left.1 = false := by
+    cases leftShape : left.1 <;> try rfl
+    simp [leftShape, B2BSN, BinarySingleNaN.Bmult, BinarySingleNaN.is_nan] at notNan
+  have rightNotNan : is_nan right.1 = false := by
+    cases rightShape : right.1 <;> try rfl
+    cases leftShape : left.1 <;>
+      simp [leftShape, rightShape, B2BSN, BinarySingleNaN.Bmult, BinarySingleNaN.is_nan] at notNan
+  rw [Bsign_B2BSN left leftNotNan, Bsign_B2BSN right rightNotNan]
+
+private theorem binary_overflow_not_nan {prec emax : Z}
+    (rounding : BinarySingleNaN.mode) (sign : Bool)
+    (value : BinarySingleNaN.binary_float prec emax)
+    (overflow : BinarySingleNaN.B2SF value =
+      BinarySingleNaN.binary_overflow (prec := prec) (emax := emax) rounding sign) :
+    BinarySingleNaN.is_nan value = false := by
+  cases value <;> try rfl
+  unfold BinarySingleNaN.binary_overflow at overflow
+  split at overflow <;> cases overflow
+
+theorem Bmult_correct :
+    ∀ {prec emax : Z} [Core.FLX.Prec_gt_0 prec]
+      [BinarySingleNaN.Prec_lt_emax prec emax]
+      (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      Bmult_correctStatement (prec := prec) (emax := emax) ctx magnitude := by
+  intro prec emax precision exponentLimit ctx magnitude nan rounding left right
+  have result := BinarySingleNaN.Bmult_correct (prec := prec) (emax := emax)
+    ctx magnitude rounding (B2BSN left.1) (B2BSN right.1)
+    (B2BSN_result_obligation_proof left) (B2BSN_result_obligation_proof right)
+  have fields := binary_payload_fields ctx (nan left.1 right.1)
+    (BinarySingleNaN.Bmult rounding (B2BSN left.1) (B2BSN right.1))
+  change (if _ then _ else _)
+  split <;> rename_i condition
+  · dsimp only [Exact.B2R] at condition
+    rw [if_pos condition] at result
+    refine ⟨fields.1.trans result.1, ?_, ?_⟩
+    · rw [is_finite_B2BSN left, is_finite_B2BSN right] at result
+      exact fields.2.1.trans result.2.1
+    · intro notNan
+      have singleNotNan := fields.2.2.1.symm.trans notNan
+      exact (fields.2.2.2.2 singleNotNan).trans
+        ((result.2.2 singleNotNan).trans (binary_mult_signs rounding left right singleNotNan))
+  · dsimp only [Exact.B2R] at condition
+    rw [if_neg condition] at result
+    apply eq_binary_overflow_FF2SF
+    have notNan := binary_overflow_not_nan rounding _ _ result
+    rw [← binary_mult_signs rounding left right notNan]
+    exact fields.2.2.2.1.trans result
+
+end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+private theorem binary_div_signs {prec emax : Z}
+    [Core.FLX.Prec_gt_0 prec] [BinarySingleNaN.Prec_lt_emax prec emax]
+    (rounding : BinarySingleNaN.mode) (left right : CertifiedBinaryFloat prec emax)
+    (notNan : BinarySingleNaN.is_nan
+      (BinarySingleNaN.Bdiv rounding (B2BSN left.1) (B2BSN right.1)) = false) :
+    (BinarySingleNaN.Bsign (B2BSN left.1) ^^ BinarySingleNaN.Bsign (B2BSN right.1)) =
+      (Bsign left.1 ^^ Bsign right.1) := by
+  have leftNotNan : is_nan left.1 = false := by
+    cases leftShape : left.1 <;> try rfl
+    simp [leftShape, B2BSN, BinarySingleNaN.Bdiv, BinarySingleNaN.is_nan] at notNan
+  have rightNotNan : is_nan right.1 = false := by
+    cases rightShape : right.1 <;> try rfl
+    cases leftShape : left.1 <;>
+      simp [leftShape, rightShape, B2BSN, BinarySingleNaN.Bdiv, BinarySingleNaN.is_nan] at notNan
+  rw [Bsign_B2BSN left leftNotNan, Bsign_B2BSN right rightNotNan]
+
+theorem Bdiv_correct :
+    ∀ {prec emax : Z} [Core.FLX.Prec_gt_0 prec]
+      [BinarySingleNaN.Prec_lt_emax prec emax]
+      (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      Bdiv_correctStatement (prec := prec) (emax := emax) ctx magnitude := by
+  intro prec emax precision exponentLimit ctx magnitude nan rounding left right nonzero
+  have result := BinarySingleNaN.Bdiv_correct (prec := prec) (emax := emax)
+    ctx magnitude rounding (B2BSN left.1) (B2BSN right.1)
+    (B2BSN_result_obligation_proof left) (B2BSN_result_obligation_proof right) nonzero
+  have fields := binary_payload_fields ctx (nan left.1 right.1)
+    (BinarySingleNaN.Bdiv rounding (B2BSN left.1) (B2BSN right.1))
+  change (if _ then _ else _)
+  split <;> rename_i condition
+  · dsimp only [Exact.B2R] at condition
+    rw [if_pos condition] at result
+    refine ⟨fields.1.trans result.1, ?_, ?_⟩
+    · exact fields.2.1.trans (result.2.1.trans (is_finite_B2BSN left))
+    · intro notNan
+      have singleNotNan := fields.2.2.1.symm.trans notNan
+      exact (fields.2.2.2.2 singleNotNan).trans
+        ((result.2.2 singleNotNan).trans (binary_div_signs rounding left right singleNotNan))
+  · dsimp only [Exact.B2R] at condition
+    rw [if_neg condition] at result
+    apply eq_binary_overflow_FF2SF
+    have notNan := binary_overflow_not_nan rounding _ _ result
+    rw [← binary_div_signs rounding left right notNan]
+    exact fields.2.2.2.1.trans result
+
+end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals
+
+private theorem binary_sprint_positive (ctx : ExactRealContext)
+    (mantissa : positive) (exponent : Z) :
+    Exact.Rlt ctx (Exact.R0 ctx) (Exact.F2R ctx (Float radix2 (Zpos mantissa) exponent)) := by
+  apply Float_prop.F2R_gt_0 ctx
+  exact Int.natCast_pos.mpr (posToNat_positive mantissa)
+
+private theorem binary_sprint_negative (ctx : ExactRealContext)
+    (mantissa : positive) (exponent : Z) :
+    Exact.Rlt ctx (Exact.F2R ctx (Float radix2 (Zopp (Zpos mantissa)) exponent))
+      (Exact.R0 ctx) := by
+  apply Float_prop.F2R_lt_0 ctx
+  change intOfZ (Zopp (Zpos mantissa)) < (0 : Int)
+  simp only [Zopp, Zaux.Zopp, ZArith.BinInt.Z.opp, intOfZ_zOfInt]
+  change -(posToNat mantissa : Int) < 0
+  have positiveMantissa := posToNat_positive mantissa
+  omega
+
+private theorem binary_sprint_compare (ctx : ExactRealContext)
+    (sign : Bool) (mantissa : positive) (exponent : Z) :
+    Exact.Rcompare ctx
+      (Exact.F2R ctx (Float radix2 (cond_Zopp sign (Zpos mantissa)) exponent))
+      (Exact.R0 ctx) = if sign then Lt else Gt := by
+  cases sign
+  · exact Raux.Rcompare_Gt ctx _ _ (binary_sprint_positive ctx mantissa exponent)
+  · exact Raux.Rcompare_Lt ctx _ _ (binary_sprint_negative ctx mantissa exponent)
+
+private theorem binary_sprint_cancellation (ctx : ExactRealContext)
+    (leftSign rightSign : Bool) (leftMantissa rightMantissa : positive)
+    (leftExponent rightExponent : Z)
+    (zeroSum : Exact.Rplus ctx
+      (Exact.F2R ctx (Float radix2 (cond_Zopp leftSign (Zpos leftMantissa)) leftExponent))
+      (Exact.F2R ctx (Float radix2 (cond_Zopp rightSign (Zpos rightMantissa)) rightExponent)) =
+      Exact.R0 ctx) : leftSign = !rightSign := by
+  cases leftSign <;> cases rightSign <;> try rfl
+  · have positiveSum : Exact.Rlt ctx (Exact.Rplus ctx (Exact.R0 ctx) (Exact.R0 ctx))
+        (Exact.Rplus ctx
+          (Exact.F2R ctx (Float radix2 (cond_Zopp false (Zpos leftMantissa)) leftExponent))
+          (Exact.F2R ctx (Float radix2 (cond_Zopp false (Zpos rightMantissa)) rightExponent))) :=
+      RIneq.Rplus_lt_compat ctx _ _ _ _
+        (binary_sprint_positive ctx leftMantissa leftExponent)
+        (binary_sprint_positive ctx rightMantissa rightExponent)
+    rw [zeroSum] at positiveSum
+    change ctx.spec.lt (ctx.spec.add ctx.spec.zero ctx.spec.zero) ctx.spec.zero at positiveSum
+    rw [ctx.certificate.orderedField.add_zero] at positiveSum
+    exact False.elim (ctx.certificate.orderedField.lt_irrefl _ positiveSum)
+  · have negativeSum : Exact.Rlt ctx
+        (Exact.Rplus ctx
+          (Exact.F2R ctx (Float radix2 (cond_Zopp true (Zpos leftMantissa)) leftExponent))
+          (Exact.F2R ctx (Float radix2 (cond_Zopp true (Zpos rightMantissa)) rightExponent)))
+        (Exact.Rplus ctx (Exact.R0 ctx) (Exact.R0 ctx)) :=
+      RIneq.Rplus_lt_compat ctx _ _ _ _
+        (binary_sprint_negative ctx leftMantissa leftExponent)
+        (binary_sprint_negative ctx rightMantissa rightExponent)
+    rw [zeroSum] at negativeSum
+    change ctx.spec.lt ctx.spec.zero (ctx.spec.add ctx.spec.zero ctx.spec.zero) at negativeSum
+    rw [ctx.certificate.orderedField.add_zero] at negativeSum
+    exact False.elim (ctx.certificate.orderedField.lt_irrefl _ negativeSum)
+
+private theorem binary_sprint_not_small (ctx : ExactRealContext)
+    (left right : Exact.R ctx) (notLess : ¬Exact.Rlt_bool ctx left right = true) :
+    Exact.Rle ctx right left := by
+  have comparison := Raux.Rlt_bool_spec ctx left right
+  have isFalse : Raux.Exact.Rlt_bool ctx left right = false := Bool.eq_false_iff.mpr notLess
+  rw [isFalse] at comparison
+  cases comparison with
+  | Rlt_bool_false_ bound => exact bound
+
+private theorem binary_sprint_plus_correct :
+    ∀ {prec emax : Z} (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+      [FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax],
+      Bplus_correctStatement (prec := prec) (emax := emax) ctx magnitude := by
+  intro prec emax ctx magnitude precision exponentLimit rounding left right
+    validLeft validRight finiteLeft finiteRight
+  have zeroRound : Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+      (Exact.round_mode ctx rounding) (Exact.R0 ctx) = Exact.R0 ctx :=
+    Generic_fmt.round_0 ctx magnitude radix2 _ _ (valid_rnd_round_mode_proof ctx rounding)
+  have zeroSmall : Exact.Rlt_bool ctx (Exact.Rabs ctx (Exact.R0 ctx))
+      (Exact.bpow ctx radix2 emax) = true := by
+    rw [show Exact.Rabs ctx (Exact.R0 ctx) = Exact.R0 ctx from
+      ctx.certificate.sourceLaws.abs_nonnegative _ (ctx.certificate.orderedField.le_refl _)]
+    exact Raux.Rlt_bool_true ctx _ _ (Raux.bpow_gt_0 ctx radix2 emax)
+  have finiteRound (value : binary_float prec emax) (valid : BinaryFloatCertificate value) :
+      Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+        (Exact.round_mode ctx rounding) (Exact.B2R ctx value) = Exact.B2R ctx value :=
+    Generic_fmt.round_generic ctx magnitude radix2 _ _ (valid_rnd_round_mode_proof ctx rounding)
+      _ (generic_format_B2R ctx magnitude value valid)
+  have finiteSmall (value : binary_float prec emax) (valid : BinaryFloatCertificate value) :
+      Exact.Rlt_bool ctx (Exact.Rabs ctx (Exact.B2R ctx value))
+        (Exact.bpow ctx radix2 emax) = true :=
+    Raux.Rlt_bool_true ctx _ _ (abs_B2R_lt_emax ctx value valid)
+  have zeroLeft (value : Exact.R ctx) : Exact.Rplus ctx (Exact.R0 ctx) value = value :=
+    ctx.certificate.orderedField.zero_add value
+  have zeroRight (value : Exact.R ctx) : Exact.Rplus ctx value (Exact.R0 ctx) = value :=
+    ctx.certificate.orderedField.add_zero value
+  cases left <;> cases right <;>
+    simp only [is_finite, Bool.false_eq_true] at finiteLeft finiteRight
+  · rename_i leftSign rightSign
+    change (if _ then _ else _)
+    simp only [Exact.B2R, zeroRight,
+      zeroRound, zeroSmall, ↓reduceIte]
+    rw [show Exact.Rcompare ctx (Exact.R0 ctx) (Exact.R0 ctx) = Eq from
+      Raux.Rcompare_Eq ctx _ _ rfl]
+    cases leftSign <;> cases rightSign <;> cases rounding <;> exact ⟨rfl, rfl, rfl⟩
+  · rename_i leftSign rightSign rightMantissa rightExponent
+    change (if _ then _ else _)
+    have rounded := finiteRound (.B754_finite rightSign rightMantissa rightExponent) validRight
+    have small := finiteSmall (.B754_finite rightSign rightMantissa rightExponent) validRight
+    simp only [Exact.B2R] at rounded small
+    simp only [Exact.B2R, zeroLeft,
+      rounded, small, ↓reduceIte]
+    rw [binary_sprint_compare]
+    cases rightSign <;> exact ⟨rfl, rfl, rfl⟩
+  · rename_i leftSign leftMantissa leftExponent rightSign
+    change (if _ then _ else _)
+    have rounded := finiteRound (.B754_finite leftSign leftMantissa leftExponent) validLeft
+    have small := finiteSmall (.B754_finite leftSign leftMantissa leftExponent) validLeft
+    simp only [Exact.B2R] at rounded small
+    simp only [Exact.B2R, zeroRight,
+      rounded, small, ↓reduceIte]
+    rw [binary_sprint_compare]
+    cases leftSign <;> exact ⟨rfl, rfl, rfl⟩
+  · rename_i leftSign leftMantissa leftExponent rightSign rightMantissa rightExponent
+    clear zeroRound zeroSmall finiteRound finiteSmall zeroLeft zeroRight finiteLeft finiteRight
+    let exponent := ZArith.BinInt.Z.min leftExponent rightExponent
+    have leftBound : Zle exponent leftExponent := by
+      simp only [exponent, ZArith.BinInt.Z.min]
+      split <;> change intOfZ _ ≤ intOfZ _ <;> omega
+    have rightBound : Zle exponent rightExponent := by
+      simp only [exponent, ZArith.BinInt.Z.min]
+      split <;> change intOfZ _ ≤ intOfZ _ <;> omega
+    have sumValue := Fplus_naive_correct ctx leftSign leftMantissa leftExponent
+      rightSign rightMantissa rightExponent exponent leftBound rightBound
+    dsimp only at sumValue
+    have normalized := binary_normalize_correct (prec := prec) (emax := emax) ctx magnitude
+      rounding (Fplus_naive leftSign leftMantissa leftExponent
+        rightSign rightMantissa rightExponent exponent) exponent
+      (match rounding with | .mode_DN => true | _ => false)
+    dsimp only at normalized
+    rw [sumValue] at normalized
+    dsimp only [exponent] at normalized
+    change (if _ then _ else _)
+    split <;> rename_i condition
+    · dsimp only [Exact.B2R] at condition
+      rw [if_pos condition] at normalized
+      refine ⟨normalized.1, normalized.2.1, ?_⟩
+      refine normalized.2.2.trans ?_
+      dsimp only [Exact.B2R, Bsign]
+      cases comparisonShape : Exact.Rcompare ctx
+        (Exact.Rplus ctx
+          (Exact.F2R ctx (Float radix2 (cond_Zopp leftSign (Zpos leftMantissa)) leftExponent))
+          (Exact.F2R ctx (Float radix2 (cond_Zopp rightSign (Zpos rightMantissa)) rightExponent)))
+        (Exact.R0 ctx) with
+      | Lt => rfl
+      | Gt => rfl
+      | Eq =>
+          have oppositeSigns := binary_sprint_cancellation ctx leftSign rightSign
+            leftMantissa rightMantissa leftExponent rightExponent
+            (Raux.Rcompare_Eq_inv ctx _ _ comparisonShape)
+          cases leftSign <;> cases rightSign <;> cases rounding <;>
+            simp [Bsign] at oppositeSigns ⊢
+    · dsimp only [Exact.B2R] at condition
+      rw [if_neg condition] at normalized
+      have overflowSigns := sign_plus_overflow (prec := prec) (emax := emax) ctx magnitude
+        rounding leftSign leftMantissa leftExponent rightSign rightMantissa rightExponent
+        validLeft validRight (binary_sprint_not_small ctx _ _ condition)
+      exact ⟨normalized.trans (congrArg (binary_overflow rounding) overflowSigns.1.symm),
+        overflowSigns.2⟩
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+private theorem binary_finite_not_nan {prec emax : Z} (value : binary_float prec emax)
+    (finite : is_finite value = true) : is_nan value = false := by
+  cases value <;> first | rfl | cases finite
+
+theorem Bplus_correct :
+    ∀ {prec emax : Z} [Core.FLX.Prec_gt_0 prec]
+      [BinarySingleNaN.Prec_lt_emax prec emax]
+      (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      Bplus_correctStatement (prec := prec) (emax := emax) ctx magnitude := by
+  intro prec emax precision exponentLimit ctx magnitude nan rounding left right finiteLeft finiteRight
+  have leftSign := Bsign_B2BSN left (binary_finite_not_nan left.1 finiteLeft)
+  have rightSign := Bsign_B2BSN right (binary_finite_not_nan right.1 finiteRight)
+  have result := BinarySingleNaN.binary_sprint_plus_correct (prec := prec) (emax := emax)
+    ctx magnitude rounding (B2BSN left.1) (B2BSN right.1)
+    (B2BSN_result_obligation_proof left) (B2BSN_result_obligation_proof right)
+    ((is_finite_B2BSN left).trans finiteLeft) ((is_finite_B2BSN right).trans finiteRight)
+  have fields := binary_payload_fields ctx (nan left.1 right.1)
+    (BinarySingleNaN.Bplus rounding (B2BSN left.1) (B2BSN right.1))
+  rw [leftSign, rightSign] at result
+  change (if _ then _ else _)
+  split <;> rename_i condition
+  · dsimp only [Exact.B2R] at condition
+    rw [if_pos condition] at result
+    refine ⟨fields.1.trans result.1, fields.2.1.trans result.2.1, ?_⟩
+    have notNan : BinarySingleNaN.is_nan
+        (BinarySingleNaN.Bplus rounding (B2BSN left.1) (B2BSN right.1)) = false := by
+      generalize BinarySingleNaN.Bplus rounding (B2BSN left.1) (B2BSN right.1) = value at result ⊢
+      cases value <;> first | rfl | cases result.2.1
+    exact (fields.2.2.2.2 notNan).trans result.2.2
+  · dsimp only [Exact.B2R] at condition
+    rw [if_neg condition] at result
+    exact ⟨eq_binary_overflow_FF2SF _ _ _ (fields.2.2.2.1.trans result.1), result.2⟩
+
+end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+open CompCert4Lean.Flocq.Core
+
+private theorem binary_sprint_minus_correct :
+    ∀ {prec emax : Z} (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+      [FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax],
+      Bminus_correctStatement (prec := prec) (emax := emax) ctx magnitude := by
+  intro prec emax ctx magnitude precision exponentLimit rounding left right
+    validLeft validRight finiteLeft finiteRight
+  have validOpposite : BinaryFloatCertificate (Bopp right) := by
+    cases right <;> exact validRight
+  have finiteOpposite : is_finite (Bopp right) = true :=
+    (is_finite_Bopp right validRight).trans finiteRight
+  have notNan : is_nan right = false := by
+    cases right <;> first | rfl | cases finiteRight
+  have subtraction : Bminus rounding left right = Bplus rounding left (Bopp right) := by
+    cases left <;> cases right <;> rfl
+  have result := binary_sprint_plus_correct ctx magnitude rounding left (Bopp right)
+    validLeft validOpposite finiteLeft finiteOpposite
+  rw [← subtraction, B2R_Bopp ctx right validRight, Bsign_Bopp right validRight notNan] at result
+  exact result
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem Bminus_correct :
+    ∀ {prec emax : Z} [Core.FLX.Prec_gt_0 prec]
+      [BinarySingleNaN.Prec_lt_emax prec emax]
+      (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      Bminus_correctStatement (prec := prec) (emax := emax) ctx magnitude := by
+  intro prec emax precision exponentLimit ctx magnitude nan rounding left right finiteLeft finiteRight
+  have leftSign := Bsign_B2BSN left (binary_finite_not_nan left.1 finiteLeft)
+  have rightSign := Bsign_B2BSN right (binary_finite_not_nan right.1 finiteRight)
+  have result := BinarySingleNaN.binary_sprint_minus_correct (prec := prec) (emax := emax)
+    ctx magnitude rounding (B2BSN left.1) (B2BSN right.1)
+    (B2BSN_result_obligation_proof left) (B2BSN_result_obligation_proof right)
+    ((is_finite_B2BSN left).trans finiteLeft) ((is_finite_B2BSN right).trans finiteRight)
+  have fields := binary_payload_fields ctx (nan left.1 right.1)
+    (BinarySingleNaN.Bminus rounding (B2BSN left.1) (B2BSN right.1))
+  rw [leftSign, rightSign] at result
+  change (if _ then _ else _)
+  split <;> rename_i condition
+  · dsimp only [Exact.B2R] at condition
+    rw [if_pos condition] at result
+    refine ⟨fields.1.trans result.1, fields.2.1.trans result.2.1, ?_⟩
+    have notNan : BinarySingleNaN.is_nan
+        (BinarySingleNaN.Bminus rounding (B2BSN left.1) (B2BSN right.1)) = false := by
+      generalize BinarySingleNaN.Bminus rounding (B2BSN left.1) (B2BSN right.1) = value at result ⊢
+      cases value <;> first | rfl | cases result.2.1
+    exact (fields.2.2.2.2 notNan).trans result.2.2
+  · dsimp only [Exact.B2R] at condition
+    rw [if_neg condition] at result
+    exact ⟨eq_binary_overflow_FF2SF _ _ _ (fields.2.2.2.1.trans result.1), result.2⟩
+
+end CompCert4Lean.Flocq.IEEE754.Binary

@@ -408,3 +408,52 @@ theorem Fdiv_core_correct :
     exact div_scaled_between ctx beta m1 _ e hb
 
 end CompCert4Lean.Flocq.Calc.Div
+
+namespace CompCert4Lean.Flocq.Calc.Div
+
+theorem mag_div_F2R (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) :
+    mag_div_F2RStatement ctx magnitude := by
+  intro beta mantissa₁ exponent₁ mantissa₂ exponent₂ positive₁ positive₂
+  have nonzero₁ : mantissa₁ ≠ Z0 := by
+    intro equal
+    subst mantissa₁
+    change (0 : Int) < 0 at positive₁
+    omega
+  have nonzero₂ : mantissa₂ ≠ Z0 := by
+    intro equal
+    subst mantissa₂
+    change (0 : Int) < 0 at positive₂
+    omega
+  have float_nonzero₁ : Exact.F2R ctx (Float beta mantissa₁ exponent₁) ≠ ctx.spec.zero := by
+    intro equal
+    have positive := CompCert4Lean.Flocq.Core.Float_prop.F2R_gt_0 ctx beta
+      (Float beta mantissa₁ exponent₁) positive₁
+    change ctx.spec.lt ctx.spec.zero (Exact.F2R ctx (Float beta mantissa₁ exponent₁)) at positive
+    rw [equal] at positive
+    exact ctx.certificate.orderedField.lt_irrefl _ positive
+  have float_nonzero₂ : Exact.F2R ctx (Float beta mantissa₂ exponent₂) ≠ ctx.spec.zero := by
+    intro equal
+    have positive := CompCert4Lean.Flocq.Core.Float_prop.F2R_gt_0 ctx beta
+      (Float beta mantissa₂ exponent₂) positive₂
+    change ctx.spec.lt ctx.spec.zero (Exact.F2R ctx (Float beta mantissa₂ exponent₂)) at positive
+    rw [equal] at positive
+    exact ctx.certificate.orderedField.lt_irrefl _ positive
+  have bounds := CompCert4Lean.Flocq.Core.Raux.mag_div ctx magnitude beta
+    (Exact.F2R ctx (Float beta mantissa₁ exponent₁))
+    (Exact.F2R ctx (Float beta mantissa₂ exponent₂)) float_nonzero₁ float_nonzero₂
+  have magnitude₁ := CompCert4Lean.Flocq.Core.Float_prop.mag_F2R_Zdigits
+    ctx magnitude beta mantissa₁ exponent₁ nonzero₁
+  have magnitude₂ := CompCert4Lean.Flocq.Core.Float_prop.mag_F2R_Zdigits
+    ctx magnitude beta mantissa₂ exponent₂ nonzero₂
+  change Exact.mag ctx magnitude beta (Exact.F2R ctx (Float beta mantissa₁ exponent₁)) =
+    Zadd (Zdigits beta mantissa₁) exponent₁ at magnitude₁
+  change Exact.mag ctx magnitude beta (Exact.F2R ctx (Float beta mantissa₂ exponent₂)) =
+    Zadd (Zdigits beta mantissa₂) exponent₂ at magnitude₂
+  change Zle (Zsub (Exact.mag ctx magnitude beta (Exact.F2R ctx (Float beta mantissa₁ exponent₁)))
+      (Exact.mag ctx magnitude beta (Exact.F2R ctx (Float beta mantissa₂ exponent₂)))) _ ∧
+    Zle _ (Zadd (Zsub (Exact.mag ctx magnitude beta (Exact.F2R ctx (Float beta mantissa₁ exponent₁)))
+      (Exact.mag ctx magnitude beta (Exact.F2R ctx (Float beta mantissa₂ exponent₂)))) Zone) at bounds
+  rw [magnitude₁, magnitude₂] at bounds
+  exact bounds
+
+end CompCert4Lean.Flocq.Calc.Div

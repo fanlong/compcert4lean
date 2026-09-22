@@ -2738,3 +2738,204 @@ theorem bytes_of_int64 : bytes_of_int64Statement := by
     _ = _ := bytes_of_int_append 4 _ 4 _ hbound
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+
+private theorem memdata_proj_inj_bytes (bytes : List byte) :
+    proj_bytes (inj_bytes bytes) = some bytes := by
+  induction bytes with
+  | nil => rfl
+  | cons first rest inductionHypothesis =>
+      simp [inj_bytes, proj_bytes, inductionHypothesis] at *
+
+private theorem memdata_proj_bytes_inj_value (amount : quantity) (value : val) :
+    proj_bytes (inj_value amount value) = none := by
+  cases amount <;> rfl
+
+private theorem memdata_proj_inj_value (requested stored : quantity) (value : val) :
+    proj_value requested (inj_value stored value) =
+      if requested = stored then value else Vundef := by
+  cases requested <;> cases stored <;>
+    simp [proj_value, inj_value, size_quantity_nat, inj_value_rec,
+      check_value, sumboolBool, Val.eq, quantity_eq]
+
+private theorem memdata_byte_unsigned_repr (number : Z) :
+    intOfZ (CCByte.unsigned (CCByte.repr number)) = intOfZ number % 256 := by
+  change intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned (CCByte.repr number)) = _
+  rw [pg_bytes64_unsigned_eq_zOfNat, memdata_byte_repr_val]
+  simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt, Int.ofNat_eq_natCast]
+  exact Int.toNat_of_nonneg (Int.emod_nonneg _ (by decide))
+
+private theorem memdata_mod_recombine (number modulus : _root_.Int)
+    (positive : 0 < modulus) :
+    number % 256 + (number / 256 % modulus) * 256 =
+      number % (modulus * 256) := by
+  have lowNonnegative := Int.emod_nonneg number (by decide : (256 : _root_.Int) ≠ 0)
+  have lowBound := Int.emod_lt_of_pos number (by decide : (0 : _root_.Int) < 256)
+  have highNonnegative := Int.emod_nonneg (number / 256) (by omega : modulus ≠ 0)
+  have highBound := Int.emod_lt_of_pos (number / 256) positive
+  have decomposition : number =
+      (number % 256 + (number / 256 % modulus) * 256) +
+        (number / 256 / modulus) * (modulus * 256) := by
+    calc
+      number = number % 256 + (number / 256) * 256 :=
+        (Int.emod_add_ediv_mul number 256).symm
+      _ = _ := by
+        conv => lhs; rw [← Int.emod_add_ediv_mul (number / 256) modulus]
+        simp only [Int.add_mul, Int.mul_assoc, Int.add_assoc]
+  conv => rhs; rw [decomposition]
+  rw [Int.add_mul_emod_self_right]
+  exact (Int.emod_eq_of_lt (by omega) (by omega)).symm
+
+private theorem memdata_decode_encode_int (count : Nat) (number : Z) :
+    intOfZ (decode_int (encode_int count number)) = intOfZ number % (256 ^ count) := by
+  have roundtrip : ∀ (count : Nat) (number : Z),
+      intOfZ (int_of_bytes (bytes_of_int count number)) =
+        intOfZ number % (256 ^ count) := by
+    intro count
+    induction count with
+    | zero => intro number; simp [bytes_of_int, int_of_bytes, z0, intOfZ]
+    | succ count inductionHypothesis =>
+        intro number
+        simp only [bytes_of_int, int_of_bytes, zAdd, zMul,
+          ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+        rw [memdata_byte_unsigned_repr, inductionHypothesis]
+        have division : intOfZ (zDiv number z256) = intOfZ number / 256 := by
+          change intOfZ (zOfInt (intOfZ number / 256)) = _
+          exact intOfZ_zOfInt _
+        rw [division]
+        change intOfZ number % 256 +
+          (intOfZ number / 256 % (256 ^ count)) * 256 = _
+        rw [Int.pow_succ]
+        exact memdata_mod_recombine _ _ (Int.pow_pos (by decide))
+  simpa [decode_int, encode_int, rev_if_be, CompCert4Lean.X86_64.Archi.big_endian]
+    using roundtrip count number
+
+private theorem memdata_decode_encode_int_one (value : CompCert4Lean.Lib.Integers.Int.int) :
+    CCInt.repr (decode_int (encode_int 1 (CCInt.unsigned value))) = intZeroExt z8 value := by
+  have encoding : decode_int (encode_int 1 (CCInt.unsigned value)) =
+      zMod (CCInt.unsigned value) (zTwoP z8) := by
+    apply intOfZ_injective
+    rw [memdata_decode_encode_int]
+    change intOfZ (CCInt.unsigned value) % 256 =
+      intOfZ (zOfInt (intOfZ (CCInt.unsigned value) % 256))
+    exact (intOfZ_zOfInt _).symm
+  rw [encoding]
+  change CompCert4Lean.Lib.Integers.Int.repr
+    (ZArith.BinInt.Z.modulo (CompCert4Lean.Lib.Integers.Int.unsigned value) (two_p z8)) = _
+  rw [← CompCert4Lean.Lib.Integers.Int.zero_ext_mod_proof_api z8 value
+    (by change (0 : Int) ≤ 8 ∧ (8 : Int) < 32; omega)]
+  exact CompCert4Lean.Lib.Integers.Int.repr_unsigned_proof _
+
+private theorem memdata_decode_encode_int_two (value : CompCert4Lean.Lib.Integers.Int.int) :
+    CCInt.repr (decode_int (encode_int 2 (CCInt.unsigned value))) = intZeroExt z16 value := by
+  have encoding : decode_int (encode_int 2 (CCInt.unsigned value)) =
+      zMod (CCInt.unsigned value) (zTwoP z16) := by
+    apply intOfZ_injective
+    rw [memdata_decode_encode_int]
+    change intOfZ (CCInt.unsigned value) % 65536 =
+      intOfZ (zOfInt (intOfZ (CCInt.unsigned value) % 65536))
+    exact (intOfZ_zOfInt _).symm
+  rw [encoding]
+  change CompCert4Lean.Lib.Integers.Int.repr
+    (ZArith.BinInt.Z.modulo (CompCert4Lean.Lib.Integers.Int.unsigned value) (two_p z16)) = _
+  rw [← CompCert4Lean.Lib.Integers.Int.zero_ext_mod_proof_api z16 value
+    (by change (0 : Int) ≤ 16 ∧ (16 : Int) < 32; omega)]
+  exact CompCert4Lean.Lib.Integers.Int.repr_unsigned_proof _
+
+private theorem memdata_decode_encode_int_four (value : CompCert4Lean.Lib.Integers.Int.int) :
+    CCInt.repr (decode_int (encode_int 4 (CCInt.unsigned value))) = value := by
+  have encoding : decode_int (encode_int 4 (CCInt.unsigned value)) =
+      CCInt.unsigned value := by
+    apply intOfZ_injective
+    rw [memdata_decode_encode_int]
+    have bounds := CompCert4Lean.Lib.Integers.Int.unsigned_range_proof value
+    exact Int.emod_eq_of_lt bounds.1 bounds.2
+  rw [encoding]
+  exact CompCert4Lean.Lib.Integers.Int.repr_unsigned_proof _
+
+private theorem memdata_decode_encode_int_eight (value : CompCert4Lean.Lib.Integers.Int64.int) :
+    CCInt64.repr (decode_int (encode_int 8 (CCInt64.unsigned value))) = value := by
+  have encoding : decode_int (encode_int 8 (CCInt64.unsigned value)) =
+      CCInt64.unsigned value := by
+    apply intOfZ_injective
+    rw [memdata_decode_encode_int]
+    have bounds := CompCert4Lean.Lib.Integers.Int64.unsigned_range_proof value
+    exact Int.emod_eq_of_lt bounds.1 bounds.2
+  rw [encoding]
+  exact CompCert4Lean.Lib.Integers.Int64.repr_unsigned_proof _
+
+private theorem memdata_sign_ext_zero_ext
+    (width : Z) (value : CompCert4Lean.Lib.Integers.Int.int)
+    (positive : zLt z0 width) :
+    intSignExt width (intZeroExt width value) = intSignExt width value := by
+  apply CompCert4Lean.Lib.Integers.Int.same_bits_eq_proof
+  intro index bounds
+  rw [CompCert4Lean.Lib.Integers.Int.bits_sign_ext_proof width _ index bounds,
+    CompCert4Lean.Lib.Integers.Int.bits_sign_ext_proof width _ index bounds]
+  run_tac
+    let theoremName := memdataIntPrivateName
+      "CompCert4Lean.Lib.Integers.Int64.manual_int64_zlt_select"
+    Lean.Elab.Tactic.evalTactic (← `(tactic| rw [$(Lean.mkIdent theoremName):term]))
+  have nonnegative : zLe z0
+      (if intOfZ index < intOfZ width then index else ZArith.BinInt.Z.sub width (.Zpos .xH)) := by
+    split
+    · exact bounds.1
+    · change 0 ≤ intOfZ (ZArith.BinInt.Z.sub width (.Zpos .xH))
+      change 0 < intOfZ width at positive
+      simp only [zSub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+      change 0 ≤ intOfZ width - 1
+      omega
+  rw [CompCert4Lean.Lib.Integers.Int.bits_zero_ext_proof _ _ _ nonnegative]
+  run_tac
+    let theoremName := memdataIntPrivateName
+      "CompCert4Lean.Lib.Integers.Int64.manual_int64_zlt_select"
+    Lean.Elab.Tactic.evalTactic (← `(tactic| rw [$(Lean.mkIdent theoremName):term]))
+  have less : intOfZ
+      (if intOfZ index < intOfZ width then index else ZArith.BinInt.Z.sub width (.Zpos .xH)) <
+      intOfZ width := by
+    split
+    · assumption
+    · change intOfZ (ZArith.BinInt.Z.sub width (.Zpos .xH)) < intOfZ width
+      simp only [zSub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+      change intOfZ width - 1 < intOfZ width
+      omega
+  rw [if_pos less]
+
+set_option maxRecDepth 4096 in
+set_option maxHeartbeats 1000000 in
+theorem decode_encode_val_general : decode_encode_val_generalStatement := by
+  have zero8 := fun value => CompCert4Lean.Lib.Integers.Int.zero_ext_idem_proof_api
+    z8 value (by change (0 : Int) ≤ 8; omega)
+  have zero16 := fun value => CompCert4Lean.Lib.Integers.Int.zero_ext_idem_proof_api
+    z16 value (by change (0 : Int) ≤ 16; omega)
+  have signed8 := fun value => memdata_sign_ext_zero_ext
+    z8 value (by change (0 : Int) < 8; omega)
+  have signed16 := fun value => memdata_sign_ext_zero_ext
+    z16 value (by change (0 : Int) < 16; omega)
+  intro value stored loaded
+  cases value <;> cases stored <;> cases loaded <;>
+    simp only [decode_encode_val]
+  all_goals try trivial
+  all_goals
+    simp [encode_val, decode_val, memdata_proj_inj_bytes,
+      memdata_proj_bytes_inj_value, memdata_proj_inj_value,
+      memdata_decode_encode_int_one, memdata_decode_encode_int_two,
+      memdata_decode_encode_int_four, memdata_decode_encode_int_eight,
+      zero8, zero16, signed8, signed16, CompCert4Lean.Lib.Floats.Float.of_to_bits,
+      CompCert4Lean.Lib.Floats.Float32.of_to_bits, Val.load_result,
+      CompCert4Lean.X86_64.Archi.ptr64, size_chunk_nat, size_chunk,
+      zToNat, z1, z2, z4, z8, z16, intZeroExt, intSignExt,
+      proj_bytes, List.replicate_succ]
+  all_goals
+    try simp [proj_value, Val.load_result, CCFloat.of_bits, CCFloat.to_bits,
+      CCFloat32.of_bits, CCFloat32.to_bits, CompCert4Lean.Lib.Floats.Float.of_to_bits,
+      CompCert4Lean.Lib.Floats.Float32.of_to_bits]
+  all_goals first
+    | exact CompCert4Lean.Lib.Floats.Float.of_to_bits _
+    | exact CompCert4Lean.Lib.Floats.Float32.of_to_bits _
+
+end CompCert4Lean.Common.Memdata
