@@ -3778,3 +3778,22 @@ theorem step_simulation
     CompCert4Lean.X86.Asmgenproof1.transl_cond_correct
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem transf_program_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    transf_program_correctStatement := by
+  intro cfg xi prog tprog matched
+  exact CompCert4Lean.Common.Smallstep.forward_simulation_star _ _
+    (senv_preserved prog tprog matched).2.1 (match_states prog)
+    (transf_initial_states prog tprog matched)
+    (transf_final_states prog) measure
+    (step_simulation cfg xi prog tprog matched)
+
+end CompCert4Lean.X86.Asmgenproof
