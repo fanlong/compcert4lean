@@ -6294,4 +6294,36 @@ theorem restore_callee_save_rec_correct
           simpa using (Regmap.gso_proof val r0 register value rs hne)
         exact hreg
 
+theorem transl_builtin_args_correct : transl_builtin_args_correctStatement := by
+  intro cfg return_address_offset prog tprog function hlocal houtgoing hstack hnorep
+    hcallee injection memory targetMemory locations savedLocations registers stack
+    targetStack parent retaddr hinject hagree hframe args values heval
+  induction heval with
+  | nil =>
+      intro hvalid hbounds
+      exact ⟨[], list_forall2.nil _, Val.inject_list.inject_list_nil⟩
+  | @cons arg args value values heval hargs ih =>
+      intro hvalid hbounds
+      obtain ⟨targetValue, htarget, hvalue⟩ :=
+        transl_builtin_arg_correct cfg return_address_offset prog tprog function
+          hlocal houtgoing hstack hnorep hcallee injection memory targetMemory
+          locations savedLocations registers stack targetStack parent retaddr
+          hinject hagree hframe arg value heval
+          (fun location hmem => hvalid location (by
+            simp only [params_of_builtin_args, List.foldr_cons, List.mem_append]
+            exact Or.inl hmem))
+          (fun slot offset type hmem => hbounds slot offset type (by
+            simp only [params_of_builtin_args, List.foldr_cons, List.mem_append]
+            exact Or.inl hmem))
+      obtain ⟨targetValues, htargets, hvalues⟩ := ih
+        (fun location hmem => hvalid location (by
+          simp only [params_of_builtin_args, List.foldr_cons, List.mem_append]
+          exact Or.inr hmem))
+        (fun slot offset type hmem => hbounds slot offset type (by
+          simp only [params_of_builtin_args, List.foldr_cons, List.mem_append]
+          exact Or.inr hmem))
+      exact ⟨targetValue :: targetValues,
+        list_forall2.cons _ _ htarget htargets,
+        Val.inject_list.inject_list_cons _ _ _ _ hvalue hvalues⟩
+
 end CompCert4Lean.Backend.Stackingproof
