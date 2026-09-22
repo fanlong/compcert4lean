@@ -3218,3 +3218,1687 @@ theorem fixpoint_entry_proof {cfg : CompCert4Lean.Config.CompilerConfig}
     code successors transf ep ev res hfix
 
 end CompCert4Lean.Backend.ValueAnalysis.DS
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Kildall
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem va_sumbool_eq {Value : Type} (first second : Value)
+    (comparison : CompCert4Lean.Foundation.Logic.Support.Sumbool
+      (first = second) (first ≠ second))
+    (equal : proj_sumbool comparison = true) : first = second := by
+  cases comparison with
+  | left same => exact same
+  | right different => cases equal
+
+private theorem va_tree_beq_eq {Value : Type} (compare : Value → Value → Bool)
+    (correct : ∀ first second, compare first second = true → first = second)
+    (first second : PTree.t Value) (equal : PTree.beq compare first second = true) :
+    first = second := by
+  apply PTree.extensionality
+  intro index
+  have compared := (PTree.beq_correct_proof compare first second).mp equal index
+  cases found_first : PTree.get index first <;>
+    cases found_second : PTree.get index second <;>
+    simp only [found_first, found_second] at compared ⊢
+  exact congrArg some (correct _ _ compared)
+
+private theorem va_bbeq_eq (first second : ablock)
+    (equal : bbeq first second = true) : first = second := by
+  have parts : proj_sumbool (eq_aptr first.ab_summary second.ab_summary) = true ∧
+      ZTree.beq (fun left right => proj_sumbool (eq_acontent left right))
+        first.ab_contents second.ab_contents = true := by
+    simpa only [bbeq, Bool.and_eq_true] using equal
+  obtain ⟨summary, contents⟩ := parts
+  have same_summary := va_sumbool_eq _ _ (eq_aptr _ _) summary
+  have same_contents := va_tree_beq_eq _
+    (fun left right => va_sumbool_eq left right (eq_acontent left right))
+    first.ab_contents second.ab_contents contents
+  cases first
+  cases second
+  simp_all
+
+private theorem va_mbeq_eq (first second : amem)
+    (equal : mbeq first second = true) : first = second := by
+  simp only [mbeq, Bool.and_eq_true] at equal
+  obtain ⟨⟨⟨top, nonstack⟩, stack⟩, globals⟩ := equal
+  have same_top := va_sumbool_eq _ _ (eq_aptr _ _) top
+  have same_nonstack := va_sumbool_eq _ _ (eq_aptr _ _) nonstack
+  have same_stack := va_bbeq_eq _ _ stack
+  have same_globals := va_tree_beq_eq bbeq va_bbeq_eq _ _ globals
+  cases first
+  cases second
+  simp_all
+
+private theorem va_ae_beq_eq (first second : aenv)
+    (equal : AE.beq first second = true) : AE.eq first second := by
+  cases first with
+  | Bot => cases second <;> simp_all [AE.beq, AE.eq]
+  | Top_except first_tree =>
+      cases second with
+      | Bot => cases equal
+      | Top_except second_tree =>
+          have same := va_tree_beq_eq _
+            (fun left right => va_sumbool_eq left right (eq_aval left right))
+            first_tree second_tree equal
+          subst second_tree
+          intro register
+          rfl
+
+private theorem va_vge_refl (value : aval) : vge value value := by
+  cases value <;> try constructor
+  all_goals first
+    | exact ZArith.BinInt.Z.le_refl _
+    | exact pge.pge_refl _
+
+private theorem va_vge_top (value : aval) : vge Vtop value := by
+  cases value <;> constructor <;> exact pge.pge_top _
+
+private theorem va_ae_lub_ge (cfg : CompilerConfig) (first second : aenv) :
+    AE.ge (AE.lub cfg first second) first ∧ AE.ge (AE.lub cfg first second) second := by
+  cases first with
+  | Bot => exact ⟨fun _ => .bot _, fun _ => va_vge_refl _⟩
+  | Top_except first_tree =>
+      cases second with
+      | Bot => exact ⟨fun _ => va_vge_refl _, fun _ => .bot _⟩
+      | Top_except second_tree =>
+          have bounds : ∀ register,
+              vge (AE.get register (AE.lub cfg (.Top_except first_tree) (.Top_except second_tree)))
+                (AE.get register (.Top_except first_tree)) ∧
+              vge (AE.get register (AE.lub cfg (.Top_except first_tree) (.Top_except second_tree)))
+                (AE.get register (.Top_except second_tree)) := by
+            intro register
+            simp only [AE.lub, AE.get, AE.LM.combine]
+            rw [PTree.gcombine_proof _ rfl]
+            cases first_found : PTree.get register first_tree with
+            | none =>
+                cases second_found : PTree.get register second_tree <;>
+                  exact ⟨va_vge_top _, va_vge_top _⟩
+            | some first_value =>
+                cases second_found : PTree.get register second_tree with
+                | none => exact ⟨va_vge_top _, va_vge_top _⟩
+                | some second_value =>
+                    simp only [AE.opt_lub]
+                    split
+                    · exact ⟨va_vge_top _, va_vge_top _⟩
+                    · exact ⟨vge_lub_l cfg first_value second_value,
+                        vge_lub_r cfg first_value second_value⟩
+          exact ⟨fun register => (bounds register).1, fun register => (bounds register).2⟩
+
+theorem solver_law_obligation_proof (cfg : CompilerConfig) : solver_law_obligation cfg := by
+  constructor
+  · refine ⟨?_, ?_, ?_, ?_, ?_, VA.ge_trans, ?_, ?_, ?_⟩
+    · intro value
+      cases value <;> simp [va_lat, VA.eq, AE.eq]
+    · intro first second equal
+      cases first <;> cases second <;>
+        simp only [va_lat, VA.eq] at equal ⊢ <;> try contradiction <;> try trivial
+      exact ⟨fun register => (equal.1 register).symm,
+        fun classification memory => (equal.2 classification memory).symm⟩
+    · intro first second third first_second second_third
+      cases first <;> cases second <;> cases third <;>
+        simp only [va_lat, VA.eq] at * <;> try contradiction <;> try trivial
+      exact ⟨fun register => (first_second.1 register).trans (second_third.1 register),
+        fun classification memory => (first_second.2 classification memory).trans
+          (second_third.2 classification memory)⟩
+    · intro first second equal
+      cases first <;> cases second <;>
+        simp only [va_lat, VA.beq, VA.eq, Bool.and_eq_true] at equal ⊢ <;>
+        try contradiction <;> try trivial
+      have same_memory := va_mbeq_eq _ _ equal.2
+      exact ⟨va_ae_beq_eq _ _ equal.1, by simp only [same_memory, iff_self, implies_true]⟩
+    · intro first second equal
+      cases first <;> cases second <;>
+        simp only [va_lat, VA.eq, VA.ge] at equal ⊢ <;>
+        try contradiction <;> try trivial
+      refine ⟨?_, fun classification memory => (equal.2 classification memory).mpr⟩
+      intro register
+      rw [equal.1 register]
+      exact va_vge_refl _
+    · intro value
+      cases value <;> trivial
+    · intro first second
+      cases first <;> cases second <;>
+        simp only [va_lat, VA.lub, VA.ge] <;> try trivial
+      · exact ⟨fun _ => va_vge_refl _, fun _ _ matched => matched⟩
+      · exact ⟨(va_ae_lub_ge cfg _ _).1,
+          fun classification memory => mmatch_lub_l cfg classification memory _ _⟩
+    · intro first second
+      cases first <;> cases second <;>
+        simp only [va_lat, VA.lub, VA.ge] <;> try trivial
+      · exact ⟨fun _ => va_vge_refl _, fun _ _ matched => matched⟩
+      · exact ⟨(va_ae_lub_ge cfg _ _).2,
+          fun classification memory => mmatch_lub_r cfg classification memory _ _⟩
+  · exact NodeSetForward.law_obligation_proof
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Lib.Maps
+
+theorem analyze_entrypoint
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    analyze_entrypointStatement := by
+  intro cfg readonly body values memory classification arguments typed matched
+  have initial_match := ematch_init classification body.fn_params values
+    body.fn_sig.sig_args typed arguments
+  unfold analyze
+  dsimp only
+  split
+  · refine ⟨AE.top, mtop, ?_, ?_, mmatch_top' classification memory _ matched⟩
+    · rfl
+    · exact ematch_ge classification _ _ _ initial_match (AE.ge_top_proof _)
+  · rename_i solution fixed
+    have above := DS.fixpoint_entry_proof (solver_law_obligation_proof cfg)
+      instruction body.fn_code successors_instr
+      (transfer' cfg body (CompCert4Lean.Backend.Liveness.last_uses body) readonly)
+      body.fn_entrypoint
+      (VA.State (einit_regs body.fn_params body.fn_sig.sig_args) mfunction_entry)
+      solution fixed
+    change VA.ge (PMap.get body.fn_entrypoint solution)
+      (VA.State (einit_regs body.fn_params body.fn_sig.sig_args) mfunction_entry) at above
+    cases current : PMap.get body.fn_entrypoint solution with
+    | Bot =>
+        erw [current] at above
+        exact False.elim above
+    | State environment abstract_memory =>
+        erw [current] at above
+        exact ⟨environment, abstract_memory, current,
+          ematch_ge classification _ _ _ initial_match above.1,
+          above.2 classification memory matched⟩
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Lib.Maps
+
+theorem analyze_successor
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    analyze_successorStatement := by
+  intro cfg body current environment abstract_memory instr successor readonly
+    next_environment next_memory analyzed code member transferred
+  unfold analyze at analyzed ⊢
+  dsimp only at analyzed ⊢
+  split at analyzed
+  · rename_i fixed
+    erw [transferred]
+    exact ⟨AE.ge_top_proof _, fun classification memory => mmatch_top' classification memory _⟩
+  · rename_i solution fixed
+    have above := DS.fixpoint_solution_proof (solver_law_obligation_proof cfg)
+      instruction body.fn_code successors_instr
+      (transfer' cfg body (CompCert4Lean.Backend.Liveness.last_uses body) readonly)
+      body.fn_entrypoint
+      (VA.State (einit_regs body.fn_params body.fn_sig.sig_args) mfunction_entry)
+      solution current instr successor fixed code member (by intro query; trivial)
+    change VA.ge (PMap.get successor solution)
+      (transfer' cfg body (CompCert4Lean.Backend.Liveness.last_uses body) readonly current
+        (PMap.get current solution)) at above
+    erw [analyzed] at above
+    unfold transfer' at above
+    dsimp only at above
+    erw [transferred] at above ⊢
+    dsimp only at above
+    cases forgotten : PTree.get current (CompCert4Lean.Backend.Liveness.last_uses body) with
+    | none =>
+        erw [forgotten] at above
+        exact above
+    | some registers =>
+        erw [forgotten] at above
+        apply VA.ge_trans _ _ _ above
+        exact ⟨eforget_ge registers next_environment, fun _ _ matched => matched⟩
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Lib.Maps
+
+theorem analyze_succ
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    analyze_succStatement := by
+  intro cfg registers memory readonly body current environment abstract_memory instr successor
+    next_environment next_memory classification analyzed code member transferred
+    environment_match memory_match
+  have above := analyze_successor cfg body current environment abstract_memory instr successor
+    readonly next_environment next_memory analyzed code member transferred
+  erw [transferred] at above
+  cases found : PMap.get successor (analyze cfg readonly body) with
+  | Bot =>
+      erw [found] at above
+      exact False.elim above
+  | State successor_environment successor_memory =>
+      erw [found] at above
+      exact ⟨successor_environment, successor_memory, rfl,
+        ematch_ge classification registers _ _ environment_match above.1,
+        above.2 classification memory memory_match⟩
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+
+set_option maxHeartbeats 2000000 in
+private theorem va_longofwords_match (classification : block_classification)
+    (first_value second_value : val) (first second : aval)
+    (first_match : vmatch classification first_value first)
+    (second_match : vmatch classification second_value second) :
+    vmatch classification (Val.longofwords first_value second_value) (longofwords first second) := by
+  cases first_match <;> cases second_match <;>
+    simp only [Val.longofwords, longofwords, ntop2]
+  all_goals first
+    | exact vmatch.long _
+    | exact vmatch.numUndef _
+    | exact vmatch.numLong _ _
+
+private theorem va_addl_match (classification : block_classification)
+    (first_value second_value : val) (first second : aval)
+    (first_match : vmatch classification first_value first)
+    (second_match : vmatch classification second_value second) :
+    vmatch classification (Val.addl first_value second_value) (addl first second) := by
+  run_tac
+    let environment ← Lean.getEnv
+    let some (proofName, _) := environment.constants.toList.find?
+        (fun (name, _) => name.toString.endsWith ".CompCert4Lean.X86.ValueAOp.addr64_add_match")
+      | throwError "Checked 64-bit abstract addition proof unavailable"
+    Lean.Elab.Tactic.evalTactic (← `(tactic| apply $(Lean.mkIdent proofName) <;> assumption))
+
+theorem abuiltin_arg_sound : abuiltin_arg_soundStatement := by
+  intro cfg classification globals registers stack memory environment readonly abstract_memory
+    environment_match readonly_match memory_match global_match stack_match argument value evaluated
+  induction evaluated with
+  | eval_BA register => exact areg_sound classification registers environment register environment_match
+  | eval_BA_int integer => exact .vmatch_i integer
+  | eval_BA_long integer => exact .long integer
+  | eval_BA_float number => exact .float number
+  | eval_BA_single number => exact .single number
+  | eval_BA_loadstack chunk offset value loaded =>
+      apply loadv_sound cfg classification chunk memory _ value readonly abstract_memory _
+        loaded readonly_match memory_match
+      simpa only [Val.offset_ptr, pg_static_ptrofs_zero_add] using
+        (vmatch.ptr stack offset (Stk offset) (pmatch.stk stack_match))
+  | eval_BA_addrstack offset =>
+      simpa only [Val.offset_ptr, pg_static_ptrofs_zero_add, abuiltin_arg] using
+        (vmatch.ptr stack offset (Stk offset) (pmatch.stk stack_match))
+  | eval_BA_loadglobal chunk identifier offset value loaded =>
+      apply loadv_sound cfg classification chunk memory _ value readonly abstract_memory _
+        loaded readonly_match memory_match
+      exact symbol_address_sound classification globals identifier offset global_match
+  | eval_BA_addrglobal identifier offset =>
+      exact symbol_address_sound classification globals identifier offset global_match
+  | eval_BA_splitlong high low high_value low_value _ _ high_match low_match =>
+      exact va_longofwords_match classification high_value low_value _ _ high_match low_match
+  | eval_BA_addptr first_arg second_arg first_value second_value _ _ first_match second_match =>
+      exact va_addl_match classification first_value second_value _ _ first_match second_match
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+theorem abuiltin_args_sound : abuiltin_args_soundStatement := by
+  intro cfg classification globals registers stack memory environment readonly abstract_memory
+    environment_match readonly_match memory_match global_match stack_match arguments values evaluated
+  induction evaluated with
+  | nil => exact .nil _
+  | cons argument value head tail induction_hypothesis =>
+      exact .cons _ _
+        (abuiltin_arg_sound cfg classification globals registers stack memory environment
+          readonly abstract_memory environment_match readonly_match memory_match global_match
+          stack_match argument value head)
+        induction_hypothesis
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+
+theorem aaddr_arg_sound_1 : aaddr_arg_sound_1Statement := by
+  intro cfg classification registers environment memory readonly abstract_memory globals stack
+    argument source offset environment_match readonly_match memory_match global_match stack_match
+    evaluated
+  have matched := abuiltin_arg_sound cfg classification globals registers stack memory environment
+    readonly abstract_memory environment_match readonly_match memory_match global_match stack_match
+    argument _ evaluated
+  have pointer_match := match_aptr_of_aval cfg classification source offset _ matched
+  cases argument <;> first
+    | exact pointer_match
+    | exact pmatch_top' classification source offset _ pointer_match
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+theorem aaddr_arg_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    aaddr_arg_soundStatement := by
+  intro cfg compilation_unit program frames body stack current registers memory argument source
+    offset sound linked evaluated
+  have invariant := sound_state_inv cfg program _ compilation_unit sound linked
+  cases invariant
+  rename_i environment abstract_memory classification global_match stack_match analyzed
+    environment_match readonly_match memory_match stack_sound
+  refine ⟨classification, ?_, global_match, stack_match⟩
+  erw [analyzed]
+  exact aaddr_arg_sound_1 cfg classification registers environment memory
+    (romem_for cfg compilation_unit) abstract_memory _ stack argument source offset
+    environment_match readonly_match memory_match global_match stack_match evaluated
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Globalenvs
+
+theorem aaddressing_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    aaddressing_soundStatement := by
+  intro cfg compilation_unit program frames body stack current registers memory address arguments
+    source offset sound linked evaluated
+  have invariant := sound_state_inv cfg program _ compilation_unit sound linked
+  cases invariant
+  rename_i environment abstract_memory classification global_match stack_match analyzed
+    environment_match readonly_match memory_match stack_sound
+  refine ⟨classification, ?_, global_match, stack_match⟩
+  erw [analyzed]
+  apply match_aptr_of_aval cfg classification source offset
+  exact CompCert4Lean.X86.ValueAOp.eval_static_addressing_sound classification
+    (Genv.globalenv program) global_match stack stack_match address _ _ (aregs environment arguments)
+    evaluated (aregs_sound classification registers environment arguments environment_match)
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+theorem sound_succ_state
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    sound_succ_stateStatement := by
+  intro cfg program globals classification current environment abstract_memory instr next_environment
+    next_memory frames body stack successor registers memory analyzed code member transferred
+    environment_match memory_match readonly_match global_match stack_match stack_sound
+  obtain ⟨successor_environment, successor_memory, successor_analyzed, successor_registers,
+    successor_matched⟩ := analyze_succ cfg registers memory (romem_for cfg program) body current
+      environment abstract_memory instr successor next_environment next_memory classification
+      analyzed code member transferred environment_match memory_match
+  exact sound_regular_state frames body stack successor registers memory successor_environment
+    successor_memory classification stack_sound successor_analyzed successor_registers readonly_match
+    successor_matched global_match stack_match
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+
+theorem store_init_data_sound : store_init_data_soundStatement := by
+  intro cfg program classification memory source position datum result abstract_block
+    global_match stored matched
+  cases datum with
+  | Init_int8 integer =>
+      exact ablock_store_sound classification _ memory source position _ result abstract_block _
+        stored matched (.vmatch_i integer)
+  | Init_int16 integer =>
+      exact ablock_store_sound classification _ memory source position _ result abstract_block _
+        stored matched (.vmatch_i integer)
+  | Init_int32 integer =>
+      exact ablock_store_sound classification _ memory source position _ result abstract_block _
+        stored matched (.vmatch_i integer)
+  | Init_int64 integer =>
+      exact ablock_store_sound classification _ memory source position _ result abstract_block _
+        stored matched (.long integer)
+  | Init_float32 number =>
+      apply ablock_store_sound classification _ memory source position _ result abstract_block _
+        stored matched
+      change vmatch classification (Vsingle number)
+        (if CompCert4Lean.Driver.Compopts.propagate_float_constants cfg then FS number else ntop)
+      split
+      · exact .single number
+      · exact .numSingle number _
+  | Init_float64 number =>
+      apply ablock_store_sound classification _ memory source position _ result abstract_block _
+        stored matched
+      change vmatch classification (Vfloat number)
+        (if CompCert4Lean.Driver.Compopts.propagate_float_constants cfg then F number else ntop)
+      split
+      · exact .float number
+      · exact .numFloat number _
+  | Init_addrof identifier offset =>
+      unfold Genv.store_init_data at stored
+      dsimp only at stored
+      split at stored
+      · contradiction
+      · rename_i target found
+        exact ablock_store_sound classification _ memory source position _ result abstract_block _
+          stored matched (.ptr target offset _ (.gl identifier ((global_match.1 identifier target).mp found)))
+  | Init_space size =>
+      change some memory = some result at stored
+      cases stored
+      exact matched
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+
+theorem store_init_data_list_sound : store_init_data_list_soundStatement := by
+  intro cfg program classification data
+  induction data with
+  | nil =>
+      intro memory source position result abstract_block global_match stored matched
+      change some memory = some result at stored
+      cases stored
+      exact matched
+  | cons datum rest induction_hypothesis =>
+      intro memory source position result abstract_block global_match stored matched
+      unfold Genv.store_init_data_list at stored
+      split at stored
+      · contradiction
+      · rename_i intermediate first_stored
+        exact induction_hypothesis intermediate source (zAdd position (init_data_size datum))
+          result (store_init_data cfg abstract_block position datum) global_match stored
+          (store_init_data_sound cfg program classification memory source position datum intermediate
+            abstract_block global_match first_stored matched)
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem va_add_global_old (globals : genv) (identifier query : ident)
+    (definition : globdef fundef Unit) (source : block) (global_variable : globvar Unit)
+    (symbol : Genv.find_symbol (Genv.add_global globals (identifier, definition)) query = some source)
+    (info : Genv.find_var_info (Genv.add_global globals (identifier, definition)) source = some global_variable)
+    (different : source ≠ globals.genv_next) :
+    Genv.find_symbol globals query = some source ∧ Genv.find_var_info globals source = some global_variable := by
+  constructor
+  · change PTree.get query (PTree.set identifier globals.genv_next globals.genv_symb) = some source at symbol
+    by_cases same : query = identifier
+    · subst query
+      erw [PTree.gss] at symbol
+      exact False.elim (different (Option.some.inj symbol).symm)
+    · erw [PTree.gso _ _ same] at symbol
+      exact symbol
+  · simp only [Genv.find_var_info, Genv.find_def, Genv.add_global] at info
+    erw [PTree.gso _ _ different] at info
+    exact info
+
+theorem alloc_global_match : alloc_global_matchStatement := by
+  intro cfg program classification global_match memory globals entry result bound initial allocated_global
+  obtain ⟨identifier, definition⟩ := entry
+  cases definition with
+  | Gfun body =>
+      let intermediate := (Mem.alloc memory z0 (zOfNat 1)).1
+      let fresh := (Mem.alloc memory z0 (zOfNat 1)).2
+      have allocated : Mem.alloc memory z0 (zOfNat 1) = (intermediate, fresh) := rfl
+      change Mem.drop_perm intermediate fresh z0 (zOfNat 1) .Nonempty = some result at allocated_global
+      intro query source global_variable symbol info not_volatile readonly
+      by_cases same : source = globals.genv_next
+      · simp only [Genv.find_var_info, Genv.find_def, Genv.add_global] at info
+        erw [same, PTree.gss] at info
+        cases info
+      · obtain ⟨old_symbol, old_info⟩ :=
+          va_add_global_old globals identifier query (.Gfun body) source global_variable symbol info same
+        have below : Plt source memory.nextblock := by
+          rw [← bound]
+          exact globals.genv_symb_range query old_symbol
+        have different : source ≠ fresh := by
+          rw [Mem.alloc_result memory z0 (zOfNat 1) intermediate fresh allocated, ← bound]
+          exact same
+        apply bmatch_inv classification memory source _ result
+          (initial query source global_variable old_symbol old_info not_volatile readonly)
+        intro offset count nonnegative
+        exact (Mem.loadbytes_drop intermediate fresh z0 (zOfNat 1) .Nonempty result
+          allocated_global source offset count (.inl different)).trans
+          (Mem.loadbytes_alloc_unchanged memory z0 (zOfNat 1) intermediate fresh allocated
+            source offset count below)
+  | Gvar declared =>
+      let size := init_data_list_size declared.gvar_init
+      let intermediate := (Mem.alloc memory z0 size).1
+      let fresh := (Mem.alloc memory z0 size).2
+      have allocated : Mem.alloc memory z0 size = (intermediate, fresh) := rfl
+      change (match store_zeros intermediate fresh z0 size with
+        | none => none
+        | some zeroed => match Genv.store_init_data_list (Genv.globalenv program) zeroed fresh z0 declared.gvar_init with
+          | none => none
+          | some initialized => Mem.drop_perm initialized fresh z0 size (Genv.perm_globvar declared)) = some result
+        at allocated_global
+      cases zeroed_eq : store_zeros intermediate fresh z0 size with
+      | none => simp only [zeroed_eq] at allocated_global; contradiction
+      | some zeroed =>
+          simp only [zeroed_eq] at allocated_global
+          cases initialized_eq : Genv.store_init_data_list (Genv.globalenv program) zeroed fresh z0 declared.gvar_init with
+          | none => simp only [initialized_eq] at allocated_global; contradiction
+          | some initialized =>
+              simp only [initialized_eq] at allocated_global
+              intro query source global_variable symbol info not_volatile readonly
+              by_cases same : source = globals.genv_next
+              · simp only [Genv.find_var_info, Genv.find_def, Genv.add_global] at info
+                erw [same, PTree.gss] at info
+                have same_variable : declared = global_variable := Option.some.inj info
+                subst global_variable
+                have same_fresh : source = fresh := same.trans
+                  (bound.trans (Mem.alloc_result memory z0 size intermediate fresh allocated).symm)
+                rw [same_fresh]
+                have empty_match := (pg_alloc_stack_undef_bmatch classification memory intermediate fresh size allocated).1
+                have zeros_match := store_zeros_same classification Pbot intermediate fresh z0 size zeroed zeroed_eq empty_match
+                have initialized_match := store_init_data_list_sound cfg program classification declared.gvar_init
+                  zeroed fresh z0 initialized (ablock_init Pbot) global_match initialized_eq
+                  (ablock_init_sound classification zeroed fresh Pbot zeros_match)
+                apply bmatch_inv classification initialized fresh _ result initialized_match
+                intro offset count nonnegative
+                apply Mem.loadbytes_drop initialized fresh z0 size (Genv.perm_globvar declared) result
+                  allocated_global fresh offset count
+                right; right; right
+                simp only [Genv.perm_globvar, not_volatile, readonly, Bool.false_eq_true,
+                  ↓reduceIte]
+                exact .perm_refl .Readable
+              · obtain ⟨old_symbol, old_info⟩ :=
+                  va_add_global_old globals identifier query (.Gvar declared) source global_variable symbol info same
+                have below : Plt source memory.nextblock := by
+                  rw [← bound]
+                  exact globals.genv_symb_range query old_symbol
+                have different : source ≠ fresh := by
+                  rw [Mem.alloc_result memory z0 size intermediate fresh allocated, ← bound]
+                  exact same
+                have old_match := initial query source global_variable old_symbol old_info not_volatile readonly
+                have allocated_match := pg_alloc_preserve_bmatch classification memory intermediate source _
+                  fresh size allocated below old_match
+                have zeroed_match := store_zeros_other classification source _ intermediate fresh z0 size zeroed
+                  zeroed_eq different allocated_match
+                have initialized_match := store_init_data_list_other program classification fresh source _
+                  declared.gvar_init zeroed z0 initialized initialized_eq different zeroed_match
+                apply bmatch_inv classification initialized source _ result initialized_match
+                intro offset count nonnegative
+                exact Mem.loadbytes_drop initialized fresh z0 size (Genv.perm_globvar declared) result
+                  allocated_global source offset count (.inl different)
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Common.Globalenvs
+
+theorem alloc_globals_match : alloc_globals_matchStatement := by
+  intro cfg program classification global_match declarations
+  induction declarations with
+  | nil =>
+      intro memory globals result bound initial allocated
+      change some memory = some result at allocated
+      cases allocated
+      exact initial
+  | cons entry rest induction_hypothesis =>
+      intro memory globals result bound initial allocated
+      unfold Genv.alloc_globals at allocated
+      split at allocated
+      · contradiction
+      · rename_i intermediate first_allocated
+        have next := Genv.alloc_global_nextblock fundef Unit (Genv.globalenv program)
+          entry memory intermediate first_allocated
+        have next_bound : (Genv.add_global globals entry).genv_next = intermediate.nextblock := by
+          rw [next]
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.succ globals.genv_next =
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.succ memory.nextblock
+          exact congrArg _ bound
+        exact induction_hypothesis intermediate (Genv.add_global globals entry) result next_bound
+          (alloc_global_match cfg program classification global_match memory globals entry intermediate
+            bound initial first_allocated) allocated
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+
+theorem initial_mem_matches : initial_mem_matchesStatement := by
+  intro cfg program memory initialized
+  obtain ⟨classification, global_match, below, no_stack, symbols, valid⟩ :=
+    initial_block_classification program memory initialized
+  refine ⟨classification, global_match, below, no_stack, ?_, valid⟩
+  intro compilation_unit linked
+  have initial : initial_mem_match cfg classification memory (Genv.globalenv program) := by
+    apply alloc_globals_match cfg program classification global_match program.prog_defs Mem.empty
+      (Genv.empty_genv fundef Unit program.prog_public) memory rfl
+    · intro identifier source global_variable symbol info not_volatile readonly
+      change PTree.get identifier (PTree.empty block) = some source at symbol
+      erw [PTree.gempty] at symbol
+      cases symbol
+    · exact initialized
+  have consistent := romem_for_consistent_2 cfg program compilation_unit linked
+  intro source identifier abstract_block global found
+  obtain ⟨global_variable, definition, readonly, not_volatile, definitive, abstract_eq⟩ :=
+    consistent identifier abstract_block found
+  obtain ⟨symbol_block, symbol_found, definition_found⟩ :=
+    (Genv.find_def_symbol fundef Unit program identifier (.Gvar global_variable)).mp definition
+  have same_block : symbol_block = source :=
+    Option.some.inj (symbol_found.symm.trans (symbols source identifier global))
+  subst symbol_block
+  have info := (Genv.find_var_info_iff fundef Unit (Genv.globalenv program) source global_variable).mpr
+    definition_found
+  refine ⟨?_, ?_, ?_⟩
+  · rw [abstract_eq]
+    exact store_init_data_list_summary cfg global_variable.gvar_init (ablock_init Pbot) z0 (.bot Glob)
+  · rw [abstract_eq]
+    exact initial identifier source global_variable symbol_found info not_volatile readonly
+  · have characterization := Genv.init_mem_characterization fundef Unit program source global_variable
+      memory info initialized
+    intro offset allowed
+    have order := (characterization.2.1 offset .Max .Writable allowed).2
+    simp only [Genv.perm_globvar, not_volatile, readonly, Bool.false_eq_true, ↓reduceIte] at order
+    cases order
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Coqlib
+
+theorem sound_initial
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    sound_initialStatement := by
+  intro cfg program current started
+  cases started with
+  | intro entry callee memory initialized symbol function_found signature =>
+      obtain ⟨classification, global_match, below, no_stack, readonly, valid⟩ :=
+        initial_mem_matches cfg program memory initialized
+      have injection_eq : inj_of_bc classification = Mem.flat_inj memory.nextblock := by
+        funext source
+        unfold Mem.flat_inj
+        cases compared : plt source memory.nextblock with
+        | left within => exact inj_of_bc_valid classification source (valid source within)
+        | right outside =>
+            have invalid := bc_below_invalid source classification memory.nextblock outside below
+            simp only [inj_of_bc, invalid]
+      have injected : Mem.inject (inj_of_bc classification) memory memory := by
+        rw [injection_eq]
+        exact Genv.initmem_inject fundef Unit program memory initialized
+      refine sound_state_intro _ ?_
+      intro compilation_unit linked
+      apply sound_call_state [] callee [] memory classification
+      · constructor
+      · intro value member
+        cases member
+      · exact readonly compilation_unit linked
+      · exact mmatch_inj_top classification memory memory injected
+      · exact global_match
+      · exact no_stack
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem return_from_public_call : return_from_public_callStatement := by
+  classical
+  intro caller callee bound stack globals registers environment value memory readonly
+    caller_below callee_stack caller_stack same caller_globals environment_match bound_below
+    result_match readonly_match memory_match callee_globals no_stack
+  let classify : block → block_class := fun source => if source = stack then BCstack else callee source
+  have unique_stack : ∀ source, classify source = BCstack → source = stack := by
+    intro source stack_class
+    by_cases equal : source = stack
+    · exact equal
+    · exact False.elim (no_stack source (by simpa only [classify, if_neg equal] using stack_class))
+  have same_globals : ∀ source identifier,
+      classify source = BCglob identifier ↔ callee source = BCglob identifier := by
+    intro source identifier
+    by_cases equal : source = stack
+    · subst source
+      simp [classify, callee_stack]
+    · simp only [classify, if_neg equal]
+  let classification : block_classification :=
+    { bc_img := classify
+      bc_stack := fun first second first_stack second_stack =>
+        (unique_stack first first_stack).trans (unique_stack second second_stack).symm
+      bc_glob := fun first second identifier first_global second_global =>
+        callee.bc_glob first second identifier ((same_globals first identifier).mp first_global)
+          ((same_globals second identifier).mp second_global) }
+  have classified_stack : classification stack = BCstack := by simp [classification, classify]
+  have unchanged : ∀ source, source ≠ stack → classification source = callee source := by
+    intro source different
+    simp only [classification, classify, if_neg different]
+  have caller_increases : bc_incr caller classification := by
+    intro source valid
+    by_cases equal : source = stack
+    · subst source
+      exact classified_stack.trans caller_stack.symm
+    · exact (unchanged source equal).trans (same source (caller_below source valid) equal).symm
+  have callee_valid : ∀ source, classification source ≠ BCinvalid ↔ callee source ≠ BCinvalid := by
+    intro source
+    by_cases equal : source = stack
+    · subst source
+      simp only [classified_stack, callee_stack, ne_eq, reduceCtorEq, not_false_eq_true]
+    · rw [unchanged source equal]
+  have pointer_top : ∀ source offset pointer, pmatch callee source offset pointer →
+      pmatch classification source offset Ptop := by
+    intro source offset pointer matched
+    cases pmatch_top' callee source offset pointer matched with
+    | top valid => exact .top ((callee_valid source).mpr valid)
+  have value_top : ∀ concrete abstract, vmatch callee concrete abstract →
+      vmatch classification concrete Vtop := by
+    intro concrete abstract matched
+    cases vmatch_top callee concrete abstract matched <;> constructor
+    exact pointer_top _ _ _ ‹_›
+  have summary_top : ∀ source pointer, smatch callee memory source pointer →
+      smatch classification memory source Ptop := by
+    intro source pointer matched
+    exact ⟨fun chunk offset concrete loaded => value_top _ _ (matched.1 chunk offset concrete loaded),
+      fun offset target target_offset quantity index loaded =>
+        pointer_top _ _ _ (matched.2 offset target target_offset quantity index loaded)⟩
+  have classified_globals : genv_match classification globals := by
+    constructor
+    · intro identifier source
+      exact (callee_globals.1 identifier source).trans (same_globals source identifier).symm
+    · intro source below_globals
+      have different : source ≠ stack := by
+        intro equal
+        subst source
+        exact (caller_globals.2 stack below_globals).2 caller_stack
+      erw [unchanged source different]
+      exact callee_globals.2 source below_globals
+  have classified_memory : mmatch classification memory mafter_public_call := by
+    constructor
+    · intro source stack_class
+      exact ablock_init_sound classification memory source Ptop
+        (summary_top source _ (memory_match.mmatch_top source
+          ((callee_valid source).mp (by simp [stack_class]))))
+    · intro identifier abstract_block source global found
+      change PTree.get identifier (PTree.empty ablock) = some abstract_block at found
+      erw [PTree.gempty] at found
+      cases found
+    · intro source not_stack valid
+      exact summary_top source _ (memory_match.mmatch_top source ((callee_valid source).mp valid))
+    · intro source valid
+      exact summary_top source _ (memory_match.mmatch_top source ((callee_valid source).mp valid))
+    · intro source valid
+      exact memory_match.mmatch_below source ((callee_valid source).mp valid)
+  refine ⟨classification, value_top _ _ result_match,
+    ematch_incr caller classification registers environment environment_match caller_increases,
+    anonymize_romatch_exten callee classification memory readonly readonly_match same_globals,
+    classified_memory, classified_globals, classified_stack, ?_⟩
+  intro source before_stack
+  have different : source ≠ stack := Plt_ne source stack before_stack
+  have stack_below : Plt stack bound := caller_below stack (by simp [caller_stack])
+  exact (unchanged source different).trans
+    (same source (Plt_trans source stack bound before_stack stack_below) different).symm
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem external_call_match
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    external_call_matchStatement := by
+  classical
+  intro providers function globals arguments before trace result after classification readonly abstract_memory
+    called global_match argument_match readonly_match memory_match no_stack
+  have arguments_injected : Val.inject_list (inj_of_bc classification) arguments arguments := by
+    clear called
+    induction arguments with
+    | nil => exact .inject_list_nil
+    | cons first rest induction_hypothesis =>
+        exact .inject_list_cons first first rest rest
+          (vmatch_inj classification first Vtop (argument_match first (by simp)))
+          (induction_hypothesis (fun value member => argument_match value (List.mem_cons_of_mem first member)))
+  obtain ⟨injection, injected_result, injected_memory, injected_call, result_injection,
+    memory_injection, unmapped_unchanged, unreachable_unchanged, injection_increases, separated⟩ :=
+    external_call_mem_inject providers function fundef Unit globals arguments before trace result after
+      (inj_of_bc classification) before arguments
+      (inj_of_bc_preserves_globals classification globals global_match) called
+      (mmatch_inj classification before abstract_memory memory_match memory_match.mmatch_below)
+      arguments_injected
+  have injection_below : ∀ source, Plt source before.nextblock →
+      injection source = inj_of_bc classification source := by
+    intro source below
+    cases original : inj_of_bc classification source with
+    | some destination =>
+        obtain ⟨target, delta⟩ := destination
+        exact injection_increases source target delta original
+    | none =>
+        cases extended : injection source with
+        | none => rfl
+        | some destination =>
+            obtain ⟨target, delta⟩ := destination
+            exact False.elim ((separated source target delta original extended).1 below)
+  let classify : block → block_class := fun source =>
+    if Plt source before.nextblock then classification source
+    else match injection source with | none => BCinvalid | some _ => BCother
+  have classify_old : ∀ source, classification source ≠ BCinvalid → classify source = classification source := by
+    intro source valid
+    exact if_pos (memory_match.mmatch_below source valid)
+  have classify_globals : ∀ source identifier,
+      classify source = BCglob identifier ↔ classification source = BCglob identifier := by
+    intro source identifier
+    by_cases below : Plt source before.nextblock
+    · simp only [classify, if_pos below]
+    · have invalid := bc_below_invalid source classification before.nextblock below memory_match.mmatch_below
+      cases mapped : injection source <;> simp [classify, below, mapped, invalid]
+  have classify_no_stack : ∀ source, classify source ≠ BCstack := by
+    intro source
+    by_cases below : Plt source before.nextblock
+    · simpa only [classify, if_pos below] using no_stack source
+    · cases mapped : injection source <;> simp [classify, below, mapped]
+  let extended : block_classification :=
+    { bc_img := classify
+      bc_stack := fun first second first_stack second_stack => False.elim (classify_no_stack first first_stack)
+      bc_glob := fun first second identifier first_global second_global =>
+        classification.bc_glob first second identifier ((classify_globals first identifier).mp first_global)
+          ((classify_globals second identifier).mp second_global) }
+  have increases : bc_incr classification extended := classify_old
+  have unchanged : ∀ source, Plt source before.nextblock → extended source = classification source := by
+    intro source below
+    exact if_pos below
+  have mapped_valid : ∀ source target delta,
+      injection source = some (target, delta) → extended source ≠ BCinvalid := by
+    intro source target delta mapped
+    by_cases below : Plt source before.nextblock
+    · rw [unchanged source below]
+      rw [injection_below source below] at mapped
+      exact (inj_of_bc_inv classification source target delta mapped).1
+    · change (if Plt source before.nextblock then classification source else
+        match injection source with | none => BCinvalid | some _ => BCother) ≠ BCinvalid
+      simp only [if_neg below, mapped, ne_eq, reduceCtorEq, not_false_eq_true]
+  have valid_mapped : ∀ source, extended source ≠ BCinvalid →
+      ∃ target delta, injection source = some (target, delta) := by
+    intro source valid
+    by_cases below : Plt source before.nextblock
+    · refine ⟨source, z0, ?_⟩
+      rw [injection_below source below]
+      apply inj_of_bc_valid classification source
+      rwa [unchanged source below] at valid
+    · change (if Plt source before.nextblock then classification source else
+        match injection source with | none => BCinvalid | some _ => BCother) ≠ BCinvalid at valid
+      rw [if_neg below] at valid
+      cases mapped : injection source with
+      | none => simp only [mapped, ne_eq, not_true_eq_false] at valid
+      | some destination => exact ⟨destination.1, destination.2, rfl⟩
+  have pointer_top : ∀ source target delta offset,
+      injection source = some (target, delta) → pmatch extended source offset Ptop := by
+    intro source target delta offset mapped
+    exact .top (mapped_valid source target delta mapped)
+  have value_top : ∀ concrete target, Val.inject injection concrete target →
+      vmatch extended concrete Vtop := by
+    intro concrete target injected
+    cases injected with
+    | inject_int integer => exact .ifptrInt integer Ptop
+    | inject_long integer => exact .ifptrLong integer Ptop
+    | inject_float number => exact .ifptrFloat number Ptop
+    | inject_single number => exact .ifptrSingle number Ptop
+    | val_inject_undef target => exact .ifptrUndef Ptop
+    | inject_ptr source offset destination target_offset delta mapped shifted =>
+        exact .ifptrPtr source offset Ptop (pointer_top source destination delta offset mapped)
+  have summary_top : ∀ source, extended source ≠ BCinvalid → smatch extended after source Ptop := by
+    intro source valid
+    obtain ⟨target, delta, mapped⟩ := valid_mapped source valid
+    constructor
+    · intro chunk offset concrete loaded
+      obtain ⟨target_value, target_loaded, injected⟩ := Mem.load_inject injection after injected_memory
+        chunk source offset target delta concrete memory_injection loaded mapped
+      exact value_top concrete target_value injected
+    · intro offset pointer pointer_offset quantity index loaded
+      obtain ⟨target_bytes, target_loaded, injected⟩ := Mem.loadbytes_inject injection after injected_memory
+        source offset (zOfNat 1) target delta _ memory_injection loaded mapped
+      cases injected with
+      | cons byte target_byte byte_injection rest =>
+          cases byte_injection with
+          | fragment first second quantity index value_injection =>
+              cases value_injection with
+              | inject_ptr pointer pointer_offset target_pointer target_offset delta pointer_injection offset_eq =>
+                  exact pointer_top pointer target_pointer delta pointer_offset pointer_injection
+  have extended_globals : genv_match extended globals := by
+    apply genv_match_exten globals classification extended global_match
+    · intro source identifier
+      exact (classify_globals source identifier).symm
+    · intro source other
+      exact (increases source (by simp [other])).trans other
+  have extended_readonly : romatch extended after readonly := by
+    intro source identifier abstract_block global found
+    have old_global := (classify_globals source identifier).mp global
+    have valid := memory_match.mmatch_below source (by simp [old_global])
+    obtain ⟨summary, block_match, not_writable⟩ := readonly_match source identifier abstract_block old_global found
+    refine ⟨summary, ?_, ?_⟩
+    · apply bmatch_incr classification extended increases after source abstract_block
+      apply bmatch_ext classification before source abstract_block after block_match
+      intro offset count bytes loaded nonnegative
+      exact external_call_readonly_proof providers function (Genv.to_senv globals) arguments before trace
+        result after source offset count bytes called valid loaded (fun position inside => not_writable position)
+    · intro offset writable
+      exact not_writable offset (external_call_max_perm_proof providers function (Genv.to_senv globals)
+        arguments before trace result after source offset .Writable called valid writable)
+  have extended_memory : mmatch extended after mtop := by
+    constructor
+    · intro source stack
+      exact ablock_init_sound extended after source Ptop (summary_top source (by simp [stack]))
+    · intro identifier abstract_block source global found
+      change PTree.get identifier (PTree.empty ablock) = some abstract_block at found
+      erw [PTree.gempty] at found
+      cases found
+    · intro source not_stack valid
+      exact summary_top source valid
+    · exact summary_top
+    · intro source valid
+      obtain ⟨target, delta, mapped⟩ := valid_mapped source valid
+      exact Mem.valid_block_inject_1 injection after injected_memory source target delta mapped memory_injection
+  refine ⟨extended, increases, unchanged, value_top result injected_result result_injection,
+    extended_globals, extended_readonly, extended_memory, classify_no_stack, ?_⟩
+  intro source offset count valid invalid
+  apply Mem.loadbytes_unchanged_on_1 (loc_unmapped (inj_of_bc classification)) before after source offset count
+    unmapped_unchanged valid
+  intro position inside
+  simp only [loc_unmapped, inj_of_bc, invalid]
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+private theorem va_call_return_match
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (program : program) (globals : genv)
+    (providers : CompCert4Lean.Common.ExternalCalls.ExternalCalls) (function : external_function)
+    (classification : block_classification) (frames : List stackframe) (stack : block)
+    (registers : regset) (environment : aenv) (before after : mem) (abstract_memory : amem)
+    (arguments : List val) (abstract_arguments : List aval) (trace : trace) (result : val)
+    (called : external_call providers function (Genv.to_senv globals) arguments before trace result after)
+    (argument_match : list_forall2 (vmatch classification) arguments abstract_arguments)
+    (environment_match : ematch classification registers environment)
+    (readonly_match : romatch classification before (romem_for cfg program))
+    (memory_match : mmatch classification before abstract_memory)
+    (global_match : genv_match classification globals)
+    (stack_match : classification stack = BCstack)
+    (stack_sound : sound_stack cfg program globals classification frames before stack) :
+    ∃ restored,
+      vmatch restored result (analyze_call abstract_memory abstract_arguments).1 ∧
+      ematch restored registers environment ∧
+      romatch restored after (romem_for cfg program) ∧
+      mmatch restored after (analyze_call abstract_memory abstract_arguments).2 ∧
+      genv_match restored globals ∧ restored stack = BCstack ∧
+      sound_stack cfg program globals restored frames after stack := by
+  have stack_valid : Plt stack before.nextblock := memory_match.mmatch_below stack (by simp [stack_match])
+  have next_bound := external_call_nextblock providers function (Genv.to_senv globals) arguments
+    before trace result after called
+  unfold analyze_call
+  split
+  · rename_i private_call
+    have private_parts : pincl abstract_memory.am_nonstack Nonstack = true ∧
+        abstract_arguments.all (fun abstract => vpincl abstract Nonstack = true) = true := by
+      simpa only [Bool.and_eq_true, decide_eq_true_eq] using private_call
+    obtain ⟨hidden, hidden_nostack, hidden_stack, hidden_other, hidden_values,
+      hidden_globals, hidden_readonly, hidden_memory⟩ := hide_stack before stack classification globals
+        (romem_for cfg program) abstract_memory global_match readonly_match memory_match stack_match
+        (pincl_ge _ _ private_parts.1)
+    have hidden_arguments : ∀ value, value ∈ arguments → vmatch hidden value Vtop := by
+      intro value member
+      obtain ⟨abstract, abstract_member, matched⟩ :=
+        list_forall2_in_left val aval (vmatch classification) value arguments abstract_arguments argument_match member
+      apply hidden_values value abstract
+      · apply vpincl_ge abstract Nonstack
+        simpa only [decide_eq_true_eq] using (List.all_eq_true.mp private_parts.2) abstract abstract_member
+      · exact matched
+    obtain ⟨extended, increases, unchanged, result_match, extended_globals, extended_readonly,
+      extended_memory, extended_nostack, preserved⟩ := external_call_match providers function globals
+        arguments before trace result after hidden (romem_for cfg program) mtop called hidden_globals
+        hidden_arguments hidden_readonly hidden_memory hidden_nostack
+    have extended_stack : extended stack = BCinvalid := (unchanged stack stack_valid).trans hidden_stack
+    have same : ∀ source, Plt source before.nextblock → source ≠ stack →
+        classification source = extended source := by
+      intro source below different
+      exact ((unchanged source below).trans (hidden_other source different)).symm
+    have contents : bmatch classification after stack abstract_memory.am_stack := by
+      apply bmatch_inv classification before stack _ after (memory_match.mmatch_stack stack stack_match)
+      intro offset count nonnegative
+      exact preserved stack offset count stack_valid hidden_stack
+    obtain ⟨restored, restored_result, restored_environment, restored_readonly, restored_memory,
+      restored_globals, restored_stack, restored_same⟩ := return_from_private_call classification extended
+        before.nextblock stack globals registers environment result after (romem_for cfg program) abstract_memory
+        memory_match.mmatch_below extended_stack stack_match same global_match environment_match contents next_bound
+        result_match extended_readonly extended_memory extended_globals extended_nostack
+    refine ⟨restored, restored_result, restored_environment, restored_readonly, restored_memory,
+      restored_globals, restored_stack, ?_⟩
+    apply sound_stack_exten cfg program globals classification frames after stack restored
+      (sound_stack_inv cfg program globals after classification frames before stack stack_sound ?_) restored_same
+    intro source offset count below invalid nonnegative
+    exact preserved source offset count (Plt_trans source stack before.nextblock below stack_valid)
+      ((hidden_other source (Plt_ne source stack below)).trans invalid)
+  · obtain ⟨hidden, hidden_nostack, hidden_stack, hidden_other, hidden_values,
+      hidden_globals, hidden_readonly, hidden_memory⟩ := anonymize_stack before stack classification globals
+        (romem_for cfg program) abstract_memory global_match readonly_match memory_match stack_match
+    have hidden_arguments : ∀ value, value ∈ arguments → vmatch hidden value Vtop := by
+      intro value member
+      obtain ⟨abstract, abstract_member, matched⟩ :=
+        list_forall2_in_left val aval (vmatch classification) value arguments abstract_arguments argument_match member
+      exact hidden_values value abstract matched
+    obtain ⟨extended, increases, unchanged, result_match, extended_globals, extended_readonly,
+      extended_memory, extended_nostack, preserved⟩ := external_call_match providers function globals
+        arguments before trace result after hidden (romem_for cfg program) mtop called hidden_globals
+        hidden_arguments hidden_readonly hidden_memory hidden_nostack
+    have extended_stack : extended stack = BCother := (unchanged stack stack_valid).trans hidden_stack
+    have same : ∀ source, Plt source before.nextblock → source ≠ stack →
+        classification source = extended source := by
+      intro source below different
+      exact ((unchanged source below).trans (hidden_other source different)).symm
+    obtain ⟨restored, restored_result, restored_environment, restored_readonly, restored_memory,
+      restored_globals, restored_stack, restored_same⟩ := return_from_public_call classification extended
+        before.nextblock stack globals registers environment result after (romem_for cfg program)
+        memory_match.mmatch_below extended_stack stack_match same global_match environment_match next_bound
+        result_match extended_readonly extended_memory extended_globals extended_nostack
+    refine ⟨restored, restored_result, restored_environment, restored_readonly, restored_memory,
+      restored_globals, restored_stack, ?_⟩
+    apply sound_stack_exten cfg program globals classification frames after stack restored
+      (sound_stack_inv cfg program globals after classification frames before stack stack_sound ?_) restored_same
+    intro source offset count below invalid nonnegative
+    exact preserved source offset count (Plt_trans source stack before.nextblock below stack_valid)
+      ((hidden_other source (Plt_ne source stack below)).trans invalid)
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem va_builtin_state
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (program : program) (globals : genv)
+    (providers : CompCert4Lean.Common.ExternalCalls.ExternalCalls) (function : external_function)
+    (classification : block_classification) (frames : List stackframe)
+    (body : CompCert4Lean.Backend.RTL.function) (stack : block)
+    (current successor : node) (registers : regset) (environment : aenv) (before after : mem)
+    (abstract_memory : amem) (arguments : List (builtin_arg reg)) (values : List val)
+    (destination : builtin_res reg) (trace : trace) (result : val)
+    (code : PTree.get current body.fn_code = some (.Ibuiltin function arguments destination successor))
+    (analyzed : PMap.get current (analyze cfg (romem_for cfg program) body) = VA.State environment abstract_memory)
+    (evaluated : eval_builtin_args (Genv.to_senv globals) (fun register => Regmap.get register registers)
+      (Vptr stack CompCert4Lean.Lib.Integers.Ptrofs.zero) before arguments values)
+    (called : external_call providers function (Genv.to_senv globals) values before trace result after)
+    (environment_match : ematch classification registers environment)
+    (readonly_match : romatch classification before (romem_for cfg program))
+    (memory_match : mmatch classification before abstract_memory)
+    (global_match : genv_match classification globals)
+    (stack_match : classification stack = BCstack)
+    (stack_sound : sound_stack cfg program globals classification frames before stack) :
+    sound_state_base cfg program globals
+      (State frames body (Vptr stack CompCert4Lean.Lib.Integers.Ptrofs.zero) successor
+        (regmap_setres destination result registers) after) := by
+  have finish : ∀ restored next_environment next_memory,
+      transfer_builtin cfg environment abstract_memory (romem_for cfg program) function arguments destination =
+        VA.State next_environment next_memory →
+      ematch restored (regmap_setres destination result registers) next_environment →
+      mmatch restored after next_memory → romatch restored after (romem_for cfg program) →
+      genv_match restored globals → restored stack = BCstack →
+      sound_stack cfg program globals restored frames after stack →
+      sound_state_base cfg program globals
+        (State frames body (Vptr stack CompCert4Lean.Lib.Integers.Ptrofs.zero) successor
+          (regmap_setres destination result registers) after) := by
+    intro restored next_environment next_memory transferred next_registers next_matched next_readonly
+      next_globals next_stack next_frames
+    apply sound_succ_state cfg program globals restored current environment abstract_memory
+      (.Ibuiltin function arguments destination successor) next_environment next_memory frames body stack successor
+      _ after analyzed code (by simp [successors_instr]) _ next_registers next_matched next_readonly
+      next_globals next_stack next_frames
+    simpa only [transfer, code] using transferred
+  have default : transfer_builtin cfg environment abstract_memory (romem_for cfg program) function arguments destination =
+      transfer_builtin_default cfg environment abstract_memory (romem_for cfg program) arguments destination →
+      sound_state_base cfg program globals
+        (State frames body (Vptr stack CompCert4Lean.Lib.Integers.Ptrofs.zero) successor
+          (regmap_setres destination result registers) after) := by
+    intro transferred
+    have argument_match := abuiltin_args_sound cfg classification globals registers stack before environment
+      (romem_for cfg program) abstract_memory environment_match readonly_match memory_match global_match stack_match
+      arguments values evaluated
+    obtain ⟨restored, restored_result, restored_registers, restored_readonly, restored_memory,
+      restored_globals, restored_stack, restored_frames⟩ := va_call_return_match cfg program globals providers function
+        classification frames stack registers environment before after abstract_memory values
+        (arguments.map (abuiltin_arg cfg environment abstract_memory (romem_for cfg program))) trace result called
+        argument_match environment_match readonly_match memory_match global_match stack_match stack_sound
+    apply finish restored _ _ (transferred.trans rfl)
+      (set_builtin_res_sound restored registers environment result _ destination restored_registers restored_result)
+      restored_memory restored_readonly restored_globals restored_stack restored_frames
+  cases function <;> try exact default rfl
+  case EF_builtin name signature =>
+    cases lookup : lookup_builtin_function name signature with
+    | none => apply default; simp only [transfer_builtin, lookup]
+    | some builtin =>
+        cases static : eval_static_builtin_function cfg environment abstract_memory (romem_for cfg program) builtin arguments with
+        | none => apply default; simp only [transfer_builtin, lookup, static]
+        | some abstract_value =>
+            simp only [external_call, builtin_or_external_sem, lookup] at called
+            cases called
+            rename_i computed
+            apply finish classification _ _ (by simp only [transfer_builtin, lookup, static])
+              (set_builtin_res_sound classification registers environment _ abstract_value destination environment_match ?_)
+              memory_match readonly_match global_match stack_match stack_sound
+            exact eval_static_builtin_function_sound cfg classification globals registers stack before environment
+              (romem_for cfg program) abstract_memory builtin arguments values _ abstract_value environment_match
+              readonly_match memory_match global_match stack_match evaluated static computed
+  case EF_annot kind text types =>
+    cases called
+    exact finish classification _ _ rfl
+      (set_builtin_res_sound classification registers environment Vundef ntop destination environment_match (.numUndef _))
+      memory_match readonly_match global_match stack_match stack_sound
+  case EF_debug kind text types =>
+    cases called
+    exact finish classification _ _ rfl
+      (set_builtin_res_sound classification registers environment Vundef ntop destination environment_match (.numUndef _))
+      memory_match readonly_match global_match stack_match stack_sound
+  case EF_annot_val kind text type =>
+    cases arguments with
+    | nil => exact default rfl
+    | cons argument rest =>
+        cases rest with
+        | cons extra rest => exact default rfl
+        | nil =>
+            cases called
+            cases evaluated
+            rename_i argument_eval remaining
+            cases remaining
+            exact finish classification _ _ rfl
+              (set_builtin_res_sound classification registers environment _ _ destination environment_match
+                (abuiltin_arg_sound cfg classification globals registers stack before environment
+                  (romem_for cfg program) abstract_memory environment_match readonly_match memory_match global_match
+                  stack_match argument _ argument_eval))
+              memory_match readonly_match global_match stack_match stack_sound
+  case EF_vload chunk =>
+    cases arguments with
+    | nil => exact default rfl
+    | cons argument rest =>
+        cases rest with
+        | cons extra rest => exact default rfl
+        | nil =>
+            cases called
+            rename_i source offset loaded
+            cases evaluated
+            rename_i argument_eval remaining
+            cases remaining
+            have address_match := abuiltin_arg_sound cfg classification globals registers stack before environment
+              (romem_for cfg program) abstract_memory environment_match readonly_match memory_match global_match
+              stack_match argument _ argument_eval
+            cases loaded with
+            | volatile_load_vol identifier event concrete volatile symbol event_match =>
+                apply finish classification _ abstract_memory rfl
+                  (set_builtin_res_sound classification registers environment _ _ destination environment_match ?_)
+                  memory_match readonly_match global_match stack_match stack_sound
+                have concrete_match : vmatch classification concrete (Ifptr Glob) := by
+                  generalize type_of_chunk chunk = matched_type at event_match
+                  cases event_match with
+                  | ev_match_int integer => exact .ifptrInt integer Glob
+                  | ev_match_long integer => exact .ifptrLong integer Glob
+                  | ev_match_float number => exact .ifptrFloat number Glob
+                  | ev_match_single number => exact .ifptrSingle number Glob
+                  | ev_match_ptr identifier target target_offset public_symbol found =>
+                      exact .ifptrPtr target target_offset Glob
+                        (.glob identifier ((global_match.1 identifier target).mp found))
+                split
+                · exact vmatch_lub_r cfg classification _ _ _
+                    (vnormalize_sound classification chunk concrete _ concrete_match)
+                · exact vnormalize_sound classification chunk concrete Vtop
+                    (vmatch_top classification concrete _ concrete_match)
+            | volatile_load_nonvol =>
+                rename_i not_volatile memory_load
+                apply finish classification _ abstract_memory rfl
+                  (set_builtin_res_sound classification registers environment _ _ destination environment_match ?_)
+                  memory_match readonly_match global_match stack_match stack_sound
+                have concrete_match := loadv_sound cfg classification chunk before (Vptr source offset) result
+                  (romem_for cfg program) abstract_memory _ memory_load readonly_match memory_match address_match
+                split
+                · exact vmatch_lub_l cfg classification _ _ _ concrete_match
+                · exact vnormalize_cast classification chunk before source
+                    (CompCert4Lean.Lib.Integers.Ptrofs.unsigned offset) result Ptop memory_load
+                    (vmatch_top classification result _ concrete_match)
+  case EF_vstore chunk =>
+    cases arguments with
+    | nil => exact default rfl
+    | cons address rest =>
+        cases rest with
+        | nil => exact default rfl
+        | cons argument rest =>
+            cases rest with
+            | cons extra rest => exact default rfl
+            | nil =>
+                cases called
+                rename_i source offset concrete stored
+                cases evaluated
+                rename_i address_eval remaining
+                cases remaining
+                rename_i value_eval remaining
+                cases remaining
+                have address_match := abuiltin_arg_sound cfg classification globals registers stack before environment
+                  (romem_for cfg program) abstract_memory environment_match readonly_match memory_match global_match
+                  stack_match address _ address_eval
+                have value_match := abuiltin_arg_sound cfg classification globals registers stack before environment
+                  (romem_for cfg program) abstract_memory environment_match readonly_match memory_match global_match
+                  stack_match argument _ value_eval
+                cases stored with
+                | volatile_store_vol identifier event volatile symbol event_match =>
+                    exact finish classification _ _ rfl
+                      (set_builtin_res_sound classification registers environment Vundef ntop destination
+                        environment_match (.numUndef _))
+                      (mmatch_lub_l cfg classification before abstract_memory _ memory_match)
+                      readonly_match global_match stack_match stack_sound
+                | volatile_store_nonvol =>
+                    rename_i not_volatile memory_store
+                    apply finish classification _ _ rfl
+                      (set_builtin_res_sound classification registers environment Vundef ntop destination
+                        environment_match (.numUndef _))
+                    · exact mmatch_lub_r cfg classification after abstract_memory _
+                        (storev_sound cfg classification chunk before (Vptr source offset) concrete after abstract_memory _ _
+                          memory_store memory_match address_match value_match)
+                    · exact romatch_store classification chunk before source _ concrete after _ memory_store readonly_match
+                    · exact global_match
+                    · exact stack_match
+                    · exact sound_stack_storev cfg program globals chunk before (Vptr source offset) concrete after classification _
+                        frames stack memory_store address_match stack_sound
+  case EF_memcpy size alignment =>
+    cases arguments with
+    | nil => exact default rfl
+    | cons destination_arg rest =>
+        cases rest with
+        | nil => exact default rfl
+        | cons source_arg rest =>
+            cases rest with
+            | cons extra rest => exact default rfl
+            | nil =>
+                cases called
+                rename_i destination_block destination_offset source_block source_offset bytes
+                  aligned nonnegative size_aligned source_aligned destination_aligned disjoint loaded stored
+                cases evaluated
+                rename_i destination_eval remaining
+                cases remaining
+                rename_i source_eval remaining
+                cases remaining
+                have destination_match := abuiltin_arg_sound cfg classification globals registers stack before environment
+                  (romem_for cfg program) abstract_memory environment_match readonly_match memory_match global_match
+                  stack_match destination_arg _ destination_eval
+                have source_match := abuiltin_arg_sound cfg classification globals registers stack before environment
+                  (romem_for cfg program) abstract_memory environment_match readonly_match memory_match global_match
+                  stack_match source_arg _ source_eval
+                apply finish classification _ _ rfl
+                  (set_builtin_res_sound classification registers environment Vundef ntop destination
+                    environment_match (.numUndef _))
+                · apply storebytes_sound classification before destination_block destination_offset bytes after
+                    abstract_memory _ size _ stored memory_match
+                    (match_aptr_of_aval cfg classification _ _ _ destination_match)
+                    (Mem.loadbytes_length before source_block _ size bytes loaded)
+                  exact loadbytes_sound cfg classification before source_block source_offset size bytes abstract_memory
+                    (romem_for cfg program) _ loaded readonly_match memory_match
+                    (match_aptr_of_aval cfg classification _ _ _ source_match)
+                · exact romatch_storebytes classification before destination_block _ bytes after _ stored readonly_match
+                · exact global_match
+                · exact stack_match
+                · exact sound_stack_storebytes cfg program globals before destination_block destination_offset bytes after
+                    classification _ frames stack stored destination_match stack_sound
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.X86.ValueAOp
+
+private theorem va_sound_step_base
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (operation_sound : eval_static_operation_soundStatement) : sound_step_baseStatement := by
+  intro cfg program providers globals initial trace final stepped sound
+  cases stepped with
+  | exec_Inop frames body pointer current registers memory successor code =>
+      cases sound
+      rename_i stack environment abstract_memory classification global_match stack_match analyzed
+        environment_match readonly_match memory_match stack_sound
+      exact sound_succ_state cfg program globals classification current environment abstract_memory
+        (.Inop successor) environment abstract_memory frames body stack successor registers memory
+        analyzed code (by simp [successors_instr]) (by simp only [transfer, code])
+        environment_match memory_match readonly_match global_match stack_match stack_sound
+  | exec_Iop frames body pointer current registers memory operation arguments destination successor value code evaluated =>
+      cases sound
+      rename_i stack environment abstract_memory classification global_match stack_match analyzed
+        environment_match readonly_match memory_match stack_sound
+      exact sound_succ_state cfg program globals classification current environment abstract_memory
+        (.Iop operation arguments destination successor) _ abstract_memory frames body stack successor _ memory
+        analyzed code (by simp [successors_instr]) (by simp only [transfer, code])
+        (ematch_update classification registers environment value _ destination environment_match
+          (operation_sound cfg classification globals global_match stack stack_match operation _ memory value _
+            evaluated (aregs_sound classification registers environment arguments environment_match)))
+        memory_match readonly_match global_match stack_match stack_sound
+  | exec_Iload frames body pointer current registers memory chunk addressing arguments destination successor
+      address value code evaluated loaded =>
+      cases sound
+      rename_i stack environment abstract_memory classification global_match stack_match analyzed
+        environment_match readonly_match memory_match stack_sound
+      have address_match := eval_static_addressing_sound classification globals global_match stack stack_match
+        addressing _ address _ evaluated (aregs_sound classification registers environment arguments environment_match)
+      exact sound_succ_state cfg program globals classification current environment abstract_memory
+        (.Iload chunk addressing arguments destination successor) _ abstract_memory frames body stack successor _ memory
+        analyzed code (by simp [successors_instr]) (by simp only [transfer, code])
+        (ematch_update classification registers environment value _ destination environment_match
+          (loadv_sound cfg classification chunk memory address value (romem_for cfg program) abstract_memory _
+            loaded readonly_match memory_match address_match))
+        memory_match readonly_match global_match stack_match stack_sound
+  | exec_Istore frames body pointer current registers memory chunk addressing arguments source successor
+      address after code evaluated stored =>
+      cases sound
+      rename_i stack environment abstract_memory classification global_match stack_match analyzed
+        environment_match readonly_match memory_match stack_sound
+      have address_match := eval_static_addressing_sound classification globals global_match stack stack_match
+        addressing _ address _ evaluated (aregs_sound classification registers environment arguments environment_match)
+      have next_readonly : romatch classification after (romem_for cfg program) := by
+        cases address <;> simp only [Mem.storev, reduceCtorEq] at stored
+        rename_i target offset
+        exact romatch_store classification chunk memory target (Ptrofs.unsigned offset) _ after _ stored readonly_match
+      exact sound_succ_state cfg program globals classification current environment abstract_memory
+        (.Istore chunk addressing arguments source successor) environment _ frames body stack successor registers after
+        analyzed code (by simp [successors_instr]) (by simp only [transfer, code]) environment_match
+        (storev_sound cfg classification chunk memory address _ after abstract_memory _ _ stored memory_match
+          address_match (areg_sound classification registers environment source environment_match))
+        next_readonly global_match stack_match
+        (sound_stack_storev cfg program globals chunk memory address _ after classification _ frames stack
+          stored address_match stack_sound)
+  | exec_Icall frames body pointer current registers memory signature function arguments destination successor
+      callee code found matching_signature =>
+      cases sound
+      rename_i stack environment abstract_memory classification global_match stack_match analyzed
+        environment_match readonly_match memory_match stack_sound
+      have transferred : transfer cfg body (romem_for cfg program) current environment abstract_memory =
+          transfer_call environment abstract_memory arguments destination := by simp only [transfer, code]
+      by_cases private_parts : pincl abstract_memory.am_nonstack Nonstack = true ∧
+          (aregs environment arguments).all (fun abstract => vpincl abstract Nonstack = true) = true
+      · simp only [transfer_call, analyze_call, Bool.and_eq_true, decide_eq_true_eq, private_parts,
+          ↓reduceIte] at transferred
+        have successor_match := analyze_successor cfg body current environment abstract_memory _ successor
+          (romem_for cfg program) _ _ analyzed code (by simp [successors_instr]) transferred
+        erw [transferred] at successor_match
+        obtain ⟨hidden, hidden_nostack, hidden_stack, hidden_other, hidden_values,
+          hidden_globals, hidden_readonly, hidden_memory⟩ := hide_stack memory stack classification globals
+            (romem_for cfg program) abstract_memory global_match readonly_match memory_match stack_match
+            (pincl_ge _ _ private_parts.1)
+        refine sound_call_state _ _ _ _ hidden ?_ ?_ hidden_readonly hidden_memory hidden_globals hidden_nostack
+        · exact sound_stack_private_call hidden destination body stack successor registers frames memory memory.nextblock
+            classification memory.nextblock environment abstract_memory stack_sound (Ple_refl _) memory_match.mmatch_below
+            hidden_stack stack_match (fun source below different => hidden_other source different) global_match
+            successor_match environment_match (memory_match.mmatch_stack stack stack_match)
+        · intro value member
+          obtain ⟨register, register_member, rfl⟩ := List.mem_map.mp member
+          apply hidden_values _ (areg environment register)
+          · apply vpincl_ge _ Nonstack
+            have abstract_member : areg environment register ∈ aregs environment arguments :=
+              List.mem_map.mpr ⟨register, register_member, rfl⟩
+            simpa only [decide_eq_true_eq] using
+              (List.all_eq_true.mp private_parts.2) _ abstract_member
+          · exact areg_sound classification registers environment register environment_match
+      · simp only [transfer_call, analyze_call, Bool.and_eq_true, decide_eq_true_eq, private_parts,
+          ↓reduceIte] at transferred
+        have successor_match := analyze_successor cfg body current environment abstract_memory _ successor
+          (romem_for cfg program) _ _ analyzed code (by simp [successors_instr]) transferred
+        erw [transferred] at successor_match
+        obtain ⟨hidden, hidden_nostack, hidden_stack, hidden_other, hidden_values,
+          hidden_globals, hidden_readonly, hidden_memory⟩ := anonymize_stack memory stack classification globals
+            (romem_for cfg program) abstract_memory global_match readonly_match memory_match stack_match
+        refine sound_call_state _ _ _ _ hidden ?_ ?_ hidden_readonly hidden_memory hidden_globals hidden_nostack
+        · exact sound_stack_public_call hidden destination body stack successor registers frames memory memory.nextblock
+            classification memory.nextblock environment stack_sound (Ple_refl _) memory_match.mmatch_below hidden_stack
+            stack_match (fun source below different => hidden_other source different) global_match successor_match
+            environment_match
+        · intro value member
+          obtain ⟨register, register_member, rfl⟩ := List.mem_map.mp member
+          exact hidden_values _ (areg environment register)
+            (areg_sound classification registers environment register environment_match)
+  | exec_Itailcall frames body stack current registers memory signature function arguments callee after
+      code found matching_signature freed =>
+      cases sound
+      rename_i environment abstract_memory classification global_match stack_match analyzed
+        environment_match readonly_match memory_match stack_sound
+      obtain ⟨hidden, hidden_nostack, hidden_stack, hidden_other, hidden_values,
+        hidden_globals, hidden_readonly, hidden_memory⟩ := anonymize_stack memory stack classification globals
+          (romem_for cfg program) abstract_memory global_match readonly_match memory_match stack_match
+      refine sound_call_state _ _ _ _ hidden ?_ ?_
+        (romatch_free hidden memory stack _ _ after _ freed hidden_readonly)
+        (mmatch_free hidden memory stack _ _ after _ freed hidden_memory) hidden_globals hidden_nostack
+      · apply sound_stack_new_bound cfg program globals hidden frames after stack after.nextblock
+        · apply sound_stack_exten cfg program globals classification frames after stack hidden
+            (sound_stack_free cfg program globals memory stack _ _ after classification frames stack freed stack_sound)
+          intro source below
+          exact hidden_other source (Plt_ne source stack below)
+        · rw [Mem.nextblock_free memory stack _ _ after freed]
+          exact Plt_Ple _ _ (memory_match.mmatch_below stack (by simp [stack_match]))
+      · intro value member
+        obtain ⟨register, register_member, rfl⟩ := List.mem_map.mp member
+        exact hidden_values _ (areg environment register)
+          (areg_sound classification registers environment register environment_match)
+  | exec_Ibuiltin frames body pointer current registers memory function arguments destination successor
+      values events result after code evaluated called =>
+      cases sound
+      rename_i stack environment abstract_memory classification global_match stack_match analyzed
+        environment_match readonly_match memory_match stack_sound
+      exact va_builtin_state cfg program globals providers function classification frames body stack current successor
+        registers environment memory after abstract_memory arguments values destination trace result code analyzed
+        evaluated called environment_match readonly_match memory_match global_match stack_match stack_sound
+  | exec_Icond frames body pointer current registers memory condition arguments if_true if_false value successor
+      code evaluated target =>
+      cases sound
+      rename_i stack environment abstract_memory classification global_match stack_match analyzed
+        environment_match readonly_match memory_match stack_sound
+      exact sound_succ_state cfg program globals classification current environment abstract_memory
+        (.Icond condition arguments if_true if_false) environment abstract_memory frames body stack successor registers memory
+        analyzed code (by cases value <;> simp_all [successors_instr]) (by simp only [transfer, code])
+        environment_match memory_match readonly_match global_match stack_match stack_sound
+  | exec_Ijumptable frames body pointer current registers memory argument targets index successor code value selected =>
+      cases sound
+      rename_i stack environment abstract_memory classification global_match stack_match analyzed
+        environment_match readonly_match memory_match stack_sound
+      exact sound_succ_state cfg program globals classification current environment abstract_memory
+        (.Ijumptable argument targets) environment abstract_memory frames body stack successor registers memory
+        analyzed code (list_nth_z_in node targets (Int.unsigned index) successor selected)
+        (by simp only [transfer, code]) environment_match memory_match readonly_match global_match stack_match stack_sound
+  | exec_Ireturn frames body stack current registers memory result after code freed =>
+      cases sound
+      rename_i environment abstract_memory classification global_match stack_match analyzed
+        environment_match readonly_match memory_match stack_sound
+      obtain ⟨hidden, hidden_nostack, hidden_stack, hidden_other, hidden_values,
+        hidden_globals, hidden_readonly, hidden_memory⟩ := anonymize_stack memory stack classification globals
+          (romem_for cfg program) abstract_memory global_match readonly_match memory_match stack_match
+      refine sound_return_state _ _ _ hidden ?_ ?_
+        (romatch_free hidden memory stack _ _ after _ freed hidden_readonly)
+        (mmatch_free hidden memory stack _ _ after _ freed hidden_memory) hidden_globals hidden_nostack
+      · apply sound_stack_new_bound cfg program globals hidden frames after stack after.nextblock
+        · apply sound_stack_exten cfg program globals classification frames after stack hidden
+            (sound_stack_free cfg program globals memory stack _ _ after classification frames stack freed stack_sound)
+          intro source below
+          exact hidden_other source (Plt_ne source stack below)
+        · rw [Mem.nextblock_free memory stack _ _ after freed]
+          exact Plt_Ple _ _ (memory_match.mmatch_below stack (by simp [stack_match]))
+      · cases result with
+        | none => exact .ifptrUndef _
+        | some register =>
+            exact hidden_values _ (areg environment register)
+              (areg_sound classification registers environment register environment_match)
+  | exec_function_internal frames body arguments before after stack typed allocated =>
+      cases sound
+      rename_i classification global_match no_stack arguments_match readonly_match memory_match stack_sound
+      obtain ⟨extended, increases, extended_stack, extended_globals, extended_readonly,
+        extended_memory, same, extended_values⟩ := allocate_stack before body.fn_stacksize after stack classification
+          globals (romem_for cfg program) mtop allocated global_match readonly_match memory_match no_stack
+      obtain ⟨environment, abstract_memory, analyzed, environment_match, matched⟩ :=
+        analyze_entrypoint cfg (romem_for cfg program) body arguments after extended
+          (fun value member => extended_values value Vtop (arguments_match value member)) typed extended_memory
+      refine sound_regular_state _ _ _ _ _ _ environment abstract_memory extended ?_ analyzed environment_match
+        extended_readonly matched extended_globals extended_stack
+      have allocated_block := Mem.alloc_result before _ _ after stack allocated
+      rw [allocated_block]
+      apply sound_stack_exten cfg program globals classification frames after before.nextblock extended
+        (sound_stack_inv cfg program globals after classification frames before before.nextblock stack_sound ?_)
+      · intro source below
+        exact same source (by simpa only [allocated_block] using below)
+      · intro source offset count below invalid nonnegative
+        exact Mem.loadbytes_alloc_unchanged before _ _ after stack allocated source offset count below
+  | exec_function_external frames function arguments result events before after called =>
+      cases sound
+      rename_i classification global_match no_stack arguments_match readonly_match memory_match stack_sound
+      obtain ⟨extended, increases, same, result_match, extended_globals, extended_readonly,
+        extended_memory, extended_nostack, preserved⟩ := external_call_match providers function globals arguments
+          before trace result after classification (romem_for cfg program) mtop called global_match arguments_match
+          readonly_match memory_match no_stack
+      refine sound_return_state _ _ _ extended ?_ result_match extended_readonly extended_memory
+        extended_globals extended_nostack
+      apply sound_stack_new_bound cfg program globals extended frames after before.nextblock after.nextblock
+      · apply sound_stack_exten cfg program globals classification frames after before.nextblock extended
+          (sound_stack_inv cfg program globals after classification frames before before.nextblock stack_sound ?_) same
+        intro source offset count below invalid nonnegative
+        exact preserved source offset count below invalid
+      · exact external_call_nextblock providers function (Genv.to_senv globals) arguments before trace result after called
+  | exec_return destination body pointer current registers frames result memory =>
+      cases sound
+      rename_i classification global_match no_stack result_match readonly_match memory_match stack_sound
+      cases stack_sound
+      case sound_stack_public_call stack caller bound environment below caller_stack caller_globals stack_class
+          same analyzed environment_match stack_sound increasing =>
+        obtain ⟨restored, restored_result, restored_environment, restored_readonly, restored_memory,
+          restored_globals, restored_stack, restored_same⟩ := return_from_public_call caller classification bound stack
+            globals registers environment result memory (romem_for cfg program) below stack_class caller_stack
+            (fun source source_below different => (same source source_below different).symm) caller_globals
+            environment_match increasing result_match readonly_match memory_match global_match no_stack
+        cases analysis : PMap.get current (analyze cfg (romem_for cfg program) body) with
+        | Bot => erw [analysis] at analyzed; exact False.elim analyzed
+        | State next_environment next_memory =>
+            erw [analysis] at analyzed
+            exact sound_regular_state _ _ _ _ _ _ next_environment next_memory restored
+              (sound_stack_exten cfg program globals caller frames memory stack restored stack_sound restored_same)
+              analysis
+              (ematch_ge restored _ _ next_environment
+                (ematch_update restored registers environment result Vtop destination restored_environment restored_result)
+                analyzed.1)
+              restored_readonly (analyzed.2 restored memory restored_memory) restored_globals restored_stack
+      case sound_stack_private_call stack caller bound environment abstract_memory below caller_stack caller_globals stack_class
+          same analyzed environment_match contents stack_sound increasing =>
+        obtain ⟨restored, restored_result, restored_environment, restored_readonly, restored_memory,
+          restored_globals, restored_stack, restored_same⟩ := return_from_private_call caller classification bound stack
+            globals registers environment result memory (romem_for cfg program) abstract_memory below stack_class caller_stack
+            (fun source source_below different => (same source source_below different).symm) caller_globals
+            environment_match contents increasing result_match readonly_match memory_match global_match no_stack
+        cases analysis : PMap.get current (analyze cfg (romem_for cfg program) body) with
+        | Bot => erw [analysis] at analyzed; exact False.elim analyzed
+        | State next_environment next_memory =>
+            erw [analysis] at analyzed
+            exact sound_regular_state _ _ _ _ _ _ next_environment next_memory restored
+              (sound_stack_exten cfg program globals caller frames memory stack restored stack_sound restored_same)
+              analysis
+              (ematch_ge restored _ _ next_environment
+                (ematch_update restored registers environment result (Ifptr Nonstack) destination
+                  restored_environment restored_result) analyzed.1)
+              restored_readonly (analyzed.2 restored memory restored_memory) restored_globals restored_stack
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+theorem sound_step_base
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    sound_step_baseStatement :=
+  va_sound_step_base CompCert4Lean.X86.ValueAOp.eval_static_operation_sound
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+theorem sound_step
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    sound_stepStatement := by
+  intro cfg program providers initial trace final stepped sound
+  cases sound with
+  | sound_state_intro matched =>
+      exact sound_state_intro final (fun compilation_unit linked =>
+        sound_step_base cfg compilation_unit providers (CompCert4Lean.Common.Globalenvs.Genv.globalenv program)
+          initial trace final stepped (matched compilation_unit linked))
+
+end CompCert4Lean.Backend.ValueAnalysis

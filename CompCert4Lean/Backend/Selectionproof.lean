@@ -1,3 +1,6 @@
+import CompCert4Lean.Backend.SelectDivproof
+import Lean
+import CompCert4Lean.X86.SelectLongproof
 import CompCert4Lean.Backend.Selection
 import CompCert4Lean.Backend.Cminortyping
 import CompCert4Lean.Backend.SplitLongproof
@@ -5173,5 +5176,2203 @@ theorem eval_binop_lessdef
       obtain ⟨v', hv', hld⟩ := hsame
       refine ⟨v', ?_, hld⟩
       simpa [Cminor.eval_binop] using hv'
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+theorem match_is_call_cont
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (oracle : SelectionOracle) :
+    match_is_call_contStatement cfg oracle := by
+  intro prog cunit types helpers known source target hmatch hcall
+  cases hmatch <;> try contradiction
+  rename_i matched
+  exact ⟨matched, by cases matched <;> trivial⟩
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+theorem sel_builtin_nolabel
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) : sel_builtin_nolabelStatement cfg := by
+  intro helpers
+  exact selection_sel_builtin_nolabel cfg helpers
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Floats
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.X86
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+private abbrev SelectionBinaryCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev SelectionInverseCertificate :=
+  CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+private abbrev selectionZOfNat := ZArith.BinInt.Z.of_nat
+
+variable
+    [binary64_certificate : SelectionBinaryCertificate (selectionZOfNat 53) (selectionZOfNat 1024)]
+    [binary32_certificate : SelectionBinaryCertificate (selectionZOfNat 24) (selectionZOfNat 128)]
+
+private theorem selection_eval_intuofsingle :
+    CompCert4Lean.X86.SelectOpproof.eval_intuofsingleStatement := by
+  intro externalCalls globalEnv stackPointer environment memory letEnvironment
+    argument input output argumentEval conversion
+  cases input <;> simp only [Val.intuofsingle, reduceCtorEq] at conversion
+  rename_i singleValue
+  cases converted : Float32.to_intu singleValue with
+  | none => simp [converted] at conversion
+  | some integerValue =>
+      simp only [converted, Option.map_some, Option.some.injEq] at conversion
+      subst output
+      apply CompCert4Lean.X86.SelectOpproof.eval_intuoffloat externalCalls globalEnv
+        stackPointer environment memory letEnvironment (floatofsingle argument)
+        (Vfloat (Float.of_single singleValue)) (Vint integerValue)
+      · apply eval_expr.eval_Eop letEnvironment Ofloatofsingle (Econs argument Enil)
+          [Vsingle singleValue] (Vfloat (Float.of_single singleValue))
+        · exact eval_exprlist.cons letEnvironment argument Enil (Vsingle singleValue) []
+            argumentEval (eval_exprlist.nil letEnvironment)
+        · rfl
+      · change (Float.to_intu (Float32.to_double singleValue)).map Vint =
+          some (Vint integerValue)
+        rw [Float32.to_intu_double singleValue integerValue converted]
+        rfl
+
+private theorem selection_eval_singleofintu :
+    CompCert4Lean.X86.SelectOpproof.eval_singleofintuStatement := by
+  intro externalCalls globalEnv stackPointer environment memory letEnvironment
+    argument input output argumentEval conversion
+  cases selected : singleofintu_match argument with
+  | singleofintu_case1 integerValue =>
+      have inputEq : input = Vint integerValue := by
+        cases argumentEval with
+        | eval_Eop _ _ _ _ _ argumentsEval operationEval =>
+            cases argumentsEval
+            exact (Option.some.inj operationEval).symm
+      subst input
+      simp only [Val.singleofintu, Option.some.injEq] at conversion
+      subst output
+      refine ⟨Vsingle (Float32.of_intu integerValue), ?_, Val.lessdef_refl _⟩
+      exact eval_expr.eval_Eop letEnvironment (Osingleconst (Float32.of_intu integerValue))
+        Enil [] _ (eval_exprlist.nil letEnvironment) rfl
+  | singleofintu_default original =>
+      cases input <;> simp only [Val.singleofintu, reduceCtorEq] at conversion
+      rename_i integerValue
+      simp only [Option.some.injEq] at conversion
+      subst output
+      obtain ⟨intermediate, intermediateEval, intermediateLessdef⟩ :=
+        CompCert4Lean.X86.SelectOpproof.eval_floatofintu externalCalls globalEnv
+          stackPointer environment memory letEnvironment argument (Vint integerValue)
+          (Vfloat (Float.of_intu integerValue)) argumentEval rfl
+      cases intermediateLessdef
+      refine ⟨Vsingle (Float32.of_intu integerValue), ?_, Val.lessdef_refl _⟩
+      simp only [SelectOp.singleofintu, selected]
+      apply eval_expr.eval_Eop letEnvironment Osingleoffloat
+        (Econs (floatofintu argument) Enil) [Vfloat (Float.of_intu integerValue)] _
+      · exact eval_exprlist.cons letEnvironment (floatofintu argument) Enil
+          (Vfloat (Float.of_intu integerValue)) [] intermediateEval
+          (eval_exprlist.nil letEnvironment)
+      · change some (Vsingle (Float32.of_double (Float.of_intu integerValue))) =
+          some (Vsingle (Float32.of_intu integerValue))
+        rw [← Float32.of_intu_double integerValue]
+
+private theorem selection_eval_longuofsingle :
+    CompCert4Lean.Backend.SplitLongproof.eval_longuofsingleStatement := by
+  intro externalCalls program helpers declared stackPointer environment memory
+    letEnvironment argument input output argumentEval conversion
+  cases input <;> simp only [Val.longuofsingle, reduceCtorEq] at conversion
+  rename_i singleValue
+  cases converted : Float32.to_longu singleValue with
+  | none => simp [converted] at conversion
+  | some integerValue =>
+      simp only [converted, Option.map_some, Option.some.injEq] at conversion
+      subst output
+      apply CompCert4Lean.Backend.SplitLongproof.eval_longuoffloat externalCalls
+        program helpers declared stackPointer environment memory letEnvironment
+        (floatofsingle argument) (Vfloat (Float.of_single singleValue)) (Vlong integerValue)
+      · apply eval_expr.eval_Eop letEnvironment Ofloatofsingle (Econs argument Enil)
+          [Vsingle singleValue] (Vfloat (Float.of_single singleValue))
+        · exact eval_exprlist.cons letEnvironment argument Enil (Vsingle singleValue) []
+            argumentEval (eval_exprlist.nil letEnvironment)
+        · rfl
+      · change (Float.to_longu (Float32.to_double singleValue)).map Vlong =
+          some (Vlong integerValue)
+        rw [Float32.to_longu_double singleValue integerValue converted]
+        rfl
+
+theorem eval_sel_unop
+    [binary64_inverse_certificate : SelectionInverseCertificate (selectionZOfNat 53) (selectionZOfNat 1024)]
+    [binary32_inverse_certificate : SelectionInverseCertificate (selectionZOfNat 24) (selectionZOfNat 128)]
+    (cfg : CompCert4Lean.Config.CompilerConfig) (oracle : SelectionOracle) :
+    eval_sel_unopStatement cfg oracle := by
+  intro externalCalls program targetProgram programsMatch compilationUnit helpers
+    linked helpersDeclared stackPointer environment memory letEnvironment
+    operation argument input output argumentEval operationEval
+  have targetHelpers := helper_functions_preserved cfg oracle program targetProgram
+    programsMatch helpers
+    (helper_functions_declared_linkorder compilationUnit program helpers helpersDeclared linked)
+  cases operation <;> simp only [Cminor.eval_unop, Option.some.injEq] at operationEval
+    <;> try subst output
+  case Ocast8unsigned =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_cast8unsigned externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      argument input argumentEval
+  case Ocast8signed =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_cast8signed externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      argument input argumentEval
+  case Ocast16unsigned =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_cast16unsigned externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      argument input argumentEval
+  case Ocast16signed =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_cast16signed externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      argument input argumentEval
+  case Onegint =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_negint externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      argument input argumentEval
+  case Onotint =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_notint externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      argument input argumentEval
+  case Onegf =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_negf externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      argument input argumentEval
+  case Oabsf =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_absf externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      argument input argumentEval
+  case Onegfs =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_negfs externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      argument input argumentEval
+  case Oabsfs =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_absfs externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      argument input argumentEval
+  case Osingleoffloat =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_singleoffloat externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      argument input argumentEval
+  case Ofloatofsingle =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_floatofsingle externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      argument input argumentEval
+  case Ointoffloat =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_intoffloat externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      argument input output argumentEval operationEval
+  case Ointuoffloat =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_intuoffloat externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      argument input output argumentEval operationEval
+  case Ofloatofint =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_floatofint externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      argument input output argumentEval operationEval
+  case Ofloatofintu =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_floatofintu externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      argument input output argumentEval operationEval
+  case Ointofsingle =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_intofsingle externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      argument input output argumentEval operationEval
+  case Ointuofsingle =>
+    exact selection_eval_intuofsingle externalCalls (Genv.globalenv targetProgram)
+      stackPointer environment memory letEnvironment argument input output argumentEval operationEval
+  case Osingleofint =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_singleofint externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      argument input output argumentEval operationEval
+  case Osingleofintu =>
+    exact selection_eval_singleofintu externalCalls (Genv.globalenv targetProgram)
+      stackPointer environment memory letEnvironment argument input output argumentEval operationEval
+  case Onegl =>
+    exact CompCert4Lean.X86.SelectLongproof.eval_negl externalCalls targetProgram
+      stackPointer environment memory letEnvironment argument input argumentEval
+  case Onotl =>
+    exact CompCert4Lean.X86.SelectLongproof.eval_notl externalCalls targetProgram
+      stackPointer environment memory letEnvironment argument input argumentEval
+  case Ointoflong =>
+    exact CompCert4Lean.X86.SelectLongproof.eval_intoflong externalCalls targetProgram
+      stackPointer environment memory letEnvironment argument input argumentEval
+  case Olongofint =>
+    exact CompCert4Lean.X86.SelectLongproof.eval_longofint externalCalls targetProgram
+      stackPointer environment memory letEnvironment argument input argumentEval
+  case Olongofintu =>
+    exact CompCert4Lean.X86.SelectLongproof.eval_longofintu externalCalls targetProgram
+      stackPointer environment memory letEnvironment argument input argumentEval
+  case Olongoffloat =>
+    exact CompCert4Lean.X86.SelectLongproof.eval_longoffloat externalCalls targetProgram
+      helpers targetHelpers stackPointer environment memory letEnvironment
+      argument input output argumentEval operationEval
+  case Olonguoffloat =>
+    exact CompCert4Lean.Backend.SplitLongproof.eval_longuoffloat externalCalls targetProgram
+      helpers targetHelpers stackPointer environment memory letEnvironment
+      argument input output argumentEval operationEval
+  case Ofloatoflong =>
+    exact CompCert4Lean.X86.SelectLongproof.eval_floatoflong externalCalls targetProgram
+      helpers targetHelpers stackPointer environment memory letEnvironment
+      argument input output argumentEval operationEval
+  case Ofloatoflongu =>
+    exact CompCert4Lean.Backend.SplitLongproof.eval_floatoflongu externalCalls targetProgram
+      helpers targetHelpers stackPointer environment memory letEnvironment
+      argument input output argumentEval operationEval
+  case Olongofsingle =>
+    exact CompCert4Lean.X86.SelectLongproof.eval_longofsingle externalCalls targetProgram
+      helpers targetHelpers stackPointer environment memory letEnvironment
+      argument input output argumentEval operationEval
+  case Olonguofsingle =>
+    exact selection_eval_longuofsingle externalCalls targetProgram helpers targetHelpers
+      stackPointer environment memory letEnvironment argument input output argumentEval operationEval
+  case Osingleoflong =>
+    exact CompCert4Lean.X86.SelectLongproof.eval_singleoflong externalCalls targetProgram
+      helpers targetHelpers stackPointer environment memory letEnvironment
+      argument input output argumentEval operationEval
+  case Osingleoflongu =>
+    exact CompCert4Lean.Backend.SplitLongproof.eval_singleoflongu externalCalls targetProgram
+      helpers targetHelpers stackPointer environment memory letEnvironment
+      argument input output argumentEval operationEval
+
+end CompCert4Lean.Backend.Selectionproof
+
+section SelectionDivisionDependencies
+
+open Lean Elab Command
+run_cmd do
+  for shortName in #["CCInt64", "BinaryNormalizeCertificate", "BexactInverseCertificate", "env", "zSub", "zMul", "zDiv", "zShiftr", "z1", "z64", "intRepr", "int64Repr", "int64Unsigned", "int64Signed", "int64Divs", "int64Divu", "int64Add", "int64Sub", "int64Mul", "int64Shr'", "int64Shru'", "int64Mulhs", "boolOfSumbool", "zltBool", "zshiftr_div_two_p_local", "eval_longconst_local", "is_longconst_sound_local", "eval_binary_op_local", "eval_modlu_base_local", "eval_divls_base_local", "eval_shrluimm_local", "int_ltu_repr_64_local"] do
+    let reference := Name.str `CompCert4Lean.Backend.SelectDivproof shortName
+    let declarations := (← getEnv).constants.toList.filter fun (name, _) =>
+      privateToUserName? name == some reference
+    match declarations with
+    | [(name, _)] =>
+        modifyScope fun scope =>
+          { scope with openDecls := .explicit (Name.mkSimple shortName) name :: scope.openDecls }
+    | _ => throwError "Expected one checked private declaration: {reference}"
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SelectDiv
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+private theorem selection_dependency_eval_modl_from_divl
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : eval_modl_from_divlStatement := by
+  intro xi prog hf hhelpers sp env memory lets quotient divisor dividend result
+    hquotient hdividend
+  have hconstant := eval_longconst_local xi (Genv.globalenv prog) sp env memory
+    lets divisor
+  obtain ⟨product, hproduct, hproductValue⟩ :=
+    CompCert4Lean.X86.SelectLongproof.eval_mull xi prog hf hhelpers sp env memory
+      lets (longconst divisor) (.Vlong divisor) quotient (.Vlong result)
+      hconstant hquotient
+  change eval_expr xi (Genv.globalenv prog) sp env memory lets
+    (mullimm divisor quotient) product at hproduct
+  rw [Val.mull_commut] at hproductValue
+  change Val.lessdef (.Vlong (int64Mul result divisor)) product at hproductValue
+  cases hproductValue
+  have hvariable : eval_expr xi (Genv.globalenv prog) sp env memory lets
+      (Eletvar 0) (.Vlong dividend) :=
+    eval_expr.eval_Eletvar lets 0 (.Vlong dividend) hdividend
+  obtain ⟨remainder, hremainder, hremainderValue⟩ :=
+    CompCert4Lean.X86.SelectLongproof.eval_subl xi prog sp env memory lets
+      (Eletvar 0) (.Vlong dividend) (mullimm divisor quotient)
+      (.Vlong (int64Mul result divisor)) hvariable hproduct
+  change Val.lessdef (.Vlong (int64Sub dividend (int64Mul result divisor)))
+    remainder at hremainderValue
+  cases hremainderValue
+  exact hremainder
+
+private theorem selection_dependency_signed_high_mul_equiv (dividend multiplier : CCInt64) :
+    CompCert4Lean.Lib.Integers.Int64.mulhs dividend multiplier =
+      int64Mulhs dividend multiplier := by
+  unfold CompCert4Lean.Lib.Integers.Int64.mulhs int64Mulhs
+  change int64Repr (zDiv (zMul (int64Signed dividend) (int64Signed multiplier))
+      CompCert4Lean.Lib.Integers.Int64.modulus) =
+    int64Repr (zShiftr (zMul (int64Signed dividend) (int64Signed multiplier)) z64)
+  rw [zshiftr_div_two_p_local _ _ (by change (0 : Int) ≤ 64; omega)]
+  rfl
+
+private theorem selection_dependency_eval_divls_mull
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : eval_divls_mullStatement := by
+  intro xi prog hf hhelpers sp env memory lets dividend divisor shift multiplier
+    hparams hdividend
+  obtain ⟨_, hshiftRange, _⟩ := divls_mul_params_sound
+    (int64Signed divisor) multiplier shift hparams
+  have hshiftBound := int_ltu_repr_64_local shift hshiftRange
+  have hvariable : eval_expr xi (Genv.globalenv prog) sp env memory lets
+      (Eletvar 0) (.Vlong dividend) :=
+    eval_expr.eval_Eletvar lets 0 (.Vlong dividend) hdividend
+  obtain ⟨product, hproduct, hproductValue⟩ :=
+    CompCert4Lean.X86.SelectLongproof.eval_mullhs xi prog hf hhelpers sp env memory
+      (int64Repr multiplier) lets (Eletvar 0) (.Vlong dividend) hvariable
+  change Val.lessdef (.Vlong (CompCert4Lean.Lib.Integers.Int64.mulhs
+    dividend (int64Repr multiplier))) product at hproductValue
+  rw [selection_dependency_signed_high_mul_equiv] at hproductValue
+  cases hproductValue
+  obtain ⟨sum, hsum, hsumValue⟩ :=
+    CompCert4Lean.X86.SelectLongproof.eval_addl xi prog sp env memory lets
+      (mullhs (Eletvar 0) (int64Repr multiplier))
+      (.Vlong (int64Mulhs dividend (int64Repr multiplier)))
+      (Eletvar 0) (.Vlong dividend) hproduct hvariable
+  change Val.lessdef (.Vlong (int64Add
+    (int64Mulhs dividend (int64Repr multiplier)) dividend)) sum at hsumValue
+  cases hsumValue
+  let adjusted := if zltBool multiplier CompCert4Lean.Lib.Integers.Int64.half_modulus
+    then mullhs (Eletvar 0) (int64Repr multiplier)
+    else addl (mullhs (Eletvar 0) (int64Repr multiplier)) (Eletvar 0)
+  let adjustedValue := if zltBool multiplier CompCert4Lean.Lib.Integers.Int64.half_modulus
+    then int64Mulhs dividend (int64Repr multiplier)
+    else int64Add (int64Mulhs dividend (int64Repr multiplier)) dividend
+  have hadjusted : eval_expr xi (Genv.globalenv prog) sp env memory lets
+      adjusted (.Vlong adjustedValue) := by
+    dsimp [adjusted, adjustedValue]
+    split
+    · exact hproduct
+    · exact hsum
+  obtain ⟨shifted, hshifted, hshiftedValue⟩ :=
+    CompCert4Lean.X86.SelectLongproof.eval_shrlimm xi prog hf hhelpers sp env memory
+      (intRepr shift) lets adjusted (.Vlong adjustedValue) hadjusted
+  simp only [Val.shrl, hshiftBound, if_true] at hshiftedValue
+  cases hshiftedValue
+  let signShift := intRepr (zSub CompCert4Lean.Lib.Integers.Int64.zwordsize z1)
+  have hsignBound : CompCert4Lean.Lib.Integers.Int.ltu signShift
+      CompCert4Lean.Lib.Integers.Int64.iwordsize' = true := by decide
+  obtain ⟨sign, hsign, hsignValue⟩ := eval_shrluimm_local xi
+    (Genv.globalenv prog) sp env memory lets (Eletvar 0) (.Vlong dividend)
+    signShift hvariable
+  simp only [Val.shrlu, hsignBound, if_true] at hsignValue
+  cases hsignValue
+  obtain ⟨quotient, hquotient, hquotientValue⟩ :=
+    CompCert4Lean.X86.SelectLongproof.eval_addl xi prog sp env memory lets
+      (shrlimm adjusted (intRepr shift)) (.Vlong (int64Shr' adjustedValue (intRepr shift)))
+      (shrluimm (Eletvar 0) signShift) (.Vlong (int64Shru' dividend signShift))
+      hshifted hsign
+  change Val.lessdef (.Vlong (int64Add (int64Shr' adjustedValue (intRepr shift))
+    (int64Shru' dividend signShift))) quotient at hquotientValue
+  cases hquotientValue
+  have hidentity : int64Divs dividend divisor =
+      int64Add (int64Shr' adjustedValue (intRepr shift))
+        (int64Shru' dividend signShift) := by
+    cases hcomparison : CompCert4Lean.Lib.Coqlib.zlt multiplier
+        CompCert4Lean.Lib.Integers.Int64.half_modulus with
+    | left hsmall =>
+        simpa [adjustedValue, zltBool, boolOfSumbool, hcomparison, signShift] using
+          (divls_mul_shift_1 dividend divisor multiplier shift hparams hsmall).2
+    | right hlarge =>
+        simpa [adjustedValue, zltBool, boolOfSumbool, hcomparison, signShift] using
+          (divls_mul_shift_2 dividend divisor multiplier shift hparams hlarge).2
+  rw [hidentity]
+  exact hquotient
+
+private theorem selection_dependency_eval_divls
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : eval_divlsStatement := by
+  intro cfg xi prog hf hhelpers sp env memory lets numerator denominator first second
+    result hfirst hsecond hdivision
+  cases first <;> cases second <;> try { solve | simp [Val.divls] at hdivision }
+  rename_i dividend divisor
+  have hdefined := hdivision
+  simp only [Val.divls] at hdivision
+  split at hdivision
+  · contradiction
+  · cases hdivision
+    have hbase := eval_divls_base_local xi (Genv.globalenv prog) sp env memory lets
+      numerator denominator (.Vlong dividend) (.Vlong divisor)
+      (.Vlong (int64Divs dividend divisor)) hfirst hsecond hdefined
+    cases hdenominator : is_longconst denominator with
+    | none =>
+        exact ⟨_, by simpa [divls, hdenominator] using hbase, Val.lessdef_refl _⟩
+    | some constantDivisor =>
+        have hsame := val.Vlong.inj (is_longconst_sound_local xi (Genv.globalenv prog)
+          sp env memory lets denominator (.Vlong divisor) constantDivisor
+          hdenominator hsecond)
+        subst constantDivisor
+        cases hnumerator : is_longconst numerator with
+        | some constantDividend =>
+            have hsame := val.Vlong.inj (is_longconst_sound_local xi (Genv.globalenv prog)
+              sp env memory lets numerator (.Vlong dividend) constantDividend
+              hnumerator hfirst)
+            subst constantDividend
+            refine ⟨_, ?_, Val.lessdef_refl _⟩
+            simpa [divls, hdenominator, hnumerator] using
+              eval_longconst_local xi (Genv.globalenv prog) sp env memory lets
+                (int64Divs dividend divisor)
+        | none =>
+            cases hpower : CompCert4Lean.Lib.Integers.Int64.is_power2' divisor with
+            | some shift =>
+                by_cases hbound : CompCert4Lean.Lib.Integers.Int.ltu shift
+                    (intRepr (ZArith.BinInt.Z.of_nat 63)) = true
+                · have hshift := Val.divls_pow2 _ _ _ _ hpower hbound hdefined
+                  obtain ⟨value, hvalue, hless⟩ :=
+                    CompCert4Lean.X86.SelectLongproof.eval_shrxlimm xi prog hf hhelpers
+                      sp env memory lets numerator shift (.Vlong dividend)
+                      (.Vlong (int64Divs dividend divisor)) hfirst hshift
+                  exact ⟨value, by simpa [divls, hdenominator, hnumerator, hpower, hbound]
+                    using hvalue, hless⟩
+                · exact ⟨_, by simpa [divls, hdenominator, hnumerator, hpower, hbound]
+                    using hbase, Val.lessdef_refl _⟩
+            | none =>
+                simp only [divls, hdenominator, hnumerator, hpower]
+                split
+                · exact ⟨_, hbase, Val.lessdef_refl _⟩
+                · cases hparams : divls_mul_params (int64Signed divisor) with
+                  | none => exact ⟨_, hbase, Val.lessdef_refl _⟩
+                  | some parameters =>
+                      rcases parameters with ⟨shift, multiplier⟩
+                      have hbody := selection_dependency_eval_divls_mull xi prog hf hhelpers sp env memory
+                        (.Vlong dividend :: lets) dividend divisor shift multiplier hparams rfl
+                      exact ⟨_, eval_expr.eval_Elet lets numerator _ (.Vlong dividend)
+                        (.Vlong (int64Divs dividend divisor)) hfirst hbody, Val.lessdef_refl _⟩
+
+private theorem selection_dependency_eval_modls
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : eval_modlsStatement := by
+  intro cfg xi prog hf hhelpers sp env memory lets numerator denominator first second
+    result hfirst hsecond hmodulus
+  cases first <;> cases second <;> try { solve | simp [Val.modls] at hmodulus }
+  rename_i dividend divisor
+  have hdefined := hmodulus
+  simp only [Val.modls] at hmodulus
+  split at hmodulus
+  · contradiction
+  · rename_i hvalid
+    cases hmodulus
+    have hbase : eval_expr xi (Genv.globalenv prog) sp env memory lets
+        (modls_base numerator denominator)
+        (.Vlong (CompCert4Lean.Lib.Integers.Int64.mods dividend divisor)) :=
+      eval_binary_op_local xi (Genv.globalenv prog) sp env memory lets Omodl
+        numerator denominator (.Vlong dividend) (.Vlong divisor) _ hfirst hsecond hdefined
+    have hdivision : Val.divls (.Vlong dividend) (.Vlong divisor) =
+        some (.Vlong (int64Divs dividend divisor)) := by
+      simp [Val.divls, hvalid]
+    have hremainder : CompCert4Lean.Lib.Integers.Int64.mods dividend divisor =
+        int64Sub dividend (int64Mul (int64Divs dividend divisor) divisor) :=
+      CompCert4Lean.Lib.Integers.Int64.mods_divs_proof dividend divisor
+    cases hdenominator : is_longconst denominator with
+    | none =>
+        exact ⟨_, by simpa [modls, hdenominator] using hbase, Val.lessdef_refl _⟩
+    | some constantDivisor =>
+        have hsame := val.Vlong.inj (is_longconst_sound_local xi (Genv.globalenv prog)
+          sp env memory lets denominator (.Vlong divisor) constantDivisor
+          hdenominator hsecond)
+        subst constantDivisor
+        cases hnumerator : is_longconst numerator with
+        | some constantDividend =>
+            have hsame := val.Vlong.inj (is_longconst_sound_local xi (Genv.globalenv prog)
+              sp env memory lets numerator (.Vlong dividend) constantDividend
+              hnumerator hfirst)
+            subst constantDividend
+            refine ⟨_, ?_, Val.lessdef_refl _⟩
+            simpa [modls, hdenominator, hnumerator] using
+              eval_longconst_local xi (Genv.globalenv prog) sp env memory lets
+                (CompCert4Lean.Lib.Integers.Int64.mods dividend divisor)
+        | none =>
+            cases hpower : CompCert4Lean.Lib.Integers.Int64.is_power2' divisor with
+            | some shift =>
+                by_cases hbound : CompCert4Lean.Lib.Integers.Int.ltu shift
+                    (intRepr (ZArith.BinInt.Z.of_nat 63)) = true
+                · have hshift := Val.divls_pow2 _ _ _ _ hpower hbound hdivision
+                  have hvariable : eval_expr xi (Genv.globalenv prog) sp env memory
+                      (.Vlong dividend :: lets) (Eletvar 0) (.Vlong dividend) :=
+                    eval_expr.eval_Eletvar _ 0 _ rfl
+                  obtain ⟨quotient, hquotient, hless⟩ :=
+                    CompCert4Lean.X86.SelectLongproof.eval_shrxlimm xi prog hf hhelpers
+                      sp env memory (.Vlong dividend :: lets) (Eletvar 0) shift
+                      (.Vlong dividend) (.Vlong (int64Divs dividend divisor)) hvariable hshift
+                  cases hless
+                  have hbody := selection_dependency_eval_modl_from_divl xi prog hf hhelpers sp env memory
+                    (.Vlong dividend :: lets) (shrxlimm (Eletvar 0) shift) divisor dividend
+                    (int64Divs dividend divisor) hquotient rfl
+                  rw [← hremainder] at hbody
+                  refine ⟨_, ?_, Val.lessdef_refl _⟩
+                  simpa [modls, hdenominator, hnumerator, hpower, hbound] using
+                    eval_expr.eval_Elet lets numerator _ (.Vlong dividend) _ hfirst hbody
+                · exact ⟨_, by simpa [modls, hdenominator, hnumerator, hpower, hbound]
+                    using hbase, Val.lessdef_refl _⟩
+            | none =>
+                simp only [modls, hdenominator, hnumerator, hpower]
+                split
+                · exact ⟨_, hbase, Val.lessdef_refl _⟩
+                · cases hparams : divls_mul_params (int64Signed divisor) with
+                  | none => exact ⟨_, hbase, Val.lessdef_refl _⟩
+                  | some parameters =>
+                      rcases parameters with ⟨shift, multiplier⟩
+                      have hquotient := selection_dependency_eval_divls_mull xi prog hf hhelpers sp env memory
+                        (.Vlong dividend :: lets) dividend divisor shift multiplier hparams rfl
+                      have hbody := selection_dependency_eval_modl_from_divl xi prog hf hhelpers sp env memory
+                        (.Vlong dividend :: lets) (divls_mull (hf := hf) shift multiplier)
+                        divisor dividend (int64Divs dividend divisor) hquotient rfl
+                      rw [← hremainder] at hbody
+                      exact ⟨_, eval_expr.eval_Elet lets numerator _ (.Vlong dividend)
+                        _ hfirst hbody, Val.lessdef_refl _⟩
+
+private theorem selection_dependency_eval_modlu
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : eval_modluStatement := by
+  intro cfg xi prog hf hhelpers sp env memory lets numerator denominator first second
+    result hfirst hsecond hmodulus
+  cases first <;> cases second <;> try { solve | simp [Val.modlu] at hmodulus }
+  rename_i dividend divisor
+  have hdefined := hmodulus
+  simp only [Val.modlu] at hmodulus
+  split at hmodulus
+  · contradiction
+  · rename_i hvalid
+    cases hmodulus
+    have hbase := eval_modlu_base_local xi (Genv.globalenv prog) sp env memory lets
+      numerator denominator (.Vlong dividend) (.Vlong divisor)
+      (.Vlong (CompCert4Lean.Lib.Integers.Int64.modu dividend divisor)) hfirst hsecond hdefined
+    have hnonzero : divisor ≠ CompCert4Lean.Lib.Integers.Int64.zero := by
+      intro hzero
+      subst divisor
+      exact hvalid rfl
+    have hremainder : CompCert4Lean.Lib.Integers.Int64.modu dividend divisor =
+        int64Sub dividend (int64Mul (int64Divu dividend divisor) divisor) :=
+      CompCert4Lean.Lib.Integers.Int64.modu_divu_proof dividend divisor hnonzero
+    cases hdenominator : is_longconst denominator with
+    | none =>
+        exact ⟨_, by simpa [modlu, hdenominator] using hbase, Val.lessdef_refl _⟩
+    | some constantDivisor =>
+        have hsame := val.Vlong.inj (is_longconst_sound_local xi (Genv.globalenv prog)
+          sp env memory lets denominator (.Vlong divisor) constantDivisor
+          hdenominator hsecond)
+        subst constantDivisor
+        cases hnumerator : is_longconst numerator with
+        | some constantDividend =>
+            have hsame := val.Vlong.inj (is_longconst_sound_local xi (Genv.globalenv prog)
+              sp env memory lets numerator (.Vlong dividend) constantDividend
+              hnumerator hfirst)
+            subst constantDividend
+            refine ⟨_, ?_, Val.lessdef_refl _⟩
+            simpa [modlu, hdenominator, hnumerator] using
+              eval_longconst_local xi (Genv.globalenv prog) sp env memory lets
+                (CompCert4Lean.Lib.Integers.Int64.modu dividend divisor)
+        | none =>
+            cases hpower : CompCert4Lean.Lib.Integers.Int64.is_power2 divisor with
+            | some shift =>
+                have hmask := Val.modlu_pow2 _ _ _ _ hpower hdefined
+                have hconstant := eval_longconst_local xi (Genv.globalenv prog)
+                  sp env memory lets (int64Sub divisor CompCert4Lean.Lib.Integers.Int64.one)
+                obtain ⟨value, hvalue, hless⟩ :=
+                  CompCert4Lean.X86.SelectLongproof.eval_andl xi prog sp env memory lets
+                    numerator (.Vlong dividend)
+                    (longconst (int64Sub divisor CompCert4Lean.Lib.Integers.Int64.one))
+                    (.Vlong (int64Sub divisor CompCert4Lean.Lib.Integers.Int64.one))
+                    hfirst hconstant
+                rw [hmask] at hless
+                exact ⟨value, by simpa [modlu, hdenominator, hnumerator, hpower]
+                  using hvalue, hless⟩
+            | none =>
+                simp only [modlu, hdenominator, hnumerator, hpower]
+                split
+                · exact ⟨_, hbase, Val.lessdef_refl _⟩
+                · cases hparams : divlu_mul_params (int64Unsigned divisor) with
+                  | none => exact ⟨_, hbase, Val.lessdef_refl _⟩
+                  | some parameters =>
+                      rcases parameters with ⟨shift, multiplier⟩
+                      have hquotient := eval_divlu_mull xi prog hf hhelpers sp env memory
+                        (.Vlong dividend :: lets) dividend divisor shift multiplier hparams rfl
+                      have hbody := selection_dependency_eval_modl_from_divl xi prog hf hhelpers sp env memory
+                        (.Vlong dividend :: lets) (divlu_mull (hf := hf) shift multiplier)
+                        divisor dividend (int64Divu dividend divisor) hquotient rfl
+                      rw [← hremainder] at hbody
+                      exact ⟨_, eval_expr.eval_Elet lets numerator _ (.Vlong dividend)
+                        _ hfirst hbody, Val.lessdef_refl _⟩
+
+private theorem selection_dependency_eval_divf
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)]
+    [certificate : BexactInverseCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)] : eval_divfStatement := by
+  intro xi prog sp env memory lets numerator denominator first second hfirst hsecond
+  unfold divf
+  cases hmatch : divf_match denominator with
+  | divf_default denominator =>
+      exact ⟨_, eval_binary_op_local xi (Genv.globalenv prog) sp env memory lets
+        Odivf numerator denominator first second (Val.divf first second)
+        hfirst hsecond rfl, Val.lessdef_refl _⟩
+  | divf_case1 divisor =>
+      have hconstantValue : second = .Vfloat divisor := by
+        cases hsecond with
+        | eval_Eop _ _ _ arguments _ harguments hoperation =>
+            cases harguments
+            change some (.Vfloat divisor) = some second at hoperation
+            cases hoperation
+            rfl
+      subst second
+      cases hinverse : CompCert4Lean.Lib.Floats.Float.exact_inverse divisor with
+      | none =>
+          refine ⟨_, ?_, Val.lessdef_refl _⟩
+          simpa only [divfimm, hinverse] using
+            eval_binary_op_local xi (Genv.globalenv prog) sp env memory lets
+              Odivf numerator (Eop (Ofloatconst divisor) Enil) first (.Vfloat divisor)
+              (Val.divf first (.Vfloat divisor)) hfirst hsecond rfl
+      | some inverse =>
+          have hconstant : eval_expr xi (Genv.globalenv prog) sp env memory lets
+              (Eop (Ofloatconst inverse) Enil) (.Vfloat inverse) :=
+            eval_expr.eval_Eop lets (Ofloatconst inverse) Enil [] (.Vfloat inverse)
+              (eval_exprlist.nil lets) rfl
+          refine ⟨Val.mulf first (.Vfloat inverse), ?_, ?_⟩
+          · simpa only [divfimm, hinverse] using
+              eval_binary_op_local xi (Genv.globalenv prog) sp env memory lets
+                Omulf numerator (Eop (Ofloatconst inverse) Enil) first (.Vfloat inverse)
+                (Val.mulf first (.Vfloat inverse)) hfirst hconstant rfl
+          · cases first <;> try exact Val.lessdef_refl _
+            rename_i dividend
+            change Val.lessdef (.Vfloat (CompCert4Lean.Lib.Floats.Float.div dividend divisor))
+              (.Vfloat (CompCert4Lean.Lib.Floats.Float.mul dividend inverse))
+            rw [CompCert4Lean.Lib.Floats.Float.div_mul_inverse dividend divisor inverse hinverse]
+            exact Val.lessdef_refl _
+
+private theorem selection_dependency_eval_divfs
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)]
+    [certificate : BexactInverseCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : eval_divfsStatement := by
+  intro xi prog sp env memory lets numerator denominator first second hfirst hsecond
+  unfold divfs
+  cases hmatch : divfs_match denominator with
+  | divfs_default denominator =>
+      exact ⟨_, eval_binary_op_local xi (Genv.globalenv prog) sp env memory lets
+        Odivfs numerator denominator first second (Val.divfs first second)
+        hfirst hsecond rfl, Val.lessdef_refl _⟩
+  | divfs_case1 divisor =>
+      have hconstantValue : second = .Vsingle divisor := by
+        cases hsecond with
+        | eval_Eop _ _ _ arguments _ harguments hoperation =>
+            cases harguments
+            change some (.Vsingle divisor) = some second at hoperation
+            cases hoperation
+            rfl
+      subst second
+      cases hinverse : CompCert4Lean.Lib.Floats.Float32.exact_inverse divisor with
+      | none =>
+          refine ⟨_, ?_, Val.lessdef_refl _⟩
+          simpa only [divfsimm, hinverse] using
+            eval_binary_op_local xi (Genv.globalenv prog) sp env memory lets
+              Odivfs numerator (Eop (Osingleconst divisor) Enil) first (.Vsingle divisor)
+              (Val.divfs first (.Vsingle divisor)) hfirst hsecond rfl
+      | some inverse =>
+          have hconstant : eval_expr xi (Genv.globalenv prog) sp env memory lets
+              (Eop (Osingleconst inverse) Enil) (.Vsingle inverse) :=
+            eval_expr.eval_Eop lets (Osingleconst inverse) Enil [] (.Vsingle inverse)
+              (eval_exprlist.nil lets) rfl
+          refine ⟨Val.mulfs first (.Vsingle inverse), ?_, ?_⟩
+          · simpa only [divfsimm, hinverse] using
+              eval_binary_op_local xi (Genv.globalenv prog) sp env memory lets
+                Omulfs numerator (Eop (Osingleconst inverse) Enil) first (.Vsingle inverse)
+                (Val.mulfs first (.Vsingle inverse)) hfirst hconstant rfl
+          · cases first <;> try exact Val.lessdef_refl _
+            rename_i dividend
+            change Val.lessdef (.Vsingle (CompCert4Lean.Lib.Floats.Float32.div dividend divisor))
+              (.Vsingle (CompCert4Lean.Lib.Floats.Float32.mul dividend inverse))
+            rw [CompCert4Lean.Lib.Floats.Float32.div_mul_inverse dividend divisor inverse hinverse]
+            exact Val.lessdef_refl _
+
+end CompCert4Lean.Backend.SelectDivproof
+
+end SelectionDivisionDependencies
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.X86.Op
+
+variable
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+
+private theorem selection_eval_compfs :
+    CompCert4Lean.X86.SelectOpproof.eval_compfsStatement := by
+  intro externalCalls globalEnv stackPointer environment memory comparison
+    letEnvironment left leftValue right rightValue leftEval rightEval
+  refine ⟨Val.cmpfs comparison leftValue rightValue, ?_, Val.lessdef_refl _⟩
+  exact eval_expr.eval_Eop letEnvironment (Ocmp (Ccompfs comparison))
+    (Econs left (Econs right Enil)) [leftValue, rightValue]
+    (Val.cmpfs comparison leftValue rightValue)
+    (eval_exprlist.cons letEnvironment left (Econs right Enil) leftValue [rightValue]
+      leftEval (eval_exprlist.cons letEnvironment right Enil rightValue [] rightEval
+        (eval_exprlist.nil letEnvironment))) rfl
+
+theorem eval_sel_binop
+    [binary64_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (cfg : CompCert4Lean.Config.CompilerConfig) (oracle : SelectionOracle) :
+    eval_sel_binopStatement cfg oracle := by
+  intro externalCalls program targetProgram programsMatch compilationUnit helpers
+    linked helpersDeclared stackPointer environment memory letEnvironment
+    operation left right leftValue rightValue output leftEval rightEval operationEval
+  have targetHelpers := helper_functions_preserved cfg oracle program targetProgram
+    programsMatch helpers
+    (helper_functions_declared_linkorder compilationUnit program helpers helpersDeclared linked)
+  cases operation <;> simp only [Cminor.eval_binop, Option.some.injEq] at operationEval
+    <;> try subst output
+  case Oadd =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_add externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      left leftValue right rightValue leftEval rightEval
+  case Osub =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_sub externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      left leftValue right rightValue leftEval rightEval
+  case Omul =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_mul externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      left leftValue right rightValue leftEval rightEval
+  case Oand =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_and externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      left leftValue right rightValue leftEval rightEval
+  case Oor =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_or externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      left leftValue right rightValue leftEval rightEval
+  case Oxor =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_xor externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      left leftValue right rightValue leftEval rightEval
+  case Oshl =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_shl externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      left leftValue right rightValue leftEval rightEval
+  case Oshr =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_shr externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      left leftValue right rightValue leftEval rightEval
+  case Oshru =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_shru externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      left leftValue right rightValue leftEval rightEval
+  case Oaddf =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_addf externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      left leftValue right rightValue leftEval rightEval
+  case Osubf =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_subf externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      left leftValue right rightValue leftEval rightEval
+  case Omulf =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_mulf externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      left leftValue right rightValue leftEval rightEval
+  case Oaddfs =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_addfs externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      left leftValue right rightValue leftEval rightEval
+  case Osubfs =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_subfs externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      left leftValue right rightValue leftEval rightEval
+  case Omulfs =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_mulfs externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory letEnvironment
+      left leftValue right rightValue leftEval rightEval
+  case Odiv =>
+    exact CompCert4Lean.Backend.SelectDivproof.eval_divs cfg externalCalls
+      targetProgram stackPointer environment memory letEnvironment
+      left right leftValue rightValue output leftEval rightEval operationEval
+  case Odivu =>
+    exact CompCert4Lean.Backend.SelectDivproof.eval_divu cfg externalCalls
+      targetProgram stackPointer environment memory letEnvironment
+      left right leftValue rightValue output leftEval rightEval operationEval
+  case Omod =>
+    exact CompCert4Lean.Backend.SelectDivproof.eval_mods cfg externalCalls
+      targetProgram stackPointer environment memory letEnvironment
+      left right leftValue rightValue output leftEval rightEval operationEval
+  case Omodu =>
+    exact CompCert4Lean.Backend.SelectDivproof.eval_modu cfg externalCalls
+      targetProgram stackPointer environment memory letEnvironment
+      left right leftValue rightValue output leftEval rightEval operationEval
+  case Odivf =>
+    exact CompCert4Lean.Backend.SelectDivproof.selection_dependency_eval_divf externalCalls
+      targetProgram stackPointer environment memory letEnvironment
+      left right leftValue rightValue leftEval rightEval
+  case Odivfs =>
+    exact CompCert4Lean.Backend.SelectDivproof.selection_dependency_eval_divfs externalCalls
+      targetProgram stackPointer environment memory letEnvironment
+      left right leftValue rightValue leftEval rightEval
+  case Oaddl =>
+    exact CompCert4Lean.X86.SelectLongproof.eval_addl externalCalls targetProgram
+      stackPointer environment memory letEnvironment left leftValue right rightValue
+      leftEval rightEval
+  case Osubl =>
+    exact CompCert4Lean.X86.SelectLongproof.eval_subl externalCalls targetProgram
+      stackPointer environment memory letEnvironment left leftValue right rightValue
+      leftEval rightEval
+  case Oandl =>
+    exact CompCert4Lean.X86.SelectLongproof.eval_andl externalCalls targetProgram
+      stackPointer environment memory letEnvironment left leftValue right rightValue
+      leftEval rightEval
+  case Oorl =>
+    exact CompCert4Lean.X86.SelectLongproof.eval_orl externalCalls targetProgram
+      stackPointer environment memory letEnvironment left leftValue right rightValue
+      leftEval rightEval
+  case Oxorl =>
+    exact CompCert4Lean.X86.SelectLongproof.eval_xorl externalCalls targetProgram
+      stackPointer environment memory letEnvironment left leftValue right rightValue
+      leftEval rightEval
+  case Omull =>
+    exact CompCert4Lean.X86.SelectLongproof.eval_mull externalCalls targetProgram helpers targetHelpers
+      stackPointer environment memory letEnvironment left leftValue right rightValue
+      leftEval rightEval
+  case Oshll =>
+    exact CompCert4Lean.X86.SelectLongproof.eval_shll externalCalls targetProgram helpers targetHelpers
+      stackPointer environment memory letEnvironment left leftValue right rightValue
+      leftEval rightEval
+  case Oshrl =>
+    exact CompCert4Lean.X86.SelectLongproof.eval_shrl externalCalls targetProgram helpers targetHelpers
+      stackPointer environment memory letEnvironment left leftValue right rightValue
+      leftEval rightEval
+  case Oshrlu =>
+    exact CompCert4Lean.X86.SelectLongproof.eval_shrlu externalCalls targetProgram helpers targetHelpers
+      stackPointer environment memory letEnvironment left leftValue right rightValue
+      leftEval rightEval
+  case Odivl =>
+    exact CompCert4Lean.Backend.SelectDivproof.selection_dependency_eval_divls
+      cfg externalCalls targetProgram helpers targetHelpers stackPointer environment
+      memory letEnvironment left right leftValue rightValue output leftEval rightEval operationEval
+  case Odivlu =>
+    exact CompCert4Lean.Backend.SelectDivproof.eval_divlu
+      cfg externalCalls targetProgram helpers targetHelpers stackPointer environment
+      memory letEnvironment left right leftValue rightValue output leftEval rightEval operationEval
+  case Omodl =>
+    exact CompCert4Lean.Backend.SelectDivproof.selection_dependency_eval_modls
+      cfg externalCalls targetProgram helpers targetHelpers stackPointer environment
+      memory letEnvironment left right leftValue rightValue output leftEval rightEval operationEval
+  case Omodlu =>
+    exact CompCert4Lean.Backend.SelectDivproof.selection_dependency_eval_modlu
+      cfg externalCalls targetProgram helpers targetHelpers stackPointer environment
+      memory letEnvironment left right leftValue rightValue output leftEval rightEval operationEval
+  case Ocmp comparison =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_comp externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory comparison
+      letEnvironment left leftValue right rightValue leftEval rightEval
+  case Ocmpu comparison =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_compu externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory comparison
+      letEnvironment left leftValue right rightValue leftEval rightEval
+  case Ocmpf comparison =>
+    exact CompCert4Lean.X86.SelectOpproof.eval_compf externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory comparison
+      letEnvironment left leftValue right rightValue leftEval rightEval
+  case Ocmpfs comparison =>
+    exact selection_eval_compfs externalCalls
+      (Genv.globalenv targetProgram) stackPointer environment memory comparison
+      letEnvironment left leftValue right rightValue leftEval rightEval
+  case Ocmpl comparison =>
+    exact ⟨output, CompCert4Lean.X86.SelectLongproof.eval_cmpl externalCalls targetProgram
+      stackPointer environment memory comparison letEnvironment left leftValue
+      right rightValue output leftEval rightEval operationEval, Val.lessdef_refl _⟩
+  case Ocmplu comparison =>
+    exact ⟨output, CompCert4Lean.X86.SelectLongproof.eval_cmplu externalCalls targetProgram
+      stackPointer environment memory comparison letEnvironment left leftValue
+      right rightValue output leftEval rightEval operationEval, Val.lessdef_refl _⟩
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.X86.Op
+
+theorem sel_expr_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    [binary64_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (cfg : CompCert4Lean.Config.CompilerConfig) (oracle : SelectionOracle) :
+    sel_expr_correctStatement cfg oracle := by
+  intro externalCalls program targetProgram programsMatch compilationUnit helpers
+    linked helpersDeclared stackPointer environment memory expression value evaluated
+  induction evaluated with
+  | eval_Evar name value lookup =>
+      intro targetEnvironment letEnvironment targetMemory environmentsMatch memoriesMatch
+      obtain ⟨targetValue, targetLookup, valuesMatch⟩ := environmentsMatch name value lookup
+      exact ⟨targetValue, eval_expr.var letEnvironment name targetValue targetLookup,
+        valuesMatch⟩
+  | eval_Econst constant value constantEval =>
+      intro targetEnvironment letEnvironment targetMemory environmentsMatch memoriesMatch
+      cases constant <;> simp only [Cminor.eval_constant, Option.some.injEq] at constantEval
+        <;> subst value
+      case Ointconst integerValue =>
+        exact ⟨Vint integerValue, eval_expr.eval_Eop letEnvironment (.Ointconst integerValue)
+          .Enil [] _ (eval_exprlist.nil letEnvironment) rfl, Val.lessdef_refl _⟩
+      case Ofloatconst floatValue =>
+        exact ⟨Vfloat floatValue, eval_expr.eval_Eop letEnvironment (.Ofloatconst floatValue)
+          .Enil [] _ (eval_exprlist.nil letEnvironment) rfl, Val.lessdef_refl _⟩
+      case Osingleconst singleValue =>
+        exact ⟨Vsingle singleValue, eval_expr.eval_Eop letEnvironment (.Osingleconst singleValue)
+          .Enil [] _ (eval_exprlist.nil letEnvironment) rfl, Val.lessdef_refl _⟩
+      case Olongconst longValue =>
+        exact ⟨Vlong longValue, eval_expr.eval_Eop letEnvironment (.Olongconst longValue)
+          .Enil [] _ (eval_exprlist.nil letEnvironment) rfl, Val.lessdef_refl _⟩
+      case Oaddrsymbol symbol offset =>
+        have sameAddress :
+            Genv.symbol_address (Genv.globalenv program) symbol offset =
+              Genv.symbol_address (Genv.globalenv targetProgram) symbol offset := by
+          unfold Genv.symbol_address
+          rw [symbols_preserved cfg oracle program targetProgram programsMatch symbol]
+        simpa only [sel_expr, sel_constant, sameAddress] using
+          CompCert4Lean.X86.SelectOpproof.eval_addrsymbol externalCalls
+            (Genv.globalenv targetProgram) stackPointer targetEnvironment targetMemory
+            cfg.relocation letEnvironment symbol offset
+      case Oaddrstack offset =>
+        exact CompCert4Lean.X86.SelectOpproof.eval_addrstack externalCalls
+          (Genv.globalenv targetProgram) stackPointer targetEnvironment targetMemory
+          letEnvironment offset
+  | eval_Eunop operation argument input output argumentEval operationEval inductionHypothesis =>
+      intro targetEnvironment letEnvironment targetMemory environmentsMatch memoriesMatch
+      obtain ⟨targetInput, targetArgumentEval, inputsMatch⟩ :=
+        inductionHypothesis targetEnvironment letEnvironment targetMemory
+          environmentsMatch memoriesMatch
+      obtain ⟨intermediate, intermediateEval, intermediateMatch⟩ :=
+        eval_unop_lessdef operation input targetInput output operationEval inputsMatch
+      obtain ⟨targetOutput, targetEval, outputsMatch⟩ := eval_sel_unop cfg oracle
+        externalCalls program targetProgram programsMatch compilationUnit helpers linked
+        helpersDeclared stackPointer targetEnvironment targetMemory letEnvironment
+        operation (sel_expr cfg argument) targetInput intermediate targetArgumentEval intermediateEval
+      exact ⟨targetOutput, targetEval,
+        Val.lessdef_trans _ _ _ intermediateMatch outputsMatch⟩
+  | eval_Ebinop operation left right leftValue rightValue output leftEval rightEval
+      operationEval leftInduction rightInduction =>
+      intro targetEnvironment letEnvironment targetMemory environmentsMatch memoriesMatch
+      obtain ⟨targetLeft, targetLeftEval, leftMatch⟩ :=
+        leftInduction targetEnvironment letEnvironment targetMemory environmentsMatch memoriesMatch
+      obtain ⟨targetRight, targetRightEval, rightMatch⟩ :=
+        rightInduction targetEnvironment letEnvironment targetMemory environmentsMatch memoriesMatch
+      obtain ⟨intermediate, intermediateEval, intermediateMatch⟩ :=
+        eval_binop_lessdef operation leftValue targetLeft rightValue targetRight output
+          memory targetMemory operationEval leftMatch rightMatch memoriesMatch
+      obtain ⟨targetOutput, targetEval, outputsMatch⟩ := eval_sel_binop cfg oracle
+        externalCalls program targetProgram programsMatch compilationUnit helpers linked
+        helpersDeclared stackPointer targetEnvironment targetMemory letEnvironment operation
+        (sel_expr cfg left) (sel_expr cfg right) targetLeft targetRight intermediate
+        targetLeftEval targetRightEval intermediateEval
+      exact ⟨targetOutput, targetEval,
+        Val.lessdef_trans _ _ _ intermediateMatch outputsMatch⟩
+  | eval_Eload chunk address addressValue output addressEval loaded inductionHypothesis =>
+      intro targetEnvironment letEnvironment targetMemory environmentsMatch memoriesMatch
+      obtain ⟨targetAddress, targetAddressEval, addressesMatch⟩ :=
+        inductionHypothesis targetEnvironment letEnvironment targetMemory
+          environmentsMatch memoriesMatch
+      obtain ⟨targetValue, targetLoaded, valuesMatch⟩ :=
+        Mem.loadv_extends chunk memory targetMemory addressValue targetAddress output
+          memoriesMatch loaded addressesMatch
+      exact ⟨targetValue, eval_load externalCalls targetProgram stackPointer targetEnvironment
+        targetMemory letEnvironment (sel_expr cfg address) targetAddress chunk targetValue
+        targetAddressEval targetLoaded, valuesMatch⟩
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+
+theorem sel_exprlist_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    [binary64_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (cfg : CompCert4Lean.Config.CompilerConfig) (oracle : SelectionOracle) :
+    sel_exprlist_correctStatement cfg oracle := by
+  intro externalCalls program targetProgram programsMatch compilationUnit helpers
+    linked helpersDeclared stackPointer environment memory expressions values evaluated
+  induction evaluated with
+  | eval_Enil =>
+      intro targetEnvironment letEnvironment targetMemory environmentsMatch memoriesMatch
+      exact ⟨[], eval_exprlist.nil letEnvironment, Val.lessdef_list_nil⟩
+  | eval_Econs argument arguments value values argumentEval argumentsEval inductionHypothesis =>
+      intro targetEnvironment letEnvironment targetMemory environmentsMatch memoriesMatch
+      obtain ⟨targetValue, targetArgumentEval, valuesMatch⟩ :=
+        sel_expr_correct cfg oracle externalCalls program targetProgram programsMatch
+          compilationUnit helpers linked helpersDeclared stackPointer environment memory
+          argument value argumentEval targetEnvironment letEnvironment targetMemory
+          environmentsMatch memoriesMatch
+      obtain ⟨targetValues, targetArgumentsEval, listsMatch⟩ :=
+        inductionHypothesis targetEnvironment letEnvironment targetMemory
+          environmentsMatch memoriesMatch
+      exact ⟨targetValue :: targetValues,
+        eval_exprlist.cons letEnvironment (sel_expr cfg argument) (sel_exprlist cfg arguments)
+          targetValue targetValues targetArgumentEval targetArgumentsEval,
+        Val.lessdef_list_cons value targetValue values targetValues valuesMatch listsMatch⟩
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+
+theorem sel_select_expr_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    [binary64_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (cfg : CompCert4Lean.Config.CompilerConfig) (oracle : SelectionOracle) :
+    sel_select_expr_correctStatement cfg oracle := by
+  intro externalCalls program targetProgram programsMatch compilationUnit helpers
+    linked helpersDeclared resultType condition ifTrue ifFalse stackPointer environment memory
+    conditionValue trueValue falseValue flag targetEnvironment targetMemory letEnvironment
+    supported conditionEval trueEval falseEval conditionTruth environmentsMatch memoriesMatch
+  obtain ⟨targetCondition, targetConditionEval, conditionMatch⟩ :=
+    sel_expr_correct cfg oracle externalCalls program targetProgram programsMatch
+      compilationUnit helpers linked helpersDeclared stackPointer environment memory
+      condition conditionValue conditionEval targetEnvironment letEnvironment targetMemory
+      environmentsMatch memoriesMatch
+  obtain ⟨targetTrue, targetTrueEval, trueMatch⟩ :=
+    sel_expr_correct cfg oracle externalCalls program targetProgram programsMatch
+      compilationUnit helpers linked helpersDeclared stackPointer environment memory
+      ifTrue trueValue trueEval targetEnvironment letEnvironment targetMemory
+      environmentsMatch memoriesMatch
+  obtain ⟨targetFalse, targetFalseEval, falseMatch⟩ :=
+    sel_expr_correct cfg oracle externalCalls program targetProgram programsMatch
+      compilationUnit helpers linked helpersDeclared stackPointer environment memory
+      ifFalse falseValue falseEval targetEnvironment letEnvironment targetMemory
+      environmentsMatch memoriesMatch
+  have targetTruth : Val.bool_of_val targetCondition flag := by
+    cases conditionTruth
+    cases conditionMatch
+    constructor
+  obtain ⟨result, resultEval, resultMatch⟩ :=
+    eval_sel_select externalCalls targetProgram stackPointer targetEnvironment targetMemory
+      letEnvironment (sel_expr cfg condition) (sel_expr cfg ifTrue) (sel_expr cfg ifFalse)
+      targetCondition targetTrue targetFalse flag resultType
+      targetConditionEval targetTrueEval targetFalseEval targetTruth
+  refine ⟨result, ?_, Val.lessdef_trans _ _ _ ?_ resultMatch⟩
+  · simpa [sel_select_expr, sel_select, supported] using resultEval
+  · exact Val.normalize_lessdef _ _ resultType (by cases flag <;> assumption)
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.X86
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+open CompCert4Lean.X86.SelectOpproof
+
+variable
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+
+private theorem selection_builtin_intconst_value
+    (externalCalls : ExternalCalls) (globalEnv : genv) (stackPointer : val)
+    (environment : Cminor.env) (memory : mem) (letEnvironment : letenv)
+    (integerValue : CompCert4Lean.Lib.Integers.int) (value : val)
+    (evaluated : eval_expr externalCalls globalEnv stackPointer environment memory
+      letEnvironment (Eop (Ointconst integerValue) Enil) value) :
+    value = Vint integerValue := by
+  cases evaluated with
+  | eval_Eop _ _ _ _ _ argumentsEval operationEval =>
+      cases argumentsEval
+      exact (Option.some.inj operationEval).symm
+
+private theorem selection_eval_builtin_arg :
+    CompCert4Lean.X86.SelectOpproof.eval_builtin_argStatement := by
+  intro externalCalls globalEnv stackPointer environment memory argument value argumentEval
+  cases selected : builtin_arg_match argument with
+  | builtin_arg_case1 integerValue =>
+      have valueEq := selection_builtin_intconst_value externalCalls globalEnv stackPointer environment
+        memory [] integerValue value argumentEval
+      subst value
+      simp only [SelectOp.builtin_arg, selected]
+      exact CminorSel.eval_builtin_arg.intValue integerValue
+  | builtin_arg_case2 longValue =>
+      cases argumentEval with
+      | eval_Eop environmentIndex operation arguments values result argumentsEval operationEval =>
+          cases argumentsEval
+          change some (Vlong longValue) = some value at operationEval
+          cases operationEval
+          simp only [SelectOp.builtin_arg, selected]
+          exact CminorSel.eval_builtin_arg.longValue longValue
+  | builtin_arg_case3 address arguments =>
+      simp only [SelectOp.builtin_arg, selected, CompCert4Lean.X86_64.Archi.ptr64, if_true]
+      exact CminorSel.eval_builtin_arg.argument _ _ argumentEval
+  | builtin_arg_case4 address arguments =>
+      simp only [SelectOp.builtin_arg, selected, CompCert4Lean.X86_64.Archi.ptr64, if_true]
+      cases argumentEval with
+      | eval_Eop environmentIndex operation arguments values result argumentsEval operationEval =>
+          exact eval_builtin_arg_addr externalCalls globalEnv stackPointer environment memory
+            address arguments values value argumentsEval operationEval
+  | builtin_arg_case5 high low =>
+      cases argumentEval with
+      | eval_Eop environmentIndex operation arguments values result argumentsEval operationEval =>
+          cases argumentsEval with
+          | cons environmentIndex first rest highValue restValues highEval restEval =>
+              cases restEval with
+              | cons environmentIndex second tail lowValue tailValues lowEval tailEval =>
+                  cases tailEval
+                  have highEq := selection_builtin_intconst_value externalCalls globalEnv stackPointer
+                    environment memory [] high highValue highEval
+                  have lowEq := selection_builtin_intconst_value externalCalls globalEnv stackPointer
+                    environment memory [] low lowValue lowEval
+                  subst highValue
+                  subst lowValue
+                  change some (Vlong (Int64.ofwords high low)) = some value at operationEval
+                  cases operationEval
+                  simp only [SelectOp.builtin_arg, selected]
+                  exact CminorSel.eval_builtin_arg.longValue (Int64.ofwords high low)
+  | builtin_arg_case6 high low =>
+      cases argumentEval with
+      | eval_Eop environmentIndex operation arguments values result argumentsEval operationEval =>
+          cases argumentsEval with
+          | cons environmentIndex first rest highValue restValues highEval restEval =>
+              cases restEval with
+              | cons environmentIndex second tail lowValue tailValues lowEval tailEval =>
+                  cases tailEval
+                  change some (Val.longofwords highValue lowValue) = some value at operationEval
+                  cases operationEval
+                  simp only [SelectOp.builtin_arg, selected]
+                  exact CminorSel.eval_builtin_arg.splitLong high low highValue lowValue
+                    highEval lowEval
+  | builtin_arg_case7 chunk identifier offset =>
+      cases argumentEval with
+      | eval_Eload environmentIndex chunk address arguments values addressValue result
+          argumentsEval addressEval loadEval =>
+          cases argumentsEval
+          change some (Genv.symbol_address globalEnv identifier offset) =
+            some addressValue at addressEval
+          cases addressEval
+          simp only [SelectOp.builtin_arg, selected]
+          exact CminorSel.eval_builtin_arg.loadGlobal chunk identifier offset value loadEval
+  | builtin_arg_case8 chunk offset =>
+      cases argumentEval with
+      | eval_Eload environmentIndex chunk address arguments values addressValue result
+          argumentsEval addressEval loadEval =>
+          cases argumentsEval
+          change some (Val.offset_ptr stackPointer offset) = some addressValue at addressEval
+          cases addressEval
+          simp only [SelectOp.builtin_arg, selected]
+          exact CminorSel.eval_builtin_arg.loadStack chunk offset value loadEval
+  | builtin_arg_default original =>
+      simp only [SelectOp.builtin_arg, selected]
+      exact CminorSel.eval_builtin_arg.argument _ _ argumentEval
+
+theorem sel_builtin_arg_correct
+    [binary64_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (cfg : CompCert4Lean.Config.CompilerConfig) (oracle : SelectionOracle) :
+    sel_builtin_arg_correctStatement cfg oracle := by
+  intro externalCalls program targetProgram programsMatch compilationUnit helpers
+    linked helpersDeclared stackPointer environment targetEnvironment memory targetMemory
+    argument value constraint environmentsMatch memoriesMatch evaluated
+  obtain ⟨targetValue, targetEval, valuesMatch⟩ :=
+    sel_expr_correct cfg oracle externalCalls program targetProgram programsMatch
+      compilationUnit helpers linked helpersDeclared stackPointer environment memory
+      argument value evaluated targetEnvironment [] targetMemory environmentsMatch memoriesMatch
+  refine ⟨targetValue, ?_, valuesMatch⟩
+  dsimp only [sel_builtin_arg]
+  split
+  · exact selection_eval_builtin_arg externalCalls (Genv.globalenv targetProgram)
+      stackPointer targetEnvironment targetMemory (sel_expr cfg argument) targetValue targetEval
+  · exact CminorSel.eval_builtin_arg.argument (sel_expr cfg argument) targetValue targetEval
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.Lib.Coqlib
+
+theorem sel_builtin_args_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    [binary64_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (cfg : CompCert4Lean.Config.CompilerConfig) (oracle : SelectionOracle) :
+    sel_builtin_args_correctStatement cfg oracle := by
+  intro externalCalls program targetProgram programsMatch compilationUnit helpers
+    linked helpersDeclared stackPointer environment targetEnvironment memory targetMemory
+    environmentsMatch memoriesMatch arguments values evaluated
+  induction evaluated with
+  | eval_Enil =>
+      intro constraints
+      exact ⟨[], list_forall2.nil _, Val.lessdef_list_nil⟩
+  | eval_Econs argument arguments value values argumentEval argumentsEval inductionHypothesis =>
+      intro constraints
+      obtain ⟨targetValue, targetEval, valuesMatch⟩ :=
+        sel_builtin_arg_correct cfg oracle externalCalls program targetProgram programsMatch
+          compilationUnit helpers linked helpersDeclared stackPointer environment targetEnvironment
+          memory targetMemory argument value (constraints.headD .OK_default)
+          environmentsMatch memoriesMatch argumentEval
+      obtain ⟨targetValues, targetArgumentsEval, listsMatch⟩ :=
+        inductionHypothesis constraints.tail
+      exact ⟨targetValue :: targetValues,
+        list_forall2.cons (sel_builtin_arg cfg argument (constraints.headD .OK_default))
+          targetValue targetEval targetArgumentsEval,
+        Val.lessdef_list_cons value targetValue values targetValues valuesMatch listsMatch⟩
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.X86.SelectOp
+open CompCert4Lean.X86.Machregs
+
+theorem sel_builtin_default_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    [binary64_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (cfg : CompCert4Lean.Config.CompilerConfig) (oracle : SelectionOracle) :
+    sel_builtin_default_correctStatement cfg oracle := by
+  intro externalCalls program targetProgram programsMatch compilationUnit helpers
+    linked helpersDeclared resultIdentifier externalFunction arguments stackPointer
+    environment memory argumentValues trace result memoryAfter targetEnvironment targetMemory
+    targetFunction continuation argumentsEval externalCall environmentsMatch memoriesMatch
+  obtain ⟨targetValues, targetArgumentsEval, argumentsMatch⟩ :=
+    sel_builtin_args_correct cfg oracle externalCalls program targetProgram programsMatch
+      compilationUnit helpers linked helpersDeclared stackPointer environment targetEnvironment
+      memory targetMemory environmentsMatch memoriesMatch arguments argumentValues argumentsEval
+      (builtin_constraints externalFunction)
+  obtain ⟨targetResult, targetAfter, targetCall, resultMatch, memoriesAfterMatch, unchanged⟩ :=
+    external_call_mem_extends_proof externalCalls externalFunction
+      (Genv.to_senv (Genv.globalenv program)) argumentValues memory trace result memoryAfter
+      targetMemory targetValues externalCall memoriesMatch argumentsMatch
+  have translatedCall := external_call_symbols_preserved_proof externalCalls externalFunction
+    (Genv.to_senv (Genv.globalenv program)) (Genv.to_senv (Genv.globalenv targetProgram))
+    targetValues targetMemory trace targetResult targetAfter
+    (senv_preserved cfg oracle program targetProgram programsMatch) targetCall
+  refine ⟨set_builtin_res (sel_builtin_res resultIdentifier) targetResult targetEnvironment,
+    targetAfter, ?_,
+    sel_builtin_res_correct resultIdentifier result environment targetResult targetEnvironment
+      environmentsMatch resultMatch, memoriesAfterMatch⟩
+  apply plus_one _ _ _ _ _ _ _
+  exact step.builtinCall targetFunction (sel_builtin_res resultIdentifier) externalFunction
+    (sel_builtin_args cfg arguments (builtin_constraints externalFunction)) continuation
+    stackPointer targetEnvironment targetMemory targetValues trace targetResult targetAfter
+    targetArgumentsEval translatedCall
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+
+theorem sel_builtin_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    [binary64_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (cfg : CompCert4Lean.Config.CompilerConfig) (oracle : SelectionOracle) :
+    sel_builtin_correctStatement cfg oracle := by
+  intro externalCalls program targetProgram programsMatch compilationUnit helpers
+    linked helpersDeclared resultIdentifier externalFunction arguments stackPointer
+    environment memory argumentValues trace result memoryAfter targetEnvironment targetMemory
+    targetFunction continuation argumentsEval externalCall environmentsMatch memoriesMatch
+  have fallback := sel_builtin_default_correct cfg oracle externalCalls program targetProgram
+    programsMatch compilationUnit helpers linked helpersDeclared resultIdentifier externalFunction
+    arguments stackPointer environment memory argumentValues trace result memoryAfter
+    targetEnvironment targetMemory targetFunction continuation argumentsEval externalCall
+    environmentsMatch memoriesMatch
+  cases externalFunction with
+  | EF_builtin name signature =>
+      cases lookup : lookup_builtin_function name signature with
+      | none => simpa [sel_builtin, lookup] using fallback
+      | some builtin =>
+          obtain ⟨targetValues, targetArgumentsEval, argumentsMatch⟩ :=
+            sel_exprlist_correct cfg oracle externalCalls program targetProgram programsMatch
+              compilationUnit helpers linked helpersDeclared stackPointer environment memory
+              arguments argumentValues argumentsEval targetEnvironment [] targetMemory
+              environmentsMatch memoriesMatch
+          obtain ⟨targetResult, targetAfter, targetCall, resultMatch, memoriesAfterMatch, unchanged⟩ :=
+            external_call_mem_extends_proof externalCalls (.EF_builtin name signature)
+              (Genv.to_senv (Genv.globalenv program)) argumentValues memory trace result memoryAfter
+              targetMemory targetValues externalCall memoriesMatch argumentsMatch
+          simp only [external_call, builtin_or_external_sem, lookup] at targetCall
+          cases targetCall with
+          | known_builtin_sem_intro _ _ builtinEval =>
+              cases resultIdentifier with
+              | none =>
+                  refine ⟨targetEnvironment, targetMemory, ?_, environmentsMatch, memoriesAfterMatch⟩
+                  simp only [sel_builtin, lookup]
+                  exact plus_two _ _ _ _ _ E0 _ E0 _ E0
+                    (step.sequence targetFunction .Sskip .Sskip continuation stackPointer
+                      targetEnvironment targetMemory)
+                    (step.skipSequence targetFunction .Sskip continuation stackPointer
+                      targetEnvironment targetMemory) rfl
+              | some identifier =>
+                  cases selected : sel_known_builtin builtin (sel_exprlist cfg arguments) with
+                  | none => simpa [sel_builtin, lookup, selected] using fallback
+                  | some expression =>
+                      obtain ⟨finalResult, expressionEval, finalMatch⟩ :=
+                        eval_sel_known_builtin externalCalls targetProgram stackPointer
+                          targetEnvironment targetMemory builtin (sel_exprlist cfg arguments)
+                          expression targetValues targetResult [] selected targetArgumentsEval builtinEval
+                      refine ⟨PTree.set identifier finalResult targetEnvironment, targetMemory,
+                        ?_, ?_, memoriesAfterMatch⟩
+                      · simp only [sel_builtin, lookup, selected]
+                        exact plus_one _ _ _ _ _ _ _
+                          (step.assign targetFunction identifier expression continuation stackPointer
+                            targetEnvironment targetMemory finalResult expressionEval)
+                      · exact set_var_lessdef environment targetEnvironment identifier result finalResult
+                          environmentsMatch (Val.lessdef_trans _ _ _ resultMatch finalMatch)
+  | _ => simpa [sel_builtin] using fallback
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Cminortyping
+open CompCert4Lean.Backend.Selection
+
+theorem if_conversion_base_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    [binary64_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (cfg : CompCert4Lean.Config.CompilerConfig) (oracle : SelectionOracle) :
+    if_conversion_base_correctStatement cfg oracle := by
+  intro externalCalls program targetProgram programsMatch compilationUnit helpers linked helpersDeclared
+    sourceFunction types condition identifier ifTrue ifFalse continuation statement environment
+    resultType conditionValue flag stackPointer memory targetFunction targetContinuation
+    targetEnvironment targetMemory converted environmentDefined environmentTyped identifierType
+    trueTyped falseTyped conditionEval conditionTruth environmentsMatch memoriesMatch
+  dsimp only [if_conversion_base] at converted
+  rw [identifierType] at converted
+  split at converted
+  next enabled =>
+    simp only [Bool.and_eq_true] at enabled
+    obtain ⟨⟨⟨⟨supported, known⟩, trueSafe⟩, falseSafe⟩, heuristic⟩ := enabled
+    cases converted
+    obtain ⟨trueValue, trueEval⟩ := eval_safe_expr (Genv.globalenv program) sourceFunction
+      stackPointer environment memory ifTrue environmentDefined trueSafe
+    obtain ⟨falseValue, falseEval⟩ := eval_safe_expr (Genv.globalenv program) sourceFunction
+      stackPointer environment memory ifFalse environmentDefined falseSafe
+    have trueType := wt_eval_expr program types stackPointer environment memory
+      ifTrue trueValue trueEval resultType trueTyped environmentTyped
+    have falseType := wt_eval_expr program types stackPointer environment memory
+      ifFalse falseValue falseEval resultType falseTyped environmentTyped
+    obtain ⟨targetValue, targetEval, valuesMatch⟩ :=
+      sel_select_expr_correct cfg oracle externalCalls program targetProgram programsMatch
+        compilationUnit helpers linked helpersDeclared resultType condition ifTrue ifFalse
+        stackPointer environment memory conditionValue trueValue falseValue flag targetEnvironment
+        targetMemory [] supported conditionEval trueEval falseEval conditionTruth
+        environmentsMatch memoriesMatch
+    have selectedType : Val.has_type (if flag then trueValue else falseValue) resultType := by
+      cases flag <;> assumption
+    simp only [Val.select, Val.normalize_idem _ _ selectedType] at valuesMatch
+    exact ⟨trueValue, falseValue, targetValue, trueEval, falseEval, valuesMatch,
+      step.assign targetFunction identifier (sel_select_expr cfg resultType condition ifTrue ifFalse)
+        targetContinuation stackPointer targetEnvironment targetMemory targetValue targetEval⟩
+  next disabled => contradiction
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Cminortyping
+open CompCert4Lean.Backend.Selection
+
+theorem if_conversion_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    [binary64_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (cfg : CompCert4Lean.Config.CompilerConfig) (oracle : SelectionOracle) :
+    if_conversion_correctStatement cfg oracle := by
+  intro externalCalls program targetProgram programsMatch compilationUnit helpers linked helpersDeclared
+    sourceFunction types returnType condition ifTrue ifFalse continuation statement conditionValue flag
+    sourceContinuation targetFunction targetContinuation stackPointer environment memory
+    targetEnvironment targetMemory converted environmentDefined environmentTyped
+    trueTyped falseTyped conditionEval conditionTruth environmentsMatch memoriesMatch
+  have trueSound := classify_stmt_sound externalCalls program ifTrue
+  have falseSound := classify_stmt_sound externalCalls program ifFalse
+  cases trueClass : classify_stmt ifTrue <;> cases falseClass : classify_stmt ifFalse <;>
+    simp only [if_conversion, trueClass, falseClass] at converted <;> try contradiction
+  case SCskip.SCassign identifier expression =>
+    simp only [trueClass] at trueSound
+    simp only [falseClass] at falseSound
+    obtain ⟨trueSteps, trueEventually⟩ := trueSound
+    obtain ⟨falseSteps, falseEventually⟩ := falseSound
+    obtain ⟨trueValue, falseValue, targetValue, trueEval, falseEval, valuesMatch, targetStep⟩ :=
+      if_conversion_base_correct cfg oracle externalCalls program targetProgram programsMatch
+        compilationUnit helpers linked helpersDeclared sourceFunction types condition identifier
+        (.Evar identifier) expression continuation statement environment (types identifier)
+        conditionValue flag stackPointer memory targetFunction targetContinuation targetEnvironment
+        targetMemory converted environmentDefined environmentTyped rfl (wt_expr.wt_Evar types identifier)
+        (classify_stmt_wt types returnType identifier expression ifFalse falseClass falseTyped)
+        conditionEval conditionTruth environmentsMatch memoriesMatch
+    refine ⟨if flag then trueSteps else falseSteps,
+      PTree.set identifier (if flag then trueValue else falseValue) environment,
+      PTree.set identifier targetValue targetEnvironment, targetStep, ?_,
+      set_var_lessdef _ _ _ _ _ environmentsMatch valuesMatch⟩
+    cases flag with
+    | false =>
+        exact falseEventually sourceFunction sourceContinuation stackPointer
+          environment memory falseValue falseEval
+    | true =>
+        have unchanged : PTree.set identifier trueValue environment = environment := by
+          cases trueEval with
+          | eval_Evar _ _ lookup => exact PTree.gsident identifier environment lookup
+        simpa [unchanged] using
+          trueEventually sourceFunction sourceContinuation stackPointer environment memory
+  case SCassign.SCskip identifier expression =>
+    simp only [trueClass] at trueSound
+    simp only [falseClass] at falseSound
+    obtain ⟨trueSteps, trueEventually⟩ := trueSound
+    obtain ⟨falseSteps, falseEventually⟩ := falseSound
+    obtain ⟨trueValue, falseValue, targetValue, trueEval, falseEval, valuesMatch, targetStep⟩ :=
+      if_conversion_base_correct cfg oracle externalCalls program targetProgram programsMatch
+        compilationUnit helpers linked helpersDeclared sourceFunction types condition identifier
+        expression (.Evar identifier) continuation statement environment (types identifier)
+        conditionValue flag stackPointer memory targetFunction targetContinuation targetEnvironment
+        targetMemory converted environmentDefined environmentTyped rfl
+        (classify_stmt_wt types returnType identifier expression ifTrue trueClass trueTyped)
+        (wt_expr.wt_Evar types identifier) conditionEval conditionTruth environmentsMatch memoriesMatch
+    refine ⟨if flag then trueSteps else falseSteps,
+      PTree.set identifier (if flag then trueValue else falseValue) environment,
+      PTree.set identifier targetValue targetEnvironment, targetStep, ?_,
+      set_var_lessdef _ _ _ _ _ environmentsMatch valuesMatch⟩
+    cases flag with
+    | false =>
+        have unchanged : PTree.set identifier falseValue environment = environment := by
+          cases falseEval with
+          | eval_Evar _ _ lookup => exact PTree.gsident identifier environment lookup
+        simpa [unchanged] using
+          falseEventually sourceFunction sourceContinuation stackPointer environment memory
+    | true =>
+        exact trueEventually sourceFunction sourceContinuation stackPointer
+          environment memory trueValue trueEval
+  case SCassign.SCassign trueIdentifier trueExpression falseIdentifier falseExpression =>
+    cases decision : CompCert4Lean.Common.AST.ident_eq trueIdentifier falseIdentifier with
+    | right different => simp [decision] at converted
+    | left identical =>
+        subst falseIdentifier
+        simp only [decision] at converted
+        simp only [trueClass] at trueSound
+        simp only [falseClass] at falseSound
+        obtain ⟨trueSteps, trueEventually⟩ := trueSound
+        obtain ⟨falseSteps, falseEventually⟩ := falseSound
+        obtain ⟨trueValue, falseValue, targetValue, trueEval, falseEval, valuesMatch, targetStep⟩ :=
+          if_conversion_base_correct cfg oracle externalCalls program targetProgram programsMatch
+            compilationUnit helpers linked helpersDeclared sourceFunction types condition trueIdentifier
+            trueExpression falseExpression continuation statement environment (types trueIdentifier)
+            conditionValue flag stackPointer memory targetFunction targetContinuation targetEnvironment
+            targetMemory converted environmentDefined environmentTyped rfl
+            (classify_stmt_wt types returnType trueIdentifier trueExpression ifTrue trueClass trueTyped)
+            (classify_stmt_wt types returnType trueIdentifier falseExpression ifFalse falseClass falseTyped)
+            conditionEval conditionTruth environmentsMatch memoriesMatch
+        refine ⟨if flag then trueSteps else falseSteps,
+          PTree.set trueIdentifier (if flag then trueValue else falseValue) environment,
+          PTree.set trueIdentifier targetValue targetEnvironment, targetStep, ?_,
+          set_var_lessdef _ _ _ _ _ environmentsMatch valuesMatch⟩
+        cases flag with
+        | false =>
+            exact falseEventually sourceFunction sourceContinuation stackPointer
+              environment memory falseValue falseEval
+        | true =>
+            exact trueEventually sourceFunction sourceContinuation stackPointer
+              environment memory trueValue trueEval
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Cminortyping
+open CompCert4Lean.Backend.Selection
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Common.Switch
+
+set_option maxRecDepth 4096
+set_option maxHeartbeats 1600000
+
+theorem sel_step_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    [binary64_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (cfg : CompCert4Lean.Config.CompilerConfig) (oracle : SelectionOracle) :
+    sel_step_correctStatement cfg oracle := by
+  intro externalCalls program targetProgram programsMatch source trace destination sourceStep target matched typed
+  cases matched with
+  | match_state compilationUnit helpers sourceFunction targetFunction sourceStatement
+      sourceContinuation following targetStatement targetContinuation stackPointer
+      environment memory targetEnvironment targetMemory types linked helpersDeclared
+      functionTranslated typeChecked statementTranslated continuationsMatch environmentsMatch memoriesMatch =>
+      cases sourceStep with
+      | step_skip_seq _ statement continuation _ _ _ =>
+          simp only [sel_stmt] at statementTranslated
+          cases statementTranslated
+          cases continuationsMatch with
+          | match_cont_seq _ _ _ _ _ resumeFollowing resumeStatement _ resumeTarget translatedResume resumeCont =>
+              refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.skipSequence ..), ?_⟩
+              exact .match_state _ _ _ _ _ _ resumeFollowing _ _ _ _ _ _ _ _
+                linked helpersDeclared functionTranslated typeChecked translatedResume
+                resumeCont environmentsMatch memoriesMatch
+          | match_cont_other _ _ _ _ _ _ callMatch => cases callMatch
+      | step_skip_block _ continuation _ _ _ =>
+          simp only [sel_stmt] at statementTranslated
+          cases statementTranslated
+          cases continuationsMatch with
+          | match_cont_block _ _ _ _ _ _ resumeCont =>
+              refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.skipBlock ..), ?_⟩
+              exact match_states_skip cfg oracle _ _ _ _ _ _ _ _ _ _ _ _ _
+                linked helpersDeclared functionTranslated typeChecked resumeCont environmentsMatch memoriesMatch
+          | match_cont_other _ _ _ _ _ _ callMatch => cases callMatch
+      | step_skip_call _ _ stackBlock _ _ memoryAfter callContinuation memoryFreed =>
+          simp only [sel_stmt] at statementTranslated
+          cases statementTranslated
+          obtain ⟨targetAfter, targetFreed, afterMatch⟩ :=
+            Mem.free_parallel_extends _ _ _ _ _ _ memoriesMatch memoryFreed
+          have stackspace := stackspace_function_translated cfg oracle _ _ _ _ functionTranslated
+          have callMatch := match_is_call_cont cfg oracle _ _ _ _ _ _ _ continuationsMatch callContinuation
+          refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.skipCall _ _ _ _ _ targetAfter callMatch.2 ?_), ?_⟩
+          · simpa only [stackspace] using targetFreed
+          · exact .match_returnstate _ _ _ _ _ _ callMatch.1 (.lessdef_refl _) afterMatch
+      | step_assign _ identifier expression _ _ _ _ value evaluated =>
+          simp only [sel_stmt] at statementTranslated
+          cases statementTranslated
+          obtain ⟨targetValue, targetEval, valuesMatch⟩ :=
+            sel_expr_correct cfg oracle externalCalls program targetProgram programsMatch
+              compilationUnit helpers linked helpersDeclared _ _ _ _ _ evaluated
+              targetEnvironment [] targetMemory environmentsMatch memoriesMatch
+          refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.assign _ _ _ _ _ _ _ _ targetEval), ?_⟩
+          exact match_states_skip cfg oracle _ _ _ _ _ _ _ _ _ _ _ _ _
+            linked helpersDeclared functionTranslated typeChecked continuationsMatch
+            (set_var_lessdef _ _ _ _ _ environmentsMatch valuesMatch) memoriesMatch
+      | step_store _ chunk address value _ _ _ _ addressValue storedValue memoryAfter addressEval valueEval stored =>
+          obtain ⟨targetAddress, targetAddressEval, addressesMatch⟩ :=
+            sel_expr_correct cfg oracle externalCalls program targetProgram programsMatch
+              compilationUnit helpers linked helpersDeclared _ _ _ _ _ addressEval
+              targetEnvironment [] targetMemory environmentsMatch memoriesMatch
+          obtain ⟨targetValue, targetValueEval, valuesMatch⟩ :=
+            sel_expr_correct cfg oracle externalCalls program targetProgram programsMatch
+              compilationUnit helpers linked helpersDeclared _ _ _ _ _ valueEval
+              targetEnvironment [] targetMemory environmentsMatch memoriesMatch
+          obtain ⟨targetAfter, targetStored, afterMatch⟩ :=
+            Mem.storev_extends _ _ _ _ _ _ _ _ memoriesMatch stored addressesMatch valuesMatch
+          have targetStep := eval_store externalCalls targetProgram _ _ _ _ _ _ _ _
+            targetFunction targetContinuation _
+            targetAddressEval targetValueEval targetStored
+          change CompCert4Lean.Common.Errors.res.OK
+            (Selection.store chunk (sel_expr cfg address) (sel_expr cfg value)) =
+            CompCert4Lean.Common.Errors.res.OK targetStatement at statementTranslated
+          cases statementTranslated
+          refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ targetStep, ?_⟩
+          exact match_states_skip cfg oracle _ _ _ _ _ _ _ _ _ _ _ _ _
+            linked helpersDeclared functionTranslated typeChecked continuationsMatch environmentsMatch afterMatch
+      | step_builtin _ resultIdentifier externalFunction arguments _ _ _ _ argumentValues trace result memoryAfter
+          argumentsEval externalCall =>
+          simp only [sel_stmt] at statementTranslated
+          cases statementTranslated
+          obtain ⟨targetEnvironmentAfter, targetAfter, targetSteps, environmentsAfterMatch, memoriesAfterMatch⟩ :=
+            sel_builtin_correct cfg oracle externalCalls program targetProgram programsMatch
+              compilationUnit helpers linked helpersDeclared resultIdentifier externalFunction arguments
+              _ _ _ _ _ _ _ targetEnvironment targetMemory targetFunction targetContinuation
+              argumentsEval externalCall environmentsMatch memoriesMatch
+          refine Or.inl ⟨_, targetSteps, ?_⟩
+          exact match_states_skip cfg oracle _ _ _ _ _ _ _ _ _ _ _ _ _
+            linked helpersDeclared functionTranslated typeChecked continuationsMatch
+            environmentsAfterMatch memoriesAfterMatch
+      | step_seq _ firstStatement secondStatement _ _ _ _ =>
+          simp only [sel_stmt] at statementTranslated
+          cases secondTranslated : sel_stmt cfg oracle (prog_defmap compilationUnit)
+              (Selection.known_id sourceFunction) types secondStatement following with
+          | Error message => simp only [secondTranslated] at statementTranslated; contradiction
+          | OK secondTarget =>
+            simp only [secondTranslated] at statementTranslated
+            cases firstTranslated : sel_stmt cfg oracle (prog_defmap compilationUnit)
+                (Selection.known_id sourceFunction) types firstStatement secondTarget with
+            | Error message => simp only [firstTranslated] at statementTranslated; contradiction
+            | OK firstTarget =>
+              simp only [firstTranslated] at statementTranslated
+              cases statementTranslated
+              refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.sequence ..), ?_⟩
+              exact .match_state _ _ _ _ _ _ secondTarget _ _ _ _ _ _ _ _
+                linked helpersDeclared functionTranslated typeChecked firstTranslated
+                (.match_cont_seq _ _ _ _ _ following _ _ _ secondTranslated continuationsMatch)
+                environmentsMatch memoriesMatch
+      | step_loop _ statement _ _ _ _ =>
+          simp only [sel_stmt] at statementTranslated
+          split at statementTranslated <;> try contradiction
+          rename_i targetBody bodyTranslated
+          cases statementTranslated
+          refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.loop ..), ?_⟩
+          refine .match_state _ _ _ _ _ _ .Sskip _ _ _ _ _ _ _ _
+            linked helpersDeclared functionTranslated typeChecked bodyTranslated
+            (.match_cont_seq _ _ _ _ _ .Sskip _ _ _ ?_ continuationsMatch)
+            environmentsMatch memoriesMatch
+          simp only [sel_stmt, bodyTranslated]
+      | step_block _ statement _ _ _ _ =>
+          simp only [sel_stmt] at statementTranslated
+          split at statementTranslated <;> try contradiction
+          rename_i targetBody bodyTranslated
+          cases statementTranslated
+          refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.blockStep ..), ?_⟩
+          exact .match_state _ _ _ _ _ _ following _ _ _ _ _ _ _ _
+            linked helpersDeclared functionTranslated typeChecked bodyTranslated
+            (.match_cont_block _ _ _ _ _ _ continuationsMatch) environmentsMatch memoriesMatch
+      | step_exit_seq _ amount statement continuation _ _ _ =>
+          simp only [sel_stmt] at statementTranslated
+          cases statementTranslated
+          cases continuationsMatch with
+          | match_cont_seq _ _ _ _ _ resumeFollowing resumeStatement _ resumeTarget translatedResume resumeCont =>
+              refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.exitSequence ..), ?_⟩
+              exact .match_state _ _ _ _ _ _ .Sskip _ _ _ _ _ _ _ _
+                linked helpersDeclared functionTranslated typeChecked rfl
+                resumeCont environmentsMatch memoriesMatch
+          | match_cont_other _ _ _ _ _ _ callMatch => cases callMatch
+      | step_exit_block_0 _ continuation _ _ _ =>
+          simp only [sel_stmt] at statementTranslated
+          cases statementTranslated
+          cases continuationsMatch with
+          | match_cont_block _ _ _ _ _ _ resumeCont =>
+              refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.exitBlockZero ..), ?_⟩
+              exact match_states_skip cfg oracle _ _ _ _ _ _ _ _ _ _ _ _ _
+                linked helpersDeclared functionTranslated typeChecked resumeCont environmentsMatch memoriesMatch
+          | match_cont_other _ _ _ _ _ _ callMatch => cases callMatch
+      | step_exit_block_S _ amount continuation _ _ _ =>
+          simp only [sel_stmt] at statementTranslated
+          cases statementTranslated
+          cases continuationsMatch with
+          | match_cont_block _ _ _ _ _ _ resumeCont =>
+              refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.exitBlockSucc ..), ?_⟩
+              exact .match_state _ _ _ _ _ _ .Sskip _ _ _ _ _ _ _ _
+                linked helpersDeclared functionTranslated typeChecked rfl
+                resumeCont environmentsMatch memoriesMatch
+          | match_cont_other _ _ _ _ _ _ callMatch => cases callMatch
+      | step_return_0 _ _ stackBlock _ _ memoryAfter memoryFreed =>
+          simp only [sel_stmt] at statementTranslated
+          cases statementTranslated
+          obtain ⟨targetAfter, targetFreed, afterMatch⟩ :=
+            Mem.free_parallel_extends _ _ _ _ _ _ memoriesMatch memoryFreed
+          have stackspace := stackspace_function_translated cfg oracle _ _ _ _ functionTranslated
+          refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.returnNone _ _ _ _ _ targetAfter ?_), ?_⟩
+          · simpa only [stackspace] using targetFreed
+          · exact .match_returnstate _ _ _ _ _ _
+              (call_cont_commut cfg oracle _ _ _ _ _ _ _ continuationsMatch)
+              (.lessdef_refl _) afterMatch
+      | step_return_1 _ expression _ stackBlock _ _ value memoryAfter evaluated memoryFreed =>
+          simp only [sel_stmt] at statementTranslated
+          cases statementTranslated
+          obtain ⟨targetValue, targetEval, valuesMatch⟩ :=
+            sel_expr_correct cfg oracle externalCalls program targetProgram programsMatch
+              compilationUnit helpers linked helpersDeclared _ _ _ _ _ evaluated
+              targetEnvironment [] targetMemory environmentsMatch memoriesMatch
+          obtain ⟨targetAfter, targetFreed, afterMatch⟩ :=
+            Mem.free_parallel_extends _ _ _ _ _ _ memoriesMatch memoryFreed
+          have stackspace := stackspace_function_translated cfg oracle _ _ _ _ functionTranslated
+          refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.returnSome _ _ _ _ _ _ _ targetAfter targetEval ?_), ?_⟩
+          · simpa only [stackspace] using targetFreed
+          · exact .match_returnstate _ _ _ _ _ _
+              (call_cont_commut cfg oracle _ _ _ _ _ _ _ continuationsMatch) valuesMatch afterMatch
+      | step_label _ label statement _ _ _ _ =>
+          simp only [sel_stmt] at statementTranslated
+          split at statementTranslated <;> try contradiction
+          rename_i targetBody bodyTranslated
+          cases statementTranslated
+          refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.label ..), ?_⟩
+          exact .match_state _ _ _ _ _ _ following _ _ _ _ _ _ _ _
+            linked helpersDeclared functionTranslated typeChecked bodyTranslated
+            continuationsMatch environmentsMatch memoriesMatch
+      | step_call _ resultIdentifier signature callee arguments _ _ _ _ functionValue argumentValues
+          calledFunction calleeEval argumentsEval functionFound signatureMatch =>
+          have classified := classify_call_correct program compilationUnit _ _ _ _ _ _
+            linked calleeEval functionFound
+          cases classification : classify_call (prog_defmap compilationUnit) callee with
+          | Call_default =>
+              simp only [sel_stmt, classification] at statementTranslated
+              cases statementTranslated
+              obtain ⟨targetValue, targetEval, valuesMatch⟩ :=
+                sel_expr_correct cfg oracle externalCalls program targetProgram programsMatch
+                  compilationUnit helpers linked helpersDeclared _ _ _ _ _ calleeEval
+                  targetEnvironment [] targetMemory environmentsMatch memoriesMatch
+              obtain ⟨targetArguments, targetArgumentsEval, argumentsMatch⟩ :=
+                sel_exprlist_correct cfg oracle externalCalls program targetProgram programsMatch
+                  compilationUnit helpers linked helpersDeclared _ _ _ _ _ argumentsEval
+                  targetEnvironment [] targetMemory environmentsMatch memoriesMatch
+              obtain ⟨calledUnit, targetCalledFunction, targetFound, functionsMatch, calledLinked⟩ :=
+                functions_translated cfg oracle _ _ programsMatch _ _ _ functionFound valuesMatch
+              refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _
+                (.call _ _ _ _ _ _ _ _ _ _ _ _ (.eval_eos_e _ _ _ targetEval)
+                  targetArgumentsEval targetFound
+                  ((sig_function_translated cfg oracle _ _ _ functionsMatch).trans signatureMatch)), ?_⟩
+              exact .match_callstate _ _ _ _ _ _ _ _ _ calledLinked functionsMatch
+                (.match_cont_call _ _ _ _ _ _ _ _ _ _ _ linked helpersDeclared
+                  functionTranslated typeChecked continuationsMatch environmentsMatch)
+                argumentsMatch memoriesMatch
+          | Call_imm identifier =>
+              simp only [classification] at classified
+              obtain ⟨functionBlock, symbolFound, valueEqual⟩ := classified
+              subst functionValue
+              simp only [sel_stmt, classification] at statementTranslated
+              cases statementTranslated
+              obtain ⟨targetArguments, targetArgumentsEval, argumentsMatch⟩ :=
+                sel_exprlist_correct cfg oracle externalCalls program targetProgram programsMatch
+                  compilationUnit helpers linked helpersDeclared _ _ _ _ _ argumentsEval
+                  targetEnvironment [] targetMemory environmentsMatch memoriesMatch
+              obtain ⟨calledUnit, targetCalledFunction, targetFound, functionsMatch, calledLinked⟩ :=
+                functions_translated cfg oracle _ _ programsMatch _ _ _ functionFound (.lessdef_refl _)
+              have targetSymbol := (symbols_preserved cfg oracle _ _ programsMatch identifier).trans symbolFound
+              refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _
+                (.call _ _ _ _ _ _ _ _ _ _ _ _ (.eval_eos_s _ _ _ targetSymbol)
+                  targetArgumentsEval targetFound
+                  ((sig_function_translated cfg oracle _ _ _ functionsMatch).trans signatureMatch)), ?_⟩
+              exact .match_callstate _ _ _ _ _ _ _ _ _ calledLinked functionsMatch
+                (.match_cont_call _ _ _ _ _ _ _ _ _ _ _ linked helpersDeclared
+                  functionTranslated typeChecked continuationsMatch environmentsMatch)
+                argumentsMatch memoriesMatch
+          | Call_builtin externalFunction =>
+              simp only [classification] at classified
+              subst calledFunction
+              simp only [sel_stmt, classification] at statementTranslated
+              cases statementTranslated
+              refine Or.inr (Or.inl ⟨by simp only [measure]; decide, rfl, ?_⟩)
+              exact .match_builtin_1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ linked helpersDeclared
+                functionTranslated typeChecked continuationsMatch argumentsEval environmentsMatch memoriesMatch
+      | step_tailcall _ signature callee arguments _ stackBlock _ _ functionValue argumentValues
+          calledFunction memoryAfter calleeEval argumentsEval functionFound signatureMatch memoryFreed =>
+          obtain ⟨targetAfter, targetFreed, afterMatch⟩ :=
+            Mem.free_parallel_extends _ _ _ _ _ _ memoriesMatch memoryFreed
+          have stackspace := stackspace_function_translated cfg oracle _ _ _ _ functionTranslated
+          have targetFree : Mem.free targetMemory stackBlock .Z0 targetFunction.fn_stackspace = some targetAfter := by
+            simpa only [stackspace] using targetFreed
+          obtain ⟨targetValue, targetEval, valuesMatch⟩ :=
+            sel_expr_correct cfg oracle externalCalls program targetProgram programsMatch
+              compilationUnit helpers linked helpersDeclared _ _ _ _ _ calleeEval
+              targetEnvironment [] targetMemory environmentsMatch memoriesMatch
+          obtain ⟨targetArguments, targetArgumentsEval, argumentsMatch⟩ :=
+            sel_exprlist_correct cfg oracle externalCalls program targetProgram programsMatch
+              compilationUnit helpers linked helpersDeclared _ _ _ _ _ argumentsEval
+              targetEnvironment [] targetMemory environmentsMatch memoriesMatch
+          obtain ⟨calledUnit, targetCalledFunction, targetFound, functionsMatch, calledLinked⟩ :=
+            functions_translated cfg oracle _ _ programsMatch _ _ _ functionFound valuesMatch
+          have classified := classify_call_correct program compilationUnit _ _ _ _ _ _
+            linked calleeEval functionFound
+          have targetSignature := (sig_function_translated cfg oracle _ _ _ functionsMatch).trans signatureMatch
+          have finalMatch := match_states.match_callstate (cfg := cfg) (oracle := oracle) (prog := program) calledUnit
+            calledFunction targetCalledFunction argumentValues targetArguments
+            (Cminor.call_cont sourceContinuation) (CminorSel.call_cont targetContinuation)
+            memoryAfter targetAfter calledLinked functionsMatch
+            (call_cont_commut cfg oracle _ _ _ _ _ _ _ continuationsMatch) argumentsMatch afterMatch
+          cases classification : classify_call (prog_defmap compilationUnit) callee with
+          | Call_default | Call_builtin _ =>
+              simp only [sel_stmt, classification] at statementTranslated
+              cases statementTranslated
+              exact Or.inl ⟨_, plus_one _ _ _ _ _ _ _
+                (.tailcall _ _ _ _ _ _ _ _ _ _ _ _ (.eval_eos_e _ _ _ targetEval)
+                  targetArgumentsEval targetFound targetSignature targetFree), finalMatch⟩
+          | Call_imm identifier =>
+              simp only [classification] at classified
+              obtain ⟨functionBlock, symbolFound, valueEqual⟩ := classified
+              subst functionValue
+              cases valuesMatch
+              simp only [sel_stmt, classification] at statementTranslated
+              cases statementTranslated
+              have targetSymbol := (symbols_preserved cfg oracle _ _ programsMatch identifier).trans symbolFound
+              exact Or.inl ⟨_, plus_one _ _ _ _ _ _ _
+                (.tailcall _ _ _ _ _ _ _ _ _ _ _ _ (.eval_eos_s _ _ _ targetSymbol)
+                  targetArgumentsEval targetFound targetSignature targetFree), finalMatch⟩
+      | step_ifthenelse _ condition ifTrue ifFalse _ _ _ _ value flag evaluated truth =>
+          simp only [sel_stmt] at statementTranslated
+          cases conversion : if_conversion cfg oracle (Selection.known_id sourceFunction)
+              types condition ifTrue ifFalse following with
+          | some convertedStatement =>
+              simp only [conversion] at statementTranslated
+              cases statementTranslated
+              cases typed with
+              | wt_normal_state _ _ _ _ _ _ checkedTypes functionTyped statementTyped continuationTyped environmentTyped environmentDefined =>
+                  cases functionTyped with
+                  | wt_function_intro checkedTypesEq parametersTyped bodyTyped =>
+                      have sameTypes : checkedTypes = types := by
+                        exact CompCert4Lean.Common.Errors.res.OK.inj (checkedTypesEq.symm.trans typeChecked)
+                      subst checkedTypes
+                      cases statementTyped with
+                      | wt_Sifthenelse _ _ _ conditionTyped trueTyped falseTyped =>
+                          obtain ⟨steps, environmentAfter, targetEnvironmentAfter, targetStep, eventuallySource, environmentsAfterMatch⟩ :=
+                            if_conversion_correct cfg oracle externalCalls program targetProgram programsMatch
+                              compilationUnit helpers linked helpersDeclared _ _ _ _ _ _ _ _ _ _ _ _ _
+                              _ _ _ _ _ conversion environmentDefined environmentTyped trueTyped falseTyped
+                              evaluated truth environmentsMatch memoriesMatch
+                          refine Or.inr (Or.inr ⟨_, steps, targetStep, ?_⟩)
+                          apply CompCert4Lean.Common.Smallstep.eventually_implies _ _ _ _ _ _ _ _ _ eventuallySource
+                          intro eventualState identical
+                          cases identical
+                          exact match_states_skip cfg oracle _ _ _ _ _ _ _ _ _ _ _ _ _
+                            linked helpersDeclared functionTranslated typeChecked continuationsMatch
+                            environmentsAfterMatch memoriesMatch
+          | none =>
+              simp only [conversion] at statementTranslated
+              cases trueTranslated : sel_stmt cfg oracle (prog_defmap compilationUnit)
+                  (Selection.known_id sourceFunction) types ifTrue following with
+              | Error message => simp only [trueTranslated] at statementTranslated; contradiction
+              | OK trueTarget =>
+                simp only [trueTranslated] at statementTranslated
+                cases falseTranslated : sel_stmt cfg oracle (prog_defmap compilationUnit)
+                    (Selection.known_id sourceFunction) types ifFalse following with
+                | Error message => simp only [falseTranslated] at statementTranslated; contradiction
+                | OK falseTarget =>
+                  simp only [falseTranslated] at statementTranslated
+                  cases statementTranslated
+                  obtain ⟨targetValue, targetEval, valuesMatch⟩ :=
+                    sel_expr_correct cfg oracle externalCalls program targetProgram programsMatch
+                      compilationUnit helpers linked helpersDeclared _ _ _ _ _ evaluated
+                      targetEnvironment [] targetMemory environmentsMatch memoriesMatch
+                  have targetTruth : Val.bool_of_val targetValue flag := by
+                    cases valuesMatch with
+                    | lessdef_refl => exact truth
+                    | lessdef_undef => cases truth
+                  refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _
+                    (.conditional _ _ trueTarget falseTarget _ _ _ _ _
+                      (eval_condexpr_of_expr externalCalls targetProgram _ _ _ _ _ _ _ targetEval targetTruth)), ?_⟩
+                  refine .match_state _ _ _ _ _ _ following _ _ _ _ _ _ _ _
+                    linked helpersDeclared functionTranslated typeChecked ?_
+                    continuationsMatch environmentsMatch memoriesMatch
+                  cases flag <;> assumption
+      | step_switch _ isLong expression casesTable default _ _ _ _ value number evaluated argument =>
+          obtain ⟨targetValue, targetEval, valuesMatch⟩ :=
+            sel_expr_correct cfg oracle externalCalls program targetProgram programsMatch
+              compilationUnit helpers linked helpersDeclared _ _ _ _ _ evaluated
+              targetEnvironment [] targetMemory environmentsMatch memoriesMatch
+          cases argument with
+          | switch_argument_32 integer =>
+              cases valuesMatch
+              simp only [sel_stmt] at statementTranslated
+              split at statementTranslated <;> try contradiction
+              rename_i validated
+              cases statementTranslated
+              refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.switch _ _ _ _ _ _ _
+                (sel_switch_int_correct externalCalls targetProgram _ _ _ _ _ _ _ _ [] validated targetEval)), ?_⟩
+              exact .match_state _ _ _ _ _ _ .Sskip _ _ _ _ _ _ _ _
+                linked helpersDeclared functionTranslated typeChecked rfl
+                continuationsMatch environmentsMatch memoriesMatch
+          | switch_argument_64 integer =>
+              cases valuesMatch
+              simp only [sel_stmt] at statementTranslated
+              split at statementTranslated <;> try contradiction
+              rename_i validated
+              cases statementTranslated
+              refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.switch _ _ _ _ _ _ _
+                (sel_switch_long_correct externalCalls targetProgram _ _ _ _ _ _ _ _ [] validated targetEval)), ?_⟩
+              exact .match_state _ _ _ _ _ _ .Sskip _ _ _ _ _ _ _ _
+                linked helpersDeclared functionTranslated typeChecked rfl
+                continuationsMatch environmentsMatch memoriesMatch
+      | step_goto _ label _ _ _ _ nextStatement nextContinuation labelFound =>
+          simp only [sel_stmt] at statementTranslated
+          cases statementTranslated
+          have bodyTranslated : sel_stmt cfg oracle (prog_defmap compilationUnit)
+              (Selection.known_id sourceFunction) types sourceFunction.fn_body .Sskip =
+              .OK targetFunction.fn_body := by
+            cases bodyEq : sel_stmt cfg oracle (prog_defmap compilationUnit)
+                (Selection.known_id sourceFunction) types sourceFunction.fn_body .Sskip with
+            | Error message => simp [sel_function, typeChecked, bodyEq] at functionTranslated
+            | OK translatedBody =>
+                simp only [sel_function, typeChecked, bodyEq] at functionTranslated
+                cases functionTranslated
+                rfl
+          have labelsMatch := find_label_commut cfg oracle program compilationUnit helpers
+            (Selection.known_id sourceFunction) types label sourceFunction.fn_body .Sskip
+            (Cminor.call_cont sourceContinuation) targetFunction.fn_body
+            (CminorSel.call_cont targetContinuation)
+            (.match_cont_other _ _ _ _ _ _
+              (call_cont_commut cfg oracle _ _ _ _ _ _ _ continuationsMatch)) bodyTranslated
+          rw [labelFound] at labelsMatch
+          cases targetLabel : CminorSel.find_label label targetFunction.fn_body
+              (CminorSel.call_cont targetContinuation) with
+          | none => simp only [targetLabel] at labelsMatch
+          | some result =>
+              obtain ⟨nextTargetStatement, nextTargetContinuation⟩ := result
+              simp only [targetLabel] at labelsMatch
+              obtain ⟨nextFollowing, nextTranslated, nextContMatch⟩ := labelsMatch
+              refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.gotoLabel _ _ _ _ _ _ _ _ targetLabel), ?_⟩
+              exact .match_state _ _ _ _ _ _ nextFollowing _ _ _ _ _ _ _ _
+                linked helpersDeclared functionTranslated typeChecked nextTranslated
+                nextContMatch environmentsMatch memoriesMatch
+  | match_callstate compilationUnit calledFunction targetCalledFunction arguments targetArguments
+      continuation targetContinuation memory targetMemory linked functionsMatch continuationsMatch argumentsMatch memoriesMatch =>
+      obtain ⟨helpers, helpersDeclared, fundefTranslated⟩ := functionsMatch
+      cases sourceStep with
+      | step_internal_function sourceFunction _ _ _ memoryAfter stackBlock environment argumentTypes allocated environmentEq =>
+          unfold sel_fundef transf_partial_fundef at fundefTranslated
+          cases functionTranslated : sel_function cfg oracle (prog_defmap compilationUnit) helpers sourceFunction with
+          | Error message => simp [functionTranslated] at fundefTranslated
+          | OK targetFunction =>
+              simp [functionTranslated] at fundefTranslated
+              cases fundefTranslated
+              have functionShape := functionTranslated
+              unfold sel_function at functionShape
+              cases typeChecked : type_function sourceFunction with
+              | Error message => simp [typeChecked] at functionShape
+              | OK types =>
+                simp only [typeChecked] at functionShape
+                cases bodyTranslated : sel_stmt cfg oracle (prog_defmap compilationUnit)
+                    (Selection.known_id sourceFunction) types sourceFunction.fn_body .Sskip with
+                | Error message => simp [bodyTranslated] at functionShape
+                | OK targetBody =>
+                  simp only [bodyTranslated] at functionShape
+                  cases functionShape
+                  obtain ⟨targetAfter, targetAllocated, afterMatch⟩ :=
+                    Mem.alloc_extends _ _ _ _ _ _ _ _ memoriesMatch allocated
+                      (ZArith.BinInt.Z.le_refl _) (ZArith.BinInt.Z.le_refl _)
+                  subst environment
+                  refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.internalFunction _ _ _ _ _ _ _
+                    (Val.has_argtype_list_lessdef _ _ _ argumentTypes argumentsMatch) targetAllocated rfl), ?_⟩
+                  exact .match_state _ _ _ _ _ _ .Sskip _ _ _ _ _ _ _ _
+                    linked helpersDeclared functionTranslated typeChecked bodyTranslated
+                    (.match_cont_other _ _ _ _ _ _ continuationsMatch)
+                    (set_locals_lessdef _ _ (set_params_lessdef _ _ _ argumentsMatch) _) afterMatch
+      | step_external_function externalFunction _ _ _ trace result memoryAfter externalCall =>
+          simp [sel_fundef, transf_partial_fundef] at fundefTranslated
+          cases fundefTranslated
+          obtain ⟨targetResult, targetAfter, targetCall, resultMatch, memoriesAfterMatch, unchanged⟩ :=
+            external_call_mem_extends_proof externalCalls externalFunction
+              (Genv.to_senv (Genv.globalenv program)) arguments memory trace result memoryAfter
+              targetMemory targetArguments externalCall memoriesMatch argumentsMatch
+          have translatedCall := external_call_symbols_preserved_proof externalCalls externalFunction
+            (Genv.to_senv (Genv.globalenv program)) (Genv.to_senv (Genv.globalenv targetProgram))
+            targetArguments targetMemory trace targetResult targetAfter
+            (senv_preserved cfg oracle program targetProgram programsMatch) targetCall
+          exact Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.externalFunction _ _ _ _ _ _ _ translatedCall),
+            .match_returnstate _ _ _ _ _ _ continuationsMatch resultMatch memoriesAfterMatch⟩
+  | match_returnstate value targetValue continuation targetContinuation memory targetMemory
+      continuationsMatch valuesMatch memoriesMatch =>
+      cases sourceStep with
+      | step_return _ resultIdentifier sourceFunction stackPointer environment resume _ =>
+          cases continuationsMatch with
+          | match_cont_call compilationUnit helpers types _ _ _ _ _ targetFunction targetEnvironment
+              targetResume linked helpersDeclared functionTranslated typeChecked resumeMatch environmentsMatch =>
+              refine Or.inl ⟨_, plus_one _ _ _ _ _ _ _ (.returnToCaller ..), ?_⟩
+              apply match_states_skip cfg oracle _ _ _ _ _ _ _ _ _ _ _ _ _
+                linked helpersDeclared functionTranslated typeChecked resumeMatch _ memoriesMatch
+              cases resultIdentifier with
+              | none => exact environmentsMatch
+              | some identifier => exact set_var_lessdef _ _ _ _ _ environmentsMatch valuesMatch
+  | match_builtin_1 compilationUnit helpers externalFunction arguments resultIdentifier sourceFunction
+      stackPointer environment continuation memory expressions targetFunction targetEnvironment
+      targetContinuation targetMemory types linked helpersDeclared functionTranslated typeChecked
+      continuationsMatch argumentsEval environmentsMatch memoriesMatch =>
+      cases sourceStep with
+      | step_external_function _ _ _ _ trace result memoryAfter externalCall =>
+          obtain ⟨targetEnvironmentAfter, targetAfter, targetSteps, environmentsAfterMatch, memoriesAfterMatch⟩ :=
+            sel_builtin_correct cfg oracle externalCalls program targetProgram programsMatch
+              compilationUnit helpers linked helpersDeclared resultIdentifier externalFunction expressions
+              _ _ _ _ _ _ _ targetEnvironment targetMemory targetFunction targetContinuation
+              argumentsEval externalCall environmentsMatch memoriesMatch
+          exact Or.inl ⟨_, targetSteps,
+            .match_builtin_2 _ _ result result _ _ _ _ _ _ _ _ _ _ _
+              linked helpersDeclared functionTranslated typeChecked continuationsMatch
+              (.lessdef_refl _) environmentsAfterMatch memoriesAfterMatch⟩
+  | match_builtin_2 compilationUnit helpers value targetValue resultIdentifier sourceFunction
+      stackPointer environment continuation memory targetFunction targetEnvironment targetMemory
+      targetContinuation types linked helpersDeclared functionTranslated typeChecked continuationsMatch
+      valuesMatch environmentsMatch memoriesMatch =>
+      cases sourceStep with
+      | step_return =>
+          exact Or.inr (Or.inl ⟨by simp only [measure]; decide, rfl,
+            match_states_skip cfg oracle _ _ _ _ _ _ _ _ _ _ _ _ _
+              linked helpersDeclared functionTranslated typeChecked continuationsMatch
+              environmentsMatch memoriesMatch⟩)
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Cminortyping
+open CompCert4Lean.Backend.Selection
+
+open CompCert4Lean.Common.Smallstep
+
+theorem transf_program_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    [binary64_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_inverse_certificate : CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (cfg : CompCert4Lean.Config.CompilerConfig) (oracle : SelectionOracle) :
+    transf_program_correctStatement cfg oracle := by
+  intro externalCalls program targetProgram programsMatch
+  have programTyped := wt_prog cfg oracle program targetProgram programsMatch
+  refine forward_simulation_eventually_star
+    (Cminor.semantics externalCalls program) (CminorSel.semantics externalCalls targetProgram)
+    (fun source target => match_states cfg oracle program source target ∧ wt_state source)
+    ?_ ?_ ?_ measure ?_
+  · exact (senv_preserved cfg oracle program targetProgram programsMatch).2.1
+  · intro source initial
+    obtain ⟨target, targetInitial, statesMatch⟩ :=
+      sel_initial_states cfg oracle program targetProgram programsMatch source initial
+    exact ⟨target, targetInitial, statesMatch, wt_initial_state program programTyped source initial⟩
+  · intro source target result matched final
+    exact sel_final_states cfg oracle program source target result matched.1 final
+  · intro source trace destination sourceStep target matched
+    have destinationTyped := subject_reduction externalCalls program programTyped
+      source trace destination sourceStep matched.2
+    obtain advancing | decreasing | converted :=
+      sel_step_correct cfg oracle externalCalls program targetProgram programsMatch
+        source trace destination sourceStep target matched.1 matched.2
+    · obtain ⟨targetAfter, targetSteps, afterMatch⟩ := advancing
+      exact Or.inl ⟨targetAfter, Or.inl targetSteps, afterMatch, destinationTyped⟩
+    · obtain ⟨decreases, silent, afterMatch⟩ := decreasing
+      subst trace
+      exact Or.inl ⟨target, Or.inr ⟨.star_refl _, decreases⟩, afterMatch, destinationTyped⟩
+    · obtain ⟨targetAfter, steps, targetStep, eventuallySource⟩ := converted
+      refine Or.inr ⟨steps, targetAfter, plus_one _ _ _ _ _ _ _ targetStep, ?_⟩
+      exact eventually_and_invariant _ _ _ _ _ wt_state _ _ _
+        (fun before event after stepProof stateTyped =>
+          subject_reduction externalCalls program programTyped before event after stepProof stateTyped)
+        eventuallySource destinationTyped
 
 end CompCert4Lean.Backend.Selectionproof

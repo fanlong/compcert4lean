@@ -2303,3 +2303,172 @@ theorem cast_idempotent :
     (binary32_certificate := _binary32_certificate) v ty ty' v' m h
 
 end CompCert4Lean.Cfrontend.Cop
+
+namespace CompCert4Lean.Cfrontend.Cop
+
+theorem sem_cmp_ptr_inj : sem_cmp_ptr_injStatement := cmp_inj_pointer
+
+end CompCert4Lean.Cfrontend.Cop
+
+namespace CompCert4Lean.Cfrontend.Cop
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Lib.Integers
+
+private theorem cop_add_ptr_int_inject
+    (mapping : meminj) (composites : composite_env) (pointee : type)
+    (sign : signedness) (first second result firstTarget secondTarget : val)
+    (firstInjection : Val.inject mapping first firstTarget)
+    (secondInjection : Val.inject mapping second secondTarget)
+    (sourceResult : sem_add_ptr_int composites pointee sign first second = some result) :
+    ∃ targetResult,
+      sem_add_ptr_int composites pointee sign firstTarget secondTarget = some targetResult ∧
+      Val.inject mapping result targetResult := by
+  cases firstInjection <;> cases secondInjection <;>
+    simp_all [sem_add_ptr_int, CompCert4Lean.X86_64.Archi.ptr64] <;> subst result
+  · exact Val.inject.inject_long _
+  · apply Val.inject.inject_ptr
+    · assumption
+    · simp only [Ptrofs.add_assoc_proof_api]
+      congr 1
+      exact Ptrofs.add_commut_proof_api _ _
+
+private theorem cop_add_ptr_long_inject
+    (mapping : meminj) (composites : composite_env) (pointee : type)
+    (first second result firstTarget secondTarget : val)
+    (firstInjection : Val.inject mapping first firstTarget)
+    (secondInjection : Val.inject mapping second secondTarget)
+    (sourceResult : sem_add_ptr_long composites pointee first second = some result) :
+    ∃ targetResult,
+      sem_add_ptr_long composites pointee firstTarget secondTarget = some targetResult ∧
+      Val.inject mapping result targetResult := by
+  cases firstInjection <;> cases secondInjection <;>
+    simp_all [sem_add_ptr_long, CompCert4Lean.X86_64.Archi.ptr64] <;> subst result
+  · exact Val.inject.inject_long _
+  · apply Val.inject.inject_ptr
+    · assumption
+    · simp only [Ptrofs.add_assoc_proof_api]
+      congr 1
+      exact Ptrofs.add_commut_proof_api _ _
+
+set_option maxHeartbeats 1600000 in
+theorem sem_binary_operation_inj :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      sem_binary_operation_injStatement := by
+  intro binary64Certificate binary32Certificate mapping sourceMemory targetMemory
+    validPointers weakPointers noOverflow distinctPointers composites operation
+    first firstType second secondType result firstTarget secondTarget
+    sourceResult firstInjection secondInjection
+  cases operation <;> simp only [sem_binary_operation] at sourceResult ⊢
+  case Oadd =>
+    unfold sem_add at sourceResult ⊢
+    cases classification : classify_add firstType secondType <;>
+      simp only [classification] at sourceResult ⊢
+    · exact cop_add_ptr_int_inject mapping _ _ _ _ _ _ _ _
+        firstInjection secondInjection sourceResult
+    · exact cop_add_ptr_long_inject mapping _ _ _ _ _ _ _
+        firstInjection secondInjection sourceResult
+    · exact cop_add_ptr_int_inject mapping _ _ _ _ _ _ _ _
+        secondInjection firstInjection sourceResult
+    · exact cop_add_ptr_long_inject mapping _ _ _ _ _ _ _
+        secondInjection firstInjection sourceResult
+    · apply sem_binarith_inject mapping sourceMemory targetMemory weakPointers
+        _ _ _ _ _ _ _ _ _ _ _ sourceResult firstInjection secondInjection <;>
+        intros <;> trivial
+  case Osub =>
+    unfold sem_sub at sourceResult ⊢
+    cases classification : classify_sub firstType secondType <;>
+      simp only [classification] at sourceResult ⊢
+    case sub_case_pi pointee sign =>
+      cases firstInjection <;> cases secondInjection <;>
+        simp_all [CompCert4Lean.X86_64.Archi.ptr64] <;> subst result
+      · exact Val.inject.inject_long _
+      · apply Val.inject.inject_ptr
+        · assumption
+        · exact Ptrofs.sub_add_l_proof_api _ _ _
+    case sub_case_pl pointee =>
+      cases firstInjection <;> cases secondInjection <;>
+        simp_all [CompCert4Lean.X86_64.Archi.ptr64] <;> subst result
+      · exact Val.inject.inject_long _
+      · apply Val.inject.inject_ptr
+        · assumption
+        · exact Ptrofs.sub_add_l_proof_api _ _ _
+    case sub_case_pp pointee =>
+      cases firstInjection <;> cases secondInjection <;>
+        dsimp only at sourceResult ⊢ <;> try contradiction
+      rename_i firstBlock firstOffset firstTargetBlock firstTargetOffset firstDelta
+        firstMapped firstShift secondBlock secondOffset secondTargetBlock
+        secondTargetOffset secondDelta secondMapped secondShift
+      subst firstTargetOffset secondTargetOffset
+      split at sourceResult
+      next sameBlock =>
+        have sameBlock' : firstBlock = secondBlock := by
+          change @Eq ident firstBlock secondBlock
+          simpa only [identEq, decide_eq_true_eq] using sameBlock
+        subst secondBlock
+        have sameImage := Option.some.inj (firstMapped.symm.trans secondMapped)
+        cases sameImage
+        rw [if_pos (show identEq firstTargetBlock firstTargetBlock = true by
+          simp only [identEq, decide_eq_true_eq]
+          rfl)]
+        split at sourceResult
+        next sizeRange =>
+          rw [if_pos sizeRange, Ptrofs.sub_shifted_proof_api]
+          cases sourceResult
+          exact ⟨_, rfl, Val.inject.inject_long _⟩
+        next => cases sourceResult
+      next => cases sourceResult
+    case sub_default =>
+      apply sem_binarith_inject mapping sourceMemory targetMemory weakPointers
+        _ _ _ _ _ _ _ _ _ _ _ sourceResult firstInjection secondInjection <;>
+        intros <;> trivial
+  all_goals
+    first
+    | exact sem_cmp_inj mapping sourceMemory targetMemory validPointers weakPointers
+        noOverflow distinctPointers _ _ _ _ _ _ _ _ sourceResult firstInjection secondInjection
+    | exact sem_shift_inject mapping _ _ _ _ _ _ _ _ _
+        sourceResult firstInjection secondInjection
+    | (simp only [sem_mul, sem_div, sem_mod, sem_and, sem_or, sem_xor] at sourceResult ⊢
+       apply sem_binarith_inject mapping sourceMemory targetMemory weakPointers
+         _ _ _ _ _ _ _ _ _ _ _ sourceResult firstInjection secondInjection
+       all_goals repeat first | trivial | split | intro _)
+
+end CompCert4Lean.Cfrontend.Cop
+
+namespace CompCert4Lean.Cfrontend.Cop
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+
+theorem sem_binary_operation_inject :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      sem_binary_operation_injectStatement := by
+  intro binary64Certificate binary32Certificate mapping sourceMemory targetMemory
+    composites operation first firstType second secondType result firstTarget secondTarget
+    sourceResult firstInjection secondInjection memoryInjection
+  refine sem_binary_operation_inj mapping sourceMemory targetMemory ?_ ?_ ?_ ?_
+    composites operation first firstType second secondType result firstTarget secondTarget
+    sourceResult firstInjection secondInjection
+  · intro sourceBlock offset targetBlock delta mapped valid
+    exact Mem.valid_pointer_inject_val mapping sourceMemory targetMemory
+      sourceBlock offset targetBlock _ memoryInjection valid
+      (Val.inject.inject_ptr sourceBlock offset targetBlock _ delta mapped rfl)
+  · intro sourceBlock offset targetBlock delta mapped valid
+    exact Mem.weak_valid_pointer_inject_val mapping sourceMemory targetMemory
+      sourceBlock offset targetBlock _ memoryInjection valid
+      (Val.inject.inject_ptr sourceBlock offset targetBlock _ delta mapped rfl)
+  · intro sourceBlock offset targetBlock delta mapped valid
+    exact Mem.weak_valid_pointer_inject_no_overflow mapping sourceMemory targetMemory
+      sourceBlock offset targetBlock delta memoryInjection valid mapped
+  · intro firstBlock firstOffset secondBlock secondOffset firstImage firstDelta
+      secondImage secondDelta distinct firstValid secondValid firstMapped secondMapped
+    exact Mem.different_pointers_inject mapping sourceMemory targetMemory
+      firstBlock firstOffset secondBlock secondOffset firstImage firstDelta
+      secondImage secondDelta memoryInjection distinct firstValid secondValid
+      firstMapped secondMapped
+
+end CompCert4Lean.Cfrontend.Cop

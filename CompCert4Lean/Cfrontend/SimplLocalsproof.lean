@@ -7157,3 +7157,1520 @@ theorem simpl_seq_of_labeled_statement_proof : CompCert4Lean.Cfrontend.SimplLoca
   simpl_seq_of_labeled_statement
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Cfrontend.SimplLocals
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+theorem match_envs_assign_lifted : match_envs_assign_liftedStatement := by
+  intro sourceProgram mapping compilationEnvironment environment temporaries memory
+    low high targetEnvironment targetTemporaries targetLow targetHigh assignedBlock
+    assignedType value newMemory identifier targetValue matched environmentEntry
+    casted valueInjection assignment lifted
+  have variableFacts : ∃ chunk,
+      PTree.get identifier targetEnvironment = none ∧ mapping assignedBlock = none ∧
+      access_mode assignedType = .By_value chunk := by
+    cases matched.me_vars identifier with
+    | match_var_lifted sourceBlock sourceType chunk oldValue oldTarget
+        sourceEntry targetEntry isLifted unmapped mode loaded targetTemp injected =>
+        have sameEntry := Option.some.inj (sourceEntry.symm.trans environmentEntry)
+        cases sameEntry
+        exact ⟨chunk, targetEntry, unmapped, mode⟩
+    | match_var_not_lifted sourceBlock sourceType targetBlock
+        sourceEntry targetEntry notLifted mapped =>
+        rw [lifted] at notLifted
+        contradiction
+    | match_var_not_local sourceEntry targetEntry notLifted =>
+        rw [lifted] at notLifted
+        contradiction
+  rcases variableFacts with ⟨chunk, targetMissing, unmapped, mode⟩
+  have stored : Mem.store chunk memory assignedBlock .Z0 value = some newMemory := by
+    cases assignment with
+    | assign_loc_value assignedValue assignedChunk resultMemory assignedMode stored =>
+        have sameChunk : assignedChunk = chunk := by
+          cases assignedMode.symm.trans mode
+          rfl
+        subst assignedChunk
+        change Mem.store chunk memory assignedBlock .Z0 value = some newMemory at stored
+        exact stored
+    | assign_loc_copy sourceBlock sourceOffset bytes resultMemory
+        assignedMode alignedSource alignedTarget separated loaded stored =>
+        rw [mode] at assignedMode
+        contradiction
+  have loaded : Mem.load chunk newMemory assignedBlock .Z0 = some value := by
+    simpa only [val_casted_load_result value assignedType chunk casted mode] using
+      Mem.load_store_same chunk memory assignedBlock .Z0 value newMemory stored
+  refine ⟨?_, ?_, matched.me_inj, matched.me_range, matched.me_trange,
+    matched.me_mapped, matched.me_flat, matched.me_incr, matched.me_tincr⟩
+  · intro queried
+    by_cases sameIdentifier : queried = identifier
+    · subst queried
+      exact match_var_lifted assignedBlock assignedType chunk value targetValue
+        environmentEntry targetMissing lifted unmapped mode loaded
+        (PTree.gss identifier targetValue targetTemporaries) valueInjection
+    · cases matched.me_vars queried with
+      | match_var_lifted otherBlock otherType otherChunk oldValue oldTarget
+          sourceEntry targetEntry isLifted notMapped otherMode oldLoad oldTemp oldInjection =>
+          refine match_var_lifted otherBlock otherType otherChunk oldValue oldTarget
+            sourceEntry targetEntry isLifted notMapped otherMode ?_ ?_ oldInjection
+          · rw [Mem.load_store_other chunk memory assignedBlock .Z0 value newMemory
+              stored otherChunk otherBlock .Z0
+              (Or.inl (matched.me_inj queried otherBlock otherType identifier
+                assignedBlock assignedType sourceEntry environmentEntry sameIdentifier))]
+            exact oldLoad
+          · exact (PTree.gso (A := val) (i := queried) (j := identifier)
+              targetValue targetTemporaries sameIdentifier).trans oldTemp
+      | match_var_not_lifted otherBlock otherType targetBlock
+          sourceEntry targetEntry notLifted mapped =>
+          exact match_var_not_lifted otherBlock otherType targetBlock
+            sourceEntry targetEntry notLifted mapped
+      | match_var_not_local sourceEntry targetEntry notLifted =>
+          exact match_var_not_local sourceEntry targetEntry notLifted
+  · intro queried sourceValue sourceTemp
+    rcases matched.me_temps queried sourceValue sourceTemp with
+      ⟨⟨oldTarget, oldTemp, oldInjection⟩, undefinedIfLifted⟩
+    refine ⟨?_, undefinedIfLifted⟩
+    by_cases sameIdentifier : queried = identifier
+    · subst queried
+      rw [undefinedIfLifted lifted]
+      exact ⟨targetValue, PTree.gss identifier targetValue targetTemporaries,
+        Val.inject.val_inject_undef _⟩
+    · exact ⟨oldTarget,
+        (PTree.gso (A := val) (i := queried) (j := identifier)
+          targetValue targetTemporaries sameIdentifier).trans oldTemp,
+        oldInjection⟩
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Lib.Integers
+
+private theorem slp_assign_unmapped_load
+    (composites : composite_env) (assignedType : type) (mapping : meminj)
+    (memory newMemory : mem) (destination targetDestination : block)
+    (offset targetOffset : ptrofs) (field : bitfield) (value : val)
+    (assignment : assign_loc composites assignedType memory destination offset
+      field value newMemory)
+    (pointerInjection : Val.inject mapping (.Vptr destination offset)
+      (.Vptr targetDestination targetOffset)) :
+    ∀ queried chunk oldValue, mapping queried = none →
+      Mem.load chunk memory queried .Z0 = some oldValue →
+      Mem.load chunk newMemory queried .Z0 = some oldValue := by
+  intro queried chunk oldValue unmapped loaded
+  have distinct : queried ≠ destination := by
+    intro sameBlock
+    subst queried
+    cases pointerInjection with
+    | inject_ptr sourceBlock sourceOffset targetBlock translatedOffset delta mapped shifted =>
+        rw [unmapped] at mapped
+        contradiction
+  cases assignment with
+  | assign_loc_value assignedValue assignedChunk resultMemory mode stored =>
+      exact (Mem.load_store_other assignedChunk memory destination (Ptrofs.unsigned offset)
+        value newMemory stored chunk queried .Z0 (Or.inl distinct)).trans loaded
+  | assign_loc_copy sourceBlock sourceOffset bytes resultMemory
+      mode sourceAligned destinationAligned separated sourceLoaded stored =>
+      exact (Mem.load_storebytes_other memory destination (Ptrofs.unsigned offset)
+        bytes newMemory stored chunk queried .Z0 (Or.inl distinct)).trans loaded
+  | assign_loc_bitfield size sign position width assignedValue resultMemory normalized stored =>
+      cases stored with
+      | store_bitfield_intro size originalSign attributes sign position width
+          sourceMemory address carrier raw resultMemory
+          positionRange widthRange carrierRange signCorrect carrierLoaded carrierStored =>
+          exact (Mem.load_store_other (chunk_for_carrier size) memory destination
+            (Ptrofs.unsigned offset)
+            (.Vint (CompCert4Lean.Lib.Integers.Int.bitfield_insert
+              (first_bit size position width) width carrier raw)) newMemory carrierStored
+            chunk queried .Z0 (Or.inl distinct)).trans loaded
+
+set_option maxHeartbeats 1600000 in
+theorem assign_loc_inject : assign_loc_injectStatement := by
+  intro configuration sourceProgram targetProgram programs
+  dsimp only
+  intro mapping assignedType memory destination offset field value newMemory
+    targetMemory targetDestination targetOffset targetValue assignment
+    pointerInjection valueInjection memoryInjection
+  rw [comp_env_preserved configuration sourceProgram targetProgram programs]
+  let composites := (globalenv sourceProgram).genv_cenv
+  have preserved := slp_assign_unmapped_load composites assignedType mapping memory newMemory
+    destination targetDestination offset targetOffset field value assignment pointerInjection
+  cases assignment with
+  | assign_loc_value assignedValue chunk resultMemory mode stored =>
+      obtain ⟨targetNewMemory, targetStored, injected⟩ :=
+        Mem.storev_mapped_inject mapping chunk memory (.Vptr destination offset)
+          value newMemory targetMemory (.Vptr targetDestination targetOffset)
+          targetValue memoryInjection stored pointerInjection valueInjection
+      exact ⟨targetNewMemory, assign_loc_value targetValue chunk targetNewMemory
+        mode targetStored, injected, preserved⟩
+  | assign_loc_copy sourceBlock sourceOffset bytes resultMemory
+      mode sourceAligned destinationAligned separated loaded stored =>
+      cases pointerInjection with
+      | inject_ptr sourceDestination destinationOffset translatedDestination
+          translatedOffset destinationDelta destinationMapped destinationShift =>
+        cases valueInjection with
+        | inject_ptr sourceBlock sourceOffset targetSource targetSourceOffset
+            sourceDelta sourceMapped sourceShift =>
+          subst targetOffset targetSourceOffset
+          let byteCount := sizeof composites assignedType
+          have sizeNonnegative : ZArith.BinInt.Z.le .Z0 byteCount :=
+            sizeof_pos composites assignedType
+          by_cases sizeZero : byteCount = .Z0
+          · have bytesEmpty : bytes = [] := by
+              apply Option.some.inj
+              exact loaded.symm.trans (Mem.loadbytes_empty memory sourceBlock
+                (Ptrofs.unsigned sourceOffset) byteCount (by
+                  rw [sizeZero]
+                  exact ZArith.BinInt.Z.le_refl _))
+            subst bytes
+            obtain ⟨targetNewMemory, targetStored⟩ := Mem.range_perm_storebytes targetMemory
+              targetDestination (Ptrofs.unsigned (Ptrofs.add offset (Ptrofs.repr destinationDelta)))
+              [] (by
+                intro position bounds
+                change intOfZ _ ≤ intOfZ position ∧ intOfZ position < intOfZ _ at bounds
+                simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt] at bounds
+                change _ ∧ intOfZ position < intOfZ _ + 0 at bounds
+                omega)
+            refine ⟨targetNewMemory, ?_, ?_, preserved⟩
+            · refine assign_loc_copy targetSource
+                (Ptrofs.add sourceOffset (Ptrofs.repr sourceDelta)) [] targetNewMemory
+                mode ?_ ?_ ?_ ?_ targetStored
+              · intro positiveSize
+                change intOfZ byteCount > 0 at positiveSize
+                rw [sizeZero] at positiveSize
+                contradiction
+              · intro positiveSize
+                change intOfZ byteCount > 0 at positiveSize
+                rw [sizeZero] at positiveSize
+                contradiction
+              · right
+                right
+                change ZArith.BinInt.Z.le (ZArith.BinInt.Z.add _ byteCount) _ ∨
+                  ZArith.BinInt.Z.le (ZArith.BinInt.Z.add _ byteCount) _
+                simp only [sizeZero, ZArith.BinInt.Z.le, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+                change _ + 0 ≤ _ ∨ _ + 0 ≤ _
+                omega
+              · exact Mem.loadbytes_empty targetMemory targetSource _ byteCount
+                  (by rw [sizeZero]; exact ZArith.BinInt.Z.le_refl _)
+            · exact Mem.storebytes_empty_inject mapping memory destination _ newMemory
+                targetMemory targetDestination _ targetNewMemory memoryInjection stored targetStored
+          · have sizePositive : ZArith.BinInt.Z.lt .Z0 byteCount := by
+              change 0 ≤ intOfZ byteCount at sizeNonnegative
+              have nonzero : intOfZ byteCount ≠ 0 := by
+                intro zero
+                apply sizeZero
+                apply intOfZ_injective
+                exact zero
+              change 0 < intOfZ byteCount
+              omega
+            have byteLength : ZArith.BinInt.Z.of_nat bytes.length = byteCount := by
+              rw [Mem.loadbytes_length memory sourceBlock (Ptrofs.unsigned sourceOffset)
+                byteCount bytes loaded]
+              exact ZArith.Znat.Z2Nat.id byteCount sizeNonnegative
+            have sourceRange : Mem.range_perm memory sourceBlock (Ptrofs.unsigned sourceOffset)
+                (ZArith.BinInt.Z.add (Ptrofs.unsigned sourceOffset) byteCount) Cur Nonempty :=
+              Mem.range_perm_implies _ _ _ _ _ Readable Nonempty
+                (Mem.loadbytes_range_perm memory sourceBlock _ byteCount bytes loaded)
+                (perm_any_N _)
+            have destinationRange : Mem.range_perm memory destination (Ptrofs.unsigned offset)
+                (ZArith.BinInt.Z.add (Ptrofs.unsigned offset) byteCount) Cur Nonempty := by
+              rw [← byteLength]
+              exact Mem.range_perm_implies _ _ _ _ _ Writable Nonempty
+                (Mem.storebytes_range_perm memory destination _ bytes newMemory stored)
+                (perm_any_N _)
+            have sourcePermission : Mem.perm memory sourceBlock (Ptrofs.unsigned sourceOffset)
+                Cur Nonempty := by
+              apply sourceRange
+              constructor
+              · exact ZArith.BinInt.Z.le_refl _
+              · change 0 < intOfZ byteCount at sizePositive
+                change intOfZ _ < intOfZ (ZArith.BinInt.Z.add _ byteCount)
+                simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+                omega
+            have destinationPermission : Mem.perm memory destination (Ptrofs.unsigned offset)
+                Cur Nonempty := by
+              apply destinationRange
+              constructor
+              · exact ZArith.BinInt.Z.le_refl _
+              · change 0 < intOfZ byteCount at sizePositive
+                change intOfZ _ < intOfZ (ZArith.BinInt.Z.add _ byteCount)
+                simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+                omega
+            have sourceAddress := Mem.address_inject mapping memory targetMemory sourceBlock
+              sourceOffset targetSource sourceDelta Nonempty memoryInjection sourcePermission sourceMapped
+            have destinationAddress := Mem.address_inject mapping memory targetMemory destination
+              offset targetDestination destinationDelta Nonempty memoryInjection destinationPermission
+              destinationMapped
+            obtain ⟨targetBytes, targetLoaded, bytesInjected⟩ :=
+              Mem.loadbytes_inject mapping memory targetMemory sourceBlock
+                (Ptrofs.unsigned sourceOffset) byteCount targetSource sourceDelta bytes
+                memoryInjection loaded sourceMapped
+            obtain ⟨targetNewMemory, targetStored, injected⟩ :=
+              Mem.storebytes_mapped_inject mapping memory destination (Ptrofs.unsigned offset)
+                bytes newMemory targetMemory targetDestination destinationDelta targetBytes
+                memoryInjection stored destinationMapped bytesInjected
+            refine ⟨targetNewMemory, ?_, injected, preserved⟩
+            refine assign_loc_copy targetSource
+              (Ptrofs.add sourceOffset (Ptrofs.repr sourceDelta)) targetBytes targetNewMemory
+              mode ?_ ?_ ?_ ?_ ?_
+            · intro positiveSize
+              rw [sourceAddress]
+              exact Mem.aligned_area_inject mapping memory targetMemory sourceBlock
+                (Ptrofs.unsigned sourceOffset) (alignof_blockcopy composites assignedType)
+                byteCount targetSource sourceDelta memoryInjection
+                (alignof_blockcopy_1248 composites assignedType) sizePositive
+                (sizeof_alignof_blockcopy_compat composites assignedType)
+                sourceRange (sourceAligned positiveSize) sourceMapped
+            · intro positiveSize
+              rw [destinationAddress]
+              exact Mem.aligned_area_inject mapping memory targetMemory destination
+                (Ptrofs.unsigned offset) (alignof_blockcopy composites assignedType)
+                byteCount targetDestination destinationDelta memoryInjection
+                (alignof_blockcopy_1248 composites assignedType) sizePositive
+                (sizeof_alignof_blockcopy_compat composites assignedType)
+                destinationRange (destinationAligned positiveSize) destinationMapped
+            · rw [sourceAddress, destinationAddress]
+              exact Mem.disjoint_or_equal_inject mapping memory targetMemory sourceBlock
+                targetSource sourceDelta destination targetDestination destinationDelta
+                (Ptrofs.unsigned sourceOffset) (Ptrofs.unsigned offset) byteCount
+                memoryInjection sourceMapped destinationMapped
+                (Mem.range_perm_max _ _ _ _ Cur Nonempty sourceRange)
+                (Mem.range_perm_max _ _ _ _ Cur Nonempty destinationRange) sizePositive separated
+            · rw [sourceAddress]
+              exact targetLoaded
+            · rw [destinationAddress]
+              exact targetStored
+  | assign_loc_bitfield size sign position width assignedValue resultMemory normalized stored =>
+      cases stored with
+      | store_bitfield_intro size originalSign attributes sign position width
+          sourceMemory address carrier raw resultMemory
+          positionRange widthRange carrierRange signCorrect carrierLoaded carrierStored =>
+          cases valueInjection
+          obtain ⟨targetCarrier, targetLoaded, carrierInjection⟩ :=
+            Mem.loadv_inject mapping memory targetMemory (chunk_for_carrier size)
+              (.Vptr destination offset) (.Vptr targetDestination targetOffset)
+              (.Vint carrier) memoryInjection carrierLoaded pointerInjection
+          cases carrierInjection
+          obtain ⟨targetNewMemory, targetStored, injected⟩ :=
+            Mem.storev_mapped_inject mapping (chunk_for_carrier size) memory
+              (.Vptr destination offset) _ newMemory targetMemory
+              (.Vptr targetDestination targetOffset) _ memoryInjection carrierStored
+              pointerInjection (Val.inject.inject_int _)
+          refine ⟨targetNewMemory, ?_, injected, preserved⟩
+          exact assign_loc_bitfield size sign position width (.Vint raw) targetNewMemory
+            (.Vint (bitfield_normalize size sign width raw))
+            (store_bitfield_intro size originalSign attributes sign position width
+              targetMemory (.Vptr targetDestination targetOffset) carrier raw targetNewMemory
+              positionRange widthRange carrierRange signCorrect targetLoaded targetStored)
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Cfrontend.SimplLocals
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+private theorem slp_lifted_rvalue
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (sourceGlobals targetGlobals : genv) (environment targetEnvironment : env)
+    (temporaries targetTemporaries : temp_env) (memory targetMemory : mem)
+    (mapping : meminj) (compilationEnvironment : compilenv)
+    (low high targetLow targetHigh : block)
+    (matched : match_envs mapping compilationEnvironment environment temporaries memory
+      low high targetEnvironment targetTemporaries targetLow targetHigh)
+    (identifier : ident) (variableType : type) (location : block) (offset : ptrofs)
+    (field : bitfield) (value : val)
+    (locationEvaluation : eval_lvalue sourceGlobals environment temporaries memory
+      (.Evar identifier variableType) location offset field)
+    (loadedValue : deref_loc variableType memory location offset field value)
+    (lifted : VSet.mem identifier compilationEnvironment = true) :
+    ∃ targetValue, eval_expr targetGlobals targetEnvironment targetTemporaries targetMemory
+      (.Etempvar identifier variableType) targetValue ∧ Val.inject mapping value targetValue := by
+  cases locationEvaluation with
+  | eval_Evar_local identifier location variableType environmentEntry =>
+      cases matched.me_vars identifier with
+      | match_var_lifted sourceBlock sourceType chunk oldValue oldTarget
+          sourceEntry targetEntry isLifted unmapped mode loaded targetTemp injected =>
+          have sameEntry := Option.some.inj (sourceEntry.symm.trans environmentEntry)
+          cases sameEntry
+          cases loadedValue with
+          | deref_loc_value loadedChunk loadedResult loadedMode dereferenced =>
+              have sameChunk : loadedChunk = chunk := by
+                cases loadedMode.symm.trans mode
+                rfl
+              subst loadedChunk
+              change Mem.load chunk memory location .Z0 = some value at dereferenced
+              have sameValue := Option.some.inj (loaded.symm.trans dereferenced)
+              cases sameValue
+              exact ⟨oldTarget, eval_Etempvar identifier variableType oldTarget targetTemp, injected⟩
+          | deref_loc_reference referenceMode =>
+              rw [mode] at referenceMode
+              contradiction
+          | deref_loc_copy copyMode =>
+              rw [mode] at copyMode
+              contradiction
+      | match_var_not_lifted sourceBlock sourceType targetBlock
+          sourceEntry targetEntry notLifted mapped =>
+          rw [lifted] at notLifted
+          contradiction
+      | match_var_not_local sourceEntry targetEntry notLifted =>
+          rw [lifted] at notLifted
+          contradiction
+  | eval_Evar_global identifier location variableType localMissing symbol =>
+      cases matched.me_vars identifier <;> simp_all
+
+private theorem slp_nonlifted_expression (compilationEnvironment : compilenv) (expression : expr) :
+    (∀ identifier expressionType, expression = .Evar identifier expressionType →
+      VSet.mem identifier compilationEnvironment = false) →
+    (match expression with
+      | .Evar identifier _ => VSet.mem identifier compilationEnvironment = false
+      | _ => True) := by
+  cases expression <;> intro notLifted <;> try trivial
+  exact notLifted _ _ rfl
+
+set_option maxHeartbeats 2400000 in
+private theorem slp_eval_simpl_mutual
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (configuration : CompilerConfig) (sourceProgram targetProgram : program)
+    (programs : match_prog configuration sourceProgram targetProgram)
+    (environment targetEnvironment : env) (temporaries targetTemporaries : temp_env)
+    (memory targetMemory : mem) (mapping : meminj) (compilationEnvironment : compilenv)
+    (low high targetLow targetHigh : block)
+    (matched : match_envs mapping compilationEnvironment environment temporaries memory
+      low high targetEnvironment targetTemporaries targetLow targetHigh)
+    (memoryInjection : Mem.inject mapping memory targetMemory)
+    (globals : ∃ bound, match_globalenvs sourceProgram mapping bound) :
+    (∀ expression value,
+      eval_expr (globalenv sourceProgram) environment temporaries memory expression value →
+      compat_cenv (addr_taken_expr expression) compilationEnvironment →
+      ∃ targetValue,
+        eval_expr (globalenv targetProgram) targetEnvironment targetTemporaries targetMemory
+          (simpl_expr compilationEnvironment expression) targetValue ∧
+        Val.inject mapping value targetValue) ∧
+    (∀ expression location offset field,
+      eval_lvalue (globalenv sourceProgram) environment temporaries memory expression location offset field →
+      compat_cenv (addr_taken_expr expression) compilationEnvironment →
+      (match expression with
+        | .Evar identifier _ => VSet.mem identifier compilationEnvironment = false
+        | _ => True) →
+      ∃ targetLocation targetOffset,
+        eval_lvalue (globalenv targetProgram) targetEnvironment targetTemporaries targetMemory
+          (simpl_expr compilationEnvironment expression) targetLocation targetOffset field ∧
+        Val.inject mapping (.Vptr location offset) (.Vptr targetLocation targetOffset)) := by
+  classical
+  apply eval_expr_lvalue_ind
+  · intro numeral expressionType compatible
+    exact ⟨_, eval_expr.const_int numeral expressionType, Val.inject.inject_int _⟩
+  · intro numeral expressionType compatible
+    exact ⟨_, eval_expr.const_float numeral expressionType, Val.inject.inject_float _⟩
+  · intro numeral expressionType compatible
+    exact ⟨_, eval_expr.const_single numeral expressionType, Val.inject.inject_single _⟩
+  · intro numeral expressionType compatible
+    exact ⟨_, eval_expr.const_long numeral expressionType, Val.inject.inject_long _⟩
+  · intro identifier expressionType value entry compatible
+    obtain ⟨targetValue, targetEntry, injected⟩ := (matched.me_temps identifier value entry).1
+    exact ⟨targetValue, eval_Etempvar identifier expressionType targetValue targetEntry, injected⟩
+  · intro operand expressionType location offset evaluated inductionHypothesis compatible
+    have operandCompatible : compat_cenv (addr_taken_expr operand) compilationEnvironment := by
+      cases operand <;> simp only [addr_taken_expr] at compatible ⊢ <;> try exact compatible
+      exact compat_cenv_empty compilationEnvironment
+    have notLifted := slp_nonlifted_expression compilationEnvironment operand (by
+      intro identifier variableType sameExpression
+      subst operand
+      cases membership : VSet.mem identifier compilationEnvironment with
+      | false => rfl
+      | true =>
+          exact False.elim (compatible identifier
+            (VSet.singleton_2_proof identifier identifier rfl)
+            (VSet.mem_2_proof compilationEnvironment identifier membership)))
+    obtain ⟨targetLocation, targetOffset, targetEvaluated, injected⟩ :=
+      inductionHypothesis operandCompatible notLifted
+    exact ⟨_, eval_Eaddrof (simpl_expr compilationEnvironment operand) expressionType
+      targetLocation targetOffset targetEvaluated, injected⟩
+  · intro operation operand expressionType operandValue value evaluated
+      inductionHypothesis computed compatible
+    obtain ⟨targetOperand, targetEvaluated, operandInjection⟩ := inductionHypothesis compatible
+    obtain ⟨targetValue, targetComputed, injected⟩ :=
+      sem_unary_operation_inject mapping memory targetMemory operation operandValue
+        (typeof operand) value targetOperand computed operandInjection memoryInjection
+    refine ⟨targetValue, eval_expr.unary operation (simpl_expr compilationEnvironment operand)
+      expressionType targetOperand targetValue targetEvaluated ?_, injected⟩
+    rw [typeof_simpl_expr compilationEnvironment operand]
+    exact targetComputed
+  · intro operation first second expressionType firstValue secondValue value
+      firstEvaluated firstHypothesis secondEvaluated secondHypothesis computed compatible
+    obtain ⟨firstTarget, firstTargetEvaluated, firstInjection⟩ := firstHypothesis
+      (compat_cenv_union_l _ _ _ compatible)
+    obtain ⟨secondTarget, secondTargetEvaluated, secondInjection⟩ := secondHypothesis
+      (compat_cenv_union_r _ _ _ compatible)
+    obtain ⟨targetValue, targetComputed, injected⟩ :=
+      sem_binary_operation_inject mapping memory targetMemory (globalenv sourceProgram).genv_cenv
+        operation firstValue (typeof first) secondValue (typeof second) value firstTarget secondTarget
+        computed firstInjection secondInjection memoryInjection
+    refine ⟨targetValue, eval_expr.binary operation (simpl_expr compilationEnvironment first)
+      (simpl_expr compilationEnvironment second) expressionType firstTarget secondTarget targetValue
+      firstTargetEvaluated secondTargetEvaluated ?_, injected⟩
+    rw [typeof_simpl_expr compilationEnvironment first, typeof_simpl_expr compilationEnvironment second,
+      comp_env_preserved configuration sourceProgram targetProgram programs]
+    exact targetComputed
+  · intro operand expressionType operandValue value evaluated inductionHypothesis computed compatible
+    obtain ⟨targetOperand, targetEvaluated, operandInjection⟩ := inductionHypothesis compatible
+    obtain ⟨targetValue, targetComputed, injected⟩ :=
+      sem_cast_inject mapping operandValue (typeof operand) expressionType memory value
+        targetOperand targetMemory computed operandInjection memoryInjection
+    refine ⟨targetValue, eval_expr.cast (simpl_expr compilationEnvironment operand) expressionType
+      targetOperand targetValue targetEvaluated ?_, injected⟩
+    rw [typeof_simpl_expr compilationEnvironment operand]
+    exact targetComputed
+  · intro measuredType expressionType compatible
+    refine ⟨_, eval_expr.sizeof_type measuredType expressionType, ?_⟩
+    rw [comp_env_preserved configuration sourceProgram targetProgram programs]
+    exact Val.inject.inject_long _
+  · intro measuredType expressionType compatible
+    refine ⟨_, eval_expr.alignof_type measuredType expressionType, ?_⟩
+    rw [comp_env_preserved configuration sourceProgram targetProgram programs]
+    exact Val.inject.inject_long _
+  · intro expression location offset field value evaluated inductionHypothesis loaded compatible
+    by_cases liftedExpression : ∃ identifier expressionType,
+        expression = .Evar identifier expressionType ∧
+        VSet.mem identifier compilationEnvironment = true
+    · obtain ⟨identifier, expressionType, sameExpression, lifted⟩ := liftedExpression
+      subst expression
+      simpa only [simpl_expr, lifted, if_true] using
+        slp_lifted_rvalue (globalenv sourceProgram) (globalenv targetProgram)
+          environment targetEnvironment temporaries targetTemporaries memory targetMemory
+          mapping compilationEnvironment low high targetLow targetHigh matched identifier
+          expressionType location offset field value evaluated loaded lifted
+    · have notLifted := slp_nonlifted_expression compilationEnvironment expression (by
+        intro identifier expressionType sameExpression
+        cases membership : VSet.mem identifier compilationEnvironment with
+        | false => rfl
+        | true =>
+            exact False.elim (liftedExpression ⟨identifier, expressionType, sameExpression, membership⟩))
+      obtain ⟨targetLocation, targetOffset, targetEvaluated, addressInjection⟩ :=
+        inductionHypothesis compatible notLifted
+      obtain ⟨targetValue, targetLoaded, injected⟩ := deref_loc_inject memory targetMemory mapping
+        memoryInjection (typeof expression) location offset field value targetLocation targetOffset
+        loaded addressInjection
+      refine ⟨targetValue, eval_Elvalue (simpl_expr compilationEnvironment expression)
+        targetLocation targetOffset field targetValue targetEvaluated ?_, injected⟩
+      rw [typeof_simpl_expr compilationEnvironment expression]
+      exact targetLoaded
+  · intro identifier location variableType sourceEntry compatible notLifted
+    cases matched.me_vars identifier with
+    | match_var_lifted sourceBlock sourceType chunk oldValue oldTarget
+        sourceEntry' targetEntry lifted unmapped mode loaded targetTemp injected =>
+        rw [notLifted] at lifted
+        contradiction
+    | match_var_not_lifted sourceBlock sourceType targetBlock sourceEntry' targetEntry
+        notLifted' mapped =>
+        have sameEntry := Option.some.inj (sourceEntry'.symm.trans sourceEntry)
+        cases sameEntry
+        refine ⟨targetBlock, Ptrofs.zero, ?_, ?_⟩
+        · simpa only [simpl_expr, notLifted, Bool.false_eq_true, if_false] using
+            eval_Evar_local identifier targetBlock variableType targetEntry
+        · exact Val.inject.inject_ptr location Ptrofs.zero targetBlock Ptrofs.zero .Z0 mapped rfl
+    | match_var_not_local sourceMissing targetMissing notLifted' =>
+        rw [sourceMissing] at sourceEntry
+        contradiction
+  · intro identifier location variableType sourceMissing symbol compatible notLifted
+    have targetMissing : PTree.get identifier targetEnvironment = none := by
+      cases matched.me_vars identifier with
+      | match_var_lifted sourceBlock sourceType chunk oldValue oldTarget
+          sourceEntry targetEntry lifted unmapped mode loaded targetTemp injected =>
+          rw [sourceMissing] at sourceEntry
+          contradiction
+      | match_var_not_lifted sourceBlock sourceType targetBlock sourceEntry targetEntry
+          notLifted' mapped =>
+          rw [sourceMissing] at sourceEntry
+          contradiction
+      | match_var_not_local sourceMissing' targetMissing notLifted' => exact targetMissing
+    refine ⟨location, Ptrofs.zero, ?_, ?_⟩
+    · simp only [simpl_expr, notLifted, Bool.false_eq_true, if_false]
+      apply eval_Evar_global identifier location variableType targetMissing
+      rw [symbols_preserved configuration sourceProgram targetProgram programs]
+      exact symbol
+    · obtain ⟨bound, globalMatch⟩ := globals
+      cases globalMatch with
+      | intro domain image symbols functions variables =>
+          exact Val.inject.inject_ptr location Ptrofs.zero location Ptrofs.zero .Z0
+            (domain location (symbols identifier location symbol)) rfl
+  · intro operand expressionType location offset evaluated inductionHypothesis compatible notLifted
+    obtain ⟨targetValue, targetEvaluated, injected⟩ := inductionHypothesis compatible
+    cases injected with
+    | inject_ptr sourceBlock sourceOffset targetLocation targetOffset delta mapped shifted =>
+        exact ⟨targetLocation, targetOffset,
+          eval_Ederef (simpl_expr compilationEnvironment operand) expressionType
+            targetLocation targetOffset targetEvaluated,
+          Val.inject.inject_ptr location offset targetLocation targetOffset delta mapped shifted⟩
+  · intro operand identifier expressionType location offset structIdentifier composite
+      attributes fieldOffset field evaluated inductionHypothesis operandType compositeEntry
+      fieldEntry compatible notLifted
+    obtain ⟨targetValue, targetEvaluated, injected⟩ := inductionHypothesis compatible
+    cases injected with
+    | inject_ptr sourceBlock sourceOffset targetLocation targetOffset delta mapped shifted =>
+        refine ⟨targetLocation, Ptrofs.add targetOffset (Ptrofs.repr fieldOffset), ?_, ?_⟩
+        · apply eval_Efield_struct (simpl_expr compilationEnvironment operand) identifier
+            expressionType targetLocation targetOffset structIdentifier composite attributes fieldOffset field
+            targetEvaluated
+          · rw [typeof_simpl_expr compilationEnvironment operand]
+            exact operandType
+          · simpa only [comp_env_preserved configuration sourceProgram targetProgram programs] using compositeEntry
+          · simpa only [comp_env_preserved configuration sourceProgram targetProgram programs] using fieldEntry
+        · apply Val.inject.inject_ptr
+          · exact mapped
+          · rw [shifted, Ptrofs.add_assoc_proof_api, Ptrofs.add_assoc_proof_api]
+            congr 1
+            exact Ptrofs.add_commut_proof_api _ _
+  · intro operand identifier expressionType location offset unionIdentifier composite
+      attributes fieldOffset field evaluated inductionHypothesis operandType compositeEntry
+      fieldEntry compatible notLifted
+    obtain ⟨targetValue, targetEvaluated, injected⟩ := inductionHypothesis compatible
+    cases injected with
+    | inject_ptr sourceBlock sourceOffset targetLocation targetOffset delta mapped shifted =>
+        refine ⟨targetLocation, Ptrofs.add targetOffset (Ptrofs.repr fieldOffset), ?_, ?_⟩
+        · apply eval_Efield_union (simpl_expr compilationEnvironment operand) identifier
+            expressionType targetLocation targetOffset unionIdentifier composite attributes fieldOffset field
+            targetEvaluated
+          · rw [typeof_simpl_expr compilationEnvironment operand]
+            exact operandType
+          · simpa only [comp_env_preserved configuration sourceProgram targetProgram programs] using compositeEntry
+          · simpa only [comp_env_preserved configuration sourceProgram targetProgram programs] using fieldEntry
+        · apply Val.inject.inject_ptr
+          · exact mapped
+          · rw [shifted, Ptrofs.add_assoc_proof_api, Ptrofs.add_assoc_proof_api]
+            congr 1
+            exact Ptrofs.add_commut_proof_api _ _
+
+theorem eval_simpl_expr :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      eval_simpl_exprStatement := by
+  intro binary64Certificate binary32Certificate configuration sourceProgram targetProgram programs
+  dsimp only
+  intro environment targetEnvironment temporaries targetTemporaries memory targetMemory mapping
+    compilationEnvironment low high targetLow targetHigh matched memoryInjection globals
+  exact (slp_eval_simpl_mutual configuration sourceProgram targetProgram programs environment
+    targetEnvironment temporaries targetTemporaries memory targetMemory mapping compilationEnvironment
+    low high targetLow targetHigh matched memoryInjection globals).1
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem eval_simpl_lvalue :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      eval_simpl_lvalueStatement := by
+  intro binary64Certificate binary32Certificate configuration sourceProgram targetProgram programs
+  dsimp only
+  intro environment targetEnvironment temporaries targetTemporaries memory targetMemory mapping
+    compilationEnvironment low high targetLow targetHigh matched memoryInjection globals
+  exact (slp_eval_simpl_mutual configuration sourceProgram targetProgram programs environment
+    targetEnvironment temporaries targetTemporaries memory targetMemory mapping compilationEnvironment
+    low high targetLow targetHigh matched memoryInjection globals).2
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Cfrontend.SimplLocals
+
+theorem eval_simpl_exprlist :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      eval_simpl_exprlistStatement := by
+  intro binary64Certificate binary32Certificate configuration sourceProgram targetProgram programs
+  dsimp only
+  intro environment targetEnvironment temporaries targetTemporaries memory targetMemory mapping
+    compilationEnvironment low high targetLow targetHigh matched memoryInjection globals
+    expressions types values evaluated
+  induction evaluated with
+  | nil =>
+      intro compatible
+      exact ⟨val_casted_list.nil, [], eval_exprlist.nil, Val.inject_list.inject_list_nil⟩
+  | cons expression rest argumentType argumentTypes operandValue value values
+      operandEvaluated casted restEvaluated inductionHypothesis =>
+      intro compatible
+      obtain ⟨targetOperand, targetEvaluated, operandInjection⟩ :=
+        eval_simpl_expr configuration sourceProgram targetProgram programs environment
+          targetEnvironment temporaries targetTemporaries memory targetMemory mapping
+          compilationEnvironment low high targetLow targetHigh matched memoryInjection globals
+          expression operandValue operandEvaluated (compat_cenv_union_l _ _ _ compatible)
+      obtain ⟨targetValue, targetCasted, injected⟩ :=
+        sem_cast_inject mapping operandValue (typeof expression) argumentType memory value
+          targetOperand targetMemory casted operandInjection memoryInjection
+      obtain ⟨restCasted, targetRest, targetRestEvaluated, restInjected⟩ :=
+        inductionHypothesis (compat_cenv_union_r _ _ _ compatible)
+      refine ⟨val_casted_list.cons value values argumentType argumentTypes
+        (cast_val_is_casted operandValue (typeof expression) argumentType value memory casted)
+        restCasted, targetValue :: targetRest, ?_, ?_⟩
+      · exact eval_exprlist.cons (simpl_expr compilationEnvironment expression)
+          (simpl_exprlist compilationEnvironment rest) argumentType argumentTypes
+          targetOperand targetValue targetRest targetEvaluated
+          (by rw [typeof_simpl_expr compilationEnvironment expression]; exact targetCasted)
+          targetRestEvaluated
+      · exact Val.inject_list.inject_list_cons _ _ _ _ injected restInjected
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Cfrontend.SimplLocals
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+private theorem slp_lifted_assignment_memory
+    (sourceProgram : program) (mapping : meminj) (compilationEnvironment : compilenv)
+    (environment : env) (temporaries : temp_env) (memory targetMemory newMemory : mem)
+    (low high targetLow targetHigh : block) (targetEnvironment : env)
+    (targetTemporaries : temp_env) (identifier : ident) (location : block)
+    (variableType : type) (value : val)
+    (matched : match_envs mapping compilationEnvironment environment temporaries memory
+      low high targetEnvironment targetTemporaries targetLow targetHigh)
+    (memoryInjection : Mem.inject mapping memory targetMemory)
+    (environmentEntry : PTree.get identifier environment = some (location, variableType))
+    (assignment : assign_loc (globalenv sourceProgram).genv_cenv variableType memory location
+      Ptrofs.zero .Full value newMemory)
+    (lifted : VSet.mem identifier compilationEnvironment = true) :
+    Mem.inject mapping newMemory targetMemory := by
+  cases matched.me_vars identifier with
+  | match_var_lifted sourceBlock sourceType chunk oldValue oldTarget
+      sourceEntry targetEntry isLifted unmapped mode loaded targetTemp injected =>
+      have sameEntry := Option.some.inj (sourceEntry.symm.trans environmentEntry)
+      cases sameEntry
+      cases assignment with
+      | assign_loc_value assignedValue assignedChunk resultMemory assignedMode stored =>
+          exact Mem.store_unmapped_inject mapping assignedChunk memory location
+            (Ptrofs.unsigned Ptrofs.zero) value newMemory targetMemory memoryInjection stored unmapped
+      | assign_loc_copy sourceBlock sourceOffset bytes resultMemory
+          assignedMode sourceAligned targetAligned separated sourceLoaded stored =>
+          rw [mode] at assignedMode
+          contradiction
+  | match_var_not_lifted sourceBlock sourceType targetBlock
+      sourceEntry targetEntry notLifted mapped =>
+      rw [lifted] at notLifted
+      contradiction
+  | match_var_not_local sourceEntry targetEntry notLifted =>
+      rw [lifted] at notLifted
+      contradiction
+
+set_option maxHeartbeats 2400000 in
+theorem store_params_correct :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      store_params_correctStatement := by
+  intro binary64Certificate binary32Certificate configuration externalCalls
+    sourceProgram targetProgram programs
+  dsimp only
+  intro mapping targetFunction targetContinuation compilationEnvironment temporaries
+    low high targetEnvironment targetLow targetHigh environment memory parameters arguments
+    newMemory bound
+  induction bound with
+  | nil memory =>
+      intro body targetMemory originalTemps initialTemps targetArguments
+        unique casted injected matched memoryInjection tempsEqual sourceMissing
+      cases injected
+      refine ⟨initialTemps, targetMemory, star_refl _ _ _, rfl, memoryInjection, ?_, rfl⟩
+      apply match_envs_temps_exten mapping compilationEnvironment environment temporaries
+        memory low high targetEnvironment originalTemps targetLow targetHigh initialTemps matched
+      intro identifier
+      exact tempsEqual identifier (by intro impossible; cases impossible)
+  | cons memory identifier variableType parameters value values location intermediateMemory finalMemory
+      environmentEntry assignment restBound inductionHypothesis =>
+      intro body targetMemory originalTemps initialTemps targetArguments
+        unique casted injected matched memoryInjection tempsEqual sourceMissing
+      cases unique with
+      | cons head headMissing uniqueTail =>
+        cases casted with
+        | cons headPair tailPair valueCasted valuesCasted =>
+          cases injected with
+          | inject_list_cons value targetValue values targetValues valueInjection valuesInjection =>
+            have identifierMissing : identifier ∉ var_names parameters := headMissing
+            have sourceMissingTail : ∀ queried, queried ∈ var_names parameters →
+                PTree.get queried temporaries = none := by
+              intro queried membership
+              apply sourceMissing
+              simp only [var_names, List.map_cons, List.mem_cons]
+              exact Or.inr membership
+            have tempsEqualTail : ∀ queried, queried ∉ var_names parameters →
+                PTree.get queried (PTree.set identifier targetValue initialTemps) =
+                  PTree.get queried (PTree.set identifier targetValue originalTemps) := by
+              intro queried absent
+              by_cases sameIdentifier : queried = identifier
+              · subst queried
+                exact (PTree.gss identifier targetValue initialTemps).trans
+                  (PTree.gss identifier targetValue originalTemps).symm
+              · rw [PTree.gso targetValue initialTemps sameIdentifier,
+                  PTree.gso targetValue originalTemps sameIdentifier]
+                apply tempsEqual
+                simp only [var_names, List.map_cons, List.mem_cons, not_or]
+                exact ⟨sameIdentifier, absent⟩
+            have targetCasted : val_casted targetValue variableType :=
+              val_casted_inject mapping value targetValue variableType valueInjection valueCasted
+            cases lifted : VSet.mem identifier compilationEnvironment with
+            | true =>
+              have nextMatched := match_envs_assign_lifted sourceProgram mapping compilationEnvironment
+                environment temporaries memory low high targetEnvironment originalTemps targetLow targetHigh
+                location variableType value intermediateMemory identifier targetValue matched environmentEntry
+                valueCasted valueInjection assignment lifted
+              have nextMemoryInjection := slp_lifted_assignment_memory sourceProgram mapping
+                compilationEnvironment environment temporaries memory targetMemory intermediateMemory
+                low high targetLow targetHigh targetEnvironment originalTemps identifier location variableType
+                value matched memoryInjection environmentEntry assignment lifted
+              obtain ⟨finalTemps, finalTargetMemory, executed, tempsBound, finalInjected,
+                  finalMatched, nextBlock⟩ := inductionHypothesis body targetMemory
+                (PTree.set identifier targetValue originalTemps)
+                (PTree.set identifier targetValue initialTemps) targetValues
+                uniqueTail valuesCasted valuesInjection nextMatched nextMemoryInjection
+                tempsEqualTail sourceMissingTail
+              refine ⟨finalTemps, finalTargetMemory, ?_, tempsBound, finalInjected, finalMatched, nextBlock⟩
+              simp only [store_params, lifted, if_true]
+              split
+              · have finalEntry : PTree.get identifier finalTemps = some targetValue :=
+                  (bind_parameter_temps_inv identifier parameters targetValues
+                    (PTree.set identifier targetValue initialTemps) finalTemps tempsBound identifierMissing).trans
+                    (PTree.gss identifier targetValue initialTemps)
+                apply star_left
+                · exact step.step_seq targetFunction _ _ targetContinuation targetEnvironment finalTemps targetMemory
+                · apply star_left
+                  · exact step.step_set targetFunction identifier _ _ targetEnvironment finalTemps targetMemory
+                      targetValue (make_cast_correct targetProgram targetEnvironment finalTemps targetMemory
+                        (.Etempvar identifier variableType) targetValue variableType targetValue
+                        (eval_Etempvar identifier variableType targetValue finalEntry)
+                        (cast_val_casted targetValue variableType targetMemory targetCasted))
+                  · rw [PTree.gsident identifier finalTemps finalEntry]
+                    apply star_left
+                    · exact step.step_skip_seq targetFunction _ targetContinuation targetEnvironment finalTemps targetMemory
+                    · exact executed
+                    · rfl
+                  · rfl
+                · rfl
+              · exact executed
+            | false =>
+              have targetVariable : ∃ targetLocation,
+                  PTree.get identifier targetEnvironment = some (targetLocation, variableType) ∧
+                  mapping location = some (targetLocation, .Z0) := by
+                cases matched.me_vars identifier with
+                | match_var_lifted sourceBlock sourceType chunk oldValue oldTarget
+                    sourceEntry targetEntry isLifted unmapped mode loaded targetTemp injected =>
+                    rw [lifted] at isLifted
+                    contradiction
+                | match_var_not_lifted sourceBlock sourceType targetBlock sourceEntry
+                    targetEntry notLifted mapped =>
+                    have sameEntry := Option.some.inj (sourceEntry.symm.trans environmentEntry)
+                    cases sameEntry
+                    exact ⟨targetBlock, targetEntry, mapped⟩
+                | match_var_not_local sourceEntry targetEntry notLifted =>
+                    rw [environmentEntry] at sourceEntry
+                    contradiction
+              obtain ⟨targetLocation, targetEntry, mapped⟩ := targetVariable
+              have pointerInjection : Val.inject mapping (.Vptr location Ptrofs.zero)
+                  (.Vptr targetLocation Ptrofs.zero) :=
+                Val.inject.inject_ptr location Ptrofs.zero targetLocation Ptrofs.zero .Z0 mapped rfl
+              obtain ⟨intermediateTargetMemory, targetAssignment, nextMemoryInjection, preserved⟩ :=
+                assign_loc_inject configuration sourceProgram targetProgram programs mapping variableType
+                  memory location Ptrofs.zero .Full value intermediateMemory targetMemory targetLocation
+                  Ptrofs.zero targetValue assignment pointerInjection valueInjection memoryInjection
+              have preservedMatch := match_envs_invariant mapping compilationEnvironment environment
+                temporaries memory low high targetEnvironment originalTemps targetLow targetHigh
+                mapping intermediateMemory matched
+                (fun queried chunk oldValue unmapped _ loaded => preserved queried chunk oldValue unmapped loaded)
+                (inject_incr_refl mapping) (fun _ _ => rfl) (fun _ _ _ _ _ => rfl)
+              have nextMatched := match_envs_change_temp mapping compilationEnvironment environment
+                temporaries intermediateMemory low high targetEnvironment originalTemps targetLow targetHigh
+                identifier targetValue preservedMatch
+                (sourceMissing identifier (by simp [var_names])) lifted
+              obtain ⟨finalTemps, finalTargetMemory, executed, tempsBound, finalInjected,
+                  finalMatched, nextBlock⟩ := inductionHypothesis body intermediateTargetMemory
+                (PTree.set identifier targetValue originalTemps)
+                (PTree.set identifier targetValue initialTemps) targetValues
+                uniqueTail valuesCasted valuesInjection nextMatched nextMemoryInjection
+                tempsEqualTail sourceMissingTail
+              refine ⟨finalTemps, finalTargetMemory, ?_, tempsBound, finalInjected, finalMatched, ?_⟩
+              · have finalEntry : PTree.get identifier finalTemps = some targetValue :=
+                  (bind_parameter_temps_inv identifier parameters targetValues
+                    (PTree.set identifier targetValue initialTemps) finalTemps tempsBound identifierMissing).trans
+                    (PTree.gss identifier targetValue initialTemps)
+                simp only [store_params, lifted, Bool.false_eq_true, if_false]
+                apply star_left
+                · exact step.step_seq targetFunction _ _ targetContinuation targetEnvironment finalTemps targetMemory
+                · apply star_left
+                  · exact step.step_assign targetFunction (.Evar identifier variableType)
+                      (.Etempvar identifier variableType) _ targetEnvironment finalTemps targetMemory
+                      targetLocation Ptrofs.zero .Full targetValue targetValue intermediateTargetMemory
+                      (eval_Evar_local identifier targetLocation variableType targetEntry)
+                      (eval_Etempvar identifier variableType targetValue finalEntry)
+                      (cast_val_casted targetValue variableType targetMemory targetCasted) targetAssignment
+                  · apply star_left
+                    · exact step.step_skip_seq targetFunction _ targetContinuation targetEnvironment finalTemps intermediateTargetMemory
+                    · exact executed
+                    · rfl
+                  · rfl
+                · rfl
+              · exact nextBlock.trans (assign_loc_nextblock _ _ _ _ _ _ _ _ targetAssignment)
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Cfrontend.SimplLocals
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+private theorem slp_return_type configuration sourceFunction targetFunction
+    (translated : transf_function configuration sourceFunction = .OK targetFunction) :
+    targetFunction.fn_return = sourceFunction.fn_return := by
+  unfold transf_function at translated
+  split at translated <;> try contradiction
+  dsimp only at translated
+  split at translated <;> try contradiction
+  cases translated
+  rfl
+
+private theorem slp_switch_inject mapping value targetValue expressionType number
+    (selected : sem_switch_arg value expressionType = some number)
+    (injected : Val.inject mapping value targetValue) :
+    sem_switch_arg targetValue expressionType = some number := by
+  unfold sem_switch_arg at selected ⊢
+  cases classified : classify_switch expressionType <;> rw [classified] at selected
+  all_goals cases injected <;> first | exact selected | contradiction
+
+private theorem slp_regular_simulation
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (configuration : CompilerConfig) (externalCalls : ExternalCalls) (sourceProgram targetProgram : program)
+    (programs : match_prog configuration sourceProgram targetProgram)
+    (sourceFunction : function) (sourceStatement : statement) (continuation : cont) (environment : env)
+    (temporaries : temp_env) (memory : mem) (targetFunction : function) (targetStatement : statement)
+    (targetContinuation : cont) (targetEnvironment : env) (targetTemporaries : temp_env) (targetMemory : mem)
+    (mapping : meminj) (low high targetLow targetHigh : block)
+    (functionTranslated : transf_function configuration sourceFunction = .OK targetFunction)
+    (translated : simpl_stmt configuration (cenv_for sourceFunction) sourceStatement = .OK targetStatement)
+    (environments : match_envs mapping (cenv_for sourceFunction) environment temporaries memory
+      low high targetEnvironment targetTemporaries targetLow targetHigh)
+    (continuations : match_cont configuration sourceProgram mapping (cenv_for sourceFunction)
+      continuation targetContinuation memory low targetLow)
+    (memoryInjection : Mem.inject mapping memory targetMemory)
+    (compatible : compat_cenv (addr_taken_stmt sourceStatement) (cenv_for sourceFunction))
+    (sourceBound : Ple high memory.nextblock) (targetBound : Ple targetHigh targetMemory.nextblock)
+    (trace : trace) (next : state)
+    (sourceStep : step1 externalCalls (globalenv sourceProgram)
+      (.State sourceFunction sourceStatement continuation environment temporaries memory) trace next) :
+    ∃ targetNext,
+      plus (step2 externalCalls) (globalenv targetProgram)
+        (.State targetFunction targetStatement targetContinuation targetEnvironment targetTemporaries targetMemory)
+        trace targetNext ∧ match_states configuration sourceProgram next targetNext := by
+  have globals := match_cont_globalenv configuration sourceProgram mapping (cenv_for sourceFunction)
+    continuation targetContinuation memory low targetLow continuations
+  have evaluate := eval_simpl_expr configuration sourceProgram targetProgram programs environment
+    targetEnvironment temporaries targetTemporaries memory targetMemory mapping (cenv_for sourceFunction)
+    low high targetLow targetHigh environments memoryInjection globals
+  have evaluateList := eval_simpl_exprlist configuration sourceProgram targetProgram programs environment
+    targetEnvironment temporaries targetTemporaries memory targetMemory mapping (cenv_for sourceFunction)
+    low high targetLow targetHigh environments memoryInjection globals
+  cases sourceStep with
+  | step_assign _ left right _ _ _ _ location offset field rightValue value nextMemory
+      leftEvaluated rightEvaluated casted assigned =>
+      obtain ⟨targetRight, rightTargetEvaluated, rightInjection⟩ := evaluate right rightValue rightEvaluated
+        (compat_cenv_union_r _ _ _ compatible)
+      obtain ⟨targetValue, targetCasted, valueInjection⟩ := sem_cast_inject mapping rightValue
+        (typeof right) (typeof left) memory value targetRight targetMemory casted rightInjection memoryInjection
+      have liftable := is_liftable_var_charact (cenv_for sourceFunction) left
+      simp only [simpl_stmt] at translated
+      cases lifted : is_liftable_var (cenv_for sourceFunction) left with
+      | some identifier =>
+          rw [lifted] at liftable translated
+          obtain ⟨variableType, sameExpression, liftedVariable⟩ := liftable
+          subst left
+          cases translated
+          cases leftEvaluated with
+          | eval_Evar_local _ _ _ entry =>
+              refine ⟨_, step_Sset_debug configuration externalCalls targetProgram _ _ _ _ _ _ _ _
+                targetRight targetValue rightTargetEvaluated ?_, ?_⟩
+              · rw [typeof_simpl_expr (cenv_for sourceFunction) right]
+                exact targetCasted
+              · apply match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+                  functionTranslated rfl
+                · exact match_envs_assign_lifted sourceProgram mapping (cenv_for sourceFunction)
+                    environment temporaries memory low high targetEnvironment targetTemporaries targetLow targetHigh
+                    location variableType value nextMemory identifier targetValue environments entry
+                    (cast_val_is_casted _ _ _ _ _ casted) valueInjection assigned liftedVariable
+                · exact match_cont_assign_loc configuration sourceProgram mapping (cenv_for sourceFunction)
+                    continuation targetContinuation memory low targetLow variableType location Ptrofs.zero .Full
+                    value nextMemory continuations assigned (environments.me_range identifier location variableType entry).1
+                · exact slp_lifted_assignment_memory sourceProgram mapping (cenv_for sourceFunction)
+                    environment temporaries memory targetMemory nextMemory low high targetLow targetHigh
+                    targetEnvironment targetTemporaries identifier location variableType value
+                    environments memoryInjection entry assigned liftedVariable
+                · exact compat_cenv_empty _
+                · rw [assign_loc_nextblock _ _ _ _ _ _ _ _ assigned]
+                  exact sourceBound
+                · exact targetBound
+          | eval_Evar_global _ _ _ missing symbol =>
+              cases environments.me_vars identifier with
+              | match_var_lifted _ _ _ _ _ entry _ _ _ _ _ _ _ => rw [missing] at entry; contradiction
+              | match_var_not_lifted _ _ _ _ _ notLifted _ => rw [liftedVariable] at notLifted; contradiction
+              | match_var_not_local _ _ notLifted => rw [liftedVariable] at notLifted; contradiction
+      | none =>
+          rw [lifted] at liftable translated
+          cases translated
+          obtain ⟨targetLocation, targetOffset, leftTargetEvaluated, addressInjection⟩ :=
+            eval_simpl_lvalue configuration sourceProgram targetProgram programs environment targetEnvironment
+              temporaries targetTemporaries memory targetMemory mapping (cenv_for sourceFunction)
+              low high targetLow targetHigh environments memoryInjection globals left location offset field
+              leftEvaluated (compat_cenv_union_l _ _ _ compatible) liftable
+          obtain ⟨nextTargetMemory, targetAssigned, nextInjection, preserved⟩ := assign_loc_inject configuration
+            sourceProgram targetProgram programs mapping (typeof left) memory location offset field value nextMemory
+              targetMemory targetLocation targetOffset targetValue assigned addressInjection valueInjection memoryInjection
+          refine ⟨_, plus_one _ _ _ _ _ _ _
+            (step.step_assign _ _ _ _ _ _ _ targetLocation targetOffset field targetRight targetValue nextTargetMemory
+              leftTargetEvaluated rightTargetEvaluated ?_ ?_), ?_⟩
+          · rw [typeof_simpl_expr (cenv_for sourceFunction) right, typeof_simpl_expr (cenv_for sourceFunction) left]
+            exact targetCasted
+          · rw [typeof_simpl_expr (cenv_for sourceFunction) left]
+            exact targetAssigned
+          · apply match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+              functionTranslated rfl
+            · exact match_envs_invariant _ _ _ _ _ _ _ _ _ _ _ _ _ environments
+                (fun location chunk value unmapped range loaded => preserved location chunk value unmapped loaded)
+                (inject_incr_refl _) (fun _ _ => rfl) (fun _ _ _ _ _ => rfl)
+            · exact match_cont_invariant configuration sourceProgram _ _ _ _ _ _ _ _ _ continuations
+                (fun location chunk value unmapped bound loaded => preserved location chunk value unmapped loaded)
+                (inject_incr_refl _) (fun _ _ => rfl) (fun _ _ _ _ _ => rfl)
+            · exact nextInjection
+            · exact compat_cenv_empty _
+            · rw [assign_loc_nextblock _ _ _ _ _ _ _ _ assigned]
+              exact sourceBound
+            · rw [assign_loc_nextblock _ _ _ _ _ _ _ _ targetAssigned]
+              exact targetBound
+  | step_set _ identifier expression _ _ _ _ value evaluated =>
+      simp only [simpl_stmt] at translated
+      split at translated <;> try contradiction
+      rename_i checked temporaryChecked
+      cases translated
+      obtain ⟨targetValue, targetEvaluated, injected⟩ := evaluate expression value evaluated compatible
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (step.step_set _ _ _ _ _ _ _ targetValue targetEvaluated), ?_⟩
+      exact match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+        functionTranslated rfl (match_envs_set_temp _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ environments injected temporaryChecked)
+        continuations memoryInjection (compat_cenv_empty _) sourceBound targetBound
+  | step_call _ result expression arguments _ _ _ _ argumentTypes returnType callingConvention
+      functionValue argumentValues callee classified evaluated argumentsEvaluated found calleeType =>
+      simp only [simpl_stmt] at translated
+      split at translated <;> try contradiction
+      rename_i checked resultChecked
+      cases translated
+      obtain ⟨targetFunctionValue, targetEvaluated, functionInjection⟩ := evaluate expression functionValue
+        evaluated (compat_cenv_union_l _ _ _ compatible)
+      obtain ⟨castedArguments, targetArguments, targetArgumentsEvaluated, argumentsInjection⟩ :=
+        evaluateList arguments argumentTypes argumentValues argumentsEvaluated (compat_cenv_union_r _ _ _ compatible)
+      obtain ⟨targetCallee, targetFound, calleeTranslated⟩ := match_cont_find_funct configuration sourceProgram
+        targetProgram programs mapping (cenv_for sourceFunction) continuation targetContinuation memory
+        low targetLow functionValue callee targetFunctionValue continuations found functionInjection
+      refine ⟨_, plus_one _ _ _ _ _ _ _
+        (step.step_call _ _ _ _ _ _ _ _ argumentTypes returnType callingConvention targetFunctionValue
+          targetArguments targetCallee ?_ targetEvaluated targetArgumentsEvaluated targetFound ?_), ?_⟩
+      · rw [typeof_simpl_expr (cenv_for sourceFunction) expression]
+        exact classified
+      · rw [type_of_fundef_preserved configuration callee targetCallee calleeTranslated]
+        exact calleeType
+      · apply match_states.call _ _ _ _ _ _ _ _ mapping argumentTypes returnType callingConvention calleeTranslated
+        · intro compilationEnvironment
+          exact match_cont.match_Kcall _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+            functionTranslated environments continuations resultChecked sourceBound targetBound
+        · exact memoryInjection
+        · exact argumentsInjection
+        · exact calleeType
+        · exact castedArguments
+  | step_builtin _ result external argumentTypes arguments _ _ _ _ values events returned nextMemory evaluated called =>
+      simp only [simpl_stmt] at translated
+      split at translated <;> try contradiction
+      rename_i checked resultChecked
+      cases translated
+      obtain ⟨castedArguments, targetArguments, targetEvaluated, argumentsInjection⟩ :=
+        evaluateList arguments argumentTypes values evaluated compatible
+      obtain ⟨nextMapping, targetReturned, nextTargetMemory, targetCalled, resultInjection,
+        nextInjection, sourceUnchanged, targetUnchanged, increased, separated⟩ :=
+        external_call_mem_inject externalCalls external _ _ (globalenv sourceProgram).genv_genv
+          values memory trace returned nextMemory mapping targetMemory targetArguments
+          (match_globalenvs_preserves_globals sourceProgram mapping globals) called memoryInjection argumentsInjection
+      have targetCalled' := external_call_symbols_preserved_proof externalCalls external _ _ _ _ _ _ _
+        (senv_preserved configuration sourceProgram targetProgram programs) targetCalled
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (step.step_builtin _ _ _ _ _ _ _ _ _ _ _ _ _
+        targetEvaluated targetCalled'), ?_⟩
+      apply match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ nextMapping low high targetLow targetHigh
+        functionTranslated rfl
+      · exact match_envs_set_opttemp _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+          (match_envs_extcall _ _ _ _ _ _ _ _ _ _ _ _ _ _ environments sourceUnchanged increased separated sourceBound targetBound)
+          resultInjection resultChecked
+      · exact match_cont_extcall configuration sourceProgram _ _ _ _ _ _ _ _ _ _ continuations
+          sourceUnchanged increased separated (Ple_trans _ _ _ environments.me_incr sourceBound)
+          (Ple_trans _ _ _ environments.me_tincr targetBound)
+      · exact nextInjection
+      · exact compat_cenv_empty _
+      · exact Ple_trans _ _ _ sourceBound (external_call_nextblock _ _ _ _ _ _ _ _ called)
+      · exact Ple_trans _ _ _ targetBound (external_call_nextblock _ _ _ _ _ _ _ _ targetCalled')
+  | step_seq _ first second _ _ _ _ =>
+      simp only [simpl_stmt] at translated
+      split at translated <;> try contradiction
+      rename_i targetFirst firstTranslated
+      split at translated <;> try contradiction
+      rename_i targetSecond secondTranslated
+      cases translated
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (step.step_seq _ _ _ _ _ _ _), ?_⟩
+      exact match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+        functionTranslated firstTranslated environments
+        (match_cont.seq _ _ _ _ _ _ _ _ secondTranslated continuations (compat_cenv_union_r _ _ _ compatible))
+        memoryInjection (compat_cenv_union_l _ _ _ compatible) sourceBound targetBound
+  | step_skip_seq _ nextStatement remaining _ _ _ =>
+      cases translated
+      cases continuations with
+      | seq _ _ _ targetNext targetRemaining _ _ _ nextTranslated remainingMatched nextCompatible =>
+          exact ⟨_, plus_one _ _ _ _ _ _ _ (step.step_skip_seq _ _ _ _ _ _),
+            match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+              functionTranslated nextTranslated environments remainingMatched memoryInjection nextCompatible sourceBound targetBound⟩
+  | step_continue_seq _ nextStatement remaining _ _ _ =>
+      cases translated
+      cases continuations with
+      | seq _ _ _ targetNext targetRemaining _ _ _ nextTranslated remainingMatched nextCompatible =>
+          exact ⟨_, plus_one _ _ _ _ _ _ _ (step.step_continue_seq _ _ _ _ _ _),
+            match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+              functionTranslated rfl environments remainingMatched memoryInjection (compat_cenv_empty _) sourceBound targetBound⟩
+  | step_break_seq _ nextStatement remaining _ _ _ =>
+      cases translated
+      cases continuations with
+      | seq _ _ _ targetNext targetRemaining _ _ _ nextTranslated remainingMatched nextCompatible =>
+          exact ⟨_, plus_one _ _ _ _ _ _ _ (step.step_break_seq _ _ _ _ _ _),
+            match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+              functionTranslated rfl environments remainingMatched memoryInjection (compat_cenv_empty _) sourceBound targetBound⟩
+  | step_ifthenelse _ condition first second _ _ _ _ value choice evaluated tested =>
+      simp only [simpl_stmt] at translated
+      split at translated <;> try contradiction
+      rename_i targetFirst firstTranslated
+      split at translated <;> try contradiction
+      rename_i targetSecond secondTranslated
+      cases translated
+      obtain ⟨targetValue, targetEvaluated, injected⟩ := evaluate condition value evaluated
+        (compat_cenv_union_l _ _ _ compatible)
+      have statementsCompatible := compat_cenv_union_r _ _ _ compatible
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (step.step_ifthenelse _ _ _ _ _ _ _ _ targetValue choice
+        targetEvaluated ?_), ?_⟩
+      · rw [typeof_simpl_expr (cenv_for sourceFunction) condition]
+        exact bool_val_inject mapping memory targetMemory value (typeof condition) choice targetValue
+          tested injected memoryInjection
+      · cases choice
+        · exact match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+            functionTranslated secondTranslated environments continuations memoryInjection
+            (compat_cenv_union_r _ _ _ statementsCompatible) sourceBound targetBound
+        · exact match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+            functionTranslated firstTranslated environments continuations memoryInjection
+            (compat_cenv_union_l _ _ _ statementsCompatible) sourceBound targetBound
+  | step_loop _ body iteration _ _ _ _ =>
+      simp only [simpl_stmt] at translated
+      split at translated <;> try contradiction
+      rename_i targetBody bodyTranslated
+      split at translated <;> try contradiction
+      rename_i targetIteration iterationTranslated
+      cases translated
+      exact ⟨_, plus_one _ _ _ _ _ _ _ (step.step_loop _ _ _ _ _ _ _),
+        match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+          functionTranslated bodyTranslated environments
+          (match_cont.loop1 _ _ _ _ _ _ _ _ _ _ bodyTranslated iterationTranslated continuations compatible)
+          memoryInjection (compat_cenv_union_l _ _ _ compatible) sourceBound targetBound⟩
+  | step_skip_or_continue_loop1 _ body iteration remaining _ _ _ current finished =>
+      cases continuations with
+      | loop1 _ _ _ _ targetBody targetIteration targetRemaining _ _ _ bodyTranslated iterationTranslated
+          remainingMatched loopCompatible =>
+          rcases finished with rfl | rfl
+          all_goals
+            cases translated
+            exact ⟨_, plus_one _ _ _ _ _ _ _ (step.step_skip_or_continue_loop1 _ _ _ _ _ _ _ _ (by simp)),
+              match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+                functionTranslated iterationTranslated environments
+                (match_cont.loop2 _ _ _ _ _ _ _ _ _ _ bodyTranslated iterationTranslated remainingMatched loopCompatible)
+                memoryInjection (compat_cenv_union_r _ _ _ loopCompatible) sourceBound targetBound⟩
+  | step_break_loop1 _ body iteration remaining _ _ _ =>
+      cases translated
+      cases continuations with
+      | loop1 _ _ _ _ targetBody targetIteration targetRemaining _ _ _ bodyTranslated iterationTranslated
+          remainingMatched loopCompatible =>
+          exact ⟨_, plus_one _ _ _ _ _ _ _ (step.step_break_loop1 _ _ _ _ _ _ _),
+            match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+              functionTranslated rfl environments remainingMatched memoryInjection (compat_cenv_empty _) sourceBound targetBound⟩
+  | step_skip_loop2 _ body iteration remaining _ _ _ =>
+      cases translated
+      cases continuations with
+      | loop2 _ _ _ _ targetBody targetIteration targetRemaining _ _ _ bodyTranslated iterationTranslated
+          remainingMatched loopCompatible =>
+          refine ⟨_, plus_one _ _ _ _ _ _ _ (step.step_skip_loop2 _ _ _ _ _ _ _),
+            match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+              functionTranslated ?_ environments remainingMatched memoryInjection loopCompatible sourceBound targetBound⟩
+          simp only [simpl_stmt, bodyTranslated, iterationTranslated]
+  | step_break_loop2 _ body iteration remaining _ _ _ =>
+      cases translated
+      cases continuations with
+      | loop2 _ _ _ _ targetBody targetIteration targetRemaining _ _ _ bodyTranslated iterationTranslated
+          remainingMatched loopCompatible =>
+          exact ⟨_, plus_one _ _ _ _ _ _ _ (step.step_break_loop2 _ _ _ _ _ _ _),
+            match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+              functionTranslated rfl environments remainingMatched memoryInjection (compat_cenv_empty _) sourceBound targetBound⟩
+  | step_return_0 _ _ _ _ _ nextMemory freed =>
+      cases translated
+      obtain ⟨nextTargetMemory, targetFreed, nextInjection⟩ := match_envs_free_blocks configuration sourceProgram
+        targetProgram programs mapping (cenv_for sourceFunction) environment temporaries memory low high
+        targetEnvironment targetTemporaries targetLow targetHigh nextMemory targetMemory environments memoryInjection freed
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (step.step_return_0 _ _ _ _ _ _ targetFreed),
+        match_states.return_ _ _ _ _ _ _ mapping ?_ nextInjection (.val_inject_undef _)⟩
+      intro compilationEnvironment
+      exact match_cont_call_cont configuration sourceProgram _ _ _ _ _ _ _
+        (match_cont_free_env configuration sourceProgram targetProgram _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+          environments continuations sourceBound targetBound freed targetFreed) compilationEnvironment
+  | step_return_1 _ expression _ _ _ _ value castValue nextMemory evaluated casted freed =>
+      cases translated
+      obtain ⟨targetValue, targetEvaluated, injected⟩ := evaluate expression value evaluated compatible
+      obtain ⟨targetCast, targetCasted, castInjection⟩ := sem_cast_inject mapping value (typeof expression)
+        sourceFunction.fn_return memory castValue targetValue targetMemory casted injected memoryInjection
+      obtain ⟨nextTargetMemory, targetFreed, nextInjection⟩ := match_envs_free_blocks configuration sourceProgram
+        targetProgram programs mapping (cenv_for sourceFunction) environment temporaries memory low high
+        targetEnvironment targetTemporaries targetLow targetHigh nextMemory targetMemory environments memoryInjection freed
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (step.step_return_1 _ _ _ _ _ _ targetValue targetCast nextTargetMemory
+        targetEvaluated ?_ targetFreed), match_states.return_ _ _ _ _ _ _ mapping ?_ nextInjection castInjection⟩
+      · rw [typeof_simpl_expr (cenv_for sourceFunction) expression, slp_return_type _ _ _ functionTranslated]
+        exact targetCasted
+      · intro compilationEnvironment
+        exact match_cont_call_cont configuration sourceProgram _ _ _ _ _ _ _
+          (match_cont_free_env configuration sourceProgram targetProgram _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+            environments continuations sourceBound targetBound freed targetFreed) compilationEnvironment
+  | step_skip_call _ _ _ _ _ nextMemory isCall freed =>
+      cases translated
+      obtain ⟨nextTargetMemory, targetFreed, nextInjection⟩ := match_envs_free_blocks configuration sourceProgram
+        targetProgram programs mapping (cenv_for sourceFunction) environment temporaries memory low high
+        targetEnvironment targetTemporaries targetLow targetHigh nextMemory targetMemory environments memoryInjection freed
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (step.step_skip_call _ _ _ _ _ _
+        (match_cont_is_call_cont configuration sourceProgram _ _ _ _ _ _ _ continuations isCall) targetFreed),
+        match_states.return_ _ _ _ _ _ _ mapping ?_ nextInjection (.val_inject_undef _)⟩
+      intro compilationEnvironment
+      exact match_cont_change_cenv configuration sourceProgram _ _ _ _ _ _ _ compilationEnvironment
+        (match_cont_free_env configuration sourceProgram targetProgram _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+          environments continuations sourceBound targetBound freed targetFreed) isCall
+  | step_switch _ selector labels _ _ _ _ value number evaluated selected =>
+      simp only [simpl_stmt] at translated
+      split at translated <;> try contradiction
+      rename_i targetLabels labelsTranslated
+      cases translated
+      obtain ⟨targetValue, targetEvaluated, injected⟩ := evaluate selector value evaluated
+        (compat_cenv_union_l _ _ _ compatible)
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (step.step_switch _ _ _ _ _ _ _ targetValue number targetEvaluated ?_), ?_⟩
+      · rw [typeof_simpl_expr (cenv_for sourceFunction) selector]
+        exact slp_switch_inject mapping value targetValue (typeof selector) number selected injected
+      · apply match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+          functionTranslated
+          (simpl_seq_of_labeled_statement_proof _ _ _ _ (simpl_select_switch _ _ _ _ _ labelsTranslated))
+          environments (match_cont.switch _ _ _ _ _ _ continuations) memoryInjection ?_ sourceBound targetBound
+        rw [addr_taken_seq_of_labeled_statement (select_switch number labels)]
+        exact compat_cenv_select_switch _ _ _ (compat_cenv_union_r _ _ _ compatible)
+  | step_skip_break_switch _ current remaining _ _ _ finished =>
+      cases continuations with
+      | switch _ _ targetRemaining _ _ _ remainingMatched =>
+          rcases finished with rfl | rfl
+          all_goals
+            cases translated
+            exact ⟨_, plus_one _ _ _ _ _ _ _ (step.step_skip_break_switch _ _ _ _ _ _ (by simp)),
+              match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+                functionTranslated rfl environments remainingMatched memoryInjection (compat_cenv_empty _) sourceBound targetBound⟩
+  | step_continue_switch _ remaining _ _ _ =>
+      cases translated
+      cases continuations with
+      | switch _ _ targetRemaining _ _ _ remainingMatched =>
+          exact ⟨_, plus_one _ _ _ _ _ _ _ (step.step_continue_switch _ _ _ _ _),
+            match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+              functionTranslated rfl environments remainingMatched memoryInjection (compat_cenv_empty _) sourceBound targetBound⟩
+  | step_label _ identifier body _ _ _ _ =>
+      simp only [simpl_stmt] at translated
+      split at translated <;> try contradiction
+      rename_i targetBody bodyTranslated
+      cases translated
+      exact ⟨_, plus_one _ _ _ _ _ _ _ (step.step_label _ _ _ _ _ _ _),
+        match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+          functionTranslated bodyTranslated environments continuations memoryInjection compatible sourceBound targetBound⟩
+  | step_goto _ identifier _ _ _ _ nextStatement nextContinuation found =>
+      cases translated
+      have originalTranslation := functionTranslated
+      unfold transf_function at functionTranslated
+      split at functionTranslated <;> try contradiction
+      dsimp only at functionTranslated
+      split at functionTranslated <;> try contradiction
+      rename_i targetBody bodyTranslated
+      cases functionTranslated
+      have labelMatched := simpl_find_label configuration sourceProgram mapping (cenv_for sourceFunction)
+        memory low targetLow identifier sourceFunction.fn_body (call_cont continuation) targetBody
+        (call_cont targetContinuation) bodyTranslated
+        (match_cont_call_cont configuration sourceProgram _ _ _ _ _ _ _ continuations _)
+        (compat_cenv_for sourceFunction)
+      rw [found] at labelMatched
+      obtain ⟨targetNextStatement, targetNextContinuation, targetFound, nextCompatible, nextTranslated, nextMatched⟩ := labelMatched
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (step.step_goto _ _ _ _ _ _ _ _ ?_),
+        match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+          originalTranslation nextTranslated environments nextMatched memoryInjection nextCompatible sourceBound targetBound⟩
+      change find_label identifier (add_debug_params configuration sourceFunction.fn_params
+        (store_params (cenv_for sourceFunction) sourceFunction.fn_params
+          (add_debug_vars configuration (remove_lifted (cenv_for sourceFunction)
+            (sourceFunction.fn_params ++ sourceFunction.fn_vars)) targetBody)))
+        (call_cont targetContinuation) = some (targetNextStatement, targetNextContinuation)
+      rw [find_label_add_debug_params _ _ _ _ _, find_label_store_params _ _ _ _ _,
+        find_label_add_debug_vars _ _ _ _ _]
+      exact targetFound
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Cfrontend.SimplLocals
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem step_simulation
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    step_simulationStatement := by
+  intro configuration externalCalls sourceProgram targetProgram programs
+  dsimp only
+  intro source trace next sourceStep target matched
+  cases matched with
+  | regular sourceFunction sourceStatement continuation environment temporaries memory targetFunction targetStatement
+      targetContinuation targetEnvironment targetTemporaries targetMemory mapping low high targetLow targetHigh
+      functionTranslated translated environments continuations memoryInjection compatible sourceBound targetBound =>
+      exact slp_regular_simulation configuration externalCalls sourceProgram targetProgram programs sourceFunction
+        sourceStatement continuation environment temporaries memory targetFunction targetStatement targetContinuation
+        targetEnvironment targetTemporaries targetMemory mapping low high targetLow targetHigh functionTranslated translated
+        environments continuations memoryInjection compatible sourceBound targetBound trace next sourceStep
+  | call callee arguments continuation memory targetCallee targetArguments targetContinuation targetMemory mapping
+      argumentTypes returnType callingConvention calleeTranslated continuations memoryInjection argumentsInjection
+      calleeType castedArguments =>
+      cases sourceStep with
+      | step_internal_function sourceFunction _ _ _ environment temporaries nextMemory entered =>
+          simp only [SimplLocals.transf_fundef] at calleeTranslated
+          split at calleeTranslated <;> try contradiction
+          rename_i targetFunction functionTranslated
+          cases calleeTranslated
+          cases entered with
+          | intro allocatedMemory variablesDistinct allocated bound tempsCreated =>
+              subst temporaries
+              simp only [type_of_fundef, type_of_function] at calleeType
+              cases calleeType
+              have originalTranslation := functionTranslated
+              unfold transf_function at functionTranslated
+              split at functionTranslated <;> try contradiction
+              rename_i disjointCheck
+              have parametersDisjoint : list_disjoint (var_names sourceFunction.fn_params)
+                  (var_names sourceFunction.fn_temps) :=
+                proj_sumbool_true _ _ _ disjointCheck
+              dsimp only at functionTranslated
+              split at functionTranslated <;> try contradiction
+              rename_i targetBody bodyTranslated
+              cases functionTranslated
+              let translatedFunction : function :=
+                { fn_return := sourceFunction.fn_return
+                  fn_callconv := sourceFunction.fn_callconv
+                  fn_params := sourceFunction.fn_params
+                  fn_vars := remove_lifted (cenv_for sourceFunction) (sourceFunction.fn_params ++ sourceFunction.fn_vars)
+                  fn_temps := add_lifted (cenv_for sourceFunction) sourceFunction.fn_vars sourceFunction.fn_temps
+                  fn_body := add_debug_params configuration sourceFunction.fn_params
+                    (store_params (cenv_for sourceFunction) sourceFunction.fn_params
+                      (add_debug_vars configuration (remove_lifted (cenv_for sourceFunction)
+                        (sourceFunction.fn_params ++ sourceFunction.fn_vars)) targetBody)) }
+              have allDistinct : list_norepet (var_names (sourceFunction.fn_params ++ sourceFunction.fn_vars)) := by
+                rw [var_names_app]
+                exact variablesDistinct
+              obtain ⟨nextMapping, targetEnvironment, allocatedTargetMemory, targetAllocated, environments,
+                allocatedInjection, increased, oldSource, oldTarget, targetEntries⟩ :=
+                match_envs_alloc_variables configuration sourceProgram targetProgram programs
+                  (cenv_for sourceFunction) memory (sourceFunction.fn_params ++ sourceFunction.fn_vars)
+                  environment allocatedMemory sourceFunction.fn_temps mapping targetMemory allocated
+                  allDistinct memoryInjection
+                  (fun identifier variableType member lifted => cenv_for_gen_by_value _ _ _ _ member allDistinct
+                    (VSet.mem_2_proof _ _ lifted))
+                  (fun identifier lifted => cenv_for_gen_domain _ _ _ (VSet.mem_2_proof _ _ lifted))
+              have parametersCasted := val_casted_list_params sourceFunction.fn_params arguments castedArguments
+              have nextArgumentsInjection := val_inject_list_incr mapping nextMapping arguments targetArguments
+                increased argumentsInjection
+              obtain ⟨parametersDistinct, targetVariablesDistinct, targetTempsDisjoint⟩ :=
+                vars_and_temps_properties (cenv_for sourceFunction) sourceFunction.fn_params sourceFunction.fn_vars
+                  sourceFunction.fn_temps variablesDistinct parametersDisjoint
+              obtain ⟨targetTemporaries, finalTargetMemory, parametersExecuted, parametersBound,
+                finalInjection, finalEnvironments, sameNextBlock⟩ :=
+                store_params_correct configuration externalCalls sourceProgram targetProgram programs
+                  nextMapping translatedFunction targetContinuation (cenv_for sourceFunction) (create_undef_temps sourceFunction.fn_temps)
+                  memory.nextblock allocatedMemory.nextblock targetEnvironment targetMemory.nextblock
+                  allocatedTargetMemory.nextblock environment allocatedMemory sourceFunction.fn_params arguments
+                  nextMemory bound
+                  (add_debug_vars configuration (remove_lifted (cenv_for sourceFunction)
+                    (sourceFunction.fn_params ++ sourceFunction.fn_vars)) targetBody)
+                  allocatedTargetMemory
+                  (create_undef_temps (add_lifted (cenv_for sourceFunction)
+                    (sourceFunction.fn_params ++ sourceFunction.fn_vars) sourceFunction.fn_temps))
+                  (create_undef_temps (add_lifted (cenv_for sourceFunction) sourceFunction.fn_vars sourceFunction.fn_temps))
+                  targetArguments parametersDistinct parametersCasted nextArgumentsInjection environments allocatedInjection
+                  (fun identifier notParameter => create_undef_temps_lifted identifier sourceFunction notParameter)
+                  (by
+                    intro identifier parameter
+                    cases entry : PTree.get identifier (create_undef_temps sourceFunction.fn_temps) with
+                    | none => rfl
+                    | some value =>
+                        have temporary := (create_undef_temps_inv sourceFunction.fn_temps identifier value entry).2
+                        exact False.elim (parametersDisjoint identifier identifier parameter temporary rfl))
+              refine ⟨.State translatedFunction targetBody targetContinuation targetEnvironment targetTemporaries finalTargetMemory,
+                plus_left _ E0 (step.step_internal_function _ _ _ _ _ _ _
+                (function_entry2.intro targetVariablesDistinct parametersDistinct targetTempsDisjoint
+                  targetAllocated parametersBound)) ?_ rfl, ?_⟩
+              · apply star_trans
+                · exact step_add_debug_params configuration externalCalls targetProgram _ _ _ _ _ _
+                    sourceFunction.fn_params targetArguments _ parametersDistinct
+                    (forall2_val_casted_inject _ _ _ nextArgumentsInjection _ parametersCasted) parametersBound
+                · apply star_trans
+                  · exact parametersExecuted
+                  · apply step_add_debug_vars
+                    intro identifier variableType member
+                    have member' := List.mem_filter.mp member
+                    have notLifted : VSet.mem identifier (cenv_for sourceFunction) = false := by
+                      simpa using member'.2
+                    exact targetEntries identifier variableType member'.1 notLifted
+                  · rfl
+                · rfl
+              · refine match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ nextMapping memory.nextblock
+                  allocatedMemory.nextblock targetMemory.nextblock allocatedTargetMemory.nextblock
+                  originalTranslation bodyTranslated finalEnvironments ?_ finalInjection
+                  (compat_cenv_for sourceFunction) ?_ ?_
+                · apply match_cont_invariant configuration sourceProgram nextMapping nextMemory mapping
+                    (cenv_for sourceFunction) continuation targetContinuation memory memory.nextblock targetMemory.nextblock
+                    (continuations (cenv_for sourceFunction)) ?_ increased oldSource oldTarget
+                  intro location chunk value unmapped before loaded
+                  rw [bind_parameters_load (globalenv sourceProgram) environment chunk location .Z0 (by
+                    intro identifier allocatedLocation variableType entry sameLocation
+                    obtain entryOld | range := alloc_variables_range (globalenv sourceProgram) identifier allocatedLocation
+                      variableType empty_env memory (sourceFunction.fn_params ++ sourceFunction.fn_vars)
+                      environment allocatedMemory allocated entry
+                    · have absent : PTree.get identifier empty_env = none := PTree.gempty _ identifier
+                      rw [absent] at entryOld
+                      contradiction
+                    · subst allocatedLocation
+                      exact Plt_strict location (Plt_Ple_trans _ _ _ before range.1))
+                    allocatedMemory sourceFunction.fn_params arguments nextMemory bound]
+                  exact alloc_variables_load sourceProgram empty_env memory _ environment allocatedMemory allocated
+                    chunk location .Z0 value loaded
+                · rw [bind_parameters_nextblock _ _ _ _ _ _ bound]
+                  exact Ple_refl _
+                · rw [sameNextBlock]
+                  exact Ple_refl _
+      | step_external_function external sourceArgumentTypes sourceReturnType sourceConvention _ _ _ returned events nextMemory called =>
+          cases calleeTranslated
+          have globals := match_cont_globalenv configuration sourceProgram mapping VSet.empty continuation
+            targetContinuation memory memory.nextblock targetMemory.nextblock (continuations VSet.empty)
+          obtain ⟨nextMapping, targetReturned, nextTargetMemory, targetCalled, resultInjection, nextInjection,
+            sourceUnchanged, targetUnchanged, increased, separated⟩ :=
+            external_call_mem_inject externalCalls external _ _ (globalenv sourceProgram).genv_genv
+              arguments memory trace returned nextMemory mapping targetMemory targetArguments
+              (match_globalenvs_preserves_globals sourceProgram mapping globals) called memoryInjection argumentsInjection
+          have targetCalled' := external_call_symbols_preserved_proof externalCalls external _ _ _ _ _ _ _
+            (senv_preserved configuration sourceProgram targetProgram programs) targetCalled
+          refine ⟨_, plus_one _ _ _ _ _ _ _ (step.step_external_function _ _ _ _ _ _ _ _ _ _ targetCalled'),
+            match_states.return_ _ _ _ _ _ _ nextMapping ?_ nextInjection resultInjection⟩
+          intro compilationEnvironment
+          exact match_cont_incr_bounds configuration sourceProgram nextMapping compilationEnvironment
+            continuation targetContinuation nextMemory memory.nextblock targetMemory.nextblock
+            (match_cont_extcall configuration sourceProgram _ _ _ _ _ _ _ _ _ _
+              (continuations compilationEnvironment) sourceUnchanged increased separated (Ple_refl _) (Ple_refl _))
+            nextMemory.nextblock nextTargetMemory.nextblock
+            (external_call_nextblock _ _ _ _ _ _ _ _ called) (external_call_nextblock _ _ _ _ _ _ _ _ targetCalled')
+  | return_ returned continuation memory targetReturned targetContinuation targetMemory mapping
+      continuations memoryInjection resultInjection =>
+      cases sourceStep with
+      | step_returnstate _ result sourceFunction environment temporaries remaining _ =>
+          have callMatched := continuations (cenv_for sourceFunction)
+          cases callMatched with
+          | match_Kcall _ _ _ _ _ _ targetFunction targetEnvironment targetTemporaries targetRemaining _
+              high targetHigh low targetLow _ _ checked functionTranslated environments remainingMatched
+              resultChecked sourceBound targetBound =>
+              refine ⟨_, plus_one _ _ _ _ _ _ _ (step.step_returnstate _ _ _ _ _ _ _), ?_⟩
+              exact match_states.regular _ _ _ _ _ _ _ _ _ _ _ _ mapping low high targetLow targetHigh
+                functionTranslated rfl
+                (match_envs_set_opttemp _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ environments resultInjection resultChecked)
+                remainingMatched memoryInjection (compat_cenv_empty _) sourceBound targetBound
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem transf_program_correct
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transf_program_correctStatement := by
+  intro configuration externalCalls sourceProgram targetProgram programs
+  exact CompCert4Lean.Common.Smallstep.forward_simulation_plus
+    (Clight.semantics1 externalCalls sourceProgram) (Clight.semantics2 externalCalls targetProgram)
+    (senv_preserved configuration sourceProgram targetProgram programs).2.1
+    (match_states configuration sourceProgram)
+    (initial_states_simulation configuration sourceProgram targetProgram programs)
+    (final_states_simulation configuration sourceProgram)
+    (step_simulation configuration externalCalls sourceProgram targetProgram programs)
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

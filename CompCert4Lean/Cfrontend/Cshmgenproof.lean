@@ -6334,3 +6334,1141 @@ theorem make_neg_correct
   exact transl_unop_make_neg_aux
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Csharpminor
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Lib.Integers
+
+theorem make_load_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_load_correctStatement := by
+  intro globals address resultType field code location offset value environment temporaries memory
+    generated evaluated dereferenced
+  cases dereferenced with
+  | deref_loc_value chunk loadedValue mode loaded =>
+      simp only [make_load, mode] at generated
+      cases generated
+      exact Csharpminor.eval_Eload chunk address (.Vptr location offset) value evaluated loaded
+  | deref_loc_reference mode =>
+      simp only [make_load, mode] at generated
+      cases generated
+      exact evaluated
+  | deref_loc_copy mode =>
+      simp only [make_load, mode] at generated
+      cases generated
+      exact evaluated
+  | deref_loc_bitfield size sign position width loadedValue loaded =>
+      cases loaded with
+      | load_bitfield_intro size originalSign attributes sign position width
+          sourceMemory sourceAddress carrier positionRange widthRange carrierRange signCorrect carrierLoaded =>
+          have firstRange := first_bit_range size position width positionRange widthRange.1 carrierRange
+          have firstNonnegative : ZArith.BinInt.Z.le .Z0 (Cop.first_bit size position width) :=
+            firstRange.1.1
+          have totalRange : ZArith.BinInt.Z.le
+              (ZArith.BinInt.Z.add (Cop.first_bit size position width) width) Int.zwordsize := by
+            have remaining := firstRange.2.1
+            change 0 ≤ intOfZ (ZArith.BinInt.Z.sub
+              (ZArith.BinInt.Z.sub Int.zwordsize (Cop.first_bit size position width)) width) at remaining
+            change intOfZ (ZArith.BinInt.Z.add _ _) ≤ intOfZ Int.zwordsize
+            simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add, intOfZ_zOfInt] at remaining ⊢
+            omega
+          let firstAmount := CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.sub
+            (ZArith.BinInt.Z.sub Int.zwordsize (Cop.first_bit size position width)) width)
+          let secondAmount := CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.sub Int.zwordsize width)
+          have firstSmall : Int.ltu firstAmount Int.iwordsize = true := int_ltu_true _ firstRange.2
+          have secondSmall : Int.ltu secondAmount Int.iwordsize = true := by
+            apply int_ltu_true
+            have positiveWidth := widthRange.1
+            change 0 < intOfZ width at positiveWidth
+            change 0 ≤ intOfZ (Cop.first_bit size position width) at firstNonnegative
+            change intOfZ (ZArith.BinInt.Z.add _ _) ≤ intOfZ Int.zwordsize at totalRange
+            change 0 ≤ intOfZ (ZArith.BinInt.Z.sub Int.zwordsize width) ∧
+              intOfZ (ZArith.BinInt.Z.sub Int.zwordsize width) < intOfZ Int.zwordsize
+            simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add, intOfZ_zOfInt] at totalRange ⊢
+            omega
+          simp only [make_load, make_extract_bitfield] at generated
+          split at generated <;> try contradiction
+          cases generated
+          have carrierEvaluated : T_eval_expr globals environment temporaries memory
+              (.Eload (chunk_for_carrier size) address) (.Vint carrier) :=
+            Csharpminor.eval_Eload _ _ (.Vptr location offset) (.Vint carrier) evaluated carrierLoaded
+          have firstEvaluated : T_eval_expr globals environment temporaries memory
+              (.Ebinop .Oshl (.Eload (chunk_for_carrier size) address) (make_intconst firstAmount))
+              (.Vint (Int.shl carrier firstAmount)) := by
+            refine Csharpminor.eval_Ebinop .Oshl _ _ (.Vint carrier) (.Vint firstAmount)
+              (.Vint (Int.shl carrier firstAmount)) carrierEvaluated
+              (make_intconst_correct globals firstAmount environment temporaries memory) ?_
+            simp only [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+              Val.shl, firstSmall, if_true]
+          refine Csharpminor.eval_Ebinop _ _ _ (.Vint (Int.shl carrier firstAmount))
+            (.Vint secondAmount) (.Vint (Cop.bitfield_extract size sign position width carrier))
+            firstEvaluated (make_intconst_correct globals secondAmount environment temporaries memory) ?_
+          have unsignedExtraction := Int.unsigned_bitfield_extract_by_shifts_proof
+            (Cop.first_bit size position width) width carrier firstNonnegative widthRange.1 totalRange
+          have signedExtraction := Int.signed_bitfield_extract_by_shifts_proof
+            (Cop.first_bit size position width) width carrier firstNonnegative widthRange.1 totalRange
+          cases size <;> cases sign <;>
+            simp only [Cop.bitfield_extract, Csharpminor.eval_binop,
+              CompCert4Lean.Backend.Cminor.eval_binop, Val.shru, Val.shr,
+              secondSmall, unsignedExtraction, signedExtraction, firstAmount, secondAmount,
+              Bool.or_true, Bool.or_false, if_true, if_false] <;> rfl
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Csharpminor
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+private theorem cshm_eval_field_address
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (globals : TGenv) (environment : TEnv) (temporaries : TTempEnv) (memory : mem)
+    (address : TExpr) (location : block) (offset : Ptrofs)
+    (delta : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (evaluated : T_eval_expr globals environment temporaries memory address (.Vptr location offset)) :
+    T_eval_expr globals environment temporaries memory
+      (.Ebinop .Oaddl address (make_longconst (Int64.repr delta)))
+      (.Vptr location (Ptrofs.add offset (Ptrofs.repr delta))) := by
+  refine Csharpminor.eval_Ebinop .Oaddl _ _ (.Vptr location offset)
+    (.Vlong (Int64.repr delta)) _ evaluated
+    (make_longconst_correct globals (Int64.repr delta) environment temporaries memory) ?_
+  simp only [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+    Val.addl, CompCert4Lean.X86_64.Archi.ptr64, if_true, earlyOfInt64Repr]
+
+theorem transl_expr_lvalue_correct
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_expr_lvalue_correctStatement := by
+  intro sourceProgram targetProgram programs compilationUnit linked environment temporaries memory
+    targetEnvironment environments
+  apply Clight.eval_expr_lvalue_ind
+  · intro numeral expressionType target translated
+    cases translated
+    exact make_intconst_correct _ _ _ _ _
+  · intro numeral expressionType target translated
+    cases translated
+    exact make_floatconst_correct _ _ _ _ _
+  · intro numeral expressionType target translated
+    cases translated
+    exact make_singleconst_correct _ _ _ _ _
+  · intro numeral expressionType target translated
+    cases translated
+    exact make_longconst_correct _ _ _ _ _
+  · intro identifier expressionType value entry target translated
+    cases translated
+    exact Csharpminor.eval_Evar identifier value entry
+  · intro operand expressionType location offset evaluated inductionHypothesis target translated
+    simp only [transl_expr] at translated
+    cases operandTranslated : transl_lvalue compilationUnit.prog_comp_env operand with
+    | Error message => simp [operandTranslated] at translated
+    | OK result =>
+        obtain ⟨address, field⟩ := result
+        obtain ⟨fieldFull, addressEvaluated⟩ := inductionHypothesis address field operandTranslated
+        subst field
+        simp only [operandTranslated] at translated
+        cases translated
+        exact addressEvaluated
+  · intro operation operand expressionType operandValue value evaluated inductionHypothesis
+      computed target translated
+    simp only [transl_expr] at translated
+    cases operandTranslated : transl_expr compilationUnit.prog_comp_env operand with
+    | Error message => simp [operandTranslated] at translated
+    | OK targetOperand =>
+        simp only [operandTranslated] at translated
+        exact transl_unop_correct _ operation targetOperand (Clight.typeof operand) target
+          operandValue value targetEnvironment temporaries memory translated computed
+          (inductionHypothesis targetOperand operandTranslated)
+  · intro operation first second expressionType firstValue secondValue value
+      firstEvaluated firstHypothesis secondEvaluated secondHypothesis computed target translated
+    simp only [transl_expr] at translated
+    cases firstTranslated : transl_expr compilationUnit.prog_comp_env first with
+    | Error message => simp [firstTranslated] at translated
+    | OK targetFirst =>
+        cases secondTranslated : transl_expr compilationUnit.prog_comp_env second with
+        | Error message => simp [firstTranslated, secondTranslated] at translated
+        | OK targetSecond =>
+            simp only [firstTranslated, secondTranslated] at translated
+            exact transl_binop_correct compilationUnit sourceProgram linked _ operation
+              targetFirst (Clight.typeof first) targetSecond (Clight.typeof second) target
+              firstValue secondValue value targetEnvironment temporaries memory translated computed
+              (firstHypothesis targetFirst firstTranslated) (secondHypothesis targetSecond secondTranslated)
+  · intro operand expressionType operandValue value evaluated inductionHypothesis computed target translated
+    simp only [transl_expr] at translated
+    cases operandTranslated : transl_expr compilationUnit.prog_comp_env operand with
+    | Error message => simp [operandTranslated] at translated
+    | OK targetOperand =>
+        simp only [operandTranslated] at translated
+        exact make_cast_correct _ targetEnvironment temporaries memory targetOperand target
+          operandValue (Clight.typeof operand) expressionType value translated
+          (inductionHypothesis targetOperand operandTranslated) computed
+  · intro measuredType expressionType target translated
+    simp only [transl_expr] at translated
+    cases sizeTranslated : Cshmgen.sizeof compilationUnit.prog_comp_env measuredType with
+    | Error message => simp [sizeTranslated] at translated
+    | OK size =>
+        simp only [sizeTranslated] at translated
+        cases translated
+        rw [transl_sizeof compilationUnit sourceProgram measuredType size linked sizeTranslated]
+        exact make_ptrofsconst_correct _ _ _ _ _
+  · intro measuredType expressionType target translated
+    simp only [transl_expr] at translated
+    cases alignmentTranslated : Cshmgen.alignof compilationUnit.prog_comp_env measuredType with
+    | Error message => simp [alignmentTranslated] at translated
+    | OK alignment =>
+        simp only [alignmentTranslated] at translated
+        cases translated
+        rw [transl_alignof compilationUnit sourceProgram measuredType alignment linked alignmentTranslated]
+        exact make_ptrofsconst_correct _ _ _ _ _
+  · intro expression location offset field value evaluated inductionHypothesis loaded target translated
+    obtain ⟨address, addressTranslated, loadTranslated⟩ :=
+      transl_expr_lvalue sourceProgram compilationUnit linked environment temporaries memory
+        expression location offset field target evaluated translated
+    exact make_load_correct _ address (Clight.typeof expression) field target location offset value
+      targetEnvironment temporaries memory loadTranslated
+      (inductionHypothesis address field addressTranslated).2 loaded
+  · intro identifier location expressionType entry target targetField translated
+    cases translated
+    exact ⟨rfl, Csharpminor.eval_Eaddrof identifier location
+      (Csharpminor.eval_var_addr_local targetEnvironment identifier location _
+        (environments.me_local identifier location expressionType entry))⟩
+  · intro identifier location expressionType missing symbol target targetField translated
+    cases translated
+    refine ⟨rfl, Csharpminor.eval_Eaddrof identifier location
+      (Csharpminor.eval_var_addr_global targetEnvironment identifier location
+        (match_env_globals sourceProgram environment targetEnvironment identifier environments missing) ?_)⟩
+    rw [symbols_preserved sourceProgram targetProgram programs identifier]
+    exact symbol
+  · intro operand expressionType location offset evaluated inductionHypothesis target targetField translated
+    simp only [transl_lvalue] at translated
+    cases operandTranslated : transl_expr compilationUnit.prog_comp_env operand with
+    | Error message => simp [operandTranslated] at translated
+    | OK targetOperand =>
+        simp only [operandTranslated] at translated
+        cases translated
+        exact ⟨rfl, inductionHypothesis target operandTranslated⟩
+  · intro operand identifier expressionType location offset structureIdentifier composite attributes
+      delta field evaluated inductionHypothesis operandType compositeEntry fieldEntry
+      target targetField translated
+    simp only [transl_lvalue] at translated
+    cases operandTranslated : transl_expr compilationUnit.prog_comp_env operand with
+    | Error message => simp [operandTranslated] at translated
+    | OK targetOperand =>
+        simp only [operandTranslated, make_field_access, operandType] at translated
+        cases compilationComposite : PTree.get structureIdentifier compilationUnit.prog_comp_env with
+        | none => simp [compilationComposite] at translated
+        | some targetComposite =>
+            obtain ⟨programComposite, stableOffset⟩ := field_offset_stable compilationUnit
+              sourceProgram structureIdentifier targetComposite identifier linked compilationComposite
+            have sameComposite : targetComposite = composite :=
+              Option.some.inj (programComposite.symm.trans compositeEntry)
+            subst targetComposite
+            have compilationOffset : Ctypes.field_offset compilationUnit.prog_comp_env
+                identifier composite.co_members = .OK (delta, field) := stableOffset.symm.trans fieldEntry
+            simp only [compilationComposite, compilationOffset,
+              CompCert4Lean.X86_64.Archi.ptr64, if_true] at translated
+            cases translated
+            exact ⟨rfl, cshm_eval_field_address _ _ _ _ targetOperand location offset delta
+              (inductionHypothesis targetOperand operandTranslated)⟩
+  · intro operand identifier expressionType location offset unionIdentifier composite attributes
+      delta field evaluated inductionHypothesis operandType compositeEntry fieldEntry
+      target targetField translated
+    simp only [transl_lvalue] at translated
+    cases operandTranslated : transl_expr compilationUnit.prog_comp_env operand with
+    | Error message => simp [operandTranslated] at translated
+    | OK targetOperand =>
+        simp only [operandTranslated, make_field_access, operandType] at translated
+        cases compilationComposite : PTree.get unionIdentifier compilationUnit.prog_comp_env with
+        | none => simp [compilationComposite] at translated
+        | some targetComposite =>
+            obtain ⟨programComposite, stableOffset⟩ := union_field_offset_stable compilationUnit
+              sourceProgram unionIdentifier targetComposite identifier linked compilationComposite
+            have sameComposite : targetComposite = composite :=
+              Option.some.inj (programComposite.symm.trans compositeEntry)
+            subst targetComposite
+            have compilationOffset : Ctypes.union_field_offset compilationUnit.prog_comp_env
+                identifier composite.co_members = .OK (delta, field) := stableOffset.symm.trans fieldEntry
+            simp only [compilationComposite, compilationOffset,
+              CompCert4Lean.X86_64.Archi.ptr64, if_true] at translated
+            cases translated
+            exact ⟨rfl, cshm_eval_field_address _ _ _ _ targetOperand location offset delta
+              (inductionHypothesis targetOperand operandTranslated)⟩
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+theorem transl_expr_correct
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_expr_correctStatement := by
+  intro sourceProgram targetProgram programs compilationUnit linked environment temporaries memory
+    targetEnvironment environments
+  exact (transl_expr_lvalue_correct sourceProgram targetProgram programs compilationUnit linked
+    environment temporaries memory targetEnvironment environments).1
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+theorem transl_lvalue_correct
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_lvalue_correctStatement := by
+  intro sourceProgram targetProgram programs compilationUnit linked environment temporaries memory
+    targetEnvironment expression location offset field environments evaluated
+  exact (transl_expr_lvalue_correct sourceProgram targetProgram programs compilationUnit linked
+    environment temporaries memory targetEnvironment environments).2
+      expression location offset field evaluated
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Cfrontend.Cshmgen
+
+theorem transl_arglist_correct
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_arglist_correctStatement := by
+  intro sourceProgram targetProgram programs compilationUnit linked environment temporaries memory
+    targetEnvironment environments arguments argumentTypes values evaluated
+  induction evaluated with
+  | nil =>
+      intro target translated
+      cases translated
+      exact Csharpminor.eval_exprlist.eval_Enil
+  | cons argument arguments argumentType argumentTypes value castValue values
+      evaluated casted tailEvaluated inductionHypothesis =>
+      intro target translated
+      simp only [transl_arglist] at translated
+      cases headTranslated : transl_expr compilationUnit.prog_comp_env argument with
+      | Error message => simp [headTranslated] at translated
+      | OK targetHead =>
+          cases castTranslated : make_cast (Clight.typeof argument) argumentType targetHead with
+          | Error message => simp [headTranslated, castTranslated] at translated
+          | OK targetCast =>
+              cases tailTranslated : transl_arglist compilationUnit.prog_comp_env arguments argumentTypes with
+              | Error message => simp [headTranslated, castTranslated, tailTranslated] at translated
+              | OK targetTail =>
+                  simp only [headTranslated, castTranslated, tailTranslated] at translated
+                  cases translated
+                  refine Csharpminor.eval_exprlist.eval_Econs targetCast targetTail castValue values ?_
+                    (inductionHypothesis targetTail tailTranslated)
+                  exact make_cast_correct _ targetEnvironment temporaries memory targetHead targetCast
+                    value (Clight.typeof argument) argumentType castValue castTranslated
+                    (transl_expr_correct sourceProgram targetProgram programs compilationUnit linked
+                      environment temporaries memory targetEnvironment environments argument value
+                      evaluated targetHead headTranslated) casted
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Ctypes
+
+private def cshm_label_match (sourceProgram : CProgram) (targetProgram : TProgram)
+    (compilationEnvironment : composite_env) (returnType : CType)
+    (source : Option (CStmt × CCont)) (target : Option (TStmt × TCont)) : Prop :=
+  match source with
+  | none => target = none
+  | some (statement, continuation) =>
+      ∃ targetStatement targetContinuation breakDepth continueDepth,
+        target = some (targetStatement, targetContinuation) ∧
+        transl_statement compilationEnvironment returnType breakDepth continueDepth statement =
+          .OK targetStatement ∧
+        match_cont sourceProgram targetProgram compilationEnvironment returnType
+          breakDepth continueDepth continuation targetContinuation
+
+private def cshm_first_label {ResultType : Type} (first second : Option ResultType) : Option ResultType :=
+  match first with
+  | some found => some found
+  | none => second
+
+private theorem cshm_label_match_choice sourceProgram targetProgram compilationEnvironment returnType
+    (first second : Option (CStmt × CCont)) (targetFirst targetSecond : Option (TStmt × TCont))
+    (firstMatched : cshm_label_match sourceProgram targetProgram compilationEnvironment returnType
+      first targetFirst)
+    (secondMatched : cshm_label_match sourceProgram targetProgram compilationEnvironment returnType
+      second targetSecond) :
+    cshm_label_match sourceProgram targetProgram compilationEnvironment returnType
+      (cshm_first_label first second) (cshm_first_label targetFirst targetSecond) := by
+  cases first with
+  | none =>
+      change targetFirst = none at firstMatched
+      simpa only [firstMatched, cshm_first_label] using secondMatched
+  | some found =>
+      obtain ⟨statement, continuation, breakDepth, continueDepth, foundTarget, translated, matched⟩ := firstMatched
+      simp only [foundTarget, cshm_first_label]
+      exact ⟨statement, continuation, breakDepth, continueDepth, rfl, translated, matched⟩
+
+private theorem cshm_store_no_label compilationEnvironment address expressionType field value target
+    (translated : make_store compilationEnvironment address expressionType field value = .OK target)
+    label continuation : Csharpminor.find_label label target continuation = none := by
+  cases field with
+  | Full =>
+      simp only [make_store] at translated
+      split at translated <;> try contradiction
+      · cases translated; rfl
+      · simp only [make_memcpy] at translated
+        split at translated <;> try contradiction
+        cases translated
+        rfl
+  | Bits size sign position width =>
+      simp only [make_store, make_store_bitfield] at translated
+      split at translated <;> try contradiction
+      cases translated
+      rfl
+
+private theorem cshm_funcall_no_label result returnType signature function arguments label continuation :
+    Csharpminor.find_label label (make_funcall result returnType signature function arguments) continuation =
+      none := by
+  unfold make_funcall
+  split <;> rfl
+
+theorem transl_find_label : transl_find_labelStatement := by
+  intro sourceProgram targetProgram compilationEnvironment label returnType
+  let statementProperty : CStmt → Prop := fun statement =>
+    ∀ breakDepth continueDepth continuation target targetContinuation,
+      transl_statement compilationEnvironment returnType breakDepth continueDepth statement = .OK target →
+      match_cont sourceProgram targetProgram compilationEnvironment returnType
+        breakDepth continueDepth continuation targetContinuation →
+      cshm_label_match sourceProgram targetProgram compilationEnvironment returnType
+        (Clight.find_label label statement continuation)
+        (Csharpminor.find_label label target targetContinuation)
+  let labelsProperty : Clight.labeled_statements → Prop := fun labels =>
+    ∀ breakDepth continueDepth continuation target targetContinuation,
+      transl_lbl_stmt compilationEnvironment returnType breakDepth continueDepth labels = .OK target →
+      match_cont sourceProgram targetProgram compilationEnvironment returnType
+        breakDepth continueDepth continuation targetContinuation →
+      cshm_label_match sourceProgram targetProgram compilationEnvironment returnType
+        (Clight.find_label_ls label labels continuation)
+        (Csharpminor.find_label_ls label target targetContinuation)
+  have allStatements : ∀ statement, statementProperty statement := by
+    apply Clight.statement.rec (motive_1 := statementProperty) (motive_2 := labelsProperty)
+    case Sskip =>
+      intro breakDepth continueDepth continuation target targetContinuation translated matched
+      cases translated
+      rfl
+    case Sassign =>
+      intro left right breakDepth continueDepth continuation target targetContinuation translated matched
+      simp only [transl_statement] at translated
+      split at translated <;> try contradiction
+      split at translated <;> try contradiction
+      split at translated <;> try contradiction
+      exact cshm_store_no_label _ _ _ _ _ _ translated label targetContinuation
+    case Sset =>
+      intro identifier expression breakDepth continueDepth continuation target targetContinuation translated matched
+      simp only [transl_statement] at translated
+      split at translated <;> try contradiction
+      cases translated
+      rfl
+    case Scall =>
+      intro result function arguments breakDepth continueDepth continuation target targetContinuation translated matched
+      simp only [transl_statement] at translated
+      split at translated <;> try contradiction
+      all_goals
+        split at translated <;> try contradiction
+        split at translated <;> try contradiction
+        cases translated
+        exact cshm_funcall_no_label _ _ _ _ _ _ _
+    case Sbuiltin =>
+      intro result external argumentTypes arguments breakDepth continueDepth continuation target
+        targetContinuation translated matched
+      simp only [transl_statement] at translated
+      split at translated <;> try contradiction
+      cases translated
+      rfl
+    case Ssequence =>
+      intro first second firstHypothesis secondHypothesis breakDepth continueDepth continuation
+        target targetContinuation translated matched
+      simp only [transl_statement] at translated
+      split at translated <;> try contradiction
+      rename_i targetFirst firstTranslated
+      split at translated <;> try contradiction
+      rename_i targetSecond secondTranslated
+      cases translated
+      have combined := cshm_label_match_choice _ _ _ _ _ _ _ _
+        (firstHypothesis breakDepth continueDepth (.Kseq second continuation) targetFirst
+          (.Kseq targetSecond targetContinuation) firstTranslated
+          (match_cont.match_Kseq _ _ _ _ _ _ _ _ secondTranslated matched))
+        (secondHypothesis breakDepth continueDepth continuation targetSecond targetContinuation
+          secondTranslated matched)
+      cases sourceFound : Clight.find_label label first (.Kseq second continuation) <;>
+        cases targetFound : Csharpminor.find_label label targetFirst (.Kseq targetSecond targetContinuation) <;>
+        simpa only [Clight.find_label, Csharpminor.find_label, cshm_first_label,
+          sourceFound, targetFound] using combined
+    case Sifthenelse =>
+      intro condition first second firstHypothesis secondHypothesis breakDepth continueDepth continuation
+        target targetContinuation translated matched
+      simp only [transl_statement] at translated
+      split at translated <;> try contradiction
+      split at translated <;> try contradiction
+      rename_i targetFirst firstTranslated
+      split at translated <;> try contradiction
+      rename_i targetSecond secondTranslated
+      cases translated
+      have combined := cshm_label_match_choice _ _ _ _ _ _ _ _
+        (firstHypothesis breakDepth continueDepth continuation targetFirst targetContinuation firstTranslated matched)
+        (secondHypothesis breakDepth continueDepth continuation targetSecond targetContinuation secondTranslated matched)
+      cases sourceFound : Clight.find_label label first continuation <;>
+        cases targetFound : Csharpminor.find_label label targetFirst targetContinuation <;>
+        simpa only [Clight.find_label, Csharpminor.find_label, cshm_first_label,
+          sourceFound, targetFound] using combined
+    case Sloop =>
+      intro body iteration bodyHypothesis iterationHypothesis breakDepth continueDepth continuation
+        target targetContinuation translated matched
+      simp only [transl_statement] at translated
+      split at translated <;> try contradiction
+      rename_i targetBody bodyTranslated
+      split at translated <;> try contradiction
+      rename_i targetIteration iterationTranslated
+      cases translated
+      have combined := cshm_label_match_choice _ _ _ _ _ _ _ _
+        (bodyHypothesis 1 0 (.Kloop1 body iteration continuation) targetBody _ bodyTranslated
+          (match_cont.match_Kloop1 _ _ _ _ _ _ _ _ _ _ bodyTranslated iterationTranslated matched))
+        (iterationHypothesis 0 (Nat.succ continueDepth) (.Kloop2 body iteration continuation)
+          targetIteration _ iterationTranslated
+          (match_cont.match_Kloop2 _ _ _ _ _ _ _ _ _ _ bodyTranslated iterationTranslated matched))
+      cases sourceFound : Clight.find_label label body (.Kloop1 body iteration continuation) <;>
+        cases targetFound : Csharpminor.find_label label targetBody
+          (.Kblock (.Kseq targetIteration
+            (.Kseq (.Sloop (.Sseq (.Sblock targetBody) targetIteration)) (.Kblock targetContinuation)))) <;>
+        simpa only [Clight.find_label, Csharpminor.find_label, cshm_first_label,
+          sourceFound, targetFound] using combined
+    case Sbreak =>
+      intro breakDepth continueDepth continuation target targetContinuation translated matched
+      cases translated
+      rfl
+    case Scontinue =>
+      intro breakDepth continueDepth continuation target targetContinuation translated matched
+      cases translated
+      rfl
+    case Sreturn =>
+      intro result breakDepth continueDepth continuation target targetContinuation translated matched
+      cases result with
+      | none => cases translated; rfl
+      | some expression =>
+          simp only [transl_statement] at translated
+          split at translated <;> try contradiction
+          split at translated <;> try contradiction
+          cases translated
+          rfl
+    case Sswitch =>
+      intro selector labels labelsHypothesis breakDepth continueDepth continuation
+        target targetContinuation translated matched
+      simp only [transl_statement] at translated
+      split at translated <;> try contradiction
+      split at translated <;> try contradiction
+      rename_i targetLabels labelsTranslated
+      split at translated <;> try contradiction
+      all_goals
+        cases translated
+        exact labelsHypothesis 0 (Nat.succ continueDepth) (.Kswitch continuation) targetLabels
+          (.Kblock targetContinuation) labelsTranslated
+          (match_cont.match_Kswitch _ _ _ _ _ _ matched)
+    case Slabel =>
+      intro identifier body bodyHypothesis breakDepth continueDepth continuation
+        target targetContinuation translated matched
+      simp only [transl_statement] at translated
+      split at translated <;> try contradiction
+      rename_i targetBody bodyTranslated
+      cases translated
+      cases sameLabel : ident_eq label identifier with
+      | left same =>
+          simp only [Clight.find_label, Csharpminor.find_label, sameLabel, cshm_label_match]
+          exact ⟨targetBody, targetContinuation, breakDepth, continueDepth, rfl, bodyTranslated, matched⟩
+      | right different =>
+          simpa only [Clight.find_label, Csharpminor.find_label, sameLabel] using
+            bodyHypothesis breakDepth continueDepth continuation targetBody targetContinuation bodyTranslated matched
+    case Sgoto =>
+      intro identifier breakDepth continueDepth continuation target targetContinuation translated matched
+      cases translated
+      rfl
+    case LSnil =>
+      intro breakDepth continueDepth continuation target targetContinuation translated matched
+      cases translated
+      rfl
+    case LScons =>
+      intro selector statement labels statementHypothesis labelsHypothesis breakDepth continueDepth
+        continuation target targetContinuation translated matched
+      simp only [transl_lbl_stmt] at translated
+      split at translated <;> try contradiction
+      rename_i targetStatement statementTranslated
+      split at translated <;> try contradiction
+      rename_i targetLabels labelsTranslated
+      cases translated
+      have combined := cshm_label_match_choice _ _ _ _ _ _ _ _
+        (statementHypothesis breakDepth continueDepth
+          (.Kseq (Clight.seq_of_labeled_statement labels) continuation) targetStatement
+          (.Kseq (Csharpminor.seq_of_lbl_stmt targetLabels) targetContinuation) statementTranslated
+          (match_cont.match_Kseq _ _ _ _ _ _ _ _
+            (transl_lbl_stmt_2 _ _ _ _ _ _ labelsTranslated) matched))
+        (labelsHypothesis breakDepth continueDepth continuation targetLabels targetContinuation labelsTranslated matched)
+      cases sourceFound : Clight.find_label label statement
+          (.Kseq (Clight.seq_of_labeled_statement labels) continuation) <;>
+        cases targetFound : Csharpminor.find_label label targetStatement
+          (.Kseq (Csharpminor.seq_of_lbl_stmt targetLabels) targetContinuation) <;>
+        simpa only [Clight.find_label_ls, Csharpminor.find_label_ls, cshm_first_label,
+          sourceFound, targetFound] using combined
+  exact allStatements
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Ctyping
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Lib.Maps
+
+private theorem cshm_store_transl_identity compilationEnvironment address expressionType field value
+    statement continuation target targetContinuation
+    (translated : make_store compilationEnvironment address expressionType field value = .OK statement)
+    (matched : match_transl statement continuation target targetContinuation) :
+    target = statement ∧ targetContinuation = continuation := by
+  cases matched with
+  | match_transl_0 => exact ⟨rfl, rfl⟩
+  | match_transl_1 =>
+      cases field with
+      | Full =>
+          simp only [make_store] at translated
+          split at translated <;> try cases translated
+          simp only [make_memcpy] at translated
+          split at translated <;> cases translated
+      | Bits size sign position width =>
+          simp only [make_store, make_store_bitfield] at translated
+          split at translated <;> cases translated
+
+private theorem cshm_function_body compilationEnvironment function targetFunction
+    (translated : transl_function compilationEnvironment function = .OK targetFunction) :
+    transl_statement compilationEnvironment function.fn_return 1 0 function.fn_body =
+      .OK targetFunction.fn_body := by
+  simp only [transl_function] at translated
+  split at translated <;> try contradiction
+  rename_i body bodyTranslated
+  split at translated <;> try contradiction
+  cases translated
+  exact bodyTranslated
+
+private theorem cshm_plus_two
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    {externalCalls : ExternalCalls} {globals : TGenv} {first middle last : TState}
+    (firstStep : T_step externalCalls globals first E0 middle)
+    (lastStep : T_step externalCalls globals middle E0 last) :
+    plus (T_step externalCalls) globals first E0 last :=
+  plus_left _ E0 firstStep (star_one _ _ _ _ _ _ _ lastStep) rfl
+
+private theorem cshm_plus_three
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    {externalCalls : ExternalCalls} {globals : TGenv} {first second third last : TState}
+    (firstStep : T_step externalCalls globals first E0 second)
+    (secondStep : T_step externalCalls globals second E0 third)
+    (lastStep : T_step externalCalls globals third E0 last) :
+    plus (T_step externalCalls) globals first E0 last :=
+  plus_left _ E0 firstStep
+    (star_step _ E0 secondStep (star_one _ _ _ _ _ _ _ lastStep) rfl) rfl
+
+private theorem cshm_plus_four
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    {externalCalls : ExternalCalls} {globals : TGenv} {first second third fourth last : TState}
+    (firstStep : T_step externalCalls globals first E0 second)
+    (secondStep : T_step externalCalls globals second E0 third)
+    (thirdStep : T_step externalCalls globals third E0 fourth)
+    (lastStep : T_step externalCalls globals fourth E0 last) :
+    plus (T_step externalCalls) globals first E0 last :=
+  plus_left _ E0 firstStep
+    (star_step _ E0 secondStep
+      (star_step _ E0 thirdStep (star_one _ _ _ _ _ _ _ lastStep) rfl) rfl) rfl
+
+private theorem cshm_regular_simulation
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (externalCalls : ExternalCalls) (sourceProgram : CProgram) (targetProgram : TProgram)
+    (programs : match_prog sourceProgram targetProgram)
+    (function : CFunction) (statement : CStmt) (continuation : CCont) (environment : CEnv)
+    (temporaries : CTempEnv) (memory : mem) (targetFunction : TFunction) (targetStatement : TStmt)
+    (targetContinuation : TCont) (targetEnvironment : TEnv) (actualStatement : TStmt)
+    (actualContinuation : TCont) (compilationUnit : CProgram) (breakDepth continueDepth : Nat)
+    (linked : Ctypes.linkorder_program compilationUnit sourceProgram)
+    (functionTranslated : transl_function compilationUnit.prog_comp_env function = .OK targetFunction)
+    (translated : transl_statement compilationUnit.prog_comp_env function.fn_return
+      breakDepth continueDepth statement = .OK targetStatement)
+    (transformed : match_transl targetStatement targetContinuation actualStatement actualContinuation)
+    (environments : match_env sourceProgram environment targetEnvironment)
+    (continuations : match_cont sourceProgram targetProgram compilationUnit.prog_comp_env
+      function.fn_return breakDepth continueDepth continuation targetContinuation)
+    (trace : trace) (next : CState)
+    (sourceStep : C_step2 externalCalls (Clight.globalenv sourceProgram)
+      (.State function statement continuation environment temporaries memory) trace next) :
+    ∃ targetNext,
+      plus (T_step externalCalls) (Genv.globalenv targetProgram)
+        (.State targetFunction actualStatement actualContinuation targetEnvironment temporaries memory)
+        trace targetNext ∧ match_states sourceProgram targetProgram next targetNext := by
+  cases sourceStep with
+  | step_assign _ left right _ _ _ _ location offset field rightValue value nextMemory
+      leftEvaluated rightEvaluated casted assigned =>
+      simp only [transl_statement] at translated
+      split at translated <;> try contradiction
+      rename_i targetLeft targetField leftTranslated
+      split at translated <;> try contradiction
+      rename_i targetRight rightTranslated
+      split at translated <;> try contradiction
+      rename_i targetCast castTranslated
+      obtain ⟨sameStatement, sameContinuation⟩ := cshm_store_transl_identity _ _ _ _ _ _ _ _ _
+        translated transformed
+      subst actualStatement actualContinuation
+      obtain ⟨sameField, addressEvaluated⟩ := transl_lvalue_correct sourceProgram targetProgram programs
+        compilationUnit linked environment temporaries memory targetEnvironment left location offset field
+        environments leftEvaluated targetLeft targetField leftTranslated
+      subst targetField
+      have valueEvaluated := make_cast_correct _ targetEnvironment temporaries memory targetRight targetCast
+        rightValue (Clight.typeof right) (Clight.typeof left) value castTranslated
+        (transl_expr_correct sourceProgram targetProgram programs compilationUnit linked environment
+          temporaries memory targetEnvironment environments right rightValue rightEvaluated
+          targetRight rightTranslated) casted
+      refine ⟨_, plus_one _ _ _ _ _ _ _
+        (make_store_correct externalCalls compilationUnit sourceProgram linked _ targetLeft
+          (Clight.typeof left) field targetCast targetStatement targetEnvironment temporaries memory
+          location offset value nextMemory targetFunction targetContinuation translated
+          addressEvaluated valueEvaluated assigned), ?_⟩
+      exact match_states_skip sourceProgram targetProgram function environment temporaries targetEnvironment
+        breakDepth continueDepth continuation targetFunction targetContinuation nextMemory compilationUnit
+        linked functionTranslated environments continuations
+  | step_set _ identifier expression _ _ _ _ value evaluated =>
+      simp only [transl_statement] at translated
+      split at translated <;> try contradiction
+      rename_i targetExpression expressionTranslated
+      cases translated
+      cases transformed
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (Csharpminor.step_set _ _ _ _ _ _ _ value
+        (transl_expr_correct sourceProgram targetProgram programs compilationUnit linked environment
+          temporaries memory targetEnvironment environments expression value evaluated targetExpression
+          expressionTranslated)), ?_⟩
+      exact match_states_skip _ _ _ _ _ _ _ _ _ _ _ _ _ linked functionTranslated environments continuations
+  | step_call _ result expression arguments _ _ _ _ argumentTypes returnType callingConvention
+      functionValue argumentValues callee classified evaluated argumentsEvaluated found calleeType =>
+      simp only [transl_statement] at translated
+      split at translated <;> try contradiction
+      all_goals
+        simp_all only [Cop.classify_fun, Cop.classify_fun_cases.fun_case_f.injEq]
+        split at translated <;> try contradiction
+        rename_i targetExpression expressionTranslated
+        split at translated <;> try contradiction
+        rename_i targetArguments argumentsTranslated
+        cases translated
+        obtain ⟨calleeUnit, targetCallee, targetFound, calleeMatched, calleeLinked⟩ :=
+          functions_translated sourceProgram targetProgram programs functionValue callee found
+        have targetEvaluated := transl_expr_correct sourceProgram targetProgram programs compilationUnit
+          linked environment temporaries memory targetEnvironment environments expression functionValue
+          evaluated targetExpression expressionTranslated
+        have targetArgumentsEvaluated := transl_arglist_correct sourceProgram targetProgram programs
+          compilationUnit linked environment temporaries memory targetEnvironment environments arguments
+          argumentTypes argumentValues argumentsEvaluated targetArguments argumentsTranslated
+        have targetSignature := transl_fundef_sig2 calleeUnit callee targetCallee argumentTypes returnType
+          callingConvention calleeMatched calleeType
+        have argumentSignature := typlist_of_arglist_eq sourceProgram environment temporaries memory
+          arguments argumentTypes argumentValues argumentsEvaluated
+        rw [argumentSignature] at transformed
+        have argumentTypesValid := transl_arglist_typed sourceProgram environment temporaries memory
+          arguments argumentTypes argumentValues argumentsEvaluated
+        unfold make_funcall at transformed
+        split at transformed
+        · cases transformed
+          refine ⟨_, cshm_plus_two (Csharpminor.step_seq _ _ _ _ _ _ _)
+            (Csharpminor.step_call _ _ _ _ _ _ _ _ _ functionValue argumentValues targetCallee
+              targetEvaluated targetArgumentsEvaluated targetFound targetSignature), ?_⟩
+          apply match_states.match_callstate _ _ _ _ _ _ argumentTypes returnType callingConvention
+            calleeUnit calleeUnit.prog_comp_env calleeLinked calleeMatched
+          · apply match_cont.match_Kcall_normalize _ _ _ _ breakDepth continueDepth
+              function environment continuation _ _ targetFunction targetEnvironment temporaries
+              targetContinuation compilationUnit linked functionTranslated environments continuations
+            intro resultValue resultEnvironment resultTemporaries resultMemory typed entry
+            exact make_normalization_correct _ resultEnvironment resultTemporaries resultMemory
+              (.Evar _) resultValue returnType (Csharpminor.eval_Evar _ _ entry) typed
+          · trivial
+          · exact calleeType
+          · exact argumentTypesValid
+        · cases transformed
+          refine ⟨_, plus_one _ _ _ _ _ _ _
+            (Csharpminor.step_call _ _ _ _ _ _ _ _ _ functionValue argumentValues targetCallee
+              targetEvaluated targetArgumentsEvaluated targetFound targetSignature), ?_⟩
+          exact match_states.match_callstate _ _ _ _ _ _ argumentTypes returnType callingConvention
+            calleeUnit calleeUnit.prog_comp_env calleeLinked calleeMatched
+            (match_cont.match_Kcall _ _ _ _ breakDepth continueDepth function environment continuation
+              _ targetFunction targetEnvironment temporaries targetContinuation compilationUnit
+              linked functionTranslated environments continuations) trivial calleeType argumentTypesValid
+  | step_builtin _ result external argumentTypes arguments _ _ _ _ values events returned nextMemory
+      evaluated called =>
+      simp only [transl_statement] at translated
+      split at translated <;> try contradiction
+      rename_i targetArguments argumentsTranslated
+      cases translated
+      cases transformed
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (Csharpminor.step_builtin _ _ _ _ _ _ _ _ values
+        trace returned nextMemory
+        (transl_arglist_correct sourceProgram targetProgram programs compilationUnit linked environment
+          temporaries memory targetEnvironment environments arguments argumentTypes values evaluated
+          targetArguments argumentsTranslated)
+        (external_call_symbols_preserved_proof externalCalls external _ _ _ _ _ _ _
+          (senv_preserved sourceProgram targetProgram programs) called)), ?_⟩
+      exact match_states_skip _ _ _ _ _ _ _ _ _ _ _ _ _ linked functionTranslated environments continuations
+  | step_seq _ first second _ _ _ _ =>
+      simp only [transl_statement] at translated
+      split at translated <;> try contradiction
+      rename_i targetFirst firstTranslated
+      split at translated <;> try contradiction
+      rename_i targetSecond secondTranslated
+      cases translated
+      cases transformed
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (Csharpminor.step_seq _ _ _ _ _ _ _), ?_⟩
+      exact match_states.match_state _ breakDepth continueDepth _ _ _ _ _ _ _ _ _ _ _ compilationUnit
+        linked functionTranslated firstTranslated (.match_transl_0 _ _) environments
+        (match_cont.match_Kseq _ _ _ _ _ _ _ _ secondTranslated continuations)
+  | step_skip_seq _ nextStatement remaining _ _ _ =>
+      cases translated
+      cases transformed
+      cases continuations with
+      | match_Kseq _ _ _ _ _ _ targetNext targetRemaining nextTranslated remainingMatched =>
+          refine ⟨_, plus_one _ _ _ _ _ _ _ (Csharpminor.step_skip_seq _ _ _ _ _ _), ?_⟩
+          exact match_states.match_state _ breakDepth continueDepth _ _ _ _ _ _ _ _ _ _ _ compilationUnit
+            linked functionTranslated nextTranslated (.match_transl_0 _ _) environments remainingMatched
+  | step_continue_seq _ nextStatement remaining _ _ _ =>
+      cases translated
+      cases transformed
+      cases continuations with
+      | match_Kseq _ _ _ _ _ _ targetNext targetRemaining nextTranslated remainingMatched =>
+          refine ⟨_, plus_one _ _ _ _ _ _ _ (Csharpminor.step_exit_seq _ _ _ _ _ _ _), ?_⟩
+          exact match_states.match_state _ breakDepth continueDepth _ _ _ _ _ _ _ _ _ _ _ compilationUnit
+            linked functionTranslated rfl (.match_transl_0 _ _) environments remainingMatched
+  | step_break_seq _ nextStatement remaining _ _ _ =>
+      cases translated
+      cases transformed
+      cases continuations with
+      | match_Kseq _ _ _ _ _ _ targetNext targetRemaining nextTranslated remainingMatched =>
+          refine ⟨_, plus_one _ _ _ _ _ _ _ (Csharpminor.step_exit_seq _ _ _ _ _ _ _), ?_⟩
+          exact match_states.match_state _ breakDepth continueDepth _ _ _ _ _ _ _ _ _ _ _ compilationUnit
+            linked functionTranslated rfl (.match_transl_0 _ _) environments remainingMatched
+  | step_ifthenelse _ condition first second _ _ _ _ value choice evaluated tested =>
+      simp only [transl_statement] at translated
+      split at translated <;> try contradiction
+      rename_i targetCondition conditionTranslated
+      split at translated <;> try contradiction
+      rename_i targetFirst firstTranslated
+      split at translated <;> try contradiction
+      rename_i targetSecond secondTranslated
+      cases translated
+      cases transformed
+      obtain ⟨targetValue, targetEvaluated, targetTested⟩ := make_boolean_correct _ targetEnvironment
+        temporaries memory targetCondition value (Clight.typeof condition) choice
+        (transl_expr_correct sourceProgram targetProgram programs compilationUnit linked environment
+          temporaries memory targetEnvironment environments condition value evaluated targetCondition conditionTranslated)
+        tested
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (Csharpminor.step_ifthenelse _ _ _ _ _ _ _ _ targetValue choice
+        targetEvaluated targetTested), ?_⟩
+      cases choice
+      · exact match_states.match_state _ breakDepth continueDepth _ _ _ _ _ _ _ _ _ _ _ compilationUnit
+          linked functionTranslated secondTranslated (.match_transl_0 _ _) environments continuations
+      · exact match_states.match_state _ breakDepth continueDepth _ _ _ _ _ _ _ _ _ _ _ compilationUnit
+          linked functionTranslated firstTranslated (.match_transl_0 _ _) environments continuations
+  | step_loop _ body iteration _ _ _ _ =>
+      simp only [transl_statement] at translated
+      split at translated <;> try contradiction
+      rename_i targetBody bodyTranslated
+      split at translated <;> try contradiction
+      rename_i targetIteration iterationTranslated
+      cases translated
+      refine ⟨_, ?_, match_states.match_state _ 1 0 _ _ _ _ _ _ _ _ _ _ _ compilationUnit
+        linked functionTranslated bodyTranslated (.match_transl_0 _ _) environments
+        (match_cont.match_Kloop1 _ _ _ _ _ _ _ _ _ _ bodyTranslated iterationTranslated continuations)⟩
+      exact star_plus_trans _ _ _ _ _ _ _ _ _ _
+        (match_transl_step externalCalls targetProgram _ _ _ _ _ _ _ _ transformed)
+        (cshm_plus_three (Csharpminor.step_loop _ _ _ _ _ _)
+          (Csharpminor.step_seq _ _ _ _ _ _ _) (Csharpminor.step_block _ _ _ _ _ _)) rfl
+  | step_skip_or_continue_loop1 _ body iteration remaining _ _ _ current finished =>
+      cases continuations with
+      | match_Kloop1 _ _ _ _ _ targetBody targetIteration oldBreak oldContinue targetRemaining
+          bodyTranslated iterationTranslated remainingMatched =>
+          rcases finished with rfl | rfl
+          all_goals
+            cases translated
+            cases transformed
+            refine ⟨.State targetFunction targetIteration
+              (.Kseq (.Sloop (.Sseq (.Sblock targetBody) targetIteration)) (.Kblock targetRemaining))
+              targetEnvironment temporaries memory,
+              cshm_plus_two ?_ (Csharpminor.step_skip_seq _ _ _ _ _ _), ?_⟩
+          · exact Csharpminor.step_skip_block _ _ _ _ _
+          · exact match_states.match_state _ 0 (Nat.succ oldContinue) _ _ _ _ _ _ _ _ _ _ _ compilationUnit
+              linked functionTranslated iterationTranslated (.match_transl_0 _ _) environments
+              (match_cont.match_Kloop2 _ _ _ _ _ _ _ _ _ _ bodyTranslated iterationTranslated remainingMatched)
+          · exact Csharpminor.step_exit_block_0 _ _ _ _ _
+          · exact match_states.match_state _ 0 (Nat.succ oldContinue) _ _ _ _ _ _ _ _ _ _ _ compilationUnit
+              linked functionTranslated iterationTranslated (.match_transl_0 _ _) environments
+              (match_cont.match_Kloop2 _ _ _ _ _ _ _ _ _ _ bodyTranslated iterationTranslated remainingMatched)
+  | step_break_loop1 _ body iteration remaining _ _ _ =>
+      cases continuations with
+      | match_Kloop1 _ _ _ _ _ targetBody targetIteration oldBreak oldContinue targetRemaining
+          bodyTranslated iterationTranslated remainingMatched =>
+          cases translated
+          cases transformed
+          refine ⟨_, cshm_plus_four (Csharpminor.step_exit_block_S _ _ _ _ _ _)
+            (Csharpminor.step_exit_seq _ _ _ _ _ _ _) (Csharpminor.step_exit_seq _ _ _ _ _ _ _)
+            (Csharpminor.step_exit_block_0 _ _ _ _ _), ?_⟩
+          exact match_states_skip _ _ _ _ _ _ _ _ _ _ _ _ _ linked functionTranslated environments remainingMatched
+  | step_skip_loop2 _ body iteration remaining _ _ _ =>
+      cases continuations with
+      | match_Kloop2 _ _ _ _ _ targetBody targetIteration oldBreak oldContinue targetRemaining
+          bodyTranslated iterationTranslated remainingMatched =>
+          cases translated
+          cases transformed
+          refine ⟨_, plus_one _ _ _ _ _ _ _ (Csharpminor.step_skip_seq _ _ _ _ _ _), ?_⟩
+          apply match_states.match_state _ oldBreak oldContinue _ _ _ _ _ _ _ _ _ _ _ compilationUnit
+            linked functionTranslated ?_ (.match_transl_1 _ _) environments remainingMatched
+          simp only [transl_statement, bodyTranslated, iterationTranslated]
+  | step_break_loop2 _ body iteration remaining _ _ _ =>
+      cases continuations with
+      | match_Kloop2 _ _ _ _ _ targetBody targetIteration oldBreak oldContinue targetRemaining
+          bodyTranslated iterationTranslated remainingMatched =>
+          cases translated
+          cases transformed
+          refine ⟨_, cshm_plus_two (Csharpminor.step_exit_seq _ _ _ _ _ _ _)
+            (Csharpminor.step_exit_block_0 _ _ _ _ _), ?_⟩
+          exact match_states_skip _ _ _ _ _ _ _ _ _ _ _ _ _ linked functionTranslated environments remainingMatched
+  | step_return_0 _ _ _ _ _ nextMemory freed =>
+      cases translated
+      cases transformed
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (Csharpminor.step_return_0 _ _ _ _ _ nextMemory
+        (match_env_free_blocks sourceProgram environment targetEnvironment memory nextMemory environments freed)), ?_⟩
+      exact match_states.match_returnstate _ function.fn_return _ _ _ compilationUnit.prog_comp_env
+        (match_cont_call_cont _ _ _ 0 0 _ _ _ _ _ _ continuations) (.wt_val_undef _)
+  | step_return_1 _ expression _ _ _ _ value castValue nextMemory evaluated casted freed =>
+      simp only [transl_statement] at translated
+      split at translated <;> try contradiction
+      rename_i targetExpression expressionTranslated
+      split at translated <;> try contradiction
+      rename_i targetCast castTranslated
+      cases translated
+      cases transformed
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (Csharpminor.step_return_1 _ _ _ _ _ _ castValue nextMemory
+        (make_cast_correct _ targetEnvironment temporaries memory targetExpression targetCast value
+          (Clight.typeof expression) function.fn_return castValue castTranslated
+          (transl_expr_correct sourceProgram targetProgram programs compilationUnit linked environment
+            temporaries memory targetEnvironment environments expression value evaluated targetExpression
+            expressionTranslated) casted)
+        (match_env_free_blocks sourceProgram environment targetEnvironment memory nextMemory environments freed)), ?_⟩
+      exact match_states.match_returnstate _ function.fn_return _ _ _ compilationUnit.prog_comp_env
+        (match_cont_call_cont _ _ _ 0 0 _ _ _ _ _ _ continuations)
+        (wt_val_casted _ _ (cast_val_is_casted _ _ _ _ _ casted))
+  | step_skip_call _ _ _ _ _ nextMemory isCall freed =>
+      cases translated
+      cases transformed
+      obtain ⟨callMatched, targetCall⟩ := match_cont_is_call_cont _ _ _ _ _ _ _ _
+        compilationUnit.prog_comp_env 0 0 continuations isCall
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (Csharpminor.step_skip_call _ _ _ _ _ nextMemory targetCall
+        (match_env_free_blocks sourceProgram environment targetEnvironment memory nextMemory environments freed)), ?_⟩
+      exact match_states.match_returnstate _ function.fn_return _ _ _ compilationUnit.prog_comp_env
+        callMatched (.wt_val_undef _)
+  | step_switch _ selector labels _ _ _ _ value number evaluated selected =>
+      simp only [transl_statement] at translated
+      split at translated <;> try contradiction
+      rename_i targetSelector selectorTranslated
+      split at translated <;> try contradiction
+      rename_i targetLabels labelsTranslated
+      have targetEvaluated := transl_expr_correct sourceProgram targetProgram programs compilationUnit linked
+        environment temporaries memory targetEnvironment environments selector value evaluated targetSelector selectorTranslated
+      split at translated <;> try contradiction
+      all_goals
+        cases translated
+        refine ⟨_, ?_, match_states.match_state _ 0 (Nat.succ continueDepth) _ _ _ _ _ _ _ _ _ _ _ compilationUnit
+          linked functionTranslated
+          (transl_lbl_stmt_2 _ _ _ _ _ _ (transl_lbl_stmt_1 _ _ _ _ _ _ _ labelsTranslated))
+          (.match_transl_0 _ _) environments (match_cont.match_Kswitch _ _ _ _ _ _ continuations)⟩
+        refine star_plus_trans _ _ _ _ _ _ _ _ _ _
+          (match_transl_step externalCalls targetProgram _ _ _ _ _ _ _ _ transformed)
+          (plus_one _ _ _ _ _ _ _ (Csharpminor.step_switch _ _ _ _ _ _ _ _ value number targetEvaluated ?_)) rfl
+        simp_all only [Cop.sem_switch_arg, Cop.classify_switch]
+        cases value <;> simp only at selected <;> cases selected <;> constructor
+  | step_skip_break_switch _ current remaining _ _ _ finished =>
+      cases continuations with
+      | match_Kswitch _ _ oldBreak oldContinue _ targetRemaining remainingMatched =>
+          rcases finished with rfl | rfl
+          all_goals
+            cases translated
+            cases transformed
+            refine ⟨_, plus_one _ _ _ _ _ _ _ ?_,
+              match_states_skip _ _ _ _ _ _ _ _ _ _ _ _ _ linked functionTranslated environments remainingMatched⟩
+          · exact Csharpminor.step_skip_block _ _ _ _ _
+          · exact Csharpminor.step_exit_block_0 _ _ _ _ _
+  | step_continue_switch _ remaining _ _ _ =>
+      cases continuations with
+      | match_Kswitch _ _ oldBreak oldContinue _ targetRemaining remainingMatched =>
+          cases translated
+          cases transformed
+          refine ⟨_, plus_one _ _ _ _ _ _ _ (Csharpminor.step_exit_block_S _ _ _ _ _ _), ?_⟩
+          exact match_states.match_state _ oldBreak oldContinue _ _ _ _ _ _ _ _ _ _ _ compilationUnit
+            linked functionTranslated rfl (.match_transl_0 _ _) environments remainingMatched
+  | step_label _ identifier body _ _ _ _ =>
+      simp only [transl_statement] at translated
+      split at translated <;> try contradiction
+      rename_i targetBody bodyTranslated
+      cases translated
+      cases transformed
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (Csharpminor.step_label _ _ _ _ _ _ _), ?_⟩
+      exact match_states.match_state _ breakDepth continueDepth _ _ _ _ _ _ _ _ _ _ _ compilationUnit
+        linked functionTranslated bodyTranslated (.match_transl_0 _ _) environments continuations
+  | step_goto _ identifier _ _ _ _ nextStatement nextContinuation found =>
+      cases translated
+      cases transformed
+      have labelMatched := transl_find_label sourceProgram targetProgram compilationUnit.prog_comp_env
+        identifier function.fn_return function.fn_body 1 0 (Clight.call_cont continuation)
+        targetFunction.fn_body (Csharpminor.call_cont targetContinuation)
+        (cshm_function_body _ _ _ functionTranslated)
+        (match_cont_call_cont _ _ _ 1 0 _ _ _ _ _ _ continuations)
+      rw [found] at labelMatched
+      obtain ⟨targetNextStatement, targetNextContinuation, nextBreak, nextContinue,
+        targetFound, nextTranslated, nextMatched⟩ := labelMatched
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (Csharpminor.step_goto _ _ _ _ _ _ _ _ targetFound), ?_⟩
+      exact match_states.match_state _ nextBreak nextContinue _ _ _ _ _ _ _ _ _ _ _ compilationUnit
+        linked functionTranslated nextTranslated (.match_transl_0 _ _) environments nextMatched
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Cfrontend.Ctyping
+open CompCert4Lean.Lib.Maps
+
+theorem transl_step
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_stepStatement := by
+  intro externalCalls sourceProgram targetProgram programs source trace next sourceStep target matched
+  cases matched with
+  | match_state function breakDepth continueDepth statement continuation environment temporaries memory
+      targetFunction targetStatement targetContinuation targetEnvironment actualStatement actualContinuation
+      compilationUnit linked functionTranslated translated transformed environments continuations =>
+      exact cshm_regular_simulation externalCalls sourceProgram targetProgram programs function statement
+        continuation environment temporaries memory targetFunction targetStatement targetContinuation
+        targetEnvironment actualStatement actualContinuation compilationUnit breakDepth continueDepth
+        linked functionTranslated translated transformed environments continuations trace next sourceStep
+  | match_callstate callee arguments continuation memory targetCallee targetContinuation argumentTypes returnType
+      callingConvention compilationUnit compilationEnvironment linked calleeMatched continuations isCall calleeType types =>
+      cases sourceStep with
+      | step_internal_function function _ _ _ environment temporaries nextMemory entered =>
+          cases calleeMatched with
+          | match_fundef_internal _ targetFunction functionTranslated =>
+              cases entered with
+              | intro variablesDistinct parametersDistinct disjoint allocated bound =>
+                  simp only [Clight.type_of_fundef, Clight.type_of_function] at calleeType
+                  cases calleeType
+                  have originalTranslation := functionTranslated
+                  simp only [transl_function] at functionTranslated
+                  split at functionTranslated <;> try contradiction
+                  rename_i targetBody bodyTranslated
+                  split at functionTranslated <;> try contradiction
+                  rename_i targetVariables variablesTranslated
+                  cases functionTranslated
+                  obtain ⟨targetEnvironment, targetAllocated, environments⟩ :=
+                    match_env_alloc_variables sourceProgram compilationUnit linked Clight.empty_env memory
+                      function.fn_vars environment nextMemory allocated targetVariables Csharpminor.empty_env
+                      variablesTranslated (match_env_empty sourceProgram)
+                  refine ⟨_, plus_one _ _ _ _ _ _ _
+                    (Csharpminor.step_internal_function _ _ _ _ _ _ temporaries ?_ ?_ ?_ ?_ targetAllocated ?_), ?_⟩
+                  · simpa only [signature_of_function, Ctypes.type_of_params, List.map_map,
+                      Function.comp_def] using types
+                  · rw [transl_vars_names _ _ _ variablesTranslated]
+                    exact variablesDistinct
+                  · exact parametersDistinct
+                  · exact disjoint
+                  · rw [create_undef_temps_match function.fn_temps]
+                    exact bind_parameter_temps_match _ _ _ _ bound
+                  · exact match_states.match_state _ 1 0 _ _ _ _ _ _ _ _ _ _ _ compilationUnit
+                      linked originalTranslation bodyTranslated (.match_transl_0 _ _) environments
+                      (match_cont_is_call_cont _ _ _ _ _ _ _ _ compilationUnit.prog_comp_env 1 0
+                        continuations isCall).1
+      | step_external_function external sourceArguments sourceReturn sourceConvention _ _ _ value events nextMemory called =>
+          cases calleeMatched with
+          | match_fundef_external _ _ _ _ signatureMatched =>
+              simp only [Clight.type_of_fundef] at calleeType
+              cases calleeType
+              refine ⟨_, plus_one _ _ _ _ _ _ _
+                (Csharpminor.step_external_function _ _ _ _ _ _ _
+                  (external_call_symbols_preserved_proof externalCalls external _ _ _ _ _ _ _
+                    (senv_preserved sourceProgram targetProgram programs) called)), ?_⟩
+              apply match_states.match_returnstate _ _ _ _ _ compilationEnvironment continuations
+              apply has_rettype_wt_val
+              have wellTyped := external_call_well_typed_gen_proof externalCalls external _ _ _ _ _ _ called
+              simpa only [signatureMatched, signature_of_type] using wellTyped
+  | match_returnstate returned returnType continuation memory targetContinuation compilationEnvironment
+      continuations typed =>
+      cases sourceStep with
+      | step_returnstate _ result function environment temporaries remaining _ =>
+          cases continuations with
+          | match_Kcall _ _ _ _ breakDepth continueDepth _ _ _ _ targetFunction targetEnvironment _
+              targetRemaining compilationUnit linked functionTranslated environments remainingMatched =>
+              refine ⟨_, plus_one _ _ _ _ _ _ _ (Csharpminor.step_return _ _ _ _ _ _ _), ?_⟩
+              exact match_states_skip _ _ _ _ _ _ _ _ _ _ _ _ _ linked functionTranslated environments remainingMatched
+          | match_Kcall_normalize _ _ _ _ breakDepth continueDepth _ _ _ identifier expression targetFunction
+              targetEnvironment _ targetRemaining compilationUnit linked functionTranslated environments
+              remainingMatched normalized =>
+              refine ⟨_, cshm_plus_three (Csharpminor.step_return _ _ _ _ _ _ _)
+                (Csharpminor.step_skip_seq _ _ _ _ _ _)
+                (Csharpminor.step_set _ _ _ _ _ _ _ returned
+                  (normalized returned targetEnvironment (PTree.set identifier returned temporaries) memory typed
+                    (PTree.gss identifier returned temporaries))), ?_⟩
+              change match_states sourceProgram targetProgram
+                (.State function .Sskip remaining environment (PTree.set identifier returned temporaries) memory)
+                (.State targetFunction .Sskip targetRemaining targetEnvironment
+                  (PTree.set identifier returned (PTree.set identifier returned temporaries)) memory)
+              rw [PTree.set2 identifier temporaries returned returned]
+              exact match_states_skip _ _ _ _ _ _ _ _ _ _ _ _ _ linked functionTranslated environments remainingMatched
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+theorem transl_program_correct
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_program_correctStatement := by
+  intro externalCalls sourceProgram targetProgram programs
+  exact CompCert4Lean.Common.Smallstep.forward_simulation_plus
+    (C_semantics2 externalCalls sourceProgram) (T_semantics externalCalls targetProgram)
+    (senv_preserved sourceProgram targetProgram programs).2.1
+    (match_states sourceProgram targetProgram)
+    (transl_initial_states sourceProgram targetProgram programs)
+    (transl_final_states sourceProgram targetProgram)
+    (transl_step externalCalls sourceProgram targetProgram programs)
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

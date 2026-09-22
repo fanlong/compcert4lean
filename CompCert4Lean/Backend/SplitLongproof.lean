@@ -4586,3 +4586,1550 @@ theorem eval_notl : eval_notlStatement := by
   · exact ha
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Lib.Floats
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_longofsingle : eval_longofsingleStatement := by
+  intro externalCalls prog helpers declared stack environment memory lets
+    argument input output evaluates converted
+  cases input <;> try { simp [Val.longofsingle] at converted }
+  rename_i singleValue
+  obtain ⟨integerValue, convertedInteger, rfl⟩ := Option.map_eq_some_iff.mp converted
+  obtain ⟨doubleValue, evaluatesDouble, lessDefined⟩ :=
+    CompCert4Lean.X86.SelectOpproof.eval_floatofsingle externalCalls
+      (Genv.globalenv prog) stack environment memory lets argument
+      (.Vsingle singleValue) evaluates
+  have valueEqual : doubleValue = Val.floatofsingle (.Vsingle singleValue) := by
+    cases lessDefined
+    rfl
+  subst doubleValue
+  apply eval_longoffloat externalCalls prog helpers declared stack environment
+    memory lets (CompCert4Lean.X86.SelectOp.floatofsingle argument)
+    (Val.floatofsingle (.Vsingle singleValue)) (.Vlong integerValue) evaluatesDouble
+  have convertedDouble := Float32.to_long_double singleValue integerValue convertedInteger
+  simpa [Val.longoffloat, Val.floatofsingle, Float32.to_double, convertedDouble]
+    using congrArg (Option.map val.Vlong) convertedDouble
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Lib.Floats
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_longuofsingle : eval_longuofsingleStatement := by
+  intro externalCalls prog helpers declared stack environment memory lets
+    argument input output evaluates converted
+  cases input <;> try { simp [Val.longuofsingle] at converted }
+  rename_i singleValue
+  obtain ⟨integerValue, convertedInteger, rfl⟩ := Option.map_eq_some_iff.mp converted
+  obtain ⟨doubleValue, evaluatesDouble, lessDefined⟩ :=
+    CompCert4Lean.X86.SelectOpproof.eval_floatofsingle externalCalls
+      (Genv.globalenv prog) stack environment memory lets argument
+      (.Vsingle singleValue) evaluates
+  have valueEqual : doubleValue = Val.floatofsingle (.Vsingle singleValue) := by
+    cases lessDefined
+    rfl
+  subst doubleValue
+  apply eval_longuoffloat externalCalls prog helpers declared stack environment
+    memory lets (CompCert4Lean.X86.SelectOp.floatofsingle argument)
+    (Val.floatofsingle (.Vsingle singleValue)) (.Vlong integerValue) evaluatesDouble
+  have convertedDouble := Float32.to_longu_double singleValue integerValue convertedInteger
+  simpa [Val.longuoffloat, Val.floatofsingle, Float32.to_double, convertedDouble]
+    using congrArg (Option.map val.Vlong) convertedDouble
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+
+open Lean Elab Tactic
+
+private theorem splitlong_sign_extension (value : CCInt) :
+    Int64.ofwords (Int.shr value (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 31))) value =
+      Int64.repr (Int.signed value) := by
+  apply Int64.same_bits_eq_proof
+  intro index bounds
+  rw [Int64.bits_ofwords_proof _ _ _ bounds,
+    Int64.testbit_repr_proof _ _ bounds,
+    Int.bits_signed_proof _ _ bounds.1]
+  run_tac
+    let environment ← getEnv
+    for suffix in ["Integers.zltSelect", "Integers.sumboolSelect",
+        "Integers.zSub", "Integers.zOne"] do
+      let some (constantName, _) := environment.constants.toList.find?
+          (fun (constantName, _) => (toString constantName).endsWith suffix)
+        | throwError "Integer bit-selection definition was not found"
+      evalTactic (← `(tactic| unfold $(Lean.mkIdent constantName)))
+  cases compared : CompCert4Lean.Lib.Coqlib.zlt index Int.zwordsize with
+  | left below => rfl
+  | right above =>
+      dsimp
+      have offsetBounds : zLe .Z0 (ZArith.BinInt.Z.sub index Int.zwordsize) ∧
+          zLt (ZArith.BinInt.Z.sub index Int.zwordsize) Int.zwordsize := by
+        have upper := bounds.2
+        change intOfZ index < 64 at upper
+        change 32 ≤ intOfZ index at above
+        change 0 ≤ intOfZ (ZArith.BinInt.Z.sub index Int.zwordsize) ∧
+          intOfZ (ZArith.BinInt.Z.sub index Int.zwordsize) < 32
+        simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        change 0 ≤ intOfZ index - 32 ∧ intOfZ index - 32 < 32
+        omega
+      rw [Int.bits_shr_proof _ _ _ offsetBounds]
+      run_tac
+        let environment ← getEnv
+        for suffix in ["Integers.zltSelect", "Integers.sumboolSelect",
+            "Integers.zAdd", "Integers.zSub", "Integers.zOne"] do
+          let some (constantName, _) := environment.constants.toList.find?
+              (fun (constantName, _) => (toString constantName).endsWith suffix)
+            | throwError "Integer bit-selection definition was not found"
+          evalTactic (← `(tactic| unfold $(Lean.mkIdent constantName)))
+      have amountEqual : Int.unsigned (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 31)) =
+          zOfNat 31 := by decide
+      rw [amountEqual]
+      congr 1
+      cases shiftedComparison : CompCert4Lean.Lib.Coqlib.zlt
+          (ZArith.BinInt.Z.add (ZArith.BinInt.Z.sub index Int.zwordsize)
+            (zOfNat 31)) Int.zwordsize with
+      | left below =>
+        dsimp
+        apply intOfZ_injective
+        change 32 ≤ intOfZ index at above
+        change intOfZ (ZArith.BinInt.Z.add
+          (ZArith.BinInt.Z.sub index Int.zwordsize) (zOfNat 31)) < 32 at below
+        simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub, intOfZ_zOfInt] at below ⊢
+        change intOfZ index - 32 + 31 < 32 at below
+        change intOfZ index - 32 + 31 = 31
+        omega
+      | right aboveShift => rfl
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_longofint : eval_longofintStatement := by
+  intro externalCalls prog stack environment memory lets argument input evaluates
+  unfold longofint
+  cases longofint_match argument with
+  | longofint_case1 integerValue =>
+      have inputEqual := is_intconst_sound externalCalls prog stack environment
+        memory lets _ input integerValue rfl evaluates
+      subst input
+      exact ⟨.Vlong (Int64.repr (Int.signed integerValue)),
+        eval_longconst externalCalls prog stack environment memory lets _,
+        Val.lessdef_refl _⟩
+  | longofint_default argument =>
+      have evaluatesLocal : eval_expr externalCalls (Genv.globalenv prog) stack
+          environment memory (input :: lets) (.Eletvar 0) input :=
+        eval_expr.eval_Eletvar _ _ _ rfl
+      obtain ⟨upperValue, evaluatesUpper, lessUpper⟩ :=
+        CompCert4Lean.X86.SelectOpproof.eval_shrimm externalCalls
+          (Genv.globalenv prog) stack environment memory (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 31))
+          (input :: lets) (.Eletvar 0) input evaluatesLocal
+      refine ⟨Val.longofwords upperValue input, ?_, ?_⟩
+      · apply eval_expr.eval_Elet lets argument _ input _ evaluates
+        apply eval_expr.eval_Eop (input :: lets) Omakelong _ [upperValue, input]
+        · exact eval_exprlist.cons _ _ _ _ _ evaluatesUpper
+            (eval_exprlist.cons _ _ _ _ _ evaluatesLocal (eval_exprlist.nil _))
+        · rfl
+      · cases input with
+        | Vint integerValue =>
+            have bounded : Int.ltu (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 31)) Int.iwordsize = true := by decide
+            simp only [Val.shr, bounded, if_true] at lessUpper
+            cases lessUpper
+            change Val.lessdef (.Vlong (Int64.repr (Int.signed integerValue)))
+              (.Vlong (Int64.ofwords (Int.shr integerValue
+                (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 31))) integerValue))
+            rw [splitlong_sign_extension]
+            exact Val.lessdef_refl _
+        | _ => exact Val.lessdef_undef _
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+open Lean Elab Tactic
+
+private theorem splitlong_ltu_iff (left right : CCInt) :
+    Int.ltu left right = true ↔ zLt (Int.unsigned left) (Int.unsigned right) := by
+  unfold Int.ltu WordCore.ltu
+  run_tac
+    let environment ← getEnv
+    for suffix in ["Integers.zltSelect", "Integers.sumboolSelect"] do
+      let some (constantName, _) := environment.constants.toList.find?
+          (fun (constantName, _) => (toString constantName).endsWith suffix)
+        | throwError "Integer comparison definition was not found"
+      evalTactic (← `(tactic| unfold $(Lean.mkIdent constantName)))
+  cases CompCert4Lean.Lib.Coqlib.zlt (WordCore.unsigned left) (WordCore.unsigned right) with
+  | left below => exact ⟨fun _ => below, fun _ => rfl⟩
+  | right above =>
+      constructor
+      · intro impossible
+        cases impossible
+      · intro below
+        exact False.elim (_root_.Int.not_lt_of_ge above below)
+
+private theorem splitlong_unsigned_sub (left right : CCInt)
+    (ordered : zLe (Int.unsigned right) (Int.unsigned left)) :
+    Int.unsigned (CompCert4Lean.Lib.Integers.Int.sub left right) =
+      ZArith.BinInt.Z.sub (Int.unsigned left) (Int.unsigned right) := by
+  apply Int.unsigned_repr_proof_api
+  have leftRange := Int.unsigned_range_proof left
+  have rightRange := Int.unsigned_range_proof right
+  change 0 ≤ intOfZ (Int.unsigned left) ∧ intOfZ (Int.unsigned left) < 4294967296 at leftRange
+  change 0 ≤ intOfZ (Int.unsigned right) ∧ intOfZ (Int.unsigned right) < 4294967296 at rightRange
+  change intOfZ (Int.unsigned right) ≤ intOfZ (Int.unsigned left) at ordered
+  change 0 ≤ intOfZ (ZArith.BinInt.Z.sub (Int.unsigned left) (Int.unsigned right)) ∧
+    intOfZ (ZArith.BinInt.Z.sub (Int.unsigned left) (Int.unsigned right)) ≤ 4294967295
+  simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+  omega
+
+theorem eval_shift_imm : eval_shift_immStatement := by
+  intro predicate amount zeroCase smallCase largeCase defaultCase
+    atZero atSmall atLarge atDefault
+  by_cases isZero : intEq amount intZero = true
+  · rw [if_pos isZero]
+    exact atZero (WordCore.ext (of_decide_eq_true isZero))
+  · rw [if_neg isZero]
+    have nonzero : intOfZ (Int.unsigned amount) ≠ 0 := by
+      intro unsignedZero
+      have amountZero : amount = intZero := by
+        apply WordCore.ext
+        apply intOfZ_injective
+        exact unsignedZero
+      subst amount
+      exact isZero (by decide)
+    by_cases small : intLtu amount intIwordsize = true
+    · rw [if_pos small]
+      have smallRange := Int.ltu_iwordsize_inv_proof amount small
+      have numericRange := smallRange
+      change 0 ≤ intOfZ (Int.unsigned amount) ∧ intOfZ (Int.unsigned amount) < 32 at numericRange
+      apply atSmall smallRange small
+      · apply (splitlong_ltu_iff _ _).mpr
+        rw [splitlong_unsigned_sub]
+        · change intOfZ (ZArith.BinInt.Z.sub (Int.unsigned Int.iwordsize)
+            (Int.unsigned amount)) < 32
+          simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+          change 32 - intOfZ (Int.unsigned amount) < 32
+          omega
+        · change intOfZ (Int.unsigned amount) ≤ 32
+          omega
+      · apply (splitlong_ltu_iff _ _).mpr
+        change intOfZ (Int.unsigned amount) < 64
+        omega
+    · rw [if_neg small]
+      by_cases large : intLtu amount int64Iwordsize = true
+      · rw [if_pos large]
+        have upper := (splitlong_ltu_iff _ _).mp large
+        change intOfZ (Int.unsigned amount) < 64 at upper
+        have lower : 32 ≤ intOfZ (Int.unsigned amount) := by
+          apply _root_.Int.le_of_not_gt
+          intro below
+          apply small
+          apply (splitlong_ltu_iff _ _).mpr
+          change intOfZ (Int.unsigned amount) < 32
+          omega
+        apply atLarge ⟨lower, upper⟩
+        apply (splitlong_ltu_iff _ _).mpr
+        rw [splitlong_unsigned_sub]
+        · change intOfZ (ZArith.BinInt.Z.sub (Int.unsigned amount)
+            (Int.unsigned Int.iwordsize)) < 32
+          simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+          change intOfZ (Int.unsigned amount) - 32 < 32
+          omega
+        · exact lower
+      · rw [if_neg large]
+        exact atDefault
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+
+private theorem splitlong_lookup_shl :
+    lookup_builtin_function (ofString "__compcert_i64_shl") sig_li_l =
+      some (.BI_standard .BI_i64_shl) := by
+  have tableExpansion : standard_builtin_table =
+      [ (ofString "__builtin_sel", BI_select Tint)
+      , (ofString "__builtin_sel", BI_select Tlong)
+      , (ofString "__builtin_sel", BI_select Tfloat)
+      , (ofString "__builtin_sel", BI_select Tsingle)
+      , (ofString "__builtin_fabs", BI_fabs)
+      , (ofString "__builtin_fabsf", BI_fabsf)
+      , (ofString "__builtin_fsqrt", BI_fsqrt)
+      , (ofString "__builtin_sqrt", BI_fsqrt)
+      , (ofString "__builtin_negl", BI_negl)
+      , (ofString "__builtin_addl", BI_addl)
+      , (ofString "__builtin_subl", BI_subl)
+      , (ofString "__builtin_mull", BI_mull)
+      , (ofString "__builtin_bswap16", BI_i16_bswap)
+      , (ofString "__builtin_bswap", BI_i32_bswap)
+      , (ofString "__builtin_bswap32", BI_i32_bswap)
+      , (ofString "__builtin_bswap64", BI_i64_bswap)
+      , (ofString "__builtin_unreachable", BI_unreachable)
+      , (ofString "__compcert_i64_umulh", BI_i64_umulh)
+      , (ofString "__compcert_i64_smulh", BI_i64_smulh)
+      , (ofString "__compcert_i64_sdiv", BI_i64_sdiv)
+      , (ofString "__compcert_i64_udiv", BI_i64_udiv)
+      , (ofString "__compcert_i64_smod", BI_i64_smod)
+      , (ofString "__compcert_i64_umod", BI_i64_umod)
+      , (ofString "__compcert_i64_shl", BI_i64_shl) ] ++
+        standard_builtin_table.drop 24 := rfl
+  have distinct : ∀ other : String, other ≠ "__compcert_i64_shl" →
+      ofString "__compcert_i64_shl" ≠ ofString other := by
+    intro other different
+    exact splitlong_ofString_ne (Ne.symm different)
+  unfold lookup_builtin_function
+  rw [tableExpansion]
+  simp only [List.cons_append, List.nil_append]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  have signatureEqual : sig_li_l = standard_builtin_sig BI_i64_shl := rfl
+  rw [splitlong_lookupBuiltin_cons_eq _ _ _ _ _ _ rfl signatureEqual]
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+private theorem splitlong_eval_make
+    {externalCalls : ExternalCalls} {global : genv} {stack : val} {environment : env}
+    {memory : mem} {lets : letenv} {upper lower : expr} {upperValue lowerValue : val}
+    (upperEvaluation : eval_expr externalCalls global stack environment memory lets upper upperValue)
+    (lowerEvaluation : eval_expr externalCalls global stack environment memory lets lower lowerValue) :
+    eval_expr externalCalls global stack environment memory lets
+      (makelong upper lower) (Val.longofwords upperValue lowerValue) := by
+  apply eval_expr.eval_Eop lets Omakelong _ [upperValue, lowerValue]
+  · exact eval_exprlist.cons _ _ _ _ _ upperEvaluation
+      (eval_exprlist.cons _ _ _ _ _ lowerEvaluation (eval_exprlist.nil _))
+  · rfl
+
+theorem eval_shllimm : eval_shllimmStatement := by
+  intro externalCalls prog helpers declared stack environment memory amount
+    lets argument input evaluates
+  unfold shllimm
+  apply eval_shift_imm (fun constructed => ∃ output,
+    eval_expr externalCalls (Genv.globalenv prog) stack environment memory lets constructed output ∧
+      Val.lessdef (Val.shll input (.Vint amount)) output) amount
+  · intro amountZero
+    subst amount
+    refine ⟨input, evaluates, ?_⟩
+    cases input with
+    | Vlong integerValue =>
+        change Val.lessdef (.Vlong (Int64.shl integerValue Int64.zero)) (.Vlong integerValue)
+        rw [Int64.shl_zero_proof]
+        exact Val.lessdef_refl _
+    | _ => exact Val.lessdef_undef _
+  · intro amountRange small complement wide
+    apply eval_splitlong externalCalls prog stack environment memory lets argument _ input
+      (fun original => Val.shll original (.Vint amount))
+    · intro localLets upper lower upperInput lowerInput upperEvaluation lowerEvaluation
+      obtain ⟨shiftedUpper, evaluatesUpper, lessUpper⟩ :=
+        CompCert4Lean.X86.SelectOpproof.eval_shlimm externalCalls (Genv.globalenv prog)
+          stack environment memory amount localLets upper upperInput upperEvaluation
+      obtain ⟨shiftedLower, evaluatesLower, lessLower⟩ :=
+        CompCert4Lean.X86.SelectOpproof.eval_shlimm externalCalls (Genv.globalenv prog)
+          stack environment memory amount localLets lower lowerInput lowerEvaluation
+      obtain ⟨crossed, evaluatesCross, lessCross⟩ :=
+        CompCert4Lean.X86.SelectOpproof.eval_shruimm externalCalls (Genv.globalenv prog)
+          stack environment memory (intSub intIwordsize amount)
+          localLets lower lowerInput lowerEvaluation
+      obtain ⟨combined, evaluatesCombined, lessCombined⟩ :=
+        CompCert4Lean.X86.SelectOpproof.eval_or externalCalls (Genv.globalenv prog)
+          stack environment memory localLets _ shiftedUpper _ crossed evaluatesUpper evaluatesCross
+      refine ⟨Val.longofwords combined shiftedLower,
+        splitlong_eval_make evaluatesCombined evaluatesLower, ?_⟩
+      intro upperWord lowerWord upperEqual lowerEqual
+      subst upperInput
+      subst lowerInput
+      simp only [Val.shl, small, if_true] at lessUpper lessLower
+      simp only [Val.shru, complement, if_true] at lessCross
+      cases lessUpper
+      cases lessLower
+      cases lessCross
+      simp only [Val.or] at lessCombined
+      cases lessCombined
+      simp only [Val.longofwords, Val.shll, wide, if_true]
+      exact congrArg val.Vlong
+        (Int64.decompose_shl_1_proof upperWord lowerWord amount amountRange).symm
+    · cases input <;> simp [Val.shll]
+    · exact evaluates
+  · intro amountRange small
+    obtain ⟨lowerValue, evaluatesLower, lessLower⟩ :=
+      eval_lowlong externalCalls prog stack environment memory lets argument input evaluates
+    obtain ⟨shifted, evaluatesShifted, lessShifted⟩ :=
+      CompCert4Lean.X86.SelectOpproof.eval_shlimm externalCalls (Genv.globalenv prog)
+        stack environment memory (intSub amount intIwordsize) lets _ lowerValue evaluatesLower
+    have evaluatesZero : eval_expr externalCalls (Genv.globalenv prog) stack environment
+        memory lets (.Eop (.Ointconst intZero) .Enil) (.Vint intZero) :=
+      eval_expr.eval_Eop _ _ _ [] _ (eval_exprlist.nil _) rfl
+    refine ⟨Val.longofwords shifted (.Vint intZero),
+      splitlong_eval_make evaluatesShifted evaluatesZero, ?_⟩
+    cases input with
+    | Vlong integerValue =>
+        simp only [Val.loword] at lessLower
+        cases lessLower
+        simp only [Val.shl, small, if_true] at lessShifted
+        cases lessShifted
+        have wide : intLtu amount int64Iwordsize = true :=
+          (splitlong_ltu_iff _ _).mpr amountRange.2
+        have decomposed := Int64.decompose_shl_2_proof
+          (Int64.hiword integerValue) (Int64.loword integerValue) amount amountRange
+        rw [Int64.ofwords_recompose_proof] at decomposed
+        simp only [Val.shll, wide, if_true, Val.longofwords, decomposed]
+        exact Val.lessdef_refl _
+    | _ => exact Val.lessdef_undef _
+  · refine ⟨Val.shll input (.Vint amount), ?_, Val.lessdef_refl _⟩
+    apply eval_helper_2 externalCalls prog stack environment memory
+      (.BI_standard .BI_i64_shl) lets helpers.i64_shl
+      (ofString "__compcert_i64_shl") sig_li_l argument
+      (.Eop (.Ointconst amount) .Enil) input (.Vint amount) _ evaluates
+    · exact eval_expr.eval_Eop _ _ _ [] _ (eval_exprlist.nil _) rfl
+    · exact declared.2.2.2.2.2.2.2.2.2.2.1
+    · exact splitlong_lookup_shl
+    · rfl
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.SplitLong
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_shll : eval_shllStatement := by
+  intro externalCalls prog helpers declared stack environment memory lets
+    left leftValue right rightValue evaluatesLeft evaluatesRight
+  unfold shll
+  cases constant : is_intconst right with
+  | some amount =>
+      simp only [constant]
+      have rightEqual := is_intconst_sound externalCalls prog stack environment
+        memory lets right rightValue amount constant evaluatesRight
+      subst rightValue
+      exact eval_shllimm externalCalls prog helpers declared stack environment
+        memory amount lets left leftValue evaluatesLeft
+  | none =>
+      simp only [constant]
+      refine ⟨Val.shll leftValue rightValue, ?_, Val.lessdef_refl _⟩
+      exact eval_helper_2 externalCalls prog stack environment memory
+        (.BI_standard .BI_i64_shl) lets helpers.i64_shl
+        (ofString "__compcert_i64_shl") sig_li_l left right leftValue rightValue _
+        evaluatesLeft evaluatesRight declared.2.2.2.2.2.2.2.2.2.2.1
+        splitlong_lookup_shl rfl
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+
+private theorem splitlong_lookup_shr :
+    lookup_builtin_function (ofString "__compcert_i64_shr") sig_li_l =
+      some (.BI_standard .BI_i64_shr) := by
+  have tableExpansion : standard_builtin_table =
+      [ (ofString "__builtin_sel", BI_select Tint)
+      , (ofString "__builtin_sel", BI_select Tlong)
+      , (ofString "__builtin_sel", BI_select Tfloat)
+      , (ofString "__builtin_sel", BI_select Tsingle)
+      , (ofString "__builtin_fabs", BI_fabs)
+      , (ofString "__builtin_fabsf", BI_fabsf)
+      , (ofString "__builtin_fsqrt", BI_fsqrt)
+      , (ofString "__builtin_sqrt", BI_fsqrt)
+      , (ofString "__builtin_negl", BI_negl)
+      , (ofString "__builtin_addl", BI_addl)
+      , (ofString "__builtin_subl", BI_subl)
+      , (ofString "__builtin_mull", BI_mull)
+      , (ofString "__builtin_bswap16", BI_i16_bswap)
+      , (ofString "__builtin_bswap", BI_i32_bswap)
+      , (ofString "__builtin_bswap32", BI_i32_bswap)
+      , (ofString "__builtin_bswap64", BI_i64_bswap)
+      , (ofString "__builtin_unreachable", BI_unreachable)
+      , (ofString "__compcert_i64_umulh", BI_i64_umulh)
+      , (ofString "__compcert_i64_smulh", BI_i64_smulh)
+      , (ofString "__compcert_i64_sdiv", BI_i64_sdiv)
+      , (ofString "__compcert_i64_udiv", BI_i64_udiv)
+      , (ofString "__compcert_i64_smod", BI_i64_smod)
+      , (ofString "__compcert_i64_umod", BI_i64_umod)
+      , (ofString "__compcert_i64_shl", BI_i64_shl)
+      , (ofString "__compcert_i64_shr", BI_i64_shr) ] ++
+        standard_builtin_table.drop 25 := rfl
+  have distinct : ∀ other : String, other ≠ "__compcert_i64_shr" →
+      ofString "__compcert_i64_shr" ≠ ofString other := by
+    intro other different
+    exact splitlong_ofString_ne (Ne.symm different)
+  unfold lookup_builtin_function
+  rw [tableExpansion]
+  simp only [List.cons_append, List.nil_append]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  have signatureEqual : sig_li_l = standard_builtin_sig BI_i64_shr := rfl
+  rw [splitlong_lookupBuiltin_cons_eq _ _ _ _ _ _ rfl signatureEqual]
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_shrluimm : eval_shrluimmStatement := by
+  intro externalCalls prog helpers declared stack environment memory amount
+    lets argument input evaluates
+  unfold shrluimm
+  apply eval_shift_imm (fun constructed => ∃ output,
+    eval_expr externalCalls (Genv.globalenv prog) stack environment memory lets constructed output ∧
+      Val.lessdef (Val.shrlu input (.Vint amount)) output) amount
+  · intro amountZero
+    subst amount
+    refine ⟨input, evaluates, ?_⟩
+    cases input with
+    | Vlong integerValue =>
+        change Val.lessdef (.Vlong (Int64.shru integerValue Int64.zero)) (.Vlong integerValue)
+        rw [Int64.shru_zero_proof]
+        exact Val.lessdef_refl _
+    | _ => exact Val.lessdef_undef _
+  · intro amountRange small complement wide
+    apply eval_splitlong externalCalls prog stack environment memory lets argument _ input
+      (fun original => Val.shrlu original (.Vint amount))
+    · intro localLets upper lower upperInput lowerInput upperEvaluation lowerEvaluation
+      obtain ⟨shiftedUpper, evaluatesUpper, lessUpper⟩ :=
+        CompCert4Lean.X86.SelectOpproof.eval_shruimm externalCalls (Genv.globalenv prog)
+          stack environment memory amount localLets upper upperInput upperEvaluation
+      obtain ⟨shiftedLower, evaluatesLower, lessLower⟩ :=
+        CompCert4Lean.X86.SelectOpproof.eval_shruimm externalCalls (Genv.globalenv prog)
+          stack environment memory amount localLets lower lowerInput lowerEvaluation
+      obtain ⟨crossed, evaluatesCross, lessCross⟩ :=
+        CompCert4Lean.X86.SelectOpproof.eval_shlimm externalCalls (Genv.globalenv prog)
+          stack environment memory (intSub intIwordsize amount)
+          localLets upper upperInput upperEvaluation
+      obtain ⟨combined, evaluatesCombined, lessCombined⟩ :=
+        CompCert4Lean.X86.SelectOpproof.eval_or externalCalls (Genv.globalenv prog)
+          stack environment memory localLets _ shiftedLower _ crossed evaluatesLower evaluatesCross
+      refine ⟨Val.longofwords shiftedUpper combined,
+        splitlong_eval_make evaluatesUpper evaluatesCombined, ?_⟩
+      intro upperWord lowerWord upperEqual lowerEqual
+      subst upperInput
+      subst lowerInput
+      simp only [Val.shru, small, if_true] at lessUpper lessLower
+      simp only [Val.shl, complement, if_true] at lessCross
+      cases lessUpper
+      cases lessLower
+      cases lessCross
+      simp only [Val.or] at lessCombined
+      cases lessCombined
+      simp only [Val.longofwords, Val.shrlu, wide, if_true]
+      exact congrArg val.Vlong
+        (Int64.decompose_shru_1_proof upperWord lowerWord amount amountRange).symm
+    · cases input <;> simp [Val.shrlu]
+    · exact evaluates
+  · intro amountRange small
+    obtain ⟨upperValue, evaluatesUpper, lessUpper⟩ :=
+      eval_highlong externalCalls prog stack environment memory lets argument input evaluates
+    obtain ⟨shifted, evaluatesShifted, lessShifted⟩ :=
+      CompCert4Lean.X86.SelectOpproof.eval_shruimm externalCalls (Genv.globalenv prog)
+        stack environment memory (intSub amount intIwordsize) lets _ upperValue evaluatesUpper
+    have evaluatesZero : eval_expr externalCalls (Genv.globalenv prog) stack environment
+        memory lets (.Eop (.Ointconst intZero) .Enil) (.Vint intZero) :=
+      eval_expr.eval_Eop _ _ _ [] _ (eval_exprlist.nil _) rfl
+    refine ⟨Val.longofwords (.Vint intZero) shifted,
+      splitlong_eval_make evaluatesZero evaluatesShifted, ?_⟩
+    cases input with
+    | Vlong integerValue =>
+        simp only [Val.hiword] at lessUpper
+        cases lessUpper
+        simp only [Val.shru, small, if_true] at lessShifted
+        cases lessShifted
+        have wide : intLtu amount int64Iwordsize = true :=
+          (splitlong_ltu_iff _ _).mpr amountRange.2
+        have decomposed := Int64.decompose_shru_2_proof
+          (Int64.hiword integerValue) (Int64.loword integerValue) amount amountRange
+        rw [Int64.ofwords_recompose_proof] at decomposed
+        simp only [Val.shrlu, wide, if_true, Val.longofwords, decomposed]
+        exact Val.lessdef_refl _
+    | _ => exact Val.lessdef_undef _
+  · refine ⟨Val.shrlu input (.Vint amount), ?_, Val.lessdef_refl _⟩
+    apply eval_helper_2 externalCalls prog stack environment memory
+      (.BI_standard .BI_i64_shr) lets helpers.i64_shr
+      (ofString "__compcert_i64_shr") sig_li_l argument
+      (.Eop (.Ointconst amount) .Enil) input (.Vint amount) _ evaluates
+    · exact eval_expr.eval_Eop _ _ _ [] _ (eval_exprlist.nil _) rfl
+    · exact declared.2.2.2.2.2.2.2.2.2.2.2.1
+    · exact splitlong_lookup_shr
+    · rfl
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.SplitLong
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_shrlu : eval_shrluStatement := by
+  intro externalCalls prog helpers declared stack environment memory lets
+    left leftValue right rightValue evaluatesLeft evaluatesRight
+  unfold shrlu
+  cases constant : is_intconst right with
+  | some amount =>
+      simp only [constant]
+      have rightEqual := is_intconst_sound externalCalls prog stack environment
+        memory lets right rightValue amount constant evaluatesRight
+      subst rightValue
+      exact eval_shrluimm externalCalls prog helpers declared stack environment
+        memory amount lets left leftValue evaluatesLeft
+  | none =>
+      simp only [constant]
+      refine ⟨Val.shrlu leftValue rightValue, ?_, Val.lessdef_refl _⟩
+      exact eval_helper_2 externalCalls prog stack environment memory
+        (.BI_standard .BI_i64_shr) lets helpers.i64_shr
+        (ofString "__compcert_i64_shr") sig_li_l left right leftValue rightValue _
+        evaluatesLeft evaluatesRight declared.2.2.2.2.2.2.2.2.2.2.2.1
+        splitlong_lookup_shr rfl
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+
+private theorem splitlong_lookup_sar :
+    lookup_builtin_function (ofString "__compcert_i64_sar") sig_li_l =
+      some (.BI_standard .BI_i64_sar) := by
+  have tableExpansion : standard_builtin_table =
+      [ (ofString "__builtin_sel", BI_select Tint)
+      , (ofString "__builtin_sel", BI_select Tlong)
+      , (ofString "__builtin_sel", BI_select Tfloat)
+      , (ofString "__builtin_sel", BI_select Tsingle)
+      , (ofString "__builtin_fabs", BI_fabs)
+      , (ofString "__builtin_fabsf", BI_fabsf)
+      , (ofString "__builtin_fsqrt", BI_fsqrt)
+      , (ofString "__builtin_sqrt", BI_fsqrt)
+      , (ofString "__builtin_negl", BI_negl)
+      , (ofString "__builtin_addl", BI_addl)
+      , (ofString "__builtin_subl", BI_subl)
+      , (ofString "__builtin_mull", BI_mull)
+      , (ofString "__builtin_bswap16", BI_i16_bswap)
+      , (ofString "__builtin_bswap", BI_i32_bswap)
+      , (ofString "__builtin_bswap32", BI_i32_bswap)
+      , (ofString "__builtin_bswap64", BI_i64_bswap)
+      , (ofString "__builtin_unreachable", BI_unreachable)
+      , (ofString "__compcert_i64_umulh", BI_i64_umulh)
+      , (ofString "__compcert_i64_smulh", BI_i64_smulh)
+      , (ofString "__compcert_i64_sdiv", BI_i64_sdiv)
+      , (ofString "__compcert_i64_udiv", BI_i64_udiv)
+      , (ofString "__compcert_i64_smod", BI_i64_smod)
+      , (ofString "__compcert_i64_umod", BI_i64_umod)
+      , (ofString "__compcert_i64_shl", BI_i64_shl)
+      , (ofString "__compcert_i64_shr", BI_i64_shr)
+      , (ofString "__compcert_i64_sar", BI_i64_sar) ] ++
+        standard_builtin_table.drop 26 := rfl
+  have distinct : ∀ other : String, other ≠ "__compcert_i64_sar" →
+      ofString "__compcert_i64_sar" ≠ ofString other := by
+    intro other different
+    exact splitlong_ofString_ne (Ne.symm different)
+  unfold lookup_builtin_function
+  rw [tableExpansion]
+  simp only [List.cons_append, List.nil_append]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  have signatureEqual : sig_li_l = standard_builtin_sig BI_i64_sar := rfl
+  rw [splitlong_lookupBuiltin_cons_eq _ _ _ _ _ _ rfl signatureEqual]
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_shrlimm : eval_shrlimmStatement := by
+  intro externalCalls prog helpers declared stack environment memory amount
+    lets argument input evaluates
+  unfold shrlimm
+  apply eval_shift_imm (fun constructed => ∃ output,
+    eval_expr externalCalls (Genv.globalenv prog) stack environment memory lets constructed output ∧
+      Val.lessdef (Val.shrl input (.Vint amount)) output) amount
+  · intro amountZero
+    subst amount
+    refine ⟨input, evaluates, ?_⟩
+    cases input with
+    | Vlong integerValue =>
+        change Val.lessdef (.Vlong (Int64.shr integerValue Int64.zero)) (.Vlong integerValue)
+        rw [Int64.shr_zero_proof]
+        exact Val.lessdef_refl _
+    | _ => exact Val.lessdef_undef _
+  · intro amountRange small complement wide
+    apply eval_splitlong externalCalls prog stack environment memory lets argument _ input
+      (fun original => Val.shrl original (.Vint amount))
+    · intro localLets upper lower upperInput lowerInput upperEvaluation lowerEvaluation
+      obtain ⟨shiftedUpper, evaluatesUpper, lessUpper⟩ :=
+        CompCert4Lean.X86.SelectOpproof.eval_shrimm externalCalls (Genv.globalenv prog)
+          stack environment memory amount localLets upper upperInput upperEvaluation
+      obtain ⟨shiftedLower, evaluatesLower, lessLower⟩ :=
+        CompCert4Lean.X86.SelectOpproof.eval_shruimm externalCalls (Genv.globalenv prog)
+          stack environment memory amount localLets lower lowerInput lowerEvaluation
+      obtain ⟨crossed, evaluatesCross, lessCross⟩ :=
+        CompCert4Lean.X86.SelectOpproof.eval_shlimm externalCalls (Genv.globalenv prog)
+          stack environment memory (intSub intIwordsize amount)
+          localLets upper upperInput upperEvaluation
+      obtain ⟨combined, evaluatesCombined, lessCombined⟩ :=
+        CompCert4Lean.X86.SelectOpproof.eval_or externalCalls (Genv.globalenv prog)
+          stack environment memory localLets _ shiftedLower _ crossed evaluatesLower evaluatesCross
+      refine ⟨Val.longofwords shiftedUpper combined,
+        splitlong_eval_make evaluatesUpper evaluatesCombined, ?_⟩
+      intro upperWord lowerWord upperEqual lowerEqual
+      subst upperInput
+      subst lowerInput
+      simp only [Val.shr, small, if_true] at lessUpper
+      simp only [Val.shru, small, if_true] at lessLower
+      simp only [Val.shl, complement, if_true] at lessCross
+      cases lessUpper
+      cases lessLower
+      cases lessCross
+      simp only [Val.or] at lessCombined
+      cases lessCombined
+      simp only [Val.longofwords, Val.shrl, wide, if_true]
+      exact congrArg val.Vlong
+        (Int64.decompose_shr_1_proof upperWord lowerWord amount amountRange).symm
+    · cases input <;> simp [Val.shrl]
+    · exact evaluates
+  · intro amountRange small
+    obtain ⟨upperValue, evaluatesUpper, lessUpper⟩ :=
+      eval_highlong externalCalls prog stack environment memory lets argument input evaluates
+    have evaluatesLocal : eval_expr externalCalls (Genv.globalenv prog) stack environment
+        memory (upperValue :: lets) (.Eletvar 0) upperValue :=
+      eval_expr.eval_Eletvar _ _ _ rfl
+    obtain ⟨signValue, evaluatesSign, lessSign⟩ :=
+      CompCert4Lean.X86.SelectOpproof.eval_shrimm externalCalls (Genv.globalenv prog)
+        stack environment memory (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 31))
+        (upperValue :: lets) (.Eletvar 0) upperValue evaluatesLocal
+    obtain ⟨shifted, evaluatesShifted, lessShifted⟩ :=
+      CompCert4Lean.X86.SelectOpproof.eval_shrimm externalCalls (Genv.globalenv prog)
+        stack environment memory (intSub amount intIwordsize)
+        (upperValue :: lets) (.Eletvar 0) upperValue evaluatesLocal
+    refine ⟨Val.longofwords signValue shifted, ?_, ?_⟩
+    · exact eval_expr.eval_Elet lets _ _ upperValue _ evaluatesUpper
+        (splitlong_eval_make evaluatesSign evaluatesShifted)
+    · cases input with
+      | Vlong integerValue =>
+          simp only [Val.hiword] at lessUpper
+          cases lessUpper
+          have signBound : intLtu (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 31))
+              intIwordsize = true := by decide
+          simp only [Val.shr, small, if_true] at lessShifted
+          simp only [Val.shr, signBound, if_true] at lessSign
+          cases lessShifted
+          cases lessSign
+          have wide : intLtu amount int64Iwordsize = true :=
+            (splitlong_ltu_iff _ _).mpr amountRange.2
+          have decomposed := Int64.decompose_shr_2_proof
+            (Int64.hiword integerValue) (Int64.loword integerValue) amount amountRange
+          rw [Int64.ofwords_recompose_proof] at decomposed
+          have resultEqual : Int64.shr' integerValue amount =
+              Int64.ofwords
+                (Int.shr (Int64.hiword integerValue)
+                  (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 31)))
+                (Int.shr (Int64.hiword integerValue) (intSub amount intIwordsize)) := decomposed
+          simp only [Val.shrl, wide, if_true, Val.longofwords, resultEqual]
+          exact Val.lessdef_refl _
+      | _ => exact Val.lessdef_undef _
+  · refine ⟨Val.shrl input (.Vint amount), ?_, Val.lessdef_refl _⟩
+    apply eval_helper_2 externalCalls prog stack environment memory
+      (.BI_standard .BI_i64_sar) lets helpers.i64_sar
+      (ofString "__compcert_i64_sar") sig_li_l argument
+      (.Eop (.Ointconst amount) .Enil) input (.Vint amount) _ evaluates
+    · exact eval_expr.eval_Eop _ _ _ [] _ (eval_exprlist.nil _) rfl
+    · exact declared.2.2.2.2.2.2.2.2.2.2.2.2.1
+    · exact splitlong_lookup_sar
+    · rfl
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.SplitLong
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_shrl : eval_shrlStatement := by
+  intro externalCalls prog helpers declared stack environment memory lets
+    left leftValue right rightValue evaluatesLeft evaluatesRight
+  unfold shrl
+  cases constant : is_intconst right with
+  | some amount =>
+      simp only [constant]
+      have rightEqual := is_intconst_sound externalCalls prog stack environment
+        memory lets right rightValue amount constant evaluatesRight
+      subst rightValue
+      exact eval_shrlimm externalCalls prog helpers declared stack environment
+        memory amount lets left leftValue evaluatesLeft
+  | none =>
+      simp only [constant]
+      refine ⟨Val.shrl leftValue rightValue, ?_, Val.lessdef_refl _⟩
+      exact eval_helper_2 externalCalls prog stack environment memory
+        (.BI_standard .BI_i64_sar) lets helpers.i64_sar
+        (ofString "__compcert_i64_sar") sig_li_l left right leftValue rightValue _
+        evaluatesLeft evaluatesRight declared.2.2.2.2.2.2.2.2.2.2.2.2.1
+        splitlong_lookup_sar rfl
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+
+private theorem splitlong_lookup_mull :
+    lookup_builtin_function (ofString "__builtin_mull") sig_ii_l =
+      some (.BI_standard .BI_mull) := by
+  have tableExpansion : standard_builtin_table =
+      [ (ofString "__builtin_sel", BI_select Tint)
+      , (ofString "__builtin_sel", BI_select Tlong)
+      , (ofString "__builtin_sel", BI_select Tfloat)
+      , (ofString "__builtin_sel", BI_select Tsingle)
+      , (ofString "__builtin_fabs", BI_fabs)
+      , (ofString "__builtin_fabsf", BI_fabsf)
+      , (ofString "__builtin_fsqrt", BI_fsqrt)
+      , (ofString "__builtin_sqrt", BI_fsqrt)
+      , (ofString "__builtin_negl", BI_negl)
+      , (ofString "__builtin_addl", BI_addl)
+      , (ofString "__builtin_subl", BI_subl)
+      , (ofString "__builtin_mull", BI_mull) ] ++
+        standard_builtin_table.drop 12 := rfl
+  have distinct : ∀ other : String, other ≠ "__builtin_mull" →
+      ofString "__builtin_mull" ≠ ofString other := by
+    intro other different
+    exact splitlong_ofString_ne (Ne.symm different)
+  unfold lookup_builtin_function
+  rw [tableExpansion]
+  simp only [List.cons_append, List.nil_append]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  have signatureEqual : sig_ii_l = standard_builtin_sig BI_mull := rfl
+  rw [splitlong_lookupBuiltin_cons_eq _ _ _ _ _ _ rfl signatureEqual]
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_mull_base : eval_mull_baseStatement := by
+  intro externalCalls prog stack environment memory lets
+    left leftValue right rightValue evaluatesLeft evaluatesRight
+  unfold mull_base
+  apply eval_splitlong2 externalCalls prog stack environment memory lets left right _
+    leftValue rightValue Val.mull
+  · intro localLets leftUpper leftLower rightUpper rightLower
+      leftUpperValue leftLowerValue rightUpperValue rightLowerValue
+      evaluatesLeftUpper evaluatesLeftLower evaluatesRightUpper evaluatesRightLower
+    let product := Val.mull' leftLowerValue rightLowerValue
+    have evaluatesProduct : eval_expr externalCalls (Genv.globalenv prog) stack environment
+        memory localLets
+        (.Ebuiltin (.EF_builtin (ofString "__builtin_mull") sig_ii_l)
+          (.Econs leftLower (.Econs rightLower .Enil))) product :=
+      eval_builtin_2 externalCalls prog stack environment memory
+        (.BI_standard .BI_mull) localLets (ofString "__builtin_mull") sig_ii_l
+        leftLower rightLower leftLowerValue rightLowerValue product
+        evaluatesLeftLower evaluatesRightLower splitlong_lookup_mull rfl
+    have evaluatesLow := splitlong_eval_low_local externalCalls (Genv.globalenv prog)
+      stack environment memory localLets product
+    have evaluatesHigh := splitlong_eval_high_local externalCalls (Genv.globalenv prog)
+      stack environment memory localLets product
+    obtain ⟨firstCross, evaluatesFirstCross, lessFirstCross⟩ :=
+      CompCert4Lean.X86.SelectOpproof.eval_mul externalCalls (Genv.globalenv prog)
+        stack environment memory (product :: localLets)
+        (lift leftLower) leftLowerValue (lift rightUpper) rightUpperValue
+        (eval_lift externalCalls (Genv.globalenv prog) stack environment memory
+          localLets leftLower leftLowerValue product evaluatesLeftLower)
+        (eval_lift externalCalls (Genv.globalenv prog) stack environment memory
+          localLets rightUpper rightUpperValue product evaluatesRightUpper)
+    obtain ⟨secondCross, evaluatesSecondCross, lessSecondCross⟩ :=
+      CompCert4Lean.X86.SelectOpproof.eval_mul externalCalls (Genv.globalenv prog)
+        stack environment memory (product :: localLets)
+        (lift leftUpper) leftUpperValue (lift rightLower) rightLowerValue
+        (eval_lift externalCalls (Genv.globalenv prog) stack environment memory
+          localLets leftUpper leftUpperValue product evaluatesLeftUpper)
+        (eval_lift externalCalls (Genv.globalenv prog) stack environment memory
+          localLets rightLower rightLowerValue product evaluatesRightLower)
+    obtain ⟨firstSum, evaluatesFirstSum, lessFirstSum⟩ :=
+      CompCert4Lean.X86.SelectOpproof.eval_add externalCalls (Genv.globalenv prog)
+        stack environment memory (product :: localLets) _ (Val.hiword product)
+        _ firstCross evaluatesHigh evaluatesFirstCross
+    obtain ⟨secondSum, evaluatesSecondSum, lessSecondSum⟩ :=
+      CompCert4Lean.X86.SelectOpproof.eval_add externalCalls (Genv.globalenv prog)
+        stack environment memory (product :: localLets) _ firstSum
+        _ secondCross evaluatesFirstSum evaluatesSecondCross
+    refine ⟨Val.longofwords secondSum (Val.loword product), ?_, ?_⟩
+    · exact eval_expr.eval_Elet localLets _ _ product _ evaluatesProduct
+        (splitlong_eval_make evaluatesSecondSum evaluatesLow)
+    · intro leftHighWord leftLowWord rightHighWord rightLowWord
+        leftHighEqual leftLowEqual rightHighEqual rightLowEqual
+      subst leftUpperValue
+      subst leftLowerValue
+      subst rightUpperValue
+      subst rightLowerValue
+      simp only [Val.mul] at lessFirstCross lessSecondCross
+      cases lessFirstCross
+      cases lessSecondCross
+      simp only [product, Val.mull', Val.hiword, Val.add] at lessFirstSum
+      cases lessFirstSum
+      simp only [Val.add] at lessSecondSum
+      cases lessSecondSum
+      simp only [product, Val.mull', Val.loword, Val.longofwords, Val.mull]
+      exact congrArg val.Vlong
+        (Int64.decompose_mul_proof leftHighWord leftLowWord rightHighWord rightLowWord).symm
+  · cases leftValue <;> cases rightValue <;> simp [Val.mull]
+  · exact evaluatesLeft
+  · exact evaluatesRight
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.Lib.Integers
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_mullimm : eval_mullimmStatement := by
+  intro externalCalls prog helpers declared stack environment memory multiplier
+    lets argument input evaluates
+  unfold mullimm
+  by_cases zeroMultiplier : int64Eq multiplier Int64.zero = true
+  · rw [if_pos zeroMultiplier]
+    have multiplierEqual : multiplier = Int64.zero :=
+      WordCore.ext (of_decide_eq_true zeroMultiplier)
+    subst multiplier
+    refine ⟨.Vlong Int64.zero,
+      eval_longconst externalCalls prog stack environment memory lets _, ?_⟩
+    cases input with
+    | Vlong integerValue =>
+        change Val.lessdef (.Vlong (CompCert4Lean.Lib.Integers.Int64.mul integerValue Int64.zero)) (.Vlong Int64.zero)
+        rw [Int64.mul_zero_proof]
+        exact Val.lessdef_refl _
+    | _ => exact Val.lessdef_undef _
+  · rw [if_neg zeroMultiplier]
+    by_cases oneMultiplier : int64Eq multiplier Int64.one = true
+    · rw [if_pos oneMultiplier]
+      have multiplierEqual : multiplier = Int64.one :=
+        WordCore.ext (of_decide_eq_true oneMultiplier)
+      subst multiplier
+      refine ⟨input, evaluates, ?_⟩
+      cases input with
+      | Vlong integerValue =>
+          change Val.lessdef (.Vlong (CompCert4Lean.Lib.Integers.Int64.mul integerValue Int64.one)) (.Vlong integerValue)
+          rw [Int64.mul_one_proof]
+          exact Val.lessdef_refl _
+      | _ => exact Val.lessdef_undef _
+    · rw [if_neg oneMultiplier]
+      cases power : Int64.is_power2' multiplier with
+      | some amount =>
+          simp only [power]
+          obtain ⟨output, evaluatesOutput, lessOutput⟩ :=
+            eval_shllimm externalCalls prog helpers declared stack environment memory amount
+              lets argument input evaluates
+          refine ⟨output, evaluatesOutput, ?_⟩
+          cases input with
+          | Vlong integerValue =>
+              have inRange := Int64.is_power2'_range_proof multiplier amount power
+              simp only [Val.shll, inRange, if_true] at lessOutput
+              change Val.lessdef (.Vlong (CompCert4Lean.Lib.Integers.Int64.mul integerValue multiplier)) output
+              rw [Int64.mul_pow2'_proof _ _ _ power]
+              exact lessOutput
+          | _ => exact Val.lessdef_undef _
+      | none =>
+          simp only [power]
+          exact eval_mull_base externalCalls prog stack environment memory lets
+            argument input (longconst multiplier) (.Vlong multiplier) evaluates
+            (eval_longconst externalCalls prog stack environment memory lets multiplier)
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.Lib.Integers
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_mull : eval_mullStatement := by
+  intro externalCalls prog helpers declared stack environment memory lets
+    left leftValue right rightValue evaluatesLeft evaluatesRight
+  unfold mull
+  cases leftConstant : is_longconst left with
+  | some leftInteger =>
+      have leftEqual := is_longconst_sound externalCalls prog stack environment
+        memory lets left leftValue leftInteger leftConstant evaluatesLeft
+      subst leftValue
+      cases rightConstant : is_longconst right with
+      | some rightInteger =>
+          simp only [leftConstant, rightConstant]
+          have rightEqual := is_longconst_sound externalCalls prog stack environment
+            memory lets right rightValue rightInteger rightConstant evaluatesRight
+          subst rightValue
+          exact ⟨.Vlong (CompCert4Lean.Lib.Integers.Int64.mul leftInteger rightInteger),
+            eval_longconst externalCalls prog stack environment memory lets _,
+            Val.lessdef_refl _⟩
+      | none =>
+          simp only [leftConstant, rightConstant]
+          have commute : Val.mull (.Vlong leftInteger) rightValue =
+              Val.mull rightValue (.Vlong leftInteger) := by
+            cases rightValue <;> simp only [Val.mull]
+            exact congrArg val.Vlong (Int64.mul_commut_proof _ _)
+          rw [commute]
+          exact eval_mullimm externalCalls prog helpers declared stack environment
+            memory leftInteger lets right rightValue evaluatesRight
+  | none =>
+      cases rightConstant : is_longconst right with
+      | some rightInteger =>
+          simp only [leftConstant, rightConstant]
+          have rightEqual := is_longconst_sound externalCalls prog stack environment
+            memory lets right rightValue rightInteger rightConstant evaluatesRight
+          subst rightValue
+          exact eval_mullimm externalCalls prog helpers declared stack environment
+            memory rightInteger lets left leftValue evaluatesLeft
+      | none =>
+          simp only [leftConstant, rightConstant]
+          exact eval_mull_base externalCalls prog stack environment memory lets
+            left leftValue right rightValue evaluatesLeft evaluatesRight
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.SplitLong
+
+private theorem splitlong_lookup_umulh :
+    lookup_builtin_function (ofString "__compcert_i64_umulh") sig_ll_l =
+      some (.BI_standard .BI_i64_umulh) := by
+  have tableExpansion : standard_builtin_table =
+      [ (ofString "__builtin_sel", BI_select Tint)
+      , (ofString "__builtin_sel", BI_select Tlong)
+      , (ofString "__builtin_sel", BI_select Tfloat)
+      , (ofString "__builtin_sel", BI_select Tsingle)
+      , (ofString "__builtin_fabs", BI_fabs)
+      , (ofString "__builtin_fabsf", BI_fabsf)
+      , (ofString "__builtin_fsqrt", BI_fsqrt)
+      , (ofString "__builtin_sqrt", BI_fsqrt)
+      , (ofString "__builtin_negl", BI_negl)
+      , (ofString "__builtin_addl", BI_addl)
+      , (ofString "__builtin_subl", BI_subl)
+      , (ofString "__builtin_mull", BI_mull)
+      , (ofString "__builtin_bswap16", BI_i16_bswap)
+      , (ofString "__builtin_bswap", BI_i32_bswap)
+      , (ofString "__builtin_bswap32", BI_i32_bswap)
+      , (ofString "__builtin_bswap64", BI_i64_bswap)
+      , (ofString "__builtin_unreachable", BI_unreachable)
+      , (ofString "__compcert_i64_umulh", BI_i64_umulh) ] ++
+        standard_builtin_table.drop 18 := rfl
+  have distinct : ∀ other : String, other ≠ "__compcert_i64_umulh" →
+      ofString "__compcert_i64_umulh" ≠ ofString other := by
+    intro other different
+    exact splitlong_ofString_ne (Ne.symm different)
+  unfold lookup_builtin_function
+  rw [tableExpansion]
+  simp only [List.cons_append, List.nil_append]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  have signatureEqual : sig_ll_l = standard_builtin_sig BI_i64_umulh := rfl
+  rw [splitlong_lookupBuiltin_cons_eq _ _ _ _ _ _ rfl signatureEqual]
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_mullhu : eval_mullhuStatement := by
+  intro externalCalls prog helpers declared stack environment memory multiplier
+    lets argument input evaluates
+  refine ⟨Val.mullhu input (.Vlong multiplier), ?_, Val.lessdef_refl _⟩
+  exact eval_helper_2 externalCalls prog stack environment memory
+    (.BI_standard .BI_i64_umulh) lets helpers.i64_umulh
+    (ofString "__compcert_i64_umulh") sig_ll_l argument (longconst multiplier)
+    input (.Vlong multiplier) _ evaluates
+    (eval_longconst externalCalls prog stack environment memory lets multiplier)
+    declared.2.2.2.2.2.2.2.2.2.2.2.2.2.1 splitlong_lookup_umulh
+    (by cases input <;> rfl)
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.SplitLong
+
+private theorem splitlong_lookup_smulh :
+    lookup_builtin_function (ofString "__compcert_i64_smulh") sig_ll_l =
+      some (.BI_standard .BI_i64_smulh) := by
+  have tableExpansion : standard_builtin_table =
+      [ (ofString "__builtin_sel", BI_select Tint)
+      , (ofString "__builtin_sel", BI_select Tlong)
+      , (ofString "__builtin_sel", BI_select Tfloat)
+      , (ofString "__builtin_sel", BI_select Tsingle)
+      , (ofString "__builtin_fabs", BI_fabs)
+      , (ofString "__builtin_fabsf", BI_fabsf)
+      , (ofString "__builtin_fsqrt", BI_fsqrt)
+      , (ofString "__builtin_sqrt", BI_fsqrt)
+      , (ofString "__builtin_negl", BI_negl)
+      , (ofString "__builtin_addl", BI_addl)
+      , (ofString "__builtin_subl", BI_subl)
+      , (ofString "__builtin_mull", BI_mull)
+      , (ofString "__builtin_bswap16", BI_i16_bswap)
+      , (ofString "__builtin_bswap", BI_i32_bswap)
+      , (ofString "__builtin_bswap32", BI_i32_bswap)
+      , (ofString "__builtin_bswap64", BI_i64_bswap)
+      , (ofString "__builtin_unreachable", BI_unreachable)
+      , (ofString "__compcert_i64_umulh", BI_i64_umulh)
+      , (ofString "__compcert_i64_smulh", BI_i64_smulh) ] ++
+        standard_builtin_table.drop 19 := rfl
+  have distinct : ∀ other : String, other ≠ "__compcert_i64_smulh" →
+      ofString "__compcert_i64_smulh" ≠ ofString other := by
+    intro other different
+    exact splitlong_ofString_ne (Ne.symm different)
+  unfold lookup_builtin_function
+  rw [tableExpansion]
+  simp only [List.cons_append, List.nil_append]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  rw [splitlong_lookupBuiltin_cons_ne _ _ _ _ _ _ (distinct _ (by decide))]
+  have signatureEqual : sig_ll_l = standard_builtin_sig BI_i64_smulh := rfl
+  rw [splitlong_lookupBuiltin_cons_eq _ _ _ _ _ _ rfl signatureEqual]
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_mullhs : eval_mullhsStatement := by
+  intro externalCalls prog helpers declared stack environment memory multiplier
+    lets argument input evaluates
+  refine ⟨Val.mullhs input (.Vlong multiplier), ?_, Val.lessdef_refl _⟩
+  exact eval_helper_2 externalCalls prog stack environment memory
+    (.BI_standard .BI_i64_smulh) lets helpers.i64_smulh
+    (ofString "__compcert_i64_smulh") sig_ll_l argument (longconst multiplier)
+    input (.Vlong multiplier) _ evaluates
+    (eval_longconst externalCalls prog stack environment memory lets multiplier)
+    declared.2.2.2.2.2.2.2.2.2.2.2.2.2.2 splitlong_lookup_smulh
+    (by cases input <;> rfl)
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_cmplu_gen : eval_cmplu_genStatement := by
+  intro externalCalls prog stack environment memory highComparison lowComparison
+    left right lets leftInteger rightInteger evaluatesLeft evaluatesRight
+  unfold cmplu_gen
+  apply eval_splitlong2_strict externalCalls prog stack environment memory lets left right _
+    leftInteger rightInteger _ evaluatesLeft evaluatesRight
+  intro localLets leftUpper leftLower rightUpper rightLower
+    evaluatesLeftUpper evaluatesLeftLower evaluatesRightUpper evaluatesRightLower
+  have upperArguments := eval_exprlist.cons localLets leftUpper (.Econs rightUpper .Enil)
+    _ _ evaluatesLeftUpper (eval_exprlist.cons localLets rightUpper .Enil _ []
+      evaluatesRightUpper (eval_exprlist.nil localLets))
+  have lowerArguments := eval_exprlist.cons localLets leftLower (.Econs rightLower .Enil)
+    _ _ evaluatesLeftLower (eval_exprlist.cons localLets rightLower .Enil _ []
+      evaluatesRightLower (eval_exprlist.nil localLets))
+  have testUpper : eval_condexpr externalCalls (Genv.globalenv prog) stack environment
+      memory localLets (.CEcond (.Ccomp .Ceq) (.Econs leftUpper (.Econs rightUpper .Enil)))
+      (intEq (int64Hiword leftInteger) (int64Hiword rightInteger)) :=
+    eval_condexpr.condition _ _ _ _ _ upperArguments rfl
+  apply eval_expr.eval_Econdition localLets _ _ _
+    (intEq (int64Hiword leftInteger) (int64Hiword rightInteger)) _ testUpper
+  cases upperEqual : intEq (int64Hiword leftInteger) (int64Hiword rightInteger) with
+  | true =>
+      simp only [upperEqual, if_true]
+      apply eval_expr.eval_Eop localLets (.Ocmp (.Ccompu lowComparison)) _ _ _ lowerArguments
+      change some (Val.of_optbool (Val.cmpu_bool (Mem.valid_pointer memory) lowComparison
+        (.Vint (int64Loword leftInteger)) (.Vint (int64Loword rightInteger)))) = _
+      cases compared : Int.cmpu lowComparison (int64Loword leftInteger) (int64Loword rightInteger) <;>
+        simp [Val.cmpu_bool, Val.of_optbool, Val.of_bool, compared]
+  | false =>
+      simp only [upperEqual, Bool.false_eq_true, if_false]
+      apply eval_expr.eval_Eop localLets (.Ocmp (.Ccompu highComparison)) _ _ _ upperArguments
+      change some (Val.of_optbool (Val.cmpu_bool (Mem.valid_pointer memory) highComparison
+        (.Vint (int64Hiword leftInteger)) (.Vint (int64Hiword rightInteger)))) = _
+      cases compared : Int.cmpu highComparison (int64Hiword leftInteger) (int64Hiword rightInteger) <;>
+        simp [Val.cmpu_bool, Val.of_optbool, Val.of_bool, compared]
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Lib.Integers
+
+theorem decompose_cmpl_lt_zero : decompose_cmpl_lt_zeroStatement := by
+  intro upper lower
+  have signBit : Int64.shru' (Int64.ofwords upper lower)
+      (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 63)) =
+      (if int64Lt (Int64.ofwords upper lower) Int64.zero then Int64.one else Int64.zero) :=
+    Int64.shru_lt_zero_proof (Int64.ofwords upper lower)
+  have amountRange : zLe Int.zwordsize
+      (Int.unsigned (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 63))) ∧
+      zLt (Int.unsigned (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 63)))
+        Int64.zwordsize := by
+    change (32 : _root_.Int) ≤ 63 ∧ (63 : _root_.Int) < 64
+    omega
+  rw [Int64.decompose_shru_2_proof _ _ _ amountRange] at signBit
+  have upperSign : Int.shru upper (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 31)) =
+      (if intLt upper Int.zero then Int.one else Int.zero) := Int.shru_lt_zero_proof upper
+  change Int64.ofwords Int.zero
+      (Int.shru upper (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 31))) = _ at signBit
+  rw [upperSign] at signBit
+  cases wideNegative : int64Lt (Int64.ofwords upper lower) Int64.zero <;>
+    cases narrowNegative : intLt upper Int.zero <;>
+    simp only [wideNegative, narrowNegative, Bool.false_eq_true, if_false, if_true] at signBit ⊢
+  · exact False.elim (Int64.one_not_zero_proof signBit)
+  · exact False.elim (Int64.one_not_zero_proof signBit.symm)
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+theorem eval_cmplu
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_cmpluStatement := by
+  intro externalCalls prog stack environment memory comparison lets left leftValue
+    right rightValue output evaluatesLeft evaluatesRight compared pointer32
+  simp [CompCert4Lean.X86_64.Archi.ptr64] at pointer32
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+private theorem splitlong_eval_high_comparison
+    (externalCalls : ExternalCalls) (prog : program) (stack : val)
+    (environment : env) (memory : mem) (comparison : CCComparison)
+    (lets : letenv) (argument : expr) (integerValue : CCInt64)
+    (evaluates : eval_expr externalCalls (Genv.globalenv prog) stack environment memory
+      lets argument (.Vlong integerValue)) :
+    eval_expr externalCalls (Genv.globalenv prog) stack environment memory lets
+      (CompCert4Lean.X86.SelectOp.comp comparison (highlong argument)
+        (.Eop (.Ointconst intZero) .Enil))
+      (Val.of_bool (Int.cmp comparison (int64Hiword integerValue) intZero)) := by
+  obtain ⟨upperValue, evaluatesUpper, lessUpper⟩ :=
+    eval_highlong externalCalls prog stack environment memory lets argument
+      (.Vlong integerValue) evaluates
+  simp only [Val.hiword] at lessUpper
+  cases lessUpper
+  have evaluatesZero : eval_expr externalCalls (Genv.globalenv prog) stack environment memory
+      lets (.Eop (.Ointconst intZero) .Enil) (.Vint intZero) :=
+    eval_expr.eval_Eop _ _ _ [] _ (eval_exprlist.nil _) rfl
+  obtain ⟨output, evaluatesOutput, lessOutput⟩ :=
+    CompCert4Lean.X86.SelectOpproof.eval_comp externalCalls (Genv.globalenv prog)
+      stack environment memory comparison lets _ (.Vint (int64Hiword integerValue))
+      _ (.Vint intZero) evaluatesUpper evaluatesZero
+  have outputEqual : output = Val.of_bool (Int.cmp comparison (int64Hiword integerValue) intZero) := by
+    cases compared : Int.cmp comparison (int64Hiword integerValue) intZero <;>
+      simp [Val.cmp, Val.cmp_bool, Val.of_optbool, Val.of_bool, compared] at lessOutput ⊢ <;>
+      cases lessOutput <;> rfl
+  simpa only [outputEqual] using evaluatesOutput
+
+theorem eval_cmpl : eval_cmplStatement := by
+  intro externalCalls prog stack environment memory comparison lets left leftValue
+    right rightValue output evaluatesLeft evaluatesRight compared
+  cases leftValue <;> try { simp [Val.cmpl, Val.cmpl_bool] at compared }
+  rename_i leftInteger
+  cases rightValue <;> try { simp [Val.cmpl, Val.cmpl_bool] at compared }
+  rename_i rightInteger
+  have outputEqual : Val.of_bool (Int64.cmp comparison leftInteger rightInteger) = output :=
+    Option.some.inj compared
+  subst output
+  have lessParts := Int64.decompose_lt_proof
+    (int64Hiword leftInteger) (int64Loword leftInteger)
+    (int64Hiword rightInteger) (int64Loword rightInteger)
+  rw [Int64.ofwords_recompose_proof, Int64.ofwords_recompose_proof] at lessParts
+  change int64Lt leftInteger rightInteger = _ at lessParts
+  have lessEqualParts := Int64.decompose_le_proof
+    (int64Hiword leftInteger) (int64Loword leftInteger)
+    (int64Hiword rightInteger) (int64Loword rightInteger)
+  rw [Int64.ofwords_recompose_proof, Int64.ofwords_recompose_proof] at lessEqualParts
+  have greaterParts := Int64.decompose_lt_proof
+    (int64Hiword rightInteger) (int64Loword rightInteger)
+    (int64Hiword leftInteger) (int64Loword leftInteger)
+  rw [Int64.ofwords_recompose_proof, Int64.ofwords_recompose_proof,
+    Int.eq_sym_proof (int64Hiword rightInteger) (int64Hiword leftInteger)] at greaterParts
+  change int64Lt rightInteger leftInteger = _ at greaterParts
+  have greaterEqualParts := Int64.decompose_le_proof
+    (int64Hiword rightInteger) (int64Loword rightInteger)
+    (int64Hiword leftInteger) (int64Loword leftInteger)
+  rw [Int64.ofwords_recompose_proof, Int64.ofwords_recompose_proof,
+    Int.eq_sym_proof (int64Hiword rightInteger) (int64Hiword leftInteger)] at greaterEqualParts
+  have signParts := decompose_cmpl_lt_zero (int64Hiword leftInteger) (int64Loword leftInteger)
+  rw [splitlong_recompose_local] at signParts
+  cases comparison with
+  | Ceq =>
+      obtain ⟨xorValue, evaluatesXor, lessXor⟩ :=
+        eval_xorl externalCalls prog stack environment memory lets left (.Vlong leftInteger)
+          right (.Vlong rightInteger) evaluatesLeft evaluatesRight
+      simp only [Val.xorl] at lessXor
+      cases lessXor
+      change eval_expr externalCalls (Genv.globalenv prog) stack environment memory lets
+        (cmpl_eq_zero (xorl left right)) (Val.of_bool (int64Eq leftInteger rightInteger))
+      rw [int64_eq_xor]
+      exact eval_cmpl_eq_zero externalCalls prog stack environment memory lets
+        (xorl left right) (int64Xor leftInteger rightInteger) evaluatesXor
+  | Cne =>
+      obtain ⟨xorValue, evaluatesXor, lessXor⟩ :=
+        eval_xorl externalCalls prog stack environment memory lets left (.Vlong leftInteger)
+          right (.Vlong rightInteger) evaluatesLeft evaluatesRight
+      simp only [Val.xorl] at lessXor
+      cases lessXor
+      change eval_expr externalCalls (Genv.globalenv prog) stack environment memory lets
+        (cmpl_ne_zero (xorl left right)) (Val.of_bool (!(int64Eq leftInteger rightInteger)))
+      rw [int64_eq_xor]
+      exact eval_cmpl_ne_zero externalCalls prog stack environment memory lets
+        (xorl left right) (int64Xor leftInteger rightInteger) evaluatesXor
+  | Clt =>
+      by_cases rightZero : is_longconst_zero right = true
+      · have rightEqual := is_longconst_zero_sound externalCalls prog stack environment memory
+          lets right (.Vlong rightInteger) rightZero evaluatesRight
+        have integerZero : rightInteger = int64Zero := val.Vlong.inj rightEqual
+        subst rightInteger
+        simp only [cmpl, rightZero, if_true]
+        change eval_expr externalCalls (Genv.globalenv prog) stack environment memory lets _
+          (Val.of_bool (int64Lt leftInteger int64Zero))
+        rw [signParts]
+        exact splitlong_eval_high_comparison externalCalls prog stack environment memory
+          .Clt lets left leftInteger evaluatesLeft
+      · simp only [cmpl, rightZero, if_false]
+        change eval_expr externalCalls (Genv.globalenv prog) stack environment memory lets _
+          (Val.of_bool (int64Lt leftInteger rightInteger))
+        rw [lessParts]
+        exact eval_cmpl_gen externalCalls prog stack environment memory .Clt .Clt
+          left right lets leftInteger rightInteger evaluatesLeft evaluatesRight
+  | Cle =>
+      change eval_expr externalCalls (Genv.globalenv prog) stack environment memory lets
+        (cmpl_gen .Clt .Cle left right) (Val.of_bool (!(int64Lt rightInteger leftInteger)))
+      rw [lessEqualParts]
+      exact eval_cmpl_gen externalCalls prog stack environment memory .Clt .Cle
+        left right lets leftInteger rightInteger evaluatesLeft evaluatesRight
+  | Cgt =>
+      change eval_expr externalCalls (Genv.globalenv prog) stack environment memory lets
+        (cmpl_gen .Cgt .Cgt left right) (Val.of_bool (int64Lt rightInteger leftInteger))
+      rw [greaterParts]
+      exact eval_cmpl_gen externalCalls prog stack environment memory .Cgt .Cgt
+        left right lets leftInteger rightInteger evaluatesLeft evaluatesRight
+  | Cge =>
+      by_cases rightZero : is_longconst_zero right = true
+      · have rightEqual := is_longconst_zero_sound externalCalls prog stack environment memory
+          lets right (.Vlong rightInteger) rightZero evaluatesRight
+        have integerZero : rightInteger = int64Zero := val.Vlong.inj rightEqual
+        subst rightInteger
+        simp only [cmpl, rightZero, if_true]
+        change eval_expr externalCalls (Genv.globalenv prog) stack environment memory lets _
+          (Val.of_bool (!(int64Lt leftInteger int64Zero)))
+        rw [signParts]
+        exact splitlong_eval_high_comparison externalCalls prog stack environment memory
+          .Cge lets left leftInteger evaluatesLeft
+      · simp only [cmpl, rightZero, if_false]
+        change eval_expr externalCalls (Genv.globalenv prog) stack environment memory lets _
+          (Val.of_bool (!(int64Lt leftInteger rightInteger)))
+        rw [greaterEqualParts]
+        exact eval_cmpl_gen externalCalls prog stack environment memory .Cgt .Cge
+          left right lets leftInteger rightInteger evaluatesLeft evaluatesRight
+
+end CompCert4Lean.Backend.SplitLongproof

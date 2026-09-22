@@ -5717,3 +5717,253 @@ theorem eval_addressing
       exact hdefault a h heq
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+
+theorem eval_compfs
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_compfsStatement := by
+  intro externalCalls globalEnv stackPointer environment memory comparison
+    letEnvironment left leftValue right rightValue leftEval rightEval
+  refine ⟨Val.cmpfs comparison leftValue rightValue, ?_, Val.lessdef_refl _⟩
+  exact eval_expr.eval_Eop letEnvironment (Ocmp (Ccompfs comparison))
+    (Econs left (Econs right Enil)) [leftValue, rightValue]
+    (Val.cmpfs comparison leftValue rightValue)
+    (eval_exprlist.cons letEnvironment left (Econs right Enil) leftValue [rightValue]
+      leftEval (eval_exprlist.cons letEnvironment right Enil rightValue [] rightEval
+        (eval_exprlist.nil letEnvironment))) rfl
+
+end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Floats
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_intuofsingle
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_intuofsingleStatement := by
+  intro externalCalls globalEnv stackPointer environment memory letEnvironment
+    argument input output argumentEval conversion
+  cases input <;> simp only [Val.intuofsingle, reduceCtorEq] at conversion
+  rename_i singleValue
+  cases converted : Float32.to_intu singleValue with
+  | none => simp [converted] at conversion
+  | some integerValue =>
+      simp only [converted, Option.map_some, Option.some.injEq] at conversion
+      subst output
+      apply eval_intuoffloat externalCalls globalEnv stackPointer environment memory
+        letEnvironment (floatofsingle argument) (Vfloat (Float.of_single singleValue))
+        (Vint integerValue)
+      · apply eval_expr.eval_Eop letEnvironment Ofloatofsingle (Econs argument Enil)
+          [Vsingle singleValue] (Vfloat (Float.of_single singleValue))
+        · exact eval_exprlist.cons letEnvironment argument Enil (Vsingle singleValue) []
+            argumentEval (eval_exprlist.nil letEnvironment)
+        · rfl
+      · change (Float.to_intu (Float32.to_double singleValue)).map Vint =
+          some (Vint integerValue)
+        rw [Float32.to_intu_double singleValue integerValue converted]
+        rfl
+
+end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Floats
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_singleofintu
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_singleofintuStatement := by
+  intro externalCalls globalEnv stackPointer environment memory letEnvironment
+    argument input output argumentEval conversion
+  cases selected : singleofintu_match argument with
+  | singleofintu_case1 integerValue =>
+      have inputEq : input = Vint integerValue :=
+        eval_intconst_suffix externalCalls globalEnv stackPointer environment memory
+          letEnvironment integerValue input (by simpa [selected] using argumentEval)
+      subst input
+      simp only [Val.singleofintu, Option.some.injEq] at conversion
+      subst output
+      refine ⟨Vsingle (Float32.of_intu integerValue), ?_, Val.lessdef_refl _⟩
+      simp only [SelectOp.singleofintu, selected]
+      exact eval_expr.eval_Eop letEnvironment (Osingleconst (Float32.of_intu integerValue))
+        Enil [] _ (eval_exprlist.nil letEnvironment) rfl
+  | singleofintu_default original =>
+      cases input <;> simp only [Val.singleofintu, reduceCtorEq] at conversion
+      rename_i integerValue
+      simp only [Option.some.injEq] at conversion
+      subst output
+      obtain ⟨intermediate, intermediateEval, intermediateLessdef⟩ :=
+        eval_floatofintu externalCalls globalEnv stackPointer environment memory
+          letEnvironment argument (Vint integerValue) (Vfloat (Float.of_intu integerValue))
+          argumentEval rfl
+      cases intermediateLessdef
+      refine ⟨Vsingle (Float32.of_intu integerValue), ?_, Val.lessdef_refl _⟩
+      simp only [SelectOp.singleofintu, selected]
+      apply eval_expr.eval_Eop letEnvironment Osingleoffloat
+        (Econs (floatofintu argument) Enil) [Vfloat (Float.of_intu integerValue)] _
+      · exact eval_exprlist.cons letEnvironment (floatofintu argument) Enil
+          (Vfloat (Float.of_intu integerValue)) [] intermediateEval
+          (eval_exprlist.nil letEnvironment)
+      · change some (Vsingle (Float32.of_double (Float.of_intu integerValue))) =
+          some (Vsingle (Float32.of_intu integerValue))
+        rw [← Float32.of_intu_double integerValue]
+
+end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+open CompCert4Lean.X86.Builtins1
+
+theorem eval_platform_builtin
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_platform_builtinStatement := by
+  intro externalCalls globalEnv stackPointer environment memory builtin arguments
+    expression values result letEnvironment selection argumentsEval semantics
+  cases argumentsEval with
+  | nil => cases builtin <;> simp [SelectOp.platform_builtin] at selection
+  | cons environmentIndex first rest firstValue restValues firstEval restEval =>
+      cases restEval with
+      | nil => cases builtin <;> simp [SelectOp.platform_builtin] at selection
+      | cons environmentIndex second tail secondValue tailValues secondEval tailEval =>
+          cases tailEval with
+          | cons => cases builtin <;> simp [SelectOp.platform_builtin] at selection
+          | nil =>
+              have valuesEval := eval_exprlist.cons letEnvironment first
+                (Econs second Enil) firstValue [secondValue] firstEval
+                (eval_exprlist.cons letEnvironment second Enil secondValue [] secondEval
+                  (eval_exprlist.nil letEnvironment))
+              refine ⟨result, ?_, Val.lessdef_refl _⟩
+              cases builtin with
+              | BI_fmin =>
+                  simp only [SelectOp.platform_builtin, Option.some.injEq] at selection
+                  subst expression
+                  apply eval_expr.eval_Eop letEnvironment Ominf _ _ result valuesEval
+                  have semanticEq : platform_builtin_sem BI_fmin [firstValue, secondValue] =
+                      some (minf firstValue secondValue) := by
+                    cases firstValue <;> cases secondValue <;> rfl
+                  exact semanticEq.symm.trans semantics
+              | BI_fmax =>
+                  simp only [SelectOp.platform_builtin, Option.some.injEq] at selection
+                  subst expression
+                  apply eval_expr.eval_Eop letEnvironment Omaxf _ _ result valuesEval
+                  have semanticEq : platform_builtin_sem BI_fmax [firstValue, secondValue] =
+                      some (maxf firstValue secondValue) := by
+                    cases firstValue <;> cases secondValue <;> rfl
+                  exact semanticEq.symm.trans semantics
+
+end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+open CompCert4Lean.Backend in
+theorem eval_builtin_arg
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_builtin_argStatement := by
+  intro externalCalls globalEnv stackPointer environment memory argument value argumentEval
+  cases selected : builtin_arg_match argument with
+  | builtin_arg_case1 integerValue =>
+      have valueEq := eval_intconst_suffix externalCalls globalEnv stackPointer environment
+        memory [] integerValue value argumentEval
+      subst value
+      simp only [SelectOp.builtin_arg, selected]
+      exact CminorSel.eval_builtin_arg.intValue integerValue
+  | builtin_arg_case2 longValue =>
+      cases argumentEval with
+      | eval_Eop environmentIndex operation arguments values result argumentsEval operationEval =>
+          cases argumentsEval
+          change some (Vlong longValue) = some value at operationEval
+          cases operationEval
+          simp only [SelectOp.builtin_arg, selected]
+          exact CminorSel.eval_builtin_arg.longValue longValue
+  | builtin_arg_case3 address arguments =>
+      simp only [SelectOp.builtin_arg, selected, CompCert4Lean.X86_64.Archi.ptr64, if_true]
+      exact CminorSel.eval_builtin_arg.argument _ _ argumentEval
+  | builtin_arg_case4 address arguments =>
+      simp only [SelectOp.builtin_arg, selected, CompCert4Lean.X86_64.Archi.ptr64, if_true]
+      cases argumentEval with
+      | eval_Eop environmentIndex operation arguments values result argumentsEval operationEval =>
+          exact eval_builtin_arg_addr externalCalls globalEnv stackPointer environment memory
+            address arguments values value argumentsEval operationEval
+  | builtin_arg_case5 high low =>
+      cases argumentEval with
+      | eval_Eop environmentIndex operation arguments values result argumentsEval operationEval =>
+          cases argumentsEval with
+          | cons environmentIndex first rest highValue restValues highEval restEval =>
+              cases restEval with
+              | cons environmentIndex second tail lowValue tailValues lowEval tailEval =>
+                  cases tailEval
+                  have highEq := eval_intconst_suffix externalCalls globalEnv stackPointer
+                    environment memory [] high highValue highEval
+                  have lowEq := eval_intconst_suffix externalCalls globalEnv stackPointer
+                    environment memory [] low lowValue lowEval
+                  subst highValue
+                  subst lowValue
+                  change some (Vlong (Int64.ofwords high low)) = some value at operationEval
+                  cases operationEval
+                  simp only [SelectOp.builtin_arg, selected]
+                  exact CminorSel.eval_builtin_arg.longValue (Int64.ofwords high low)
+  | builtin_arg_case6 high low =>
+      cases argumentEval with
+      | eval_Eop environmentIndex operation arguments values result argumentsEval operationEval =>
+          cases argumentsEval with
+          | cons environmentIndex first rest highValue restValues highEval restEval =>
+              cases restEval with
+              | cons environmentIndex second tail lowValue tailValues lowEval tailEval =>
+                  cases tailEval
+                  change some (Val.longofwords highValue lowValue) = some value at operationEval
+                  cases operationEval
+                  simp only [SelectOp.builtin_arg, selected]
+                  exact CminorSel.eval_builtin_arg.splitLong high low highValue lowValue
+                    highEval lowEval
+  | builtin_arg_case7 chunk identifier offset =>
+      cases argumentEval with
+      | eval_Eload environmentIndex chunk address arguments values addressValue result
+          argumentsEval addressEval loadEval =>
+          cases argumentsEval
+          change some (Genv.symbol_address globalEnv identifier offset) =
+            some addressValue at addressEval
+          cases addressEval
+          simp only [SelectOp.builtin_arg, selected]
+          exact CminorSel.eval_builtin_arg.loadGlobal chunk identifier offset value loadEval
+  | builtin_arg_case8 chunk offset =>
+      cases argumentEval with
+      | eval_Eload environmentIndex chunk address arguments values addressValue result
+          argumentsEval addressEval loadEval =>
+          cases argumentsEval
+          change some (Val.offset_ptr stackPointer offset) = some addressValue at addressEval
+          cases addressEval
+          simp only [SelectOp.builtin_arg, selected]
+          exact CminorSel.eval_builtin_arg.loadStack chunk offset value loadEval
+  | builtin_arg_default original =>
+      simp only [SelectOp.builtin_arg, selected]
+      exact CminorSel.eval_builtin_arg.argument _ _ argumentEval
+
+end CompCert4Lean.X86.SelectOpproof

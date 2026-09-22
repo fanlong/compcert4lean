@@ -8,6 +8,7 @@ import CompCert4Lean.Foundation.Logic
 import CompCert4Lean.Lib.Coqlib
 import CompCert4Lean.Lib.Floats
 import CompCert4Lean.Lib.Integers
+import CompCert4Lean.X86.SelectLongproof
 
 /-!
 # Correctness surface for integer and floating-point division selection
@@ -4170,5 +4171,448 @@ theorem divls_mul_shift_2 : divls_mul_shift_2Statement := by
   · exact CompCert4Lean.Lib.Integers.Int64.eqm_unsigned_repr_r_proof _ _
       (CompCert4Lean.Lib.Integers.Int64.eqm_refl_proof _)
   · exact pg_int64_eqm_signed_unsigned x
+
+end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SelectDiv
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+theorem eval_modl_from_divl
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : eval_modl_from_divlStatement := by
+  intro xi prog hf hhelpers sp env memory lets quotient divisor dividend result
+    hquotient hdividend
+  have hconstant := eval_longconst_local xi (Genv.globalenv prog) sp env memory
+    lets divisor
+  obtain ⟨product, hproduct, hproductValue⟩ :=
+    CompCert4Lean.X86.SelectLongproof.eval_mull xi prog hf hhelpers sp env memory
+      lets (longconst divisor) (.Vlong divisor) quotient (.Vlong result)
+      hconstant hquotient
+  change eval_expr xi (Genv.globalenv prog) sp env memory lets
+    (mullimm divisor quotient) product at hproduct
+  rw [Val.mull_commut] at hproductValue
+  change Val.lessdef (.Vlong (int64Mul result divisor)) product at hproductValue
+  cases hproductValue
+  have hvariable : eval_expr xi (Genv.globalenv prog) sp env memory lets
+      (Eletvar 0) (.Vlong dividend) :=
+    eval_expr.eval_Eletvar lets 0 (.Vlong dividend) hdividend
+  obtain ⟨remainder, hremainder, hremainderValue⟩ :=
+    CompCert4Lean.X86.SelectLongproof.eval_subl xi prog sp env memory lets
+      (Eletvar 0) (.Vlong dividend) (mullimm divisor quotient)
+      (.Vlong (int64Mul result divisor)) hvariable hproduct
+  change Val.lessdef (.Vlong (int64Sub dividend (int64Mul result divisor)))
+    remainder at hremainderValue
+  cases hremainderValue
+  exact hremainder
+
+private theorem signed_high_mul_equiv (dividend multiplier : CCInt64) :
+    CompCert4Lean.Lib.Integers.Int64.mulhs dividend multiplier =
+      int64Mulhs dividend multiplier := by
+  unfold CompCert4Lean.Lib.Integers.Int64.mulhs int64Mulhs
+  change int64Repr (zDiv (zMul (int64Signed dividend) (int64Signed multiplier))
+      CompCert4Lean.Lib.Integers.Int64.modulus) =
+    int64Repr (zShiftr (zMul (int64Signed dividend) (int64Signed multiplier)) z64)
+  rw [zshiftr_div_two_p_local _ _ (by change (0 : Int) ≤ 64; omega)]
+  rfl
+
+theorem eval_divls_mull
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : eval_divls_mullStatement := by
+  intro xi prog hf hhelpers sp env memory lets dividend divisor shift multiplier
+    hparams hdividend
+  obtain ⟨_, hshiftRange, _⟩ := divls_mul_params_sound
+    (int64Signed divisor) multiplier shift hparams
+  have hshiftBound := int_ltu_repr_64_local shift hshiftRange
+  have hvariable : eval_expr xi (Genv.globalenv prog) sp env memory lets
+      (Eletvar 0) (.Vlong dividend) :=
+    eval_expr.eval_Eletvar lets 0 (.Vlong dividend) hdividend
+  obtain ⟨product, hproduct, hproductValue⟩ :=
+    CompCert4Lean.X86.SelectLongproof.eval_mullhs xi prog hf hhelpers sp env memory
+      (int64Repr multiplier) lets (Eletvar 0) (.Vlong dividend) hvariable
+  change Val.lessdef (.Vlong (CompCert4Lean.Lib.Integers.Int64.mulhs
+    dividend (int64Repr multiplier))) product at hproductValue
+  rw [signed_high_mul_equiv] at hproductValue
+  cases hproductValue
+  obtain ⟨sum, hsum, hsumValue⟩ :=
+    CompCert4Lean.X86.SelectLongproof.eval_addl xi prog sp env memory lets
+      (mullhs (Eletvar 0) (int64Repr multiplier))
+      (.Vlong (int64Mulhs dividend (int64Repr multiplier)))
+      (Eletvar 0) (.Vlong dividend) hproduct hvariable
+  change Val.lessdef (.Vlong (int64Add
+    (int64Mulhs dividend (int64Repr multiplier)) dividend)) sum at hsumValue
+  cases hsumValue
+  let adjusted := if zltBool multiplier CompCert4Lean.Lib.Integers.Int64.half_modulus
+    then mullhs (Eletvar 0) (int64Repr multiplier)
+    else addl (mullhs (Eletvar 0) (int64Repr multiplier)) (Eletvar 0)
+  let adjustedValue := if zltBool multiplier CompCert4Lean.Lib.Integers.Int64.half_modulus
+    then int64Mulhs dividend (int64Repr multiplier)
+    else int64Add (int64Mulhs dividend (int64Repr multiplier)) dividend
+  have hadjusted : eval_expr xi (Genv.globalenv prog) sp env memory lets
+      adjusted (.Vlong adjustedValue) := by
+    dsimp [adjusted, adjustedValue]
+    split
+    · exact hproduct
+    · exact hsum
+  obtain ⟨shifted, hshifted, hshiftedValue⟩ :=
+    CompCert4Lean.X86.SelectLongproof.eval_shrlimm xi prog hf hhelpers sp env memory
+      (intRepr shift) lets adjusted (.Vlong adjustedValue) hadjusted
+  simp only [Val.shrl, hshiftBound, if_true] at hshiftedValue
+  cases hshiftedValue
+  let signShift := intRepr (zSub CompCert4Lean.Lib.Integers.Int64.zwordsize z1)
+  have hsignBound : CompCert4Lean.Lib.Integers.Int.ltu signShift
+      CompCert4Lean.Lib.Integers.Int64.iwordsize' = true := by decide
+  obtain ⟨sign, hsign, hsignValue⟩ := eval_shrluimm_local xi
+    (Genv.globalenv prog) sp env memory lets (Eletvar 0) (.Vlong dividend)
+    signShift hvariable
+  simp only [Val.shrlu, hsignBound, if_true] at hsignValue
+  cases hsignValue
+  obtain ⟨quotient, hquotient, hquotientValue⟩ :=
+    CompCert4Lean.X86.SelectLongproof.eval_addl xi prog sp env memory lets
+      (shrlimm adjusted (intRepr shift)) (.Vlong (int64Shr' adjustedValue (intRepr shift)))
+      (shrluimm (Eletvar 0) signShift) (.Vlong (int64Shru' dividend signShift))
+      hshifted hsign
+  change Val.lessdef (.Vlong (int64Add (int64Shr' adjustedValue (intRepr shift))
+    (int64Shru' dividend signShift))) quotient at hquotientValue
+  cases hquotientValue
+  have hidentity : int64Divs dividend divisor =
+      int64Add (int64Shr' adjustedValue (intRepr shift))
+        (int64Shru' dividend signShift) := by
+    cases hcomparison : CompCert4Lean.Lib.Coqlib.zlt multiplier
+        CompCert4Lean.Lib.Integers.Int64.half_modulus with
+    | left hsmall =>
+        simpa [adjustedValue, zltBool, boolOfSumbool, hcomparison, signShift] using
+          (divls_mul_shift_1 dividend divisor multiplier shift hparams hsmall).2
+    | right hlarge =>
+        simpa [adjustedValue, zltBool, boolOfSumbool, hcomparison, signShift] using
+          (divls_mul_shift_2 dividend divisor multiplier shift hparams hlarge).2
+  rw [hidentity]
+  exact hquotient
+
+theorem eval_divls
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : eval_divlsStatement := by
+  intro cfg xi prog hf hhelpers sp env memory lets numerator denominator first second
+    result hfirst hsecond hdivision
+  cases first <;> cases second <;> try { solve | simp [Val.divls] at hdivision }
+  rename_i dividend divisor
+  have hdefined := hdivision
+  simp only [Val.divls] at hdivision
+  split at hdivision
+  · contradiction
+  · cases hdivision
+    have hbase := eval_divls_base_local xi (Genv.globalenv prog) sp env memory lets
+      numerator denominator (.Vlong dividend) (.Vlong divisor)
+      (.Vlong (int64Divs dividend divisor)) hfirst hsecond hdefined
+    cases hdenominator : is_longconst denominator with
+    | none =>
+        exact ⟨_, by simpa [divls, hdenominator] using hbase, Val.lessdef_refl _⟩
+    | some constantDivisor =>
+        have hsame := val.Vlong.inj (is_longconst_sound_local xi (Genv.globalenv prog)
+          sp env memory lets denominator (.Vlong divisor) constantDivisor
+          hdenominator hsecond)
+        subst constantDivisor
+        cases hnumerator : is_longconst numerator with
+        | some constantDividend =>
+            have hsame := val.Vlong.inj (is_longconst_sound_local xi (Genv.globalenv prog)
+              sp env memory lets numerator (.Vlong dividend) constantDividend
+              hnumerator hfirst)
+            subst constantDividend
+            refine ⟨_, ?_, Val.lessdef_refl _⟩
+            simpa [divls, hdenominator, hnumerator] using
+              eval_longconst_local xi (Genv.globalenv prog) sp env memory lets
+                (int64Divs dividend divisor)
+        | none =>
+            cases hpower : CompCert4Lean.Lib.Integers.Int64.is_power2' divisor with
+            | some shift =>
+                by_cases hbound : CompCert4Lean.Lib.Integers.Int.ltu shift
+                    (intRepr (ZArith.BinInt.Z.of_nat 63)) = true
+                · have hshift := Val.divls_pow2 _ _ _ _ hpower hbound hdefined
+                  obtain ⟨value, hvalue, hless⟩ :=
+                    CompCert4Lean.X86.SelectLongproof.eval_shrxlimm xi prog hf hhelpers
+                      sp env memory lets numerator shift (.Vlong dividend)
+                      (.Vlong (int64Divs dividend divisor)) hfirst hshift
+                  exact ⟨value, by simpa [divls, hdenominator, hnumerator, hpower, hbound]
+                    using hvalue, hless⟩
+                · exact ⟨_, by simpa [divls, hdenominator, hnumerator, hpower, hbound]
+                    using hbase, Val.lessdef_refl _⟩
+            | none =>
+                simp only [divls, hdenominator, hnumerator, hpower]
+                split
+                · exact ⟨_, hbase, Val.lessdef_refl _⟩
+                · cases hparams : divls_mul_params (int64Signed divisor) with
+                  | none => exact ⟨_, hbase, Val.lessdef_refl _⟩
+                  | some parameters =>
+                      rcases parameters with ⟨shift, multiplier⟩
+                      have hbody := eval_divls_mull xi prog hf hhelpers sp env memory
+                        (.Vlong dividend :: lets) dividend divisor shift multiplier hparams rfl
+                      exact ⟨_, eval_expr.eval_Elet lets numerator _ (.Vlong dividend)
+                        (.Vlong (int64Divs dividend divisor)) hfirst hbody, Val.lessdef_refl _⟩
+
+theorem eval_modls
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : eval_modlsStatement := by
+  intro cfg xi prog hf hhelpers sp env memory lets numerator denominator first second
+    result hfirst hsecond hmodulus
+  cases first <;> cases second <;> try { solve | simp [Val.modls] at hmodulus }
+  rename_i dividend divisor
+  have hdefined := hmodulus
+  simp only [Val.modls] at hmodulus
+  split at hmodulus
+  · contradiction
+  · rename_i hvalid
+    cases hmodulus
+    have hbase : eval_expr xi (Genv.globalenv prog) sp env memory lets
+        (modls_base numerator denominator)
+        (.Vlong (CompCert4Lean.Lib.Integers.Int64.mods dividend divisor)) :=
+      eval_binary_op_local xi (Genv.globalenv prog) sp env memory lets Omodl
+        numerator denominator (.Vlong dividend) (.Vlong divisor) _ hfirst hsecond hdefined
+    have hdivision : Val.divls (.Vlong dividend) (.Vlong divisor) =
+        some (.Vlong (int64Divs dividend divisor)) := by
+      simp [Val.divls, hvalid]
+    have hremainder : CompCert4Lean.Lib.Integers.Int64.mods dividend divisor =
+        int64Sub dividend (int64Mul (int64Divs dividend divisor) divisor) :=
+      CompCert4Lean.Lib.Integers.Int64.mods_divs_proof dividend divisor
+    cases hdenominator : is_longconst denominator with
+    | none =>
+        exact ⟨_, by simpa [modls, hdenominator] using hbase, Val.lessdef_refl _⟩
+    | some constantDivisor =>
+        have hsame := val.Vlong.inj (is_longconst_sound_local xi (Genv.globalenv prog)
+          sp env memory lets denominator (.Vlong divisor) constantDivisor
+          hdenominator hsecond)
+        subst constantDivisor
+        cases hnumerator : is_longconst numerator with
+        | some constantDividend =>
+            have hsame := val.Vlong.inj (is_longconst_sound_local xi (Genv.globalenv prog)
+              sp env memory lets numerator (.Vlong dividend) constantDividend
+              hnumerator hfirst)
+            subst constantDividend
+            refine ⟨_, ?_, Val.lessdef_refl _⟩
+            simpa [modls, hdenominator, hnumerator] using
+              eval_longconst_local xi (Genv.globalenv prog) sp env memory lets
+                (CompCert4Lean.Lib.Integers.Int64.mods dividend divisor)
+        | none =>
+            cases hpower : CompCert4Lean.Lib.Integers.Int64.is_power2' divisor with
+            | some shift =>
+                by_cases hbound : CompCert4Lean.Lib.Integers.Int.ltu shift
+                    (intRepr (ZArith.BinInt.Z.of_nat 63)) = true
+                · have hshift := Val.divls_pow2 _ _ _ _ hpower hbound hdivision
+                  have hvariable : eval_expr xi (Genv.globalenv prog) sp env memory
+                      (.Vlong dividend :: lets) (Eletvar 0) (.Vlong dividend) :=
+                    eval_expr.eval_Eletvar _ 0 _ rfl
+                  obtain ⟨quotient, hquotient, hless⟩ :=
+                    CompCert4Lean.X86.SelectLongproof.eval_shrxlimm xi prog hf hhelpers
+                      sp env memory (.Vlong dividend :: lets) (Eletvar 0) shift
+                      (.Vlong dividend) (.Vlong (int64Divs dividend divisor)) hvariable hshift
+                  cases hless
+                  have hbody := eval_modl_from_divl xi prog hf hhelpers sp env memory
+                    (.Vlong dividend :: lets) (shrxlimm (Eletvar 0) shift) divisor dividend
+                    (int64Divs dividend divisor) hquotient rfl
+                  rw [← hremainder] at hbody
+                  refine ⟨_, ?_, Val.lessdef_refl _⟩
+                  simpa [modls, hdenominator, hnumerator, hpower, hbound] using
+                    eval_expr.eval_Elet lets numerator _ (.Vlong dividend) _ hfirst hbody
+                · exact ⟨_, by simpa [modls, hdenominator, hnumerator, hpower, hbound]
+                    using hbase, Val.lessdef_refl _⟩
+            | none =>
+                simp only [modls, hdenominator, hnumerator, hpower]
+                split
+                · exact ⟨_, hbase, Val.lessdef_refl _⟩
+                · cases hparams : divls_mul_params (int64Signed divisor) with
+                  | none => exact ⟨_, hbase, Val.lessdef_refl _⟩
+                  | some parameters =>
+                      rcases parameters with ⟨shift, multiplier⟩
+                      have hquotient := eval_divls_mull xi prog hf hhelpers sp env memory
+                        (.Vlong dividend :: lets) dividend divisor shift multiplier hparams rfl
+                      have hbody := eval_modl_from_divl xi prog hf hhelpers sp env memory
+                        (.Vlong dividend :: lets) (divls_mull (hf := hf) shift multiplier)
+                        divisor dividend (int64Divs dividend divisor) hquotient rfl
+                      rw [← hremainder] at hbody
+                      exact ⟨_, eval_expr.eval_Elet lets numerator _ (.Vlong dividend)
+                        _ hfirst hbody, Val.lessdef_refl _⟩
+
+theorem eval_modlu
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : eval_modluStatement := by
+  intro cfg xi prog hf hhelpers sp env memory lets numerator denominator first second
+    result hfirst hsecond hmodulus
+  cases first <;> cases second <;> try { solve | simp [Val.modlu] at hmodulus }
+  rename_i dividend divisor
+  have hdefined := hmodulus
+  simp only [Val.modlu] at hmodulus
+  split at hmodulus
+  · contradiction
+  · rename_i hvalid
+    cases hmodulus
+    have hbase := eval_modlu_base_local xi (Genv.globalenv prog) sp env memory lets
+      numerator denominator (.Vlong dividend) (.Vlong divisor)
+      (.Vlong (CompCert4Lean.Lib.Integers.Int64.modu dividend divisor)) hfirst hsecond hdefined
+    have hnonzero : divisor ≠ CompCert4Lean.Lib.Integers.Int64.zero := by
+      intro hzero
+      subst divisor
+      exact hvalid rfl
+    have hremainder : CompCert4Lean.Lib.Integers.Int64.modu dividend divisor =
+        int64Sub dividend (int64Mul (int64Divu dividend divisor) divisor) :=
+      CompCert4Lean.Lib.Integers.Int64.modu_divu_proof dividend divisor hnonzero
+    cases hdenominator : is_longconst denominator with
+    | none =>
+        exact ⟨_, by simpa [modlu, hdenominator] using hbase, Val.lessdef_refl _⟩
+    | some constantDivisor =>
+        have hsame := val.Vlong.inj (is_longconst_sound_local xi (Genv.globalenv prog)
+          sp env memory lets denominator (.Vlong divisor) constantDivisor
+          hdenominator hsecond)
+        subst constantDivisor
+        cases hnumerator : is_longconst numerator with
+        | some constantDividend =>
+            have hsame := val.Vlong.inj (is_longconst_sound_local xi (Genv.globalenv prog)
+              sp env memory lets numerator (.Vlong dividend) constantDividend
+              hnumerator hfirst)
+            subst constantDividend
+            refine ⟨_, ?_, Val.lessdef_refl _⟩
+            simpa [modlu, hdenominator, hnumerator] using
+              eval_longconst_local xi (Genv.globalenv prog) sp env memory lets
+                (CompCert4Lean.Lib.Integers.Int64.modu dividend divisor)
+        | none =>
+            cases hpower : CompCert4Lean.Lib.Integers.Int64.is_power2 divisor with
+            | some shift =>
+                have hmask := Val.modlu_pow2 _ _ _ _ hpower hdefined
+                have hconstant := eval_longconst_local xi (Genv.globalenv prog)
+                  sp env memory lets (int64Sub divisor CompCert4Lean.Lib.Integers.Int64.one)
+                obtain ⟨value, hvalue, hless⟩ :=
+                  CompCert4Lean.X86.SelectLongproof.eval_andl xi prog sp env memory lets
+                    numerator (.Vlong dividend)
+                    (longconst (int64Sub divisor CompCert4Lean.Lib.Integers.Int64.one))
+                    (.Vlong (int64Sub divisor CompCert4Lean.Lib.Integers.Int64.one))
+                    hfirst hconstant
+                rw [hmask] at hless
+                exact ⟨value, by simpa [modlu, hdenominator, hnumerator, hpower]
+                  using hvalue, hless⟩
+            | none =>
+                simp only [modlu, hdenominator, hnumerator, hpower]
+                split
+                · exact ⟨_, hbase, Val.lessdef_refl _⟩
+                · cases hparams : divlu_mul_params (int64Unsigned divisor) with
+                  | none => exact ⟨_, hbase, Val.lessdef_refl _⟩
+                  | some parameters =>
+                      rcases parameters with ⟨shift, multiplier⟩
+                      have hquotient := eval_divlu_mull xi prog hf hhelpers sp env memory
+                        (.Vlong dividend :: lets) dividend divisor shift multiplier hparams rfl
+                      have hbody := eval_modl_from_divl xi prog hf hhelpers sp env memory
+                        (.Vlong dividend :: lets) (divlu_mull (hf := hf) shift multiplier)
+                        divisor dividend (int64Divu dividend divisor) hquotient rfl
+                      rw [← hremainder] at hbody
+                      exact ⟨_, eval_expr.eval_Elet lets numerator _ (.Vlong dividend)
+                        _ hfirst hbody, Val.lessdef_refl _⟩
+
+theorem eval_divf
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)]
+    [certificate : BexactInverseCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)] : eval_divfStatement := by
+  intro xi prog sp env memory lets numerator denominator first second hfirst hsecond
+  unfold divf
+  cases hmatch : divf_match denominator with
+  | divf_default denominator =>
+      exact ⟨_, eval_binary_op_local xi (Genv.globalenv prog) sp env memory lets
+        Odivf numerator denominator first second (Val.divf first second)
+        hfirst hsecond rfl, Val.lessdef_refl _⟩
+  | divf_case1 divisor =>
+      have hconstantValue : second = .Vfloat divisor := by
+        cases hsecond with
+        | eval_Eop _ _ _ arguments _ harguments hoperation =>
+            cases harguments
+            change some (.Vfloat divisor) = some second at hoperation
+            cases hoperation
+            rfl
+      subst second
+      cases hinverse : CompCert4Lean.Lib.Floats.Float.exact_inverse divisor with
+      | none =>
+          refine ⟨_, ?_, Val.lessdef_refl _⟩
+          simpa only [divfimm, hinverse] using
+            eval_binary_op_local xi (Genv.globalenv prog) sp env memory lets
+              Odivf numerator (Eop (Ofloatconst divisor) Enil) first (.Vfloat divisor)
+              (Val.divf first (.Vfloat divisor)) hfirst hsecond rfl
+      | some inverse =>
+          have hconstant : eval_expr xi (Genv.globalenv prog) sp env memory lets
+              (Eop (Ofloatconst inverse) Enil) (.Vfloat inverse) :=
+            eval_expr.eval_Eop lets (Ofloatconst inverse) Enil [] (.Vfloat inverse)
+              (eval_exprlist.nil lets) rfl
+          refine ⟨Val.mulf first (.Vfloat inverse), ?_, ?_⟩
+          · simpa only [divfimm, hinverse] using
+              eval_binary_op_local xi (Genv.globalenv prog) sp env memory lets
+                Omulf numerator (Eop (Ofloatconst inverse) Enil) first (.Vfloat inverse)
+                (Val.mulf first (.Vfloat inverse)) hfirst hconstant rfl
+          · cases first <;> try exact Val.lessdef_refl _
+            rename_i dividend
+            change Val.lessdef (.Vfloat (CompCert4Lean.Lib.Floats.Float.div dividend divisor))
+              (.Vfloat (CompCert4Lean.Lib.Floats.Float.mul dividend inverse))
+            rw [CompCert4Lean.Lib.Floats.Float.div_mul_inverse dividend divisor inverse hinverse]
+            exact Val.lessdef_refl _
+
+theorem eval_divfs
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)]
+    [certificate : BexactInverseCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : eval_divfsStatement := by
+  intro xi prog sp env memory lets numerator denominator first second hfirst hsecond
+  unfold divfs
+  cases hmatch : divfs_match denominator with
+  | divfs_default denominator =>
+      exact ⟨_, eval_binary_op_local xi (Genv.globalenv prog) sp env memory lets
+        Odivfs numerator denominator first second (Val.divfs first second)
+        hfirst hsecond rfl, Val.lessdef_refl _⟩
+  | divfs_case1 divisor =>
+      have hconstantValue : second = .Vsingle divisor := by
+        cases hsecond with
+        | eval_Eop _ _ _ arguments _ harguments hoperation =>
+            cases harguments
+            change some (.Vsingle divisor) = some second at hoperation
+            cases hoperation
+            rfl
+      subst second
+      cases hinverse : CompCert4Lean.Lib.Floats.Float32.exact_inverse divisor with
+      | none =>
+          refine ⟨_, ?_, Val.lessdef_refl _⟩
+          simpa only [divfsimm, hinverse] using
+            eval_binary_op_local xi (Genv.globalenv prog) sp env memory lets
+              Odivfs numerator (Eop (Osingleconst divisor) Enil) first (.Vsingle divisor)
+              (Val.divfs first (.Vsingle divisor)) hfirst hsecond rfl
+      | some inverse =>
+          have hconstant : eval_expr xi (Genv.globalenv prog) sp env memory lets
+              (Eop (Osingleconst inverse) Enil) (.Vsingle inverse) :=
+            eval_expr.eval_Eop lets (Osingleconst inverse) Enil [] (.Vsingle inverse)
+              (eval_exprlist.nil lets) rfl
+          refine ⟨Val.mulfs first (.Vsingle inverse), ?_, ?_⟩
+          · simpa only [divfsimm, hinverse] using
+              eval_binary_op_local xi (Genv.globalenv prog) sp env memory lets
+                Omulfs numerator (Eop (Osingleconst inverse) Enil) first (.Vsingle inverse)
+                (Val.mulfs first (.Vsingle inverse)) hfirst hconstant rfl
+          · cases first <;> try exact Val.lessdef_refl _
+            rename_i dividend
+            change Val.lessdef (.Vsingle (CompCert4Lean.Lib.Floats.Float32.div dividend divisor))
+              (.Vsingle (CompCert4Lean.Lib.Floats.Float32.mul dividend inverse))
+            rw [CompCert4Lean.Lib.Floats.Float32.div_mul_inverse dividend divisor inverse hinverse]
+            exact Val.lessdef_refl _
 
 end CompCert4Lean.Backend.SelectDivproof
