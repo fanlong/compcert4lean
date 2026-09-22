@@ -4934,3 +4934,49 @@ theorem testcond_for_unsigned_comparison_64_correct :
       · simp_all
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.X86.Asm
+open CompCert4Lean.X86.Asmgen
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Backend.Asmgenproof0
+
+theorem transl_load_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    transl_load_correctStatement := by
+  intro environment function chunk addressing arguments destination continuation generated
+    registers memory address value translated evaluated loaded
+  unfold transl_load at translated
+  obtain ⟨mode, mode_translated, translated⟩ := bind_inversion _ _ _ _ _ translated
+  have related := transl_addressing_mode_correct environment addressing arguments mode
+    registers address mode_translated evaluated
+  have exact_address : eval_addrmode environment mode registers = address := by
+    cases related with
+    | lessdef_refl => rfl
+    | lessdef_undef => simp [Mem.loadv] at loaded
+  have load_step : exec_load environment chunk memory mode registers (preg_of destination) =
+      .Next (nextinstr_nf (Pregmap.set (preg_of destination) value registers)) memory := by
+    simp [exec_load, exact_address, loaded]
+  have program_counter : nextinstr_nf (Pregmap.set (preg_of destination) value registers) .PC =
+      Val.offset_ptr (registers .PC) CompCert4Lean.Lib.Integers.Ptrofs.one := by
+    cases destination <;> rfl
+  refine ⟨nextinstr_nf (Pregmap.set (preg_of destination) value registers), ?_, ?_, ?_⟩
+  · cases chunk <;> cases destination <;>
+      simp [ireg_of, freg_of, CompCert4Lean.Common.Errors.bind, preg_of] at translated
+    all_goals cases translated
+    all_goals apply exec_straight_one
+    all_goals first | exact load_step | exact program_counter
+  · rw [nextinstr_nf_inv1 _ _ (preg_of_data destination)]
+    simp [Pregmap.set]
+  · intro register data distinct
+    rw [nextinstr_nf_inv1 _ _ data]
+    simp [Pregmap.set, distinct]
+
+end CompCert4Lean.X86.Asmgenproof1
