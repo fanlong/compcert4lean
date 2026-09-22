@@ -6169,3 +6169,10 @@ theorem function_prologue_correct
     · exact hjinc
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+theorem transl_external_arguments_rec : transl_external_arguments_recStatement :=
+  transl_external_arguments_rec_aux
+
+end CompCert4Lean.Backend.Stackingproof
