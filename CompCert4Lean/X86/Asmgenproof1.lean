@@ -4980,3 +4980,43 @@ theorem transl_load_correct
     simp [Pregmap.set, distinct]
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.X86.Asm
+open CompCert4Lean.X86.Asmgen
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Backend.Asmgenproof0
+
+theorem transl_store_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    transl_store_correctStatement := by
+  intro environment function chunk addressing arguments source continuation generated
+    registers memory address final_memory translated evaluated stored
+  unfold transl_store at translated
+  obtain ⟨mode, mode_translated, translated⟩ := bind_inversion _ _ _ _ _ translated
+  have related := transl_addressing_mode_correct environment addressing arguments mode
+    registers address mode_translated evaluated
+  have exact_address : eval_addrmode environment mode registers = address := by
+    cases related with
+    | lessdef_refl => rfl
+    | lessdef_undef => simp [Mem.storev] at stored
+  have store_step : exec_store environment chunk memory mode registers (preg_of source) [] =
+      .Next (nextinstr_nf registers) final_memory := by
+    simp [exec_store, Pregmap.get, exact_address, stored, undef_regs]
+  refine ⟨nextinstr_nf registers, ?_, ?_⟩
+  · cases chunk <;> cases source <;>
+      simp [ireg_of, freg_of, preg_of, mk_storebyte] at translated
+    all_goals cases translated
+    all_goals apply exec_straight_one
+    all_goals first | exact store_step | rfl
+  · intro register data excluded
+    exact nextinstr_nf_inv1 register registers data
+
+end CompCert4Lean.X86.Asmgenproof1
