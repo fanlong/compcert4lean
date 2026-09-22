@@ -7793,3 +7793,1664 @@ private theorem conversion_finite32_roundtrip
           exact equality
 
 end CompCert4Lean.Lib.Floats
+
+set_option maxRecDepth 4096
+namespace CompCert4Lean.Lib.Floats
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Flocq.IEEE754
+
+open _root_.Float.Model
+open _root_.Float.Model.UnpackedFloat
+
+private theorem remaining_round_canonical64
+    (sign : Sign) (mantissa : Nat) (exponent : Int)
+    (positive : 0 < mantissa) (digits : mantissa.log2 = 52)
+    (minimum : -1074 ≤ exponent) :
+    roundWithAccuracy Format.binary64 sign mantissa exponent .exact =
+      .finite sign mantissa exponent positive := by
+  have target : Format.binary64.targetExponent (totalExponent mantissa exponent) = exponent := by
+    change max ((mantissa.log2 : Int) + 1 + exponent - 53) (-1074) = exponent
+    rw [digits]
+    omega
+  have shifted : shiftToTargetExponent Format.binary64 mantissa exponent .exact =
+      (⟨mantissa, false, false⟩, exponent) := by
+    unfold shiftToTargetExponent
+    rw [target]
+    simp [shiftToExponent, ExtendedMantissa.ofMantissaAndAccuracy]
+    rfl
+  unfold roundWithAccuracy
+  rw [shifted]
+  dsimp only
+  change (match shiftToTargetExponent Format.binary64 mantissa exponent .exact with
+    | (final, finalExponent) =>
+      if proof : final.mantissa = 0 then UnpackedFloat.zero sign
+      else UnpackedFloat.finite sign final.mantissa finalExponent (Nat.pos_of_ne_zero proof)) = _
+  rw [shifted]
+  simp [Nat.ne_of_gt positive]
+
+private theorem remaining_round_small64 (mantissa : Nat)
+    (positive : 0 < mantissa) (small : mantissa.log2 ≤ 31) :
+    round Format.binary64 .positive mantissa 0 =
+      .finite .positive (mantissa * 2 ^ (52 - mantissa.log2))
+        ((mantissa.log2 : Int) - 52)
+        (Nat.mul_pos positive (Nat.two_pow_pos _)) := by
+  have target : Format.binary64.targetExponent (totalExponent mantissa 0) =
+      (mantissa.log2 : Int) - 52 := by
+    change max ((mantissa.log2 : Int) + 1 + 0 - 53) (-1074) = _
+    omega
+  have shift : (0 - ((mantissa.log2 : Int) - 52)).toNat = 52 - mantissa.log2 := by omega
+  have exponent : (0 : Int) - ((52 - mantissa.log2 : Nat) : Int) =
+      (mantissa.log2 : Int) - 52 := by omega
+  unfold round
+  rw [target]
+  simp only [decreaseExponent, shift, Nat.shiftLeft_eq, exponent]
+  apply remaining_round_canonical64
+  · rw [log2_mul_pow _ _ (Nat.ne_of_gt positive)]
+    omega
+  · omega
+
+private theorem remaining_encode64_normal (mantissa : positive) (exponent : Int)
+    (lower : 2 ^ 52 ≤ posToNat mantissa) (upper : posToNat mantissa < 2 ^ 53)
+    (emin : -1074 ≤ exponent) (emax : exponent ≤ 971) :
+    (encode64 (.B754_finite false mantissa (zOfInt exponent))).bits =
+      packComponents Format.binary64 .positive
+        (BitVec.ofNat 11 (exponent + 1075).toNat)
+        (BitVec.ofNat 52 (posToNat mantissa)) := by
+  have fraction : 0 ≤ (posToNat mantissa : Int) - 4503599627370496 := by omega
+  have fractionTest : Bits.Zle_bool Bits.Z0
+      (Bits.Zsub (.Zpos mantissa) (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 52))) = true := by
+    change (if 0 ≤ intOfZ (zOfInt ((posToNat mantissa : Int) - 4503599627370496)) then true else false) = true
+    rw [intOfZ_zOfInt]
+    exact if_pos fraction
+  unfold encode64 Bits.bits_of_b64 Bits.bits_of_binary_float
+  dsimp only
+  rw [fractionTest]
+  simp only [↓reduceIte]
+  change (BitVec.ofNat 64 (ZArith.BinInt.Z.to_nat
+    (Bits.join_bits _ _ false (zOfInt ((posToNat mantissa : Int) - 4503599627370496))
+        (Bits.Zadd (Bits.Zsub (zOfInt exponent) (Bits.emin _ _)) Bits.Zone)))) = _
+  apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.toNat_ofNat, packComponents, BitVec.toNat_append,
+    Sign.toBitVec, BitVec.toNat_ofNat]
+  have eminValue : intOfZ (Bits.emin (ZArith.BinInt.Z.of_nat 52)
+      (ZArith.BinInt.Z.of_nat 11)) = -1074 := by decide
+  simp only [Bits.join_bits, Bits.Zadd, Bits.Zshiftl, Bits.Zsub, Bits.Zone,
+    ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub, ZArith.BinInt.Z.shiftl,
+    ZArith.BinInt.Z.to_nat, intOfZ_zOfInt]
+  simp only [eminValue, show intOfZ (ZArith.BinInt.Z.of_nat 52) = 52 from rfl,
+    show intOfZ Flocq.Core.Zaux.Zone = 1 from rfl]
+  simp only [show (0 : Int) ≤ 52 from by decide, show (false = true) = False from by decide,
+    ↓reduceIte, intOfZ_zOfInt, show intOfZ Bits.Z0 = 0 from rfl, Int.zero_add]
+  rw [show exponent - (-1074) + 1 = exponent + 1075 by omega]
+  change (Int.toNat (((exponent + 1075) * 4503599627370496) +
+    ((posToNat mantissa : Int) - 4503599627370496))) % 18446744073709551616 = _
+  have exponentNat : ((exponent + 1075).toNat : Int) = exponent + 1075 := by omega
+  have fractionNat : ((posToNat mantissa - 4503599627370496 : Nat) : Int) =
+      (posToNat mantissa : Int) - 4503599627370496 := by omega
+  have natural : Int.toNat (((exponent + 1075) * 4503599627370496) +
+      ((posToNat mantissa : Int) - 4503599627370496)) =
+      (exponent + 1075).toNat * 4503599627370496 +
+        (posToNat mantissa - 4503599627370496) := by
+    rw [← exponentNat, ← fractionNat]
+    omega
+  rw [natural]
+  have exponentBound : (exponent + 1075).toNat < 2048 := by omega
+  have mantissaMod : posToNat mantissa % 4503599627370496 =
+      posToNat mantissa - 4503599627370496 := by omega
+  simp only [Nat.zero_mod, Nat.zero_shiftLeft, Nat.zero_or, Nat.mod_eq_of_lt exponentBound]
+  rw [Nat.shiftLeft_eq, Nat.mul_comm _ (2 ^ 52),
+    ← Nat.two_pow_add_eq_or_of_lt (Nat.mod_lt _ (Nat.two_pow_pos 52))]
+  rw [mantissaMod]
+  omega
+
+private theorem remaining_sign_components64 (exponent : BitVec 11) (mantissa : BitVec 52) :
+    unpackSign (spec := Format.binary64)
+      (packComponents Format.binary64 .positive exponent mantissa) = 0#1 := by
+  change BitVec.extractLsb 63 63 (0#1 ++ exponent ++ mantissa) = 0#1
+  bv_decide
+
+private theorem remaining_unpack_components64 (mantissa exponent : Nat)
+    (lower : 2 ^ 52 ≤ mantissa) (upper : mantissa < 2 ^ 53)
+    (emin : 0 < exponent) (emax : exponent < 2047) :
+    UnpackedFloat.unpack Format.binary64
+      (packComponents Format.binary64 .positive
+        (BitVec.ofNat 11 exponent) (BitVec.ofNat 52 mantissa)) =
+      .finite .positive mantissa ((exponent : Int) - 1075) (by omega) := by
+  have exponentNonzero : (BitVec.ofNat 11 exponent) ≠ 0#11 := by
+    intro equality
+    have := congrArg BitVec.toNat equality
+    simp only [BitVec.toNat_ofNat] at this
+    omega
+  have exponentFinite : (BitVec.ofNat 11 exponent) ≠ -1#11 := by
+    intro equality
+    have := congrArg BitVec.toNat equality
+    change exponent % 2048 = 2047 at this
+    omega
+  unfold UnpackedFloat.unpack
+  dsimp only
+  simp only [unpackMantissa_packComponents (spec := Format.binary64),
+    unpackExponent_packComponents (spec := Format.binary64), remaining_sign_components64]
+  simp only [exponentNonzero, exponentFinite, ↓reduceIte, Sign.ofBitVec]
+  have combined : (1#1 ++ BitVec.ofNat 52 mantissa).toNat = mantissa := by
+    rw [BitVec.toNat_append, Nat.shiftLeft_eq]
+    change 4503599627370496 ||| mantissa % 4503599627370496 = mantissa
+    rw [show 4503599627370496 = 2 ^ 52 * 1 by rfl,
+      ← Nat.two_pow_add_eq_or_of_lt (Nat.mod_lt _ (Nat.two_pow_pos 52))]
+    omega
+  simp only [combined, BitVec.toNat_ofNat,
+    Nat.mod_eq_of_lt (show exponent < 2 ^ 11 by omega)]
+  rfl
+
+private theorem remaining_scaled_bounds (mantissa : Nat) (positive : 0 < mantissa)
+    (small : mantissa.log2 ≤ 31) :
+    2 ^ 52 ≤ mantissa * 2 ^ (52 - mantissa.log2) ∧
+      mantissa * 2 ^ (52 - mantissa.log2) < 2 ^ 53 := by
+  have digits : (mantissa * 2 ^ (52 - mantissa.log2)).log2 = 52 := by
+    rw [log2_mul_pow _ _ (Nat.ne_of_gt positive)]
+    omega
+  have nonzero := Nat.ne_of_gt (Nat.mul_pos positive (Nat.two_pow_pos (52 - mantissa.log2)))
+  constructor
+  · exact (Nat.le_log2 nonzero).mp (by omega)
+  · exact (Nat.log2_lt nonzero).mp (by omega)
+
+private theorem remaining_BofZ_bits64
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024]
+    (mantissa : Nat) (positive : 0 < mantissa) (small : mantissa.log2 ≤ 31) :
+    (encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024)
+      (ZArith.BinInt.Z.of_nat mantissa))).bits =
+      packComponents Format.binary64 .positive
+        (BitVec.ofNat 11 (mantissa.log2 + 1023))
+        (BitVec.ofNat 52 (mantissa * 2 ^ (52 - mantissa.log2))) := by
+  have naturalZ : ZArith.BinInt.Z.of_nat mantissa = .Zpos (posOfNat mantissa) := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    change (mantissa : Int) = (posToNat (posOfNat mantissa) : Int)
+    rw [posToNat_posOfNat positive]
+  rw [naturalZ, manual_BofZ_positive_small64 (posOfNat mantissa)
+    (by simpa only [posToNat_posOfNat positive] using small)]
+  simp only [posToNat_posOfNat positive]
+  have scaledPositive := Nat.mul_pos positive (Nat.two_pow_pos (52 - mantissa.log2))
+  have bounds := remaining_scaled_bounds mantissa positive small
+  erw [remaining_encode64_normal _ _
+    (by simpa only [posToNat_posOfNat scaledPositive] using bounds.1)
+    (by simpa only [posToNat_posOfNat scaledPositive] using bounds.2)
+    (by omega) (by omega)]
+  rw [posToNat_posOfNat scaledPositive]
+  have exponent : ((mantissa.log2 : Int) - 52 + 1075).toNat = mantissa.log2 + 1023 := by omega
+  rw [exponent]
+
+private theorem remaining_BofZ_unpack64
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024]
+    (mantissa : Nat) (positive : 0 < mantissa) (small : mantissa.log2 ≤ 31) :
+    UnpackedFloat.unpack Format.binary64
+      (encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024)
+        (ZArith.BinInt.Z.of_nat mantissa))).bits =
+      .finite .positive (mantissa * 2 ^ (52 - mantissa.log2))
+        ((mantissa.log2 : Int) - 52)
+        (Nat.mul_pos positive (Nat.two_pow_pos _)) := by
+  rw [remaining_BofZ_bits64 mantissa positive small]
+  have bounds := remaining_scaled_bounds mantissa positive small
+  rw [remaining_unpack_components64 (mantissa * 2 ^ (52 - mantissa.log2))
+    (mantissa.log2 + 1023) bounds.1 bounds.2 (by omega) (by omega)]
+  have exponent : ((mantissa.log2 + 1023 : Nat) : Int) - 1075 =
+      (mantissa.log2 : Int) - 52 := by omega
+  simp only [exponent]
+
+private theorem remaining_round_scaled_uint64 (mantissa shift : Nat)
+    (digits : mantissa.log2 = 31) (positive : 0 < mantissa)
+    (shiftLower : 21 ≤ shift) (shiftUpper : shift ≤ 52) :
+    round Format.binary64 .positive (mantissa * 2 ^ shift) (-(shift : Int)) =
+      .finite .positive (mantissa * 2 ^ 21) (-21)
+        (Nat.mul_pos positive (Nat.two_pow_pos 21)) := by
+  have scaledNonzero : mantissa * 2 ^ shift ≠ 0 :=
+    Nat.ne_of_gt (Nat.mul_pos positive (Nat.two_pow_pos shift))
+  have total : totalExponent (mantissa * 2 ^ shift) (-(shift : Int)) = 32 := by
+    unfold totalExponent
+    rw [log2_mul_pow _ _ (Nat.ne_of_gt positive), digits]
+    omega
+  have target : Format.binary64.targetExponent
+      (totalExponent (mantissa * 2 ^ shift) (-(shift : Int))) = -21 := by
+    rw [total]
+    rfl
+  unfold round
+  rw [target]
+  have noDecrease : (-(shift : Int) - (-21)).toNat = 0 := by omega
+  simp only [decreaseExponent, noDecrease, Nat.shiftLeft_zero, Int.ofNat_zero, Int.sub_zero]
+  have canonicalDigits : (mantissa * 2 ^ 21).log2 = 52 := by
+    rw [log2_mul_pow _ _ (Nat.ne_of_gt positive), digits]
+  have canonicalTarget : Format.binary64.targetExponent
+      (totalExponent (mantissa * 2 ^ 21) (-21)) = -21 := by
+    change max (((mantissa * 2 ^ 21).log2 : Int) + 1 - 21 - 53) (-1074) = -21
+    rw [canonicalDigits]
+    rfl
+  have scale := shiftToTargetExponent_scale64 (mantissa * 2 ^ 21) (shift - 21) (-21)
+    (Nat.ne_of_gt (Nat.mul_pos positive (Nat.two_pow_pos 21)))
+    (by rw [canonicalTarget]; omega)
+  have scaledMantissa : mantissa * 2 ^ 21 * 2 ^ (shift - 21) = mantissa * 2 ^ shift := by
+    rw [Nat.mul_assoc, ← Nat.pow_add, Nat.add_sub_of_le shiftLower]
+  have scaledExponent : (-21 : Int) - ((shift - 21 : Nat) : Int) = -(shift : Int) := by omega
+  rw [scaledMantissa, scaledExponent] at scale
+  have canonical := remaining_round_canonical64 .positive (mantissa * 2 ^ 21) (-21)
+    (Nat.mul_pos positive (Nat.two_pow_pos 21)) canonicalDigits (by decide)
+  unfold roundWithAccuracy at canonical ⊢
+  rw [scale]
+  exact canonical
+
+private theorem remaining_BofZ_pack64
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024]
+    (mantissa : Nat) (positive : 0 < mantissa) (small : mantissa.log2 ≤ 31) :
+    (encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024)
+      (ZArith.BinInt.Z.of_nat mantissa))).bits =
+      UnpackedFloat.pack Format.binary64
+        (.finite .positive (mantissa * 2 ^ (52 - mantissa.log2))
+          ((mantissa.log2 : Int) - 52)
+          (Nat.mul_pos positive (Nat.two_pow_pos _))) := by
+  rw [remaining_BofZ_bits64 mantissa positive small]
+  have digits : (mantissa * 2 ^ (52 - mantissa.log2)).log2 = 52 := by
+    rw [log2_mul_pow _ _ (Nat.ne_of_gt positive)]
+    omega
+  unfold UnpackedFloat.pack
+  dsimp only
+  rw [digits]
+  have exponent : ((mantissa.log2 : Int) - 52 + 1023 + 52).toNat = mantissa.log2 + 1023 := by omega
+  change _ = if 2048 ≤ ((mantissa.log2 : Int) - 52 + 1023 + 52).toNat + 1 then _ else _
+  simp only [exponent]
+  simp only [show ¬ 2048 ≤ mantissa.log2 + 1023 + 1 by omega, ↓reduceIte]
+  simp only [show 52 + 1 = Format.binary64.mantissaBits from rfl, ↓reduceIte]
+  simp only [show Format.binary64.exponentBias = 1023 from rfl,
+    show ((1023 : Nat) : Int) = 1023 from rfl,
+    show ((52 : Nat) : Int) = 52 from rfl, exponent]
+
+private theorem remaining_components_notNaN64 (mantissa exponent : Nat)
+    (bound : exponent < 2047) :
+    isNaN64 ⟨packComponents Format.binary64 .positive
+      (BitVec.ofNat 11 exponent) (BitVec.ofNat 52 mantissa)⟩ = false := by
+  have extracted := congrArg BitVec.toNat
+    (unpackExponent_packComponents (spec := Format.binary64)
+      (sign := .positive) (exponent := BitVec.ofNat 11 exponent)
+      (mantissa := BitVec.ofNat 52 mantissa))
+  simp only [unpackExponent, BitVec.toNat_cast, BitVec.extractLsb_toNat,
+    Nat.shiftRight_eq_div_pow, BitVec.toNat_ofNat] at extracted
+  have exponentValue : exponent64 ⟨packComponents Format.binary64 .positive
+      (BitVec.ofNat 11 exponent) (BitVec.ofNat 52 mantissa)⟩ = exponent := by
+    change (packComponents Format.binary64 .positive
+      (BitVec.ofNat 11 exponent) (BitVec.ofNat 52 mantissa)).toNat / 2 ^ 52 % 2 ^ 11 = exponent
+    rw [extracted, Nat.mod_eq_of_lt (by omega)]
+  unfold isNaN64
+  rw [exponentValue]
+  simp only [show (2 ^ 11 - 1 : Nat) = 2047 by decide,
+    show (exponent == 2047) = false by simp; omega, Bool.false_and]
+
+private theorem remaining_BofZ_notNaN64
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024]
+    (mantissa : Nat) (positive : 0 < mantissa) (small : mantissa.log2 ≤ 31) :
+    isNaN64 (encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024)
+      (ZArith.BinInt.Z.of_nat mantissa))) = false := by
+  have value : encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024)
+      (ZArith.BinInt.Z.of_nat mantissa)) =
+      ⟨packComponents Format.binary64 .positive
+        (BitVec.ofNat 11 (mantissa.log2 + 1023))
+        (BitVec.ofNat 52 (mantissa * 2 ^ (52 - mantissa.log2)))⟩ := by
+    apply float.ext
+    exact remaining_BofZ_bits64 mantissa positive small
+  rw [value]
+  exact remaining_components_notNaN64 _ _ (by omega)
+
+private theorem remaining_add_uint64 (mantissa : Nat)
+    (positive : 0 < mantissa) (bound : mantissa < 2 ^ 31) :
+    UnpackedFloat.add Format.binary64
+      (.finite .positive (mantissa * 2 ^ (52 - mantissa.log2))
+        ((mantissa.log2 : Int) - 52)
+        (Nat.mul_pos positive (Nat.two_pow_pos _)))
+      (.finite .positive 4503599627370496 (-21) (by decide)) =
+      .finite .positive ((mantissa + 2 ^ 31) * 2 ^ 21) (-21)
+        (Nat.mul_pos (by omega) (Nat.two_pow_pos _)) := by
+  have small : mantissa.log2 < 31 := (Nat.log2_lt (Nat.ne_of_gt positive)).mpr bound
+  have minimum : min ((mantissa.log2 : Int) - 52) (-21) =
+      (mantissa.log2 : Int) - 52 := by omega
+  have noShift : ((mantissa.log2 : Int) - 52 - ((mantissa.log2 : Int) - 52)).toNat = 0 := by omega
+  have thresholdShift : ((-21 : Int) - ((mantissa.log2 : Int) - 52)).toNat =
+      31 - mantissa.log2 := by omega
+  have shiftedThreshold : 4503599627370496 * 2 ^ (31 - mantissa.log2) =
+      2 ^ 31 * 2 ^ (52 - mantissa.log2) := by
+    change 2 ^ 52 * 2 ^ (31 - mantissa.log2) = _
+    rw [← Nat.pow_add, ← Nat.pow_add]
+    congr 1
+    omega
+  have totalPositive : 0 < mantissa * 2 ^ (52 - mantissa.log2) +
+      4503599627370496 * 2 ^ (31 - mantissa.log2) := by
+    have := Nat.mul_pos positive (Nat.two_pow_pos (52 - mantissa.log2))
+    omega
+  unfold UnpackedFloat.add
+  dsimp only
+  rw [minimum]
+  simp only [decreaseExponent, noShift, thresholdShift,
+    Nat.shiftLeft_eq, Sign.apply, Nat.pow_zero, Nat.mul_one]
+  unfold normalize
+  have comparison : compare
+      ((mantissa * 2 ^ (52 - mantissa.log2) : Nat) +
+        (4503599627370496 * 2 ^ (31 - mantissa.log2) : Nat) : Int) 0 = .gt := by
+    apply Int.compare_eq_gt.mpr
+    omega
+  rw [comparison]
+  simp only [← Int.natCast_add, Int.toNat_natCast, shiftedThreshold, ← Nat.add_mul]
+  have totalDigits : (mantissa + 2 ^ 31).log2 = 31 := by
+    have totalNonzero : mantissa + 2 ^ 31 ≠ 0 := by omega
+    have low := (Nat.le_log2 totalNonzero).mpr (show 2 ^ 31 ≤ mantissa + 2 ^ 31 by omega)
+    have high := (Nat.log2_lt totalNonzero).mpr (show mantissa + 2 ^ 31 < 2 ^ 32 by omega)
+    omega
+  have exponent : (mantissa.log2 : Int) - 52 = -((52 - mantissa.log2 : Nat) : Int) := by omega
+  rw [exponent]
+  exact remaining_round_scaled_uint64 (mantissa + 2 ^ 31) (52 - mantissa.log2)
+    totalDigits (by omega) (by omega) (by omega)
+
+private theorem remaining_BofZ_add64
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024]
+    (mantissa : Nat) (positive : 0 < mantissa) (bound : mantissa < 2 ^ 31) :
+    Float.add
+      (encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024) (ZArith.BinInt.Z.of_nat mantissa)))
+      (encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024) (ZArith.BinInt.Z.of_nat (2 ^ 31)))) =
+      encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024)
+        (ZArith.BinInt.Z.of_nat (mantissa + 2 ^ 31))) := by
+  have small : mantissa.log2 ≤ 31 := by
+    have := (Nat.log2_lt (Nat.ne_of_gt positive)).mpr bound
+    omega
+  have totalPositive : 0 < mantissa + 2 ^ 31 := by omega
+  have totalDigits : (mantissa + 2 ^ 31).log2 = 31 := by
+    have nonzero := Nat.ne_of_gt totalPositive
+    have low := (Nat.le_log2 nonzero).mpr (show 2 ^ 31 ≤ mantissa + 2 ^ 31 by omega)
+    have high := (Nat.log2_lt nonzero).mpr (show mantissa + 2 ^ 31 < 2 ^ 32 by omega)
+    omega
+  have raw : modelBinary64 (UnpackedFloat.add Format.binary64)
+      (encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024) (ZArith.BinInt.Z.of_nat mantissa)))
+      (encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024) (ZArith.BinInt.Z.of_nat (2 ^ 31)))) =
+      encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024)
+        (ZArith.BinInt.Z.of_nat (mantissa + 2 ^ 31))) := by
+    apply float.ext
+    unfold modelBinary64
+    simp only
+    rw [remaining_BofZ_unpack64 mantissa positive small,
+      remaining_BofZ_unpack64 (2 ^ 31) (by decide) (by decide)]
+    change UnpackedFloat.pack Format.binary64
+      (UnpackedFloat.add Format.binary64
+        (.finite .positive (mantissa * 2 ^ (52 - mantissa.log2))
+          ((mantissa.log2 : Int) - 52) _)
+        (.finite .positive 4503599627370496 (-21) _)) = _
+    rw [remaining_add_uint64 mantissa positive bound,
+      remaining_BofZ_pack64 (mantissa + 2 ^ 31) totalPositive (by omega)]
+    simp only [totalDigits, show (52 - 31 : Nat) = 21 from rfl,
+      show ((31 : Nat) : Int) - 52 = -21 from rfl]
+  unfold Float.add
+  rw [raw]
+  simp only [Float.finishBinary, remaining_BofZ_notNaN64 mantissa positive small,
+    remaining_BofZ_notNaN64 (2 ^ 31) (by decide) (by decide),
+    remaining_BofZ_notNaN64 (mantissa + 2 ^ 31) totalPositive (by omega),
+    Bool.false_or, Bool.false_eq_true, ↓reduceIte]
+
+private theorem remaining_unsigned_split (word : Integers.Int.int)
+    (large : Integers.Int.ltu word Float.ox8000_0000 = false) :
+    ∃ mantissa : Nat, mantissa < 2 ^ 31 ∧
+      Integers.Int.unsigned word = ZArith.BinInt.Z.of_nat (mantissa + 2 ^ 31) ∧
+      Integers.Int.signed (Integers.Int.sub word Float.ox8000_0000) =
+        ZArith.BinInt.Z.of_nat mantissa := by
+  have range := Integers.Int.unsigned_range_proof word
+  have half : Integers.Int.unsigned Float.ox8000_0000 = ZArith.BinInt.Z.of_nat (2 ^ 31) := by decide
+  have lower : (2147483648 : Int) ≤ intOfZ (Integers.Int.unsigned word) := by
+    apply Int.le_of_not_gt
+    intro contradiction
+    have less : ZArith.BinInt.Z.lt (Integers.Int.unsigned word)
+        (Integers.Int.unsigned Float.ox8000_0000) := by
+      rw [half]
+      change intOfZ (Integers.Int.unsigned word) < 2147483648
+      omega
+    have comparison : Integers.Int.ltu word Float.ox8000_0000 = true :=
+      Coqlib.zlt_true _ _ _ _ _ less
+    rw [large] at comparison
+    contradiction
+  have upper : intOfZ (Integers.Int.unsigned word) < 4294967296 := range.2
+  let mantissa := (intOfZ (Integers.Int.unsigned word) - 2147483648).toNat
+  have cast : (mantissa : Int) = intOfZ (Integers.Int.unsigned word) - 2147483648 := by
+    dsimp [mantissa]
+    omega
+  have bound : mantissa < 2 ^ 31 := by omega
+  refine ⟨mantissa, bound, ?_, ?_⟩
+  · apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt, Int.ofNat_eq_natCast, Int.natCast_add]
+    omega
+  · have difference : Integers.Int.sub word Float.ox8000_0000 =
+        Integers.Int.repr (ZArith.BinInt.Z.of_nat mantissa) := by
+      unfold Integers.Int.sub Integers.WordCore.sub
+      change Integers.Int.repr (ZArith.BinInt.Z.sub (Integers.Int.unsigned word)
+        (Integers.Int.unsigned Float.ox8000_0000)) = _
+      rw [half]
+      congr 1
+      apply intOfZ_injective
+      simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+      exact cast.symm
+    rw [difference]
+    apply Integers.Int.signed_repr_proof
+    constructor
+    · change -2147483648 ≤ intOfZ (ZArith.BinInt.Z.of_nat mantissa)
+      simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt, Int.ofNat_eq_natCast]
+      omega
+    · change intOfZ (ZArith.BinInt.Z.of_nat mantissa) ≤ 2147483647
+      simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt, Int.ofNat_eq_natCast]
+      omega
+
+theorem Float.of_intu_of_int_2
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024] :
+    Float.of_intu_of_int_2Statement := by
+  intro word large
+  obtain ⟨mantissa, bound, unsigned, signed⟩ := remaining_unsigned_split word large
+  have half : Integers.Int.unsigned Float.ox8000_0000 = ZArith.BinInt.Z.of_nat (2 ^ 31) := by decide
+  unfold Float.of_intu Float.of_int
+  rw [unsigned, signed, half]
+  by_cases positive : 0 < mantissa
+  · exact (remaining_BofZ_add64 mantissa positive bound).symm
+  · have zero : mantissa = 0 := by omega
+    subst mantissa
+    simp only [Nat.zero_add]
+    have encodedZero : encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024)
+        (ZArith.BinInt.Z.of_nat 0)) = ⟨0#64⟩ := by
+      rfl
+    rw [encodedZero]
+    have raw : modelBinary64 (UnpackedFloat.add Format.binary64) ⟨0#64⟩
+        (encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024)
+          (ZArith.BinInt.Z.of_nat (2 ^ 31)))) =
+        encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024)
+          (ZArith.BinInt.Z.of_nat (2 ^ 31))) := by
+      apply float.ext
+      unfold modelBinary64
+      simp only
+      rw [remaining_BofZ_unpack64 (2 ^ 31) (by decide) (by decide),
+        remaining_BofZ_pack64 (2 ^ 31) (by decide) (by decide)]
+      rfl
+    unfold Float.add
+    rw [raw]
+    simp only [Float.finishBinary, remaining_BofZ_notNaN64 (2 ^ 31) (by decide) (by decide),
+      show isNaN64 ⟨0#64⟩ = false from rfl, Bool.false_or, Bool.false_eq_true, ↓reduceIte]
+
+end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Flocq.IEEE754
+open _root_.Float.Model
+open _root_.Float.Model.UnpackedFloat
+
+private theorem remaining_zofnat_positive (value : Nat) (positive : 0 < value) :
+    ZArith.BinInt.Z.of_nat value = .Zpos (posOfNat value) := by
+  apply intOfZ_injective
+  change intOfZ (zOfInt value) = (posToNat (posOfNat value) : Int)
+  rw [intOfZ_zOfInt, posToNat_posOfNat positive]
+
+private theorem remaining_decode64_fields (value : float) (sign : Bool)
+    (mantissa : positive) (exponent : Z)
+    (decoded : decode64 value = .B754_finite sign mantissa exponent) :
+    sign = decide (2 ^ 63 ≤ value.bits.toNat) ∧
+    ((intOfZ exponent = -1074 ∧ posToNat mantissa = value.bits.toNat % 2 ^ 52 ∧
+      value.bits.toNat / 2 ^ 52 % 2048 = 0) ∨
+      (intOfZ exponent = ((value.bits.toNat / 2 ^ 52 % 2048 : Nat) : Int) - 1075 ∧
+       posToNat mantissa = value.bits.toNat % 2 ^ 52 + 2 ^ 52 ∧
+       0 < value.bits.toNat / 2 ^ 52 % 2048 ∧
+       value.bits.toNat / 2 ^ 52 % 2048 < 2047)) := by
+  let rawExponent := value.bits.toNat / 2 ^ 52 % 2048
+  let rawMantissa := value.bits.toNat % 2 ^ 52
+  have rawBound : rawExponent < 2048 := Nat.mod_lt _ (by decide)
+  have division := zdiv_nat_f64 value.bits.toNat (2 ^ 52) (by decide)
+  have remainder := zmod_nat_f64 value.bits.toNat (2 ^ 52) (by decide)
+  have exponentRemainder := zmod_nat_f64 (value.bits.toNat / 2 ^ 52) 2048 (by decide)
+  change @Eq (Binary.binary_float z53 z1024) (decode64 value)
+    (.B754_finite sign mantissa exponent) at decoded
+  unfold decode64 Bits.b64_of_bits_unchecked Bits.binary_float_of_bits_unchecked
+    Bits.binary_float_of_bits_aux Bits.split_bits at decoded
+  dsimp only at decoded
+  simp only [show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 52) =
+      ZArith.BinInt.Z.of_nat (2 ^ 52) by decide,
+    show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 11) =
+      ZArith.BinInt.Z.of_nat 2048 by decide,
+    division, remainder, exponentRemainder] at decoded
+  have signTest : Bits.Zle_bool
+      (Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 52)) (ZArith.BinInt.Z.of_nat 2048))
+      (ZArith.BinInt.Z.of_nat value.bits.toNat) = decide (2 ^ 63 ≤ value.bits.toNat) := by
+    change (if (9223372036854775808 : Int) ≤ intOfZ (zOfInt value.bits.toNat) then true else false) = _
+    rw [intOfZ_zOfInt]
+    split
+    · symm
+      apply decide_eq_true
+      omega
+    · symm
+      apply decide_eq_false
+      omega
+  rw [signTest] at decoded
+  by_cases zeroExponent : rawExponent = 0
+  · have zeroTest : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat rawExponent) Bits.Z0 = true := by
+      rw [zeroExponent]
+      rfl
+    rw [zeroTest] at decoded
+    simp only [↓reduceIte] at decoded
+    by_cases zeroMantissa : rawMantissa = 0
+    · have mantissaZero : ZArith.BinInt.Z.of_nat (value.bits.toNat % 2 ^ 52) = .Z0 := by
+        rw [show value.bits.toNat % 2 ^ 52 = 0 from zeroMantissa]
+        rfl
+      simp only [mantissaZero, Binary.FF2B_unchecked] at decoded
+      contradiction
+    · have positive := Nat.pos_of_ne_zero zeroMantissa
+      rw [remaining_zofnat_positive rawMantissa positive] at decoded
+      change Binary.B754_finite (decide (2 ^ 63 ≤ value.bits.toNat))
+        (posOfNat rawMantissa) (Bits.emin _ _) = _ at decoded
+      injection decoded with signEq mantissaEq exponentEq
+      refine ⟨signEq.symm, Or.inl ⟨?_, ?_, zeroExponent⟩⟩
+      · rw [← exponentEq]
+        rfl
+      · rw [← mantissaEq, posToNat_posOfNat positive]
+  · have zeroTest : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat rawExponent) Bits.Z0 = false :=
+      conversion_zeq_nat_false zeroExponent
+    rw [zeroTest] at decoded
+    simp only [Bool.false_eq_true, ↓reduceIte] at decoded
+    have maxValue : Bits.Zsub (ZArith.BinInt.Z.of_nat 2048) Bits.Zone =
+        ZArith.BinInt.Z.of_nat 2047 := by decide
+    rw [maxValue] at decoded
+    by_cases maxExponent : rawExponent = 2047
+    · rw [conversion_zeq_nat_true maxExponent] at decoded
+      simp only [↓reduceIte] at decoded
+      cases mantissaValue : ZArith.BinInt.Z.of_nat (value.bits.toNat % 2 ^ 52) <;>
+        simp only [mantissaValue, Binary.FF2B_unchecked] at decoded <;> contradiction
+    · rw [conversion_zeq_nat_false maxExponent] at decoded
+      simp only [Bool.false_eq_true, ↓reduceIte] at decoded
+      have sum : Bits.Zadd (ZArith.BinInt.Z.of_nat rawMantissa)
+          (ZArith.BinInt.Z.of_nat (2 ^ 52)) =
+          ZArith.BinInt.Z.of_nat (rawMantissa + 2 ^ 52) := by
+        apply intOfZ_injective
+        simp only [Bits.Zadd, ZArith.BinInt.Z.add, ZArith.BinInt.Z.of_nat,
+          intOfZ_zOfInt, Int.ofNat_eq_natCast, Int.natCast_add]
+      rw [sum, remaining_zofnat_positive (rawMantissa + 2 ^ 52) (by omega)] at decoded
+      change Binary.B754_finite (decide (2 ^ 63 ≤ value.bits.toNat))
+        (posOfNat (rawMantissa + 2 ^ 52))
+        (Bits.Zsub (Bits.Zadd (ZArith.BinInt.Z.of_nat rawExponent) (Bits.emin _ _)) Bits.Zone) = _ at decoded
+      injection decoded with signEq mantissaEq exponentEq
+      refine ⟨signEq.symm, Or.inr ⟨?_, ?_, by omega, by omega⟩⟩
+      · rw [← exponentEq]
+        simp only [Bits.Zsub, Bits.Zadd, ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add,
+          ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+        change (rawExponent : Int) + (-1074) - 1 = (rawExponent : Int) - 1075
+        omega
+      · rw [← mantissaEq, posToNat_posOfNat (by omega)]
+
+private theorem remaining_positive_uint_exponent (mantissa : positive) (exponent result : Z)
+    (lower : 4503599627370496 ≤ posToNat mantissa)
+    (large : -21 ≤ intOfZ exponent)
+    (upper : intOfZ result < 4294967296)
+    (converted : IEEE754_extra.ZofB (prec := z53) (emax := z1024)
+      (.B754_finite false mantissa exponent) = some result) :
+    exponent = .Zneg (posOfNat 21) := by
+  cases exponent with
+  | Z0 =>
+      have equal := congrArg intOfZ (Option.some.inj converted)
+      change (posToNat mantissa : Int) = intOfZ result at equal
+      omega
+  | Zpos shift =>
+      have equal := congrArg intOfZ (Option.some.inj converted)
+      change intOfZ (ZArith.BinInt.Z.mul (.Zpos mantissa)
+        (ZArith.BinInt.Z.pow_pos (.Zpos (.xO .xH)) shift)) = intOfZ result at equal
+      simp only [ZArith.BinInt.Z.mul, ZArith.BinInt.Z.pow_pos, intOfZ_zOfInt] at equal
+      change (posToNat mantissa : Int) * (2 : Int) ^ posToNat shift = intOfZ result at equal
+      have factor : (1 : Int) ≤ (2 : Int) ^ posToNat shift := Int.pow_pos (by decide)
+      have bound := Int.mul_le_mul_of_nonneg_left factor (Int.natCast_nonneg (posToNat mantissa))
+      omega
+  | Zneg shift =>
+      have equal := congrArg intOfZ (Option.some.inj converted)
+      change intOfZ (ZArith.BinInt.Z.div (.Zpos mantissa)
+        (ZArith.BinInt.Z.pow_pos (.Zpos (.xO .xH)) shift)) = intOfZ result at equal
+      rw [manual_div_pow_int] at equal
+      have shiftUpper : posToNat shift ≤ 21 := by
+        change -21 ≤ -(posToNat shift : Int) at large
+        omega
+      have shiftLower : 21 ≤ posToNat shift := by
+        by_cases small : posToNat shift ≤ 20
+        · have power := Nat.pow_le_pow_right (by decide : 0 < 2) small
+          have powerInt : (2 : Int) ^ posToNat shift ≤ 1048576 := Int.ofNat_le.mpr power
+          have scaled := Int.mul_le_mul_of_nonneg_left powerInt (by decide : (0 : Int) ≤ 4294967296)
+          have quotient : 4294967296 ≤ (posToNat mantissa : Int) / (2 : Int) ^ posToNat shift := by
+            apply (Int.le_ediv_iff_mul_le (Int.pow_pos (by decide))).mpr
+            omega
+          omega
+        · omega
+      congr 1
+      apply posToNat_injective
+      change posToNat shift = 21
+      omega
+
+private theorem remaining_uint_input
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024]
+    (value : float) (word : Integers.Int.int)
+    (compared : Float.cmp .Clt value (Float.of_intu Float.ox8000_0000) = false)
+    (converted : Float.to_intu value = some word) :
+    ∃ mantissa : positive,
+      decode64 value = .B754_finite false mantissa (.Zneg (posOfNat 21)) ∧
+      2 ^ 52 ≤ posToNat mantissa ∧ posToNat mantissa < 2 ^ 53 := by
+  have threshold : decode64 (Float.of_intu Float.ox8000_0000) =
+      Binary.B754_finite false (posOfNat 4503599627370496) (.Zneg (posOfNat 21)) := by rfl
+  unfold Float.cmp Float.compare at compared
+  rw [threshold] at compared
+  have notLess : Binary.Bcompare (decode64 value)
+      (.B754_finite false (posOfNat 4503599627370496) (.Zneg (posOfNat 21))) ≠ some .Lt := by
+    intro equality
+    simp only [equality, cmp_of_comparison] at compared
+    contradiction
+  unfold Float.to_intu at converted
+  cases rangeResult : IEEE754_extra.ZofB_range (decode64 value) z0 Integers.Int.max_unsigned with
+  | none => simp [rangeResult] at converted
+  | some result =>
+    have inRange := IEEE754_extra.ZofB_range_inversion
+      ⟨decode64 value, manual_decode64_certificate value⟩ z0 Integers.Int.max_unsigned result rangeResult
+    have truncated : IEEE754_extra.ZofB (decode64 value) = some result := inRange.2.2
+    have upper : intOfZ result < 4294967296 := by
+      have limit : intOfZ result ≤ 4294967295 := inRange.2.1
+      omega
+    have valid := manual_decode64_certificate value
+    cases decoded : decode64 value with
+    | B754_zero sign => simp [decoded, Binary.Bcompare, Binary.B2BSN, BinarySingleNaN.Bcompare,
+        BinarySingleNaN.SFcompare, Model.Rocq.Coq.Floats.SpecFloat.SFcompare,
+        BinarySingleNaN.B2SF, cmp_of_comparison] at compared
+    | B754_infinity sign => simp [decoded, IEEE754_extra.ZofB] at truncated
+    | B754_nan sign payload => simp [decoded, IEEE754_extra.ZofB] at truncated
+    | B754_finite sign mantissa exponent =>
+      rw [decoded] at compared truncated valid notLess
+      cases sign with
+      | true =>
+        simp [Binary.Bcompare, Binary.B2BSN, BinarySingleNaN.Bcompare,
+          BinarySingleNaN.SFcompare, Model.Rocq.Coq.Floats.SpecFloat.SFcompare,
+          BinarySingleNaN.B2SF, cmp_of_comparison] at compared
+      | false =>
+        have large : -21 ≤ intOfZ exponent := by
+          apply Int.le_of_not_gt
+          intro less
+          have lessComparison : Binary.Bcompare (prec := z53) (emax := z1024)
+              (.B754_finite false mantissa exponent)
+              (.B754_finite false (posOfNat 4503599627370496) (.Zneg (posOfNat 21))) = some .Lt := by
+            change some (match ZArith.BinInt.Z.compare exponent (.Zneg (posOfNat 21)) with
+              | .Eq => PArith.BinPos.Pos.compare_cont .Eq mantissa (posOfNat 4503599627370496)
+              | other => other) = some .Lt
+            have comparison : ZArith.BinInt.Z.compare exponent (.Zneg (posOfNat 21)) = .Lt := by
+              change (if intOfZ exponent < -21 then (.Lt : RCmp) else if intOfZ exponent = -21 then .Eq else .Gt) = .Lt
+              rw [if_pos less]
+            rw [comparison]
+          exact notLess lessComparison
+        have fields := remaining_decode64_fields value false mantissa exponent decoded
+        have lower : 4503599627370496 ≤ posToNat mantissa := by
+          rcases fields.2 with subnormal | normal
+          · omega
+          · omega
+        have exponentExact := remaining_positive_uint_exponent mantissa exponent result lower large upper truncated
+        refine ⟨mantissa, ?_, lower, ?_⟩
+        · subst exponent
+          rfl
+        · have bound := manual_mantissa_bound64 mantissa exponent valid
+          omega
+
+private theorem remaining_positive_normal_bits64 (value : float)
+    (mantissa : positive) (exponent : Z)
+    (decoded : decode64 value = .B754_finite false mantissa exponent)
+    (lower : 2 ^ 52 ≤ posToNat mantissa) :
+    value.bits = packComponents Format.binary64 .positive
+      (BitVec.ofNat 11 (intOfZ exponent + 1075).toNat)
+      (BitVec.ofNat 52 (posToNat mantissa)) := by
+  have fields := remaining_decode64_fields value false mantissa exponent decoded
+  have rawSmall : value.bits.toNat < 2 ^ 63 := by
+    have signFalse := fields.1.symm
+    simp only [decide_eq_false_iff_not] at signFalse
+    omega
+  have fractionBound : value.bits.toNat % 2 ^ 52 < 2 ^ 52 := Nat.mod_lt _ (by decide)
+  rcases fields.2 with subnormal | ⟨exponentEq, mantissaEq, exponentPositive, exponentBound⟩
+  · omega
+  · have quotientBound : value.bits.toNat / 2 ^ 52 < 2048 := by omega
+    have quotientMod : value.bits.toNat / 2 ^ 52 % 2048 = value.bits.toNat / 2 ^ 52 := Nat.mod_eq_of_lt quotientBound
+    rw [quotientMod] at exponentEq exponentPositive exponentBound
+    have exponentNat : (intOfZ exponent + 1075).toNat = value.bits.toNat / 2 ^ 52 := by omega
+    apply BitVec.eq_of_toNat_eq
+    simp only [packComponents, BitVec.toNat_append, Sign.toBitVec, BitVec.toNat_ofNat,
+      Nat.zero_mod, Nat.zero_shiftLeft, Nat.zero_or, exponentNat,
+      Nat.mod_eq_of_lt quotientBound]
+    rw [Nat.shiftLeft_eq, Nat.mul_comm _ (2 ^ 52),
+      ← Nat.two_pow_add_eq_or_of_lt (Nat.mod_lt _ (Nat.two_pow_pos 52))]
+    omega
+
+private theorem remaining_positive_normal_unpack64 (value : float)
+    (mantissa : positive) (exponent : Z)
+    (decoded : decode64 value = .B754_finite false mantissa exponent)
+    (lower : 2 ^ 52 ≤ posToNat mantissa) :
+    UnpackedFloat.unpack Format.binary64 value.bits =
+      .finite .positive (posToNat mantissa) (intOfZ exponent) (posToNat_positive mantissa) := by
+  have fields := remaining_decode64_fields value false mantissa exponent decoded
+  have fractionBound : value.bits.toNat % 2 ^ 52 < 2 ^ 52 := Nat.mod_lt _ (by decide)
+  have exponentBounds : 0 < (intOfZ exponent + 1075).toNat ∧
+      (intOfZ exponent + 1075).toNat < 2047 := by
+    rcases fields.2 with subnormal | normal <;> omega
+  have mantissaUpper : posToNat mantissa < 2 ^ 53 := by
+    rcases fields.2 with subnormal | normal <;> omega
+  rw [remaining_positive_normal_bits64 value mantissa exponent decoded lower]
+  rw [remaining_unpack_components64 (posToNat mantissa) _ lower mantissaUpper
+    exponentBounds.1 exponentBounds.2]
+  have exponentEq : ((intOfZ exponent + 1075).toNat : Int) - 1075 = intOfZ exponent := by
+    rcases fields.2 with subnormal | normal <;> omega
+  simp only [exponentEq]
+
+private theorem remaining_fraction_round64 (mantissa : Nat)
+    (positive : 0 < mantissa) (small : mantissa.log2 ≤ 51) :
+    round Format.binary64 .positive mantissa (-21) =
+      .finite .positive (mantissa * 2 ^ (52 - mantissa.log2))
+        ((mantissa.log2 : Int) - 73)
+        (Nat.mul_pos positive (Nat.two_pow_pos _)) := by
+  have target : Format.binary64.targetExponent (totalExponent mantissa (-21)) =
+      (mantissa.log2 : Int) - 73 := by
+    change max ((mantissa.log2 : Int) + 1 - 21 - 53) (-1074) = _
+    omega
+  have shift : (-21 - ((mantissa.log2 : Int) - 73)).toNat = 52 - mantissa.log2 := by omega
+  have exponent : (-21 : Int) - ((52 - mantissa.log2 : Nat) : Int) =
+      (mantissa.log2 : Int) - 73 := by omega
+  unfold round
+  rw [target]
+  simp only [decreaseExponent, shift, Nat.shiftLeft_eq, exponent]
+  apply remaining_round_canonical64
+  · rw [log2_mul_pow _ _ (Nat.ne_of_gt positive)]
+    omega
+  · omega
+
+private theorem remaining_fraction_certificate64 (mantissa : Nat)
+    (positive : 0 < mantissa) (small : mantissa.log2 ≤ 51) :
+    Binary.BinaryFloatCertificate (prec := z53) (emax := z1024)
+      (.B754_finite false (posOfNat (mantissa * 2 ^ (52 - mantissa.log2)))
+        (zOfInt ((mantissa.log2 : Int) - 73))) := by
+  have scaledPositive := Nat.mul_pos positive (Nat.two_pow_pos (52 - mantissa.log2))
+  have digits : posToNat (BinarySingleNaN.digits2_pos
+      (posOfNat (mantissa * 2 ^ (52 - mantissa.log2)))) = 53 := by
+    have equation := quiet_nan_digits2_pos_nat (posOfNat (mantissa * 2 ^ (52 - mantissa.log2)))
+    change posToNat (BinarySingleNaN.digits2_pos _) =
+      (posToNat (posOfNat (mantissa * 2 ^ (52 - mantissa.log2)))).log2 + 1 at equation
+    rw [equation, posToNat_posOfNat scaledPositive, log2_mul_pow _ _ (Nat.ne_of_gt positive)]
+    omega
+  change (BinarySingleNaN.canonical_mantissa0 z53 z1024 _ _ &&
+    ZArith.Zbool.Zle_bool _ (ZArith.BinInt.Z.sub z1024 z53)) = true
+  apply Bool.and_eq_true_iff.mpr
+  constructor
+  · apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true
+    exact manual_fexp_canonical64 _ _ digits (by rw [intOfZ_zOfInt]; omega)
+  · change (if intOfZ (zOfInt ((mantissa.log2 : Int) - 73)) ≤ 971 then true else false) = true
+    rw [intOfZ_zOfInt]
+    exact if_pos (by omega)
+
+private theorem remaining_fraction_pack64 (mantissa : Nat)
+    (positive : 0 < mantissa) (small : mantissa.log2 ≤ 51) :
+    UnpackedFloat.pack Format.binary64 (round Format.binary64 .positive mantissa (-21)) =
+      (encode64 (.B754_finite false (posOfNat (mantissa * 2 ^ (52 - mantissa.log2)))
+        (zOfInt ((mantissa.log2 : Int) - 73)))).bits := by
+  have scaledPositive := Nat.mul_pos positive (Nat.two_pow_pos (52 - mantissa.log2))
+  have digits : (mantissa * 2 ^ (52 - mantissa.log2)).log2 = 52 := by
+    rw [log2_mul_pow _ _ (Nat.ne_of_gt positive)]
+    omega
+  have lower : 2 ^ 52 ≤ mantissa * 2 ^ (52 - mantissa.log2) :=
+    (Nat.le_log2 (Nat.ne_of_gt scaledPositive)).mp (by omega)
+  have upper : mantissa * 2 ^ (52 - mantissa.log2) < 2 ^ 53 :=
+    (Nat.log2_lt (Nat.ne_of_gt scaledPositive)).mp (by omega)
+  rw [remaining_fraction_round64 mantissa positive small]
+  rw [remaining_encode64_normal _ _
+    (by simpa only [posToNat_posOfNat scaledPositive] using lower)
+    (by simpa only [posToNat_posOfNat scaledPositive] using upper)
+    (by omega) (by omega), posToNat_posOfNat scaledPositive]
+  unfold UnpackedFloat.pack
+  dsimp only
+  rw [digits]
+  have exponent : ((mantissa.log2 : Int) - 73 + 1023 + 52).toNat = mantissa.log2 + 1002 := by omega
+  have exponent' : ((mantissa.log2 : Int) - 73 + 1075).toNat = mantissa.log2 + 1002 := by omega
+  simp only [show Format.binary64.exponentBits = 11 from rfl,
+    show Format.binary64.exponentBias = 1023 from rfl,
+    show Format.binary64.mantissaBitsWithoutImplicit = 52 from rfl,
+    show Format.binary64.mantissaBits = 53 from rfl,
+    show ((1023 : Nat) : Int) = 1023 from rfl,
+    show ((52 : Nat) : Int) = 52 from rfl, exponent, exponent',
+    show ¬ 2 ^ 11 ≤ mantissa.log2 + 1002 + 1 by omega, ↓reduceIte]
+
+private theorem remaining_fraction_trunc64 (mantissa : Nat)
+    (positive : 0 < mantissa) (small : mantissa.log2 ≤ 51) :
+    IEEE754_extra.ZofB (prec := z53) (emax := z1024)
+      (.B754_finite false (posOfNat (mantissa * 2 ^ (52 - mantissa.log2)))
+        (zOfInt ((mantissa.log2 : Int) - 73))) =
+      some (ZArith.BinInt.Z.of_nat (mantissa / 2 ^ 21)) := by
+  have exponent : zOfInt ((mantissa.log2 : Int) - 73) = .Zneg (posOfNat (73 - mantissa.log2)) := by
+    apply intOfZ_injective
+    rw [intOfZ_zOfInt]
+    change (mantissa.log2 : Int) - 73 = -(posToNat (posOfNat (73 - mantissa.log2)) : Int)
+    rw [posToNat_posOfNat (by omega)]
+    omega
+  rw [exponent]
+  apply congrArg some
+  apply intOfZ_injective
+  simp only [Flocq.Core.Zaux.cond_Zopp, Model.Rocq.Coq.Floats.SpecFloat.cond_Zopp,
+    Bool.false_eq_true, ↓reduceIte]
+  rw [manual_div_pow_int]
+  rw [posToNat_posOfNat (Nat.mul_pos positive (Nat.two_pow_pos _)),
+    posToNat_posOfNat (by omega)]
+  have denominator : 2 ^ (73 - mantissa.log2) = 2 ^ 21 * 2 ^ (52 - mantissa.log2) := by
+    rw [← Nat.pow_add]
+    congr 1
+    omega
+  have natural : (mantissa * 2 ^ (52 - mantissa.log2)) / 2 ^ (73 - mantissa.log2) =
+      mantissa / 2 ^ 21 := by
+    rw [denominator]
+    exact Nat.mul_div_mul_right _ _ (Nat.two_pow_pos _)
+  change ((mantissa * 2 ^ (52 - mantissa.log2) : Nat) : Int) /
+    (2 : Int) ^ (73 - mantissa.log2) = intOfZ (zOfInt ((mantissa / 2 ^ 21 : Nat) : Int))
+  rw [intOfZ_zOfInt]
+  exact (Int.natCast_ediv _ _).symm.trans (congrArg Int.ofNat natural)
+
+private theorem remaining_fraction_properties64 (mantissa : Nat) (small : mantissa < 2 ^ 52) :
+    let value : float := ⟨UnpackedFloat.pack Format.binary64
+      (normalize Format.binary64 (mantissa : Int) (-21) .positive)⟩
+    isNaN64 value = false ∧
+      Float.to_int value = some (Integers.Int.repr (ZArith.BinInt.Z.of_nat (mantissa / 2 ^ 21))) := by
+  by_cases positive : 0 < mantissa
+  · have logarithm : mantissa.log2 ≤ 51 := by
+      have := (Nat.log2_lt (Nat.ne_of_gt positive)).mpr small
+      omega
+    have comparison : compare (mantissa : Int) 0 = .gt := Int.compare_eq_gt.mpr (by omega)
+    simp only [normalize, comparison, Int.toNat_natCast]
+    have bits := remaining_fraction_pack64 mantissa positive logarithm
+    have valueEq : (⟨UnpackedFloat.pack Format.binary64 (round Format.binary64 .positive mantissa (-21))⟩ : float) =
+        encode64 (.B754_finite false (posOfNat (mantissa * 2 ^ (52 - mantissa.log2)))
+          (zOfInt ((mantissa.log2 : Int) - 73))) := float.ext bits
+    rw [valueEq]
+    have decoded := conversion_encode64_decode
+      (⟨.B754_finite false (posOfNat (mantissa * 2 ^ (52 - mantissa.log2)))
+        (zOfInt ((mantissa.log2 : Int) - 73)),
+        remaining_fraction_certificate64 mantissa positive logarithm⟩ : Binary.CertifiedBinaryFloat z53 z1024)
+    constructor
+    · rw [← conversion_isNaN64_decode]
+      erw [decoded]
+      rfl
+    · unfold Float.to_int
+      erw [decoded]
+      have truncated := remaining_fraction_trunc64 mantissa positive logarithm
+      have lower : ZArith.Zbool.Zle_bool Integers.Int.min_signed
+          (ZArith.BinInt.Z.of_nat (mantissa / 2 ^ 21)) = true := by
+        change (if -2147483648 ≤ intOfZ (zOfInt (mantissa / 2 ^ 21)) then true else false) = true
+        rw [intOfZ_zOfInt]
+        exact if_pos (by omega)
+      have upper : ZArith.Zbool.Zle_bool (ZArith.BinInt.Z.of_nat (mantissa / 2 ^ 21))
+          Integers.Int.max_signed = true := by
+        change (if intOfZ (zOfInt (mantissa / 2 ^ 21)) ≤ 2147483647 then true else false) = true
+        rw [intOfZ_zOfInt]
+        exact if_pos (by omega)
+      unfold IEEE754_extra.ZofB_range
+      erw [truncated]
+      simp only [lower, upper, Bool.true_and, ↓reduceIte]
+      rfl
+  · have zero : mantissa = 0 := by omega
+    subst mantissa
+    decide
+
+private theorem remaining_sub_uint64
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024]
+    (value : float) (mantissa : positive)
+    (decoded : decode64 value = .B754_finite false mantissa (.Zneg (posOfNat 21)))
+    (lower : 2 ^ 52 ≤ posToNat mantissa) (upper : posToNat mantissa < 2 ^ 53) :
+    Float.to_int (Float.sub value (Float.of_intu Float.ox8000_0000)) =
+      some (Integers.Int.repr (ZArith.BinInt.Z.of_nat ((posToNat mantissa - 2 ^ 52) / 2 ^ 21))) := by
+  let remainder := posToNat mantissa - 2 ^ 52
+  have remainderSmall : remainder < 2 ^ 52 := by dsimp [remainder]; omega
+  have difference : (posToNat mantissa : Int) - 4503599627370496 = (remainder : Int) := by
+    dsimp [remainder]
+    omega
+  have unpacked := remaining_positive_normal_unpack64 value mantissa (.Zneg (posOfNat 21)) decoded lower
+  have half : Float.of_intu Float.ox8000_0000 =
+      encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024)
+        (ZArith.BinInt.Z.of_nat (2 ^ 31))) := by rfl
+  have raw : modelBinary64 (UnpackedFloat.sub Format.binary64) value (Float.of_intu Float.ox8000_0000) =
+      ⟨UnpackedFloat.pack Format.binary64 (normalize Format.binary64 (remainder : Int) (-21) .positive)⟩ := by
+    apply float.ext
+    unfold modelBinary64
+    simp only
+    rw [unpacked, half, remaining_BofZ_unpack64 (2 ^ 31) (by decide) (by decide)]
+    change UnpackedFloat.pack Format.binary64
+      (UnpackedFloat.sub Format.binary64 (.finite .positive (posToNat mantissa) (-21) _)
+        (.finite .positive 4503599627370496 (-21) _)) = _
+    simp only [UnpackedFloat.sub, decreaseExponent, Int.min_self, Int.sub_self,
+      Int.toNat_zero, Nat.shiftLeft_zero, Sign.apply,
+      show ((4503599627370496 : Nat) : Int) = 4503599627370496 from rfl, difference]
+  have properties := remaining_fraction_properties64 remainder remainderSmall
+  have valueNan : isNaN64 value = false := by
+    rw [← conversion_isNaN64_decode, decoded]
+    rfl
+  have halfNan : isNaN64 (Float.of_intu Float.ox8000_0000) = false := by
+    rw [half]
+    exact remaining_BofZ_notNaN64 (2 ^ 31) (by decide) (by decide)
+  unfold Float.sub
+  rw [raw]
+  simp only [Float.finishBinary, valueNan, halfNan, properties.1, Bool.false_or,
+    Bool.false_eq_true, ↓reduceIte]
+  exact properties.2
+
+theorem Float.to_intu_to_int_2
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024] :
+    Float.to_intu_to_int_2Statement := by
+  intro value word compared converted
+  obtain ⟨mantissa, decoded, lower, upper⟩ := remaining_uint_input value word compared converted
+  have subtraction := remaining_sub_uint64 value mantissa decoded lower upper
+  rw [subtraction]
+  have truncated : IEEE754_extra.ZofB (decode64 value) =
+      some (ZArith.BinInt.Z.of_nat (posToNat mantissa / 2 ^ 21)) := by
+    rw [decoded]
+    apply congrArg some
+    apply intOfZ_injective
+    change intOfZ (ZArith.BinInt.Z.div (.Zpos mantissa)
+      (ZArith.BinInt.Z.pow_pos (.Zpos (.xO .xH)) (posOfNat 21))) = _
+    rw [manual_div_pow_int]
+    change (posToNat mantissa : Int) / (2 : Int) ^ 21 =
+      intOfZ (zOfInt (posToNat mantissa / 2 ^ 21))
+    rw [intOfZ_zOfInt]
+  unfold Float.to_intu IEEE754_extra.ZofB_range at converted
+  rw [truncated] at converted
+  dsimp only at converted
+  split at converted
+  · simp only [Option.map_some, Option.some.injEq] at converted
+    rw [← converted]
+    apply congrArg some
+    unfold Integers.Int.sub Integers.WordCore.sub
+    change _ = Integers.Int.repr
+      (ZArith.BinInt.Z.sub
+        (Integers.Int.unsigned (Integers.Int.repr (ZArith.BinInt.Z.of_nat (posToNat mantissa / 2 ^ 21))))
+        (Integers.Int.unsigned Float.ox8000_0000))
+    have quotientRange : ZArith.BinInt.Z.le .Z0 (ZArith.BinInt.Z.of_nat (posToNat mantissa / 2 ^ 21)) ∧
+        ZArith.BinInt.Z.le (ZArith.BinInt.Z.of_nat (posToNat mantissa / 2 ^ 21)) Integers.Int.max_unsigned := by
+      constructor
+      · change 0 ≤ intOfZ (zOfInt (posToNat mantissa / 2 ^ 21))
+        rw [intOfZ_zOfInt]
+        omega
+      · change intOfZ (zOfInt (posToNat mantissa / 2 ^ 21)) ≤ 4294967295
+        rw [intOfZ_zOfInt]
+        omega
+    rw [Integers.Int.unsigned_repr_proof_api _ quotientRange,
+      show Integers.Int.unsigned Float.ox8000_0000 = ZArith.BinInt.Z.of_nat (2 ^ 31) by decide]
+    congr 1
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.of_nat,
+      intOfZ_zOfInt, Int.ofNat_eq_natCast]
+    omega
+  · simp only [Option.map_none, reduceCtorEq] at converted
+
+end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Flocq.IEEE754
+open _root_.Float.Model
+open _root_.Float.Model.UnpackedFloat
+
+private theorem inverse_extended_add (value : ExtendedMantissa) (first second : Nat) :
+    (value >>> first) >>> second = value >>> (first + second) := by
+  induction second with
+  | zero => rfl
+  | succ second inductionHypothesis =>
+      change ExtendedMantissa.shiftRightOne ((value >>> first) >>> second) =
+        ExtendedMantissa.shiftRightOne (value >>> (first + second))
+      rw [inductionHypothesis]
+
+private theorem inverse_extended_fields (mantissa count : Nat) :
+    (ExtendedMantissa.ofMantissaAndAccuracy mantissa .exact >>> (count + 1)) =
+      ⟨mantissa / 2 ^ (count + 1), mantissa / 2 ^ count % 2 != 0,
+        mantissa % 2 ^ count != 0⟩ := by
+  induction count with
+  | zero =>
+      simp only [Nat.zero_add, Nat.pow_zero, Nat.div_one, Nat.mod_one, bne_self_eq_false]
+      rfl
+  | succ count inductionHypothesis =>
+      change ExtendedMantissa.shiftRightOne
+        (ExtendedMantissa.ofMantissaAndAccuracy mantissa .exact >>> (count + 1)) = _
+      rw [inductionHypothesis]
+      unfold ExtendedMantissa.shiftRightOne
+      have quotient : mantissa / 2 ^ (count + 1) / 2 = mantissa / 2 ^ (count + 1 + 1) := by
+        rw [Nat.div_div_eq_div_mul, ← Nat.pow_succ]
+      have sticky : (mantissa / 2 ^ count % 2 != 0 || mantissa % 2 ^ count != 0) =
+          (mantissa % 2 ^ (count + 1) != 0) := by
+        have modulo : mantissa % 2 ^ (count + 1) =
+            mantissa % 2 ^ count + 2 ^ count * (mantissa / 2 ^ count % 2) := by
+          rw [Nat.pow_succ, Nat.mod_mul]
+        rw [modulo]
+        have power := Nat.two_pow_pos count
+        apply Bool.eq_iff_iff.mpr
+        simp only [Bool.or_eq_true, bne_iff_ne, ne_eq]
+        constructor
+        · intro nonzero
+          rcases nonzero with high | low
+          · have product := Nat.mul_pos power (Nat.pos_of_ne_zero high)
+            omega
+          · omega
+        · intro nonzero
+          by_cases high : mantissa / 2 ^ count % 2 = 0
+          · right
+            rw [high, Nat.mul_zero, Nat.add_zero] at nonzero
+            exact nonzero
+          · exact Or.inl high
+      simp only [quotient, sticky]
+
+private theorem inverse_fraction_extended (mantissa count : Nat) :
+    ExtendedMantissa.ofMantissaAndAccuracy (mantissa / 2 ^ count)
+      (accuracyOfFraction (mantissa % 2 ^ count) (2 ^ count)) =
+      ExtendedMantissa.ofMantissaAndAccuracy mantissa .exact >>> count := by
+  cases count with
+  | zero => simp [accuracyOfFraction, extendedMantissa_shift_zero, Nat.mod_one]
+  | succ count =>
+      rw [inverse_extended_fields]
+      let half := 2 ^ count
+      have halfPositive : 0 < half := Nat.two_pow_pos count
+      have remainderBound : mantissa % (half * 2) < half * 2 := Nat.mod_lt _ (by omega)
+      have high : mantissa % (half * 2) / half = mantissa / half % 2 := Nat.mod_mul_right_div_self _ _ _
+      have low : mantissa % (half * 2) % half = mantissa % half := Nat.mod_mul_right_mod _ _ _
+      have splitRemainder := Nat.mod_add_div (mantissa % (half * 2)) half
+      rw [high, low] at splitRemainder
+      have digitBound : mantissa / half % 2 < 2 := Nat.mod_lt _ (by decide)
+      change ExtendedMantissa.ofMantissaAndAccuracy (mantissa / (half * 2))
+        (accuracyOfFraction (mantissa % (half * 2)) (half * 2)) =
+          ⟨mantissa / (half * 2), mantissa / half % 2 != 0, mantissa % half != 0⟩
+      unfold accuracyOfFraction
+      by_cases exactRemainder : mantissa % (half * 2) = 0
+      · rw [if_pos exactRemainder]
+        have highZero : mantissa / half % 2 = 0 := by
+          rw [exactRemainder, Nat.zero_div] at high
+          exact high.symm
+        have lowZero : mantissa % half = 0 := by
+          rw [exactRemainder, Nat.zero_mod] at low
+          exact low.symm
+        simp [ExtendedMantissa.ofMantissaAndAccuracy, highZero, lowZero]
+      · rw [if_neg exactRemainder]
+        by_cases roundZero : mantissa / half % 2 = 0
+        · rw [roundZero, Nat.mul_zero, Nat.add_zero] at splitRemainder
+          have less : 2 * (mantissa % (half * 2)) < half * 2 := by
+            have remainderLow := Nat.mod_lt mantissa halfPositive
+            omega
+          have compared : compare (2 * (mantissa % (half * 2))) (half * 2) = .lt := Nat.compare_eq_lt.mpr less
+          have lowNonzero : mantissa % half ≠ 0 := by omega
+          simp [compared, ExtendedMantissa.ofMantissaAndAccuracy, roundZero, lowNonzero]
+        · have highOne : mantissa / half % 2 = 1 := by omega
+          rw [highOne, Nat.mul_one] at splitRemainder
+          by_cases stickyZero : mantissa % half = 0
+          · have equal : 2 * (mantissa % (half * 2)) = half * 2 := by omega
+            have compared : compare (2 * (mantissa % (half * 2))) (half * 2) = .eq := Nat.compare_eq_eq.mpr equal
+            simp [compared, ExtendedMantissa.ofMantissaAndAccuracy, highOne, stickyZero]
+          · have greater : half * 2 < 2 * (mantissa % (half * 2)) := by omega
+            have compared : compare (2 * (mantissa % (half * 2))) (half * 2) = .gt := Nat.compare_eq_gt.mpr greater
+            simp [compared, ExtendedMantissa.ofMantissaAndAccuracy, highOne, stickyZero]
+
+private theorem inverse_extended_scales (mantissa firstScale secondScale firstShift secondShift : Nat)
+    (equal : firstScale + secondShift = secondScale + firstShift) :
+    (ExtendedMantissa.ofMantissaAndAccuracy (mantissa * 2 ^ firstScale) .exact >>> firstShift) =
+      (ExtendedMantissa.ofMantissaAndAccuracy (mantissa * 2 ^ secondScale) .exact >>> secondShift) := by
+  by_cases scales : firstScale ≤ secondScale
+  · have shift : secondShift = (secondScale - firstScale) + firstShift := by omega
+    have scaled : mantissa * 2 ^ secondScale =
+        (mantissa * 2 ^ firstScale) * 2 ^ (secondScale - firstScale) := by
+      rw [Nat.mul_assoc, ← Nat.pow_add, Nat.add_sub_of_le scales]
+    rw [scaled, shift, extendedMantissa_shift_pow_add]
+  · have shift : firstShift = (firstScale - secondScale) + secondShift := by omega
+    have scaled : mantissa * 2 ^ firstScale =
+        (mantissa * 2 ^ secondScale) * 2 ^ (firstScale - secondScale) := by
+      rw [Nat.mul_assoc, ← Nat.pow_add, Nat.add_sub_of_le (by omega)]
+    rw [scaled, shift, extendedMantissa_shift_pow_add]
+
+private theorem inverse_log2_quotient (mantissa count : Nat)
+    (positive : 0 < mantissa / 2 ^ count) :
+    (mantissa / 2 ^ count).log2 + count = mantissa.log2 := by
+  have mantissaPositive : 0 < mantissa := by
+    have bound := Nat.div_le_self mantissa (2 ^ count)
+    omega
+  have bounds := (Nat.log2_eq_iff (Nat.ne_of_gt positive)).mp rfl
+  have lower := Nat.mul_le_mul_right (2 ^ count) bounds.1
+  have product := Nat.div_mul_le_self mantissa (2 ^ count)
+  have lowerCombined : 2 ^ ((mantissa / 2 ^ count).log2 + count) ≤ mantissa := by
+    rw [Nat.pow_add]
+    omega
+  have upperCombined : mantissa < 2 ^ ((mantissa / 2 ^ count).log2 + count + 1) := by
+    have bound := (Nat.div_lt_iff_lt_mul (Nat.two_pow_pos count)).mp bounds.2
+    rw [← Nat.pow_add] at bound
+    simpa only [Nat.add_right_comm] using bound
+  exact ((Nat.log2_eq_iff (Nat.ne_of_gt mantissaPositive)).mpr
+    ⟨lowerCombined, upperCombined⟩).symm
+
+private theorem inverse_division_shift (spec : Format) (precision mantissa : Nat)
+    (specPrecision : spec.mantissaBits = precision + 1)
+    (precisionPositive : 0 < precision) (positive : 0 < mantissa)
+    (numeratorExponent denominatorExponent : Int) :
+    let divided := divCore spec mantissa numeratorExponent (2 ^ precision) denominatorExponent
+    shiftToTargetExponent spec divided.1 divided.2.1 divided.2.2 =
+      shiftToTargetExponent spec (mantissa * 2 ^ precision)
+        (numeratorExponent - denominatorExponent - 2 * (precision : Int)) .exact := by
+  let difference := numeratorExponent - denominatorExponent
+  let target := min difference
+    (max ((mantissa.log2 : Int) + difference - 2 * (precision : Int) - 1) spec.minExponent)
+  let shift := (difference - target).toNat
+  let numerator := mantissa * 2 ^ shift
+  let quotient := numerator / 2 ^ precision
+  let finalTarget := max ((mantissa.log2 : Int) + difference - 2 * (precision : Int)) spec.minExponent
+  have targetLower : target ≤ difference := by dsimp [target]; omega
+  have shiftCast : (shift : Int) = difference - target := by dsimp [shift]; omega
+  have numeratorPositive : 0 < numerator := Nat.mul_pos positive (Nat.two_pow_pos shift)
+  have numeratorDigits : numerator.log2 = mantissa.log2 + shift :=
+    log2_mul_pow mantissa shift (Nat.ne_of_gt positive)
+  have targetFinal : target ≤ finalTarget := by dsimp [target, finalTarget]; omega
+  have productLower : difference - 2 * (precision : Int) ≤ finalTarget := by
+    dsimp [finalTarget]
+    omega
+  have divShape : divCore spec mantissa numeratorExponent (2 ^ precision) denominatorExponent =
+      (quotient, target, accuracyOfFraction (numerator % 2 ^ precision) (2 ^ precision)) := by
+    unfold divCore totalExponent Format.targetExponent
+    rw [Nat.log2_two_pow, specPrecision]
+    have targetEq : min (numeratorExponent - denominatorExponent)
+        (max (((mantissa.log2 : Int) + 1 + numeratorExponent -
+          ((precision : Int) + 1 + denominatorExponent)) - ((precision + 1 : Nat) : Int)) spec.minExponent) = target := by
+      dsimp [target, difference]
+      congr 2
+      omega
+    simp only [targetEq, Nat.shiftLeft_eq]
+    rfl
+  have quotientTarget : spec.targetExponent (totalExponent quotient target) = finalTarget := by
+    by_cases quotientPositive : 0 < quotient
+    · have digits := inverse_log2_quotient numerator precision quotientPositive
+      rw [numeratorDigits] at digits
+      change quotient.log2 + precision = mantissa.log2 + shift at digits
+      unfold Format.targetExponent totalExponent
+      rw [specPrecision]
+      change max ((quotient.log2 : Int) + 1 + target - ((precision + 1 : Nat) : Int)) spec.minExponent =
+        max ((mantissa.log2 : Int) + difference - 2 * (precision : Int)) spec.minExponent
+      apply congrArg (fun exponent : Int => max exponent spec.minExponent)
+      omega
+    · have quotientZero : quotient = 0 := Nat.eq_zero_of_not_pos quotientPositive
+      have numeratorSmall : numerator < 2 ^ precision := by
+        rcases Nat.div_eq_zero_iff.mp quotientZero with zero | small
+        · have := Nat.two_pow_pos precision
+          omega
+        · exact small
+      have digitsSmall := (Nat.log2_lt (Nat.ne_of_gt numeratorPositive)).mpr numeratorSmall
+      rw [numeratorDigits] at digitsSmall
+      have targetMinimum : target ≤ spec.minExponent := by
+        change min difference (max ((mantissa.log2 : Int) + difference - 2 * (precision : Int) - 1)
+          spec.minExponent) ≤ spec.minExponent
+        omega
+      have finalMinimum : finalTarget = spec.minExponent := by dsimp [finalTarget]; omega
+      rw [quotientZero, finalMinimum]
+      unfold Format.targetExponent totalExponent
+      rw [specPrecision]
+      change max ((0 : Int) + 1 + target - ((precision + 1 : Nat) : Int)) spec.minExponent = spec.minExponent
+      omega
+  have productTarget : spec.targetExponent
+      (totalExponent (mantissa * 2 ^ precision) (difference - 2 * (precision : Int))) = finalTarget := by
+    unfold Format.targetExponent totalExponent
+    rw [log2_mul_pow _ _ (Nat.ne_of_gt positive), specPrecision]
+    dsimp [finalTarget]
+    congr 1
+    omega
+  rw [divShape]
+  change shiftToTargetExponent spec quotient target
+    (accuracyOfFraction (numerator % 2 ^ precision) (2 ^ precision)) = _
+  unfold shiftToTargetExponent
+  rw [quotientTarget, productTarget]
+  unfold shiftToExponent
+  apply Prod.ext
+  · dsimp only
+    rw [inverse_fraction_extended numerator precision, inverse_extended_add]
+    apply inverse_extended_scales
+    have firstCast : ((finalTarget - target).toNat : Int) = finalTarget - target := by omega
+    have secondCast : ((finalTarget - (difference - 2 * (precision : Int))).toNat : Int) =
+        finalTarget - (difference - 2 * (precision : Int)) := by omega
+    omega
+  · dsimp only
+    have firstCast : ((finalTarget - target).toNat : Int) = finalTarget - target := by omega
+    have secondCast : ((finalTarget - (difference - 2 * (precision : Int))).toNat : Int) =
+        finalTarget - (difference - 2 * (precision : Int)) := by omega
+    omega
+
+private theorem inverse_unpacked_div_mul (spec : Format) (precision : Nat)
+    (specPrecision : spec.mantissaBits = precision + 1) (precisionPositive : 0 < precision)
+    (value : UnpackedFloat) (sign : Sign) (exponent : Int) :
+    UnpackedFloat.div spec value (.finite sign (2 ^ precision) exponent (Nat.two_pow_pos precision)) =
+      UnpackedFloat.mul spec value
+        (.finite sign (2 ^ precision) (-exponent - 2 * (precision : Int)) (Nat.two_pow_pos precision)) := by
+  have signDivision (other : Sign) : other / sign = other * sign := by
+    cases other <;> cases sign <;> rfl
+  cases value with
+  | notANumber => rfl
+  | infinity other => simp only [UnpackedFloat.div, UnpackedFloat.mul, signDivision]
+  | zero other => simp only [UnpackedFloat.div, UnpackedFloat.mul, signDivision]
+  | finite other mantissa numeratorExponent positive =>
+      have aligned := inverse_division_shift spec precision mantissa specPrecision precisionPositive positive
+        numeratorExponent exponent
+      cases result : divCore spec mantissa numeratorExponent (2 ^ precision) exponent with
+      | mk quotient rest =>
+        cases rest with
+        | mk quotientExponent accuracy =>
+          rw [result] at aligned
+          dsimp only at aligned
+          simp only [UnpackedFloat.div, UnpackedFloat.mul, result, signDivision]
+          have exponentEq : numeratorExponent + (-exponent - 2 * (precision : Int)) =
+              numeratorExponent - exponent - 2 * (precision : Int) := by omega
+          rw [exponentEq]
+          unfold roundWithAccuracy
+          rw [aligned]
+
+private theorem inverse_normal_bits64 (value : float) (sign : Bool)
+    (mantissa : positive) (exponent : Z)
+    (decoded : decode64 value = .B754_finite sign mantissa exponent)
+    (lower : 2 ^ 52 ≤ posToNat mantissa) :
+    value.bits = packComponents Format.binary64 (if sign then .negative else .positive)
+      (BitVec.ofNat 11 (intOfZ exponent + 1075).toNat)
+      (BitVec.ofNat 52 (posToNat mantissa)) := by
+  cases sign with
+  | false => exact remaining_positive_normal_bits64 value mantissa exponent decoded lower
+  | true =>
+    have fields := remaining_decode64_fields value true mantissa exponent decoded
+    have rawLower : 2 ^ 63 ≤ value.bits.toNat := by
+      have signTrue := fields.1.symm
+      exact of_decide_eq_true signTrue
+    have rawUpper : value.bits.toNat < 2 ^ 64 := value.bits.isLt
+    have fractionBound : value.bits.toNat % 2 ^ 52 < 2 ^ 52 := Nat.mod_lt _ (by decide)
+    rcases fields.2 with subnormal | ⟨exponentEq, mantissaEq, exponentPositive, exponentBound⟩
+    · omega
+    · have quotientBound : value.bits.toNat / 2 ^ 52 < 4096 := by omega
+      have quotientMod : value.bits.toNat / 2 ^ 52 % 2048 = value.bits.toNat / 2 ^ 52 - 2048 := by omega
+      have exponentNat : (intOfZ exponent + 1075).toNat = value.bits.toNat / 2 ^ 52 % 2048 := by omega
+      have exponentSmall : value.bits.toNat / 2 ^ 52 % 2048 < 2048 := Nat.mod_lt _ (by decide)
+      apply BitVec.eq_of_toNat_eq
+      simp only [↓reduceIte, packComponents, BitVec.toNat_append, Sign.toBitVec, BitVec.toNat_ofNat,
+        exponentNat, Nat.mod_eq_of_lt exponentSmall]
+      change value.bits.toNat = (1 <<< 11 ||| value.bits.toNat / 2 ^ 52 % 2048) <<< 52 ||| posToNat mantissa % 2 ^ 52
+      simp only [Nat.shiftLeft_eq]
+      rw [show (1 : Nat) * 2 ^ 11 = 2 ^ 11 * 1 by rfl,
+        ← Nat.two_pow_add_eq_or_of_lt exponentSmall]
+      rw [Nat.mul_comm _ (2 ^ 52),
+        ← Nat.two_pow_add_eq_or_of_lt (Nat.mod_lt _ (Nat.two_pow_pos 52))]
+      omega
+
+private theorem inverse_unpack_components64 (sign : Sign) (mantissa exponent : Nat)
+    (lower : 2 ^ 52 ≤ mantissa) (upper : mantissa < 2 ^ 53)
+    (emin : 0 < exponent) (emax : exponent < 2047) :
+    UnpackedFloat.unpack Format.binary64
+      (packComponents Format.binary64 sign (BitVec.ofNat 11 exponent) (BitVec.ofNat 52 mantissa)) =
+      .finite sign mantissa ((exponent : Int) - 1075) (by omega) := by
+  have signPart (exponentBits : BitVec 11) (mantissaBits : BitVec 52) :
+      unpackSign (spec := Format.binary64) (packComponents Format.binary64 sign exponentBits mantissaBits) =
+        sign.toBitVec := by
+    cases sign <;> change BitVec.extractLsb 63 63 (_ ++ exponentBits ++ mantissaBits) = _ <;> bv_decide
+  have exponentNonzero : BitVec.ofNat 11 exponent ≠ 0#11 := by
+    intro equality
+    have := congrArg BitVec.toNat equality
+    change exponent % 2048 = 0 at this
+    omega
+  have exponentFinite : BitVec.ofNat 11 exponent ≠ -1#11 := by
+    intro equality
+    have := congrArg BitVec.toNat equality
+    change exponent % 2048 = 2047 at this
+    omega
+  have combined : (1#1 ++ BitVec.ofNat 52 mantissa).toNat = mantissa := by
+    rw [BitVec.toNat_append, Nat.shiftLeft_eq]
+    change 4503599627370496 ||| mantissa % 4503599627370496 = mantissa
+    rw [show 4503599627370496 = 2 ^ 52 * 1 by rfl,
+      ← Nat.two_pow_add_eq_or_of_lt (Nat.mod_lt _ (Nat.two_pow_pos 52))]
+    omega
+  unfold UnpackedFloat.unpack
+  dsimp only
+  simp only [unpackMantissa_packComponents (spec := Format.binary64),
+    unpackExponent_packComponents (spec := Format.binary64), signPart,
+    exponentNonzero, exponentFinite, ↓reduceIte, combined,
+    BitVec.toNat_ofNat, Nat.mod_eq_of_lt (show exponent < 2 ^ 11 by omega)]
+  cases sign <;> rfl
+
+private theorem inverse_normal_unpack64 (value : float) (sign : Bool)
+    (mantissa : positive) (exponent : Z)
+    (decoded : decode64 value = .B754_finite sign mantissa exponent)
+    (lower : 2 ^ 52 ≤ posToNat mantissa) :
+    UnpackedFloat.unpack Format.binary64 value.bits =
+      .finite (if sign then .negative else .positive) (posToNat mantissa) (intOfZ exponent)
+        (posToNat_positive mantissa) := by
+  have fields := remaining_decode64_fields value sign mantissa exponent decoded
+  have fractionBound : value.bits.toNat % 2 ^ 52 < 2 ^ 52 := Nat.mod_lt _ (by decide)
+  have exponentBounds : 0 < (intOfZ exponent + 1075).toNat ∧
+      (intOfZ exponent + 1075).toNat < 2047 := by
+    rcases fields.2 with subnormal | normal <;> omega
+  have mantissaUpper : posToNat mantissa < 2 ^ 53 := by
+    rcases fields.2 with subnormal | normal <;> omega
+  rw [inverse_normal_bits64 value sign mantissa exponent decoded lower]
+  rw [inverse_unpack_components64 _ (posToNat mantissa) _ lower mantissaUpper
+    exponentBounds.1 exponentBounds.2]
+  have exponentEq : ((intOfZ exponent + 1075).toNat : Int) - 1075 = intOfZ exponent := by
+    rcases fields.2 with subnormal | normal <;> omega
+  simp only [exponentEq]
+
+private theorem inverse_result_shape {precision maximum : Z}
+    [IEEE754_extra.Prec_gt_0 precision] [IEEE754_extra.Prec_lt_emax precision maximum]
+    [IEEE754_extra.Bexact_inverse_certificate precision maximum]
+    (value result : Binary.binary_float precision maximum)
+    (returned : IEEE754_extra.Bexact_inverse value = some result) :
+    ∃ sign exponent,
+      value = .B754_finite sign (IEEE754_extra.Bexact_inverse_mantissa (prec := precision)) exponent ∧
+      result = .B754_finite sign (IEEE754_extra.Bexact_inverse_mantissa (prec := precision))
+        (IEEE754_extra.Zsub (IEEE754_extra.Zopp exponent)
+          (IEEE754_extra.Zmul (IEEE754_extra.Zsub precision IEEE754_extra.Zone) IEEE754_extra.Ztwo)) := by
+  cases value with
+  | B754_zero sign => simp [IEEE754_extra.Bexact_inverse] at returned
+  | B754_infinity sign => simp [IEEE754_extra.Bexact_inverse] at returned
+  | B754_nan sign payload => simp [IEEE754_extra.Bexact_inverse] at returned
+  | B754_finite sign mantissa exponent =>
+      by_cases recognized : mantissa = IEEE754_extra.Bexact_inverse_mantissa (prec := precision)
+      · subst mantissa
+        simp only [IEEE754_extra.Bexact_inverse, ↓reduceDIte] at returned
+        split at returned
+        · split at returned
+          · exact ⟨sign, exponent, rfl, (Option.some.inj returned).symm⟩
+          · contradiction
+        · contradiction
+      · simp [IEEE754_extra.Bexact_inverse, recognized] at returned
+
+theorem Float.div_mul_inverse
+    [certificate : IEEE754_extra.Bexact_inverse_certificate z53 z1024] :
+    Float.div_mul_inverseStatement := by
+  intro numerator divisor reciprocal inverse
+  unfold Float.exact_inverse at inverse
+  cases returned : IEEE754_extra.Bexact_inverse (prec := z53) (emax := z1024) (decode64 divisor) with
+  | none =>
+      rw [returned] at inverse
+      change (none : Option float) = some reciprocal at inverse
+      contradiction
+  | some result =>
+      have encoded : encode64 result = reciprocal := by
+        rw [returned] at inverse
+        change some (encode64 result) = some reciprocal at inverse
+        exact Option.some.inj inverse
+      subst reciprocal
+      rcases inverse_result_shape (precision := z53) (maximum := z1024) (decode64 divisor) result returned with
+        ⟨sign, exponent, decoded, resultShape⟩
+      have valid := IEEE754_extra.Bexact_inverse_result_obligation_proof (prec := z53) (emax := z1024)
+        ⟨decode64 divisor, manual_decode64_certificate divisor⟩ result returned
+      have reciprocalDecoded : decode64 (encode64 result) = result := conversion_encode64_decode ⟨result, valid⟩
+      have mantissaValue : posToNat (IEEE754_extra.Bexact_inverse_mantissa (prec := z53)) = 2 ^ 52 := by decide
+      have divisorUnpacked := inverse_normal_unpack64 divisor sign _ exponent decoded (by rw [mantissaValue]; omega)
+      have reciprocalUnpacked := inverse_normal_unpack64 (encode64 result) sign _ _
+        (reciprocalDecoded.trans resultShape) (by rw [mantissaValue]; omega)
+      have exponentValue : intOfZ (IEEE754_extra.Zsub (IEEE754_extra.Zopp exponent)
+          (IEEE754_extra.Zmul (IEEE754_extra.Zsub z53 IEEE754_extra.Zone) IEEE754_extra.Ztwo)) =
+          -intOfZ exponent - 2 * (52 : Int) := by
+        change intOfZ (ZArith.BinInt.Z.sub (ZArith.BinInt.Z.opp exponent)
+          (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.sub z53 IEEE754_extra.Zone) IEEE754_extra.Ztwo)) = _
+        simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.opp, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+        rfl
+      have modelEqual : modelBinary64 (UnpackedFloat.div Format.binary64) numerator divisor =
+          modelBinary64 (UnpackedFloat.mul Format.binary64) numerator (encode64 result) := by
+        unfold modelBinary64
+        rw [divisorUnpacked, reciprocalUnpacked]
+        simp only [mantissaValue, exponentValue]
+        rw [inverse_unpacked_div_mul Format.binary64 52 (by rfl) (by decide)]
+        rfl
+      have divisorNan : isNaN64 divisor = false := by
+        rw [← conversion_isNaN64_decode, decoded]
+        rfl
+      have reciprocalNan : isNaN64 (encode64 result) = false := by
+        rw [← conversion_isNaN64_decode, reciprocalDecoded, resultShape]
+        rfl
+      simp only [Float.div, Float.mul, modelEqual, Float.finishBinary, divisorNan, reciprocalNan,
+        Float.binop_nan, Float.cons_pl, Bool.false_eq_true, ↓reduceIte]
+
+private theorem inverse_decode32_fields (value : float32) (sign : Bool)
+    (mantissa : positive) (exponent : Z)
+    (decoded : decode32 value = .B754_finite sign mantissa exponent) :
+    sign = decide (2 ^ 31 ≤ value.bits.toNat) ∧
+    ((intOfZ exponent = -149 ∧ posToNat mantissa = value.bits.toNat % 2 ^ 23 ∧
+      value.bits.toNat / 2 ^ 23 % 256 = 0) ∨
+      (intOfZ exponent = ((value.bits.toNat / 2 ^ 23 % 256 : Nat) : Int) - 150 ∧
+       posToNat mantissa = value.bits.toNat % 2 ^ 23 + 2 ^ 23 ∧
+       0 < value.bits.toNat / 2 ^ 23 % 256 ∧
+       value.bits.toNat / 2 ^ 23 % 256 < 255)) := by
+  let rawExponent := value.bits.toNat / 2 ^ 23 % 256
+  let rawMantissa := value.bits.toNat % 2 ^ 23
+  have rawBound : rawExponent < 256 := Nat.mod_lt _ (by decide)
+  have division := zdiv_nat_f64 value.bits.toNat (2 ^ 23) (by decide)
+  have remainder := zmod_nat_f64 value.bits.toNat (2 ^ 23) (by decide)
+  have exponentRemainder := zmod_nat_f64 (value.bits.toNat / 2 ^ 23) 256 (by decide)
+  change @Eq (Binary.binary_float z24 z128) (decode32 value)
+    (.B754_finite sign mantissa exponent) at decoded
+  unfold decode32 Bits.b32_of_bits_unchecked Bits.binary_float_of_bits_unchecked
+    Bits.binary_float_of_bits_aux Bits.split_bits at decoded
+  dsimp only at decoded
+  simp only [show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 23) =
+      ZArith.BinInt.Z.of_nat (2 ^ 23) by decide,
+    show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 8) =
+      ZArith.BinInt.Z.of_nat 256 by decide,
+    division, remainder, exponentRemainder] at decoded
+  have signTest : Bits.Zle_bool
+      (Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 23)) (ZArith.BinInt.Z.of_nat 256))
+      (ZArith.BinInt.Z.of_nat value.bits.toNat) = decide (2 ^ 31 ≤ value.bits.toNat) := by
+    change (if (2147483648 : Int) ≤ intOfZ (zOfInt value.bits.toNat) then true else false) = _
+    rw [intOfZ_zOfInt]
+    split
+    · symm
+      apply decide_eq_true
+      omega
+    · symm
+      apply decide_eq_false
+      omega
+  rw [signTest] at decoded
+  by_cases zeroExponent : rawExponent = 0
+  · have zeroTest : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat rawExponent) Bits.Z0 = true := by
+      rw [zeroExponent]
+      rfl
+    rw [zeroTest] at decoded
+    simp only [↓reduceIte] at decoded
+    by_cases zeroMantissa : rawMantissa = 0
+    · have mantissaZero : ZArith.BinInt.Z.of_nat (value.bits.toNat % 2 ^ 23) = .Z0 := by
+        rw [show value.bits.toNat % 2 ^ 23 = 0 from zeroMantissa]
+        rfl
+      simp only [mantissaZero, Binary.FF2B_unchecked] at decoded
+      contradiction
+    · have positive := Nat.pos_of_ne_zero zeroMantissa
+      rw [remaining_zofnat_positive rawMantissa positive] at decoded
+      change Binary.B754_finite (decide (2 ^ 31 ≤ value.bits.toNat))
+        (posOfNat rawMantissa) (Bits.emin _ _) = _ at decoded
+      injection decoded with signEq mantissaEq exponentEq
+      refine ⟨signEq.symm, Or.inl ⟨?_, ?_, zeroExponent⟩⟩
+      · rw [← exponentEq]
+        rfl
+      · rw [← mantissaEq, posToNat_posOfNat positive]
+  · have zeroTest : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat rawExponent) Bits.Z0 = false :=
+      conversion_zeq_nat_false zeroExponent
+    rw [zeroTest] at decoded
+    simp only [Bool.false_eq_true, ↓reduceIte] at decoded
+    have maxValue : Bits.Zsub (ZArith.BinInt.Z.of_nat 256) Bits.Zone =
+        ZArith.BinInt.Z.of_nat 255 := by decide
+    rw [maxValue] at decoded
+    by_cases maxExponent : rawExponent = 255
+    · rw [conversion_zeq_nat_true maxExponent] at decoded
+      simp only [↓reduceIte] at decoded
+      cases mantissaValue : ZArith.BinInt.Z.of_nat (value.bits.toNat % 2 ^ 23) <;>
+        simp only [mantissaValue, Binary.FF2B_unchecked] at decoded <;> contradiction
+    · rw [conversion_zeq_nat_false maxExponent] at decoded
+      simp only [Bool.false_eq_true, ↓reduceIte] at decoded
+      have sum : Bits.Zadd (ZArith.BinInt.Z.of_nat rawMantissa)
+          (ZArith.BinInt.Z.of_nat (2 ^ 23)) =
+          ZArith.BinInt.Z.of_nat (rawMantissa + 2 ^ 23) := by
+        apply intOfZ_injective
+        simp only [Bits.Zadd, ZArith.BinInt.Z.add, ZArith.BinInt.Z.of_nat,
+          intOfZ_zOfInt, Int.ofNat_eq_natCast, Int.natCast_add]
+      rw [sum, remaining_zofnat_positive (rawMantissa + 2 ^ 23) (by omega)] at decoded
+      change Binary.B754_finite (decide (2 ^ 31 ≤ value.bits.toNat))
+        (posOfNat (rawMantissa + 2 ^ 23))
+        (Bits.Zsub (Bits.Zadd (ZArith.BinInt.Z.of_nat rawExponent) (Bits.emin _ _)) Bits.Zone) = _ at decoded
+      injection decoded with signEq mantissaEq exponentEq
+      refine ⟨signEq.symm, Or.inr ⟨?_, ?_, by omega, by omega⟩⟩
+      · rw [← exponentEq]
+        simp only [Bits.Zsub, Bits.Zadd, ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add,
+          ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+        change (rawExponent : Int) + (-149) - 1 = (rawExponent : Int) - 150
+        omega
+      · rw [← mantissaEq, posToNat_posOfNat (by omega)]
+
+private theorem inverse_positive_normal_bits32 (value : float32)
+    (mantissa : positive) (exponent : Z)
+    (decoded : decode32 value = .B754_finite false mantissa exponent)
+    (lower : 2 ^ 23 ≤ posToNat mantissa) :
+    value.bits = packComponents Format.binary32 .positive
+      (BitVec.ofNat 8 (intOfZ exponent + 150).toNat)
+      (BitVec.ofNat 23 (posToNat mantissa)) := by
+  have fields := inverse_decode32_fields value false mantissa exponent decoded
+  have rawSmall : value.bits.toNat < 2 ^ 31 := by
+    have signFalse := fields.1.symm
+    simp only [decide_eq_false_iff_not] at signFalse
+    omega
+  have fractionBound : value.bits.toNat % 2 ^ 23 < 2 ^ 23 := Nat.mod_lt _ (by decide)
+  rcases fields.2 with subnormal | ⟨exponentEq, mantissaEq, exponentPositive, exponentBound⟩
+  · omega
+  · have quotientBound : value.bits.toNat / 2 ^ 23 < 256 := by omega
+    have quotientMod : value.bits.toNat / 2 ^ 23 % 256 = value.bits.toNat / 2 ^ 23 := Nat.mod_eq_of_lt quotientBound
+    rw [quotientMod] at exponentEq exponentPositive exponentBound
+    have exponentNat : (intOfZ exponent + 150).toNat = value.bits.toNat / 2 ^ 23 := by omega
+    apply BitVec.eq_of_toNat_eq
+    simp only [packComponents, BitVec.toNat_append, Sign.toBitVec, BitVec.toNat_ofNat,
+      Nat.zero_mod, Nat.zero_shiftLeft, Nat.zero_or, exponentNat,
+      Nat.mod_eq_of_lt quotientBound]
+    rw [Nat.shiftLeft_eq, Nat.mul_comm _ (2 ^ 23),
+      ← Nat.two_pow_add_eq_or_of_lt (Nat.mod_lt _ (Nat.two_pow_pos 23))]
+    omega
+
+private theorem inverse_normal_bits32 (value : float32) (sign : Bool)
+    (mantissa : positive) (exponent : Z)
+    (decoded : decode32 value = .B754_finite sign mantissa exponent)
+    (lower : 2 ^ 23 ≤ posToNat mantissa) :
+    value.bits = packComponents Format.binary32 (if sign then .negative else .positive)
+      (BitVec.ofNat 8 (intOfZ exponent + 150).toNat)
+      (BitVec.ofNat 23 (posToNat mantissa)) := by
+  cases sign with
+  | false => exact inverse_positive_normal_bits32 value mantissa exponent decoded lower
+  | true =>
+    have fields := inverse_decode32_fields value true mantissa exponent decoded
+    have rawLower : 2 ^ 31 ≤ value.bits.toNat := by
+      have signTrue := fields.1.symm
+      exact of_decide_eq_true signTrue
+    have rawUpper : value.bits.toNat < 2 ^ 32 := value.bits.isLt
+    have fractionBound : value.bits.toNat % 2 ^ 23 < 2 ^ 23 := Nat.mod_lt _ (by decide)
+    rcases fields.2 with subnormal | ⟨exponentEq, mantissaEq, exponentPositive, exponentBound⟩
+    · omega
+    · have quotientBound : value.bits.toNat / 2 ^ 23 < 512 := by omega
+      have quotientMod : value.bits.toNat / 2 ^ 23 % 256 = value.bits.toNat / 2 ^ 23 - 256 := by omega
+      have exponentNat : (intOfZ exponent + 150).toNat = value.bits.toNat / 2 ^ 23 % 256 := by omega
+      have exponentSmall : value.bits.toNat / 2 ^ 23 % 256 < 256 := Nat.mod_lt _ (by decide)
+      apply BitVec.eq_of_toNat_eq
+      simp only [↓reduceIte, packComponents, BitVec.toNat_append, Sign.toBitVec, BitVec.toNat_ofNat,
+        exponentNat, Nat.mod_eq_of_lt exponentSmall]
+      change value.bits.toNat = (1 <<< 8 ||| value.bits.toNat / 2 ^ 23 % 256) <<< 23 ||| posToNat mantissa % 2 ^ 23
+      simp only [Nat.shiftLeft_eq]
+      rw [show (1 : Nat) * 2 ^ 8 = 2 ^ 8 * 1 by rfl,
+        ← Nat.two_pow_add_eq_or_of_lt exponentSmall]
+      rw [Nat.mul_comm _ (2 ^ 23),
+        ← Nat.two_pow_add_eq_or_of_lt (Nat.mod_lt _ (Nat.two_pow_pos 23))]
+      omega
+
+private theorem inverse_unpack_components32 (sign : Sign) (mantissa exponent : Nat)
+    (lower : 2 ^ 23 ≤ mantissa) (upper : mantissa < 2 ^ 24)
+    (emin : 0 < exponent) (emax : exponent < 255) :
+    UnpackedFloat.unpack Format.binary32
+      (packComponents Format.binary32 sign (BitVec.ofNat 8 exponent) (BitVec.ofNat 23 mantissa)) =
+      .finite sign mantissa ((exponent : Int) - 150) (by omega) := by
+  have signPart (exponentBits : BitVec 8) (mantissaBits : BitVec 23) :
+      unpackSign (spec := Format.binary32) (packComponents Format.binary32 sign exponentBits mantissaBits) =
+        sign.toBitVec := by
+    cases sign <;> change BitVec.extractLsb 31 31 (_ ++ exponentBits ++ mantissaBits) = _ <;> bv_decide
+  have exponentNonzero : BitVec.ofNat 8 exponent ≠ 0#8 := by
+    intro equality
+    have := congrArg BitVec.toNat equality
+    change exponent % 256 = 0 at this
+    omega
+  have exponentFinite : BitVec.ofNat 8 exponent ≠ -1#8 := by
+    intro equality
+    have := congrArg BitVec.toNat equality
+    change exponent % 256 = 255 at this
+    omega
+  have combined : (1#1 ++ BitVec.ofNat 23 mantissa).toNat = mantissa := by
+    rw [BitVec.toNat_append, Nat.shiftLeft_eq]
+    change 8388608 ||| mantissa % 8388608 = mantissa
+    rw [show 8388608 = 2 ^ 23 * 1 by rfl,
+      ← Nat.two_pow_add_eq_or_of_lt (Nat.mod_lt _ (Nat.two_pow_pos 23))]
+    omega
+  unfold UnpackedFloat.unpack
+  dsimp only
+  simp only [unpackMantissa_packComponents (spec := Format.binary32),
+    unpackExponent_packComponents (spec := Format.binary32), signPart,
+    exponentNonzero, exponentFinite, ↓reduceIte, combined,
+    BitVec.toNat_ofNat, Nat.mod_eq_of_lt (show exponent < 2 ^ 8 by omega)]
+  cases sign <;> rfl
+
+private theorem inverse_normal_unpack32 (value : float32) (sign : Bool)
+    (mantissa : positive) (exponent : Z)
+    (decoded : decode32 value = .B754_finite sign mantissa exponent)
+    (lower : 2 ^ 23 ≤ posToNat mantissa) :
+    UnpackedFloat.unpack Format.binary32 value.bits =
+      .finite (if sign then .negative else .positive) (posToNat mantissa) (intOfZ exponent)
+        (posToNat_positive mantissa) := by
+  have fields := inverse_decode32_fields value sign mantissa exponent decoded
+  have fractionBound : value.bits.toNat % 2 ^ 23 < 2 ^ 23 := Nat.mod_lt _ (by decide)
+  have exponentBounds : 0 < (intOfZ exponent + 150).toNat ∧
+      (intOfZ exponent + 150).toNat < 255 := by
+    rcases fields.2 with subnormal | normal <;> omega
+  have mantissaUpper : posToNat mantissa < 2 ^ 24 := by
+    rcases fields.2 with subnormal | normal <;> omega
+  rw [inverse_normal_bits32 value sign mantissa exponent decoded lower]
+  rw [inverse_unpack_components32 _ (posToNat mantissa) _ lower mantissaUpper
+    exponentBounds.1 exponentBounds.2]
+  have exponentEq : ((intOfZ exponent + 150).toNat : Int) - 150 = intOfZ exponent := by
+    rcases fields.2 with subnormal | normal <;> omega
+  simp only [exponentEq]
+
+theorem Float32.div_mul_inverse
+    [certificate : IEEE754_extra.Bexact_inverse_certificate z24 z128] :
+    Float32.div_mul_inverseStatement := by
+  intro numerator divisor reciprocal inverse
+  unfold Float32.exact_inverse at inverse
+  cases returned : IEEE754_extra.Bexact_inverse (prec := z24) (emax := z128) (decode32 divisor) with
+  | none =>
+      rw [returned] at inverse
+      change (none : Option float32) = some reciprocal at inverse
+      contradiction
+  | some result =>
+      have encoded : encode32 result = reciprocal := by
+        rw [returned] at inverse
+        change some (encode32 result) = some reciprocal at inverse
+        exact Option.some.inj inverse
+      subst reciprocal
+      rcases inverse_result_shape (precision := z24) (maximum := z128) (decode32 divisor) result returned with
+        ⟨sign, exponent, decoded, resultShape⟩
+      have valid := IEEE754_extra.Bexact_inverse_result_obligation_proof (prec := z24) (emax := z128)
+        ⟨decode32 divisor, conversion_decode32_valid divisor⟩ result returned
+      have reciprocalDecoded : decode32 (encode32 result) = result := conversion_encode32_decode ⟨result, valid⟩
+      have mantissaValue : posToNat (IEEE754_extra.Bexact_inverse_mantissa (prec := z24)) = 2 ^ 23 := by decide
+      have divisorUnpacked := inverse_normal_unpack32 divisor sign _ exponent decoded (by rw [mantissaValue]; omega)
+      have reciprocalUnpacked := inverse_normal_unpack32 (encode32 result) sign _ _
+        (reciprocalDecoded.trans resultShape) (by rw [mantissaValue]; omega)
+      have exponentValue : intOfZ (IEEE754_extra.Zsub (IEEE754_extra.Zopp exponent)
+          (IEEE754_extra.Zmul (IEEE754_extra.Zsub z24 IEEE754_extra.Zone) IEEE754_extra.Ztwo)) =
+          -intOfZ exponent - 2 * (23 : Int) := by
+        change intOfZ (ZArith.BinInt.Z.sub (ZArith.BinInt.Z.opp exponent)
+          (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.sub z24 IEEE754_extra.Zone) IEEE754_extra.Ztwo)) = _
+        simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.opp, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+        rfl
+      have modelEqual : modelBinary32 (UnpackedFloat.div Format.binary32) numerator divisor =
+          modelBinary32 (UnpackedFloat.mul Format.binary32) numerator (encode32 result) := by
+        unfold modelBinary32
+        rw [divisorUnpacked, reciprocalUnpacked]
+        simp only [mantissaValue, exponentValue]
+        rw [inverse_unpacked_div_mul Format.binary32 23 (by rfl) (by decide)]
+        rfl
+      have divisorNan : isNaN32 divisor = false := by
+        rw [← conversion_isNaN32_decode, decoded]
+        rfl
+      have reciprocalNan : isNaN32 (encode32 result) = false := by
+        rw [← conversion_isNaN32_decode, reciprocalDecoded, resultShape]
+        rfl
+      simp only [Float32.div, Float32.mul, modelEqual, Float32.finishBinary, divisorNan, reciprocalNan,
+        Float32.binop_nan, Float32.cons_pl, Bool.false_eq_true, ↓reduceIte]
+
+end CompCert4Lean.Lib.Floats
