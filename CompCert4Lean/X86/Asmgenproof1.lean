@@ -5245,3 +5245,70 @@ theorem transl_cond_correct
           condition_float_preserved, condition_float32_preserved]
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.X86.Asm
+open CompCert4Lean.X86.Asmgen
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Backend.Asmgenproof0
+
+theorem transl_sel_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    transl_sel_correctStatement := by
+  intro environment function type condition arguments destination alternate continuation generated
+    registers memory translated
+  unfold transl_sel at translated
+  split at translated
+  · rename_i same
+    have equal : destination = alternate := of_decide_eq_true same
+    subst alternate
+    injection translated with generated_equal
+    subst generated
+    refine ⟨nextinstr (Pregmap.set (.IR destination) (registers (.IR destination)) registers), ?_, ?_, ?_⟩
+    · constructor <;> rfl
+    · simp only [nextinstr, Pregmap.set]
+      cases eval_condition condition (arguments.map (fun register => registers (preg_of register))) memory with
+      | none => exact Val.lessdef_undef _
+      | some result =>
+        cases result <;> exact Val.lessdef_normalize _ _
+    · intro register data distinct
+      cases register <;> simp_all [nextinstr, Pregmap.set, Pregmap.get, data_preg]
+  · rename_i different
+    have distinct : destination ≠ alternate := by
+      intro equal
+      apply different
+      subst alternate
+      exact decide_eq_true rfl
+    obtain ⟨middle_code, selected, translated⟩ := bind_inversion _ _ _ _ _ translated
+    obtain ⟨middle, condition_steps, flags, unchanged⟩ :=
+      transl_cond_correct environment function condition arguments middle_code generated registers memory translated
+    have selection_flags :
+        match eval_condition condition (arguments.map (fun register => registers (preg_of register))) memory with
+        | some result => eval_extcond (testcond_for_condition condition) middle = some result ∧
+            eval_extcond (negate_extcond (testcond_for_condition condition)) middle = some (!result)
+        | none => True := by
+      rw [negate_testcond_for_condition condition]
+      cases evaluated : eval_condition condition
+          (arguments.map (fun register => registers (preg_of register))) memory <;>
+        simpa only [evaluated] using flags
+    obtain ⟨final, selection_steps, value, preserved⟩ :=
+      mk_sel_correct environment function (testcond_for_condition condition) type destination alternate
+        continuation middle_code
+        (eval_condition condition (arguments.map (fun register => registers (preg_of register))) memory)
+        middle memory selected distinct selection_flags
+    refine ⟨final, exec_straight_trans environment function _ _ _ _ _ _ _ _ _
+      condition_steps selection_steps, ?_, ?_⟩
+    · rw [unchanged (.IR destination) rfl, unchanged (.IR alternate) rfl] at value
+      exact value
+    · intro register data other
+      exact (preserved register data other).trans (unchanged register data)
+
+end CompCert4Lean.X86.Asmgenproof1
