@@ -4819,3 +4819,118 @@ theorem testcond_for_signed_comparison_64_correct :
           distinct, Ne.symm distinct]
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.X86.Asm
+open CompCert4Lean.X86.Asmgen
+open CompCert4Lean.Common.Values
+open Lean Elab Tactic Meta
+
+private theorem unsigned_flag_evaluation
+    (comparison : CompCert4Lean.Lib.Integers.comparison) (registers : regset)
+    (equal less : Option Bool)
+    (zero_flag : registers (.CR .ZF) = Val.of_optbool equal)
+    (carry_flag : registers (.CR .CF) = Val.of_optbool less) :
+    eval_testcond (testcond_for_unsigned_comparison comparison) registers =
+      match (generalizing := false) comparison with
+      | .Ceq => equal
+      | .Cne => equal.map Bool.not
+      | .Clt => less
+      | .Cle => match (generalizing := false) less, equal with
+        | some less, some equal => some (less || equal)
+        | _, _ => none
+      | .Cgt => match (generalizing := false) less, equal with
+        | some less, some equal => some (!less && !equal)
+        | _, _ => none
+      | .Cge => less.map Bool.not := by
+  have distinct : CompCert4Lean.Lib.Integers.Int.one.intval ≠
+      CompCert4Lean.Lib.Integers.Int.zero.intval := by decide
+  cases comparison <;> simp only [testcond_for_unsigned_comparison, eval_testcond]
+  all_goals
+    run_tac
+      let goal ← getMainGoal
+      let target ← goal.getType
+      let privatePrefix := Name.str (Name.str (Name.str (Name.str Name.anonymous
+        "_private") "CompCert4Lean") "X86") "Asm"
+      let flagName := "CompCert4Lean.X86.Asm.flagValue".splitOn "."
+        |>.foldl Name.str (Name.num privatePrefix 0)
+      let target ← Lean.Meta.transform target (post := fun expression => do
+        if expression.isAppOf flagName then
+          return .visit (← Lean.Meta.unfoldDefinition expression)
+        else return .continue)
+      let goal ← goal.replaceTargetDefEq target
+      Lean.Elab.Tactic.replaceMainGoal [goal]
+    simp only [Pregmap.get, zero_flag, carry_flag]
+    rcases equal with _ | equal <;> rcases less with _ | less
+  all_goals try cases equal
+  all_goals try cases less
+  all_goals simp [Val.of_optbool, Vtrue, Vfalse, CompCert4Lean.Lib.Integers.Int.eq,
+    CompCert4Lean.Lib.Integers.WordCore.eq, distinct, Ne.symm distinct]
+
+private theorem maketotal_of_bool (value : Option Bool) :
+    Val.maketotal (value.map Val.of_bool) = Val.of_optbool value := by
+  cases value with
+  | none => rfl
+  | some value => cases value <;> rfl
+
+theorem testcond_for_unsigned_comparison_64_correct :
+    testcond_for_unsigned_comparison_64_correctStatement := by
+  intro comparison left right registers memory result evaluated
+  rcases compare_longs_spec registers left right memory with
+    ⟨zero_flag, carry_flag, sign_flag, overflow_flag, preserved⟩
+  simp only [Val.cmplu, maketotal_of_bool] at zero_flag carry_flag
+  rw [unsigned_flag_evaluation comparison _ _ _ zero_flag carry_flag]
+  clear zero_flag carry_flag sign_flag overflow_flag preserved
+  cases left <;> cases right <;>
+    simp only [Val.cmplu_bool] at evaluated ⊢
+  all_goals try { simp at evaluated }
+  case Vlong.Vlong left right =>
+    have reversed := CompCert4Lean.Lib.Integers.Int64.ltu_not_proof left right
+    cases comparison <;>
+      simp only [CompCert4Lean.Lib.Integers.Int64.cmpu,
+        CompCert4Lean.Lib.Integers.WordCore.cmpu] at evaluated ⊢
+    all_goals
+      cases equal : CompCert4Lean.Lib.Integers.Int64.eq left right <;>
+        cases less : CompCert4Lean.Lib.Integers.Int64.ltu left right <;>
+        simp_all [CompCert4Lean.Lib.Integers.Int64.eq,
+          CompCert4Lean.Lib.Integers.Int64.ltu]
+  case Vlong.Vptr integer block offset =>
+    split at evaluated
+    · rename_i valid
+      simp only [valid, if_true]
+      cases comparison <;> simp_all [Val.cmp_different_blocks]
+    · simp_all
+  case Vptr.Vlong block offset integer =>
+    split at evaluated
+    · rename_i valid
+      simp only [valid, if_true]
+      cases comparison <;> simp_all [Val.cmp_different_blocks]
+    · simp_all
+  case Vptr.Vptr left_block left_offset right_block right_offset =>
+    simp only [show CompCert4Lean.X86_64.Archi.ptr64 = true from rfl, if_true] at evaluated ⊢
+    split at evaluated
+    · rename_i same_block
+      simp only [same_block, if_true]
+      split at evaluated
+      · rename_i valid
+        simp only [valid, if_true]
+        have reversed := CompCert4Lean.Lib.Integers.Ptrofs.ltu_not_proof left_offset right_offset
+        cases comparison <;>
+          simp only [CompCert4Lean.Lib.Integers.Ptrofs.cmpu,
+            CompCert4Lean.Lib.Integers.WordCore.cmpu] at evaluated ⊢
+        all_goals
+          cases equal : CompCert4Lean.Lib.Integers.Ptrofs.eq left_offset right_offset <;>
+            cases less : CompCert4Lean.Lib.Integers.Ptrofs.ltu left_offset right_offset <;>
+            simp_all [CompCert4Lean.Lib.Integers.Ptrofs.eq,
+              CompCert4Lean.Lib.Integers.Ptrofs.ltu]
+      · simp_all
+    · rename_i different_blocks
+      simp only [different_blocks, if_false]
+      split at evaluated
+      · rename_i valid
+        simp only [valid, if_true]
+        cases comparison <;> simp_all [Val.cmp_different_blocks]
+      · simp_all
+
+end CompCert4Lean.X86.Asmgenproof1
