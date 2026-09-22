@@ -4627,3 +4627,49 @@ theorem divls_modls_exists : divls_modls_existsStatement := by
     exact CompCert4Lean.Lib.Integers.Int64.divmods2_divs_mods_proof numerator denominator nonzero safe
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.X86.Asm
+open CompCert4Lean.X86.Asmgen
+open CompCert4Lean.Common.Values
+
+theorem normalize_addrmode_64_correct : normalize_addrmode_64_correctStatement := by
+  intro environment addressing registers
+  cases addressing with
+  | Addrmode base offset constant =>
+    cases constant with
+    | inl displacement =>
+      cases range : Op.offset_in_range displacement with
+      | true => simp [normalize_addrmode_64, range]
+      | false =>
+        simp only [normalize_addrmode_64, range, Bool.false_eq_true, if_false, eval_addrmode64]
+        rw [Val.addl_assoc, Val.addl_assoc]
+        congr 2
+        exact congrArg val.Vlong
+          (CompCert4Lean.Lib.Integers.Int64.add_zero_l_proof _).symm
+    | inr symbol =>
+      rcases symbol with ⟨symbol, displacement⟩
+      cases range : Op.ptroffset_in_range displacement with
+      | true => simp [normalize_addrmode_64, range]
+      | false =>
+        simp only [normalize_addrmode_64, range, Bool.false_or]
+        change _ = Val.addl (eval_addrmode64 environment
+          (.Addrmode base offset (.inr (symbol, CompCert4Lean.Lib.Integers.Ptrofs.zero))) registers)
+          (.Vlong (CompCert4Lean.Lib.Integers.Ptrofs.to_int64 displacement))
+        simp only [eval_addrmode64]
+        rw [Val.addl_assoc, Val.addl_assoc]
+        congr 2
+        have shifted := CompCert4Lean.Common.Globalenvs.Genv.shift_symbol_address_64
+          _ _ environment symbol CompCert4Lean.Lib.Integers.Ptrofs.zero
+          (CompCert4Lean.Lib.Integers.Ptrofs.to_int64 displacement) rfl
+        have converted := CompCert4Lean.Lib.Integers.Ptrofs.of_int64_to_int64_proof
+          rfl displacement
+        rw [converted] at shifted
+        have zero : CompCert4Lean.Lib.Integers.Ptrofs.add
+            CompCert4Lean.Lib.Integers.Ptrofs.zero displacement = displacement :=
+          CompCert4Lean.Lib.Integers.Ptrofs.add_zero_l_proof displacement
+        rw [zero] at shifted
+        exact shifted
+
+end CompCert4Lean.X86.Asmgenproof1
