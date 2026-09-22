@@ -4762,3 +4762,60 @@ theorem mk_setcc_correct
   exact mk_setcc_base_correct
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.X86.Asm
+open CompCert4Lean.X86.Asmgen
+open CompCert4Lean.Common.Values
+open Lean Elab Tactic Meta
+
+theorem testcond_for_signed_comparison_64_correct :
+    testcond_for_signed_comparison_64_correctStatement := by
+  intro comparison left right registers memory result evaluated
+  cases left <;> cases right <;> simp [Val.cmpl_bool] at evaluated
+  case Vlong.Vlong left right =>
+    subst result
+    have distinct : CompCert4Lean.Lib.Integers.Int.one.intval ≠
+        CompCert4Lean.Lib.Integers.Int.zero.intval := by decide
+    have sign_combination := int64_sub_overflow left right
+    have reversed := CompCert4Lean.Lib.Integers.Int64.lt_not_proof left right
+    rcases compare_longs_spec registers (.Vlong left) (.Vlong right) memory with
+      ⟨zero_flag, carry_flag, sign_flag, overflow_flag, preserved⟩
+    have boolean_flag (value : Bool) :
+        (match Val.of_bool value with | .Vint integer => some integer | _ => none) =
+          some (if value then CompCert4Lean.Lib.Integers.Int.one
+            else CompCert4Lean.Lib.Integers.Int.zero) := by
+      cases value <;> rfl
+    cases comparison <;>
+      simp only [testcond_for_signed_comparison, eval_testcond]
+    all_goals
+      run_tac
+        let goal ← getMainGoal
+        let target ← goal.getType
+        let privatePrefix := Name.str (Name.str (Name.str (Name.str Name.anonymous
+          "_private") "CompCert4Lean") "X86") "Asm"
+        let flagName := "CompCert4Lean.X86.Asm.flagValue".splitOn "."
+          |>.foldl Name.str (Name.num privatePrefix 0)
+        let target ← Lean.Meta.transform target (post := fun expression => do
+          if expression.isAppOf flagName then
+            return .visit (← Lean.Meta.unfoldDefinition expression)
+          else return .continue)
+        let goal ← goal.replaceTargetDefEq target
+        Lean.Elab.Tactic.replaceMainGoal [goal]
+      simp only [Pregmap.get, zero_flag, carry_flag, sign_flag, overflow_flag]
+      simp only [Val.cmplu, Val.cmplu_bool, Option.map_some, Val.maketotal,
+        Val.negativel, Val.subl, Val.subl_overflow, boolean_flag, sign_combination,
+        CompCert4Lean.Lib.Integers.Int64.cmpu, CompCert4Lean.Lib.Integers.Int64.cmp,
+        CompCert4Lean.Lib.Integers.WordCore.cmpu, CompCert4Lean.Lib.Integers.WordCore.cmp]
+    all_goals
+      try rw [CompCert4Lean.Lib.Integers.Int64.not_lt_proof left right]
+      try rw [CompCert4Lean.Lib.Integers.Int64.lt_not_proof left right]
+      cases equal : CompCert4Lean.Lib.Integers.Int64.eq left right <;>
+        cases less : CompCert4Lean.Lib.Integers.Int64.lt left right <;>
+        simp_all [Val.of_bool, Vtrue, Vfalse, sign_combination,
+          CompCert4Lean.Lib.Integers.Int64.eq, CompCert4Lean.Lib.Integers.Int64.lt,
+          CompCert4Lean.Lib.Integers.Int.eq, CompCert4Lean.Lib.Integers.WordCore.eq,
+          distinct, Ne.symm distinct]
+
+end CompCert4Lean.X86.Asmgenproof1
