@@ -6175,4 +6175,13 @@ namespace CompCert4Lean.Backend.Stackingproof
 theorem transl_external_arguments_rec : transl_external_arguments_recStatement :=
   transl_external_arguments_rec_aux
 
+theorem set_location : set_locationStatement := by
+  intro return_address_offset tprog m injection stack position bound slot locations
+    frame offset type value targetValue hmemory hoffset hbound halign hinject
+  obtain ⟨memory, _, hstore, hcontents⟩ :=
+    stackingproof_set_location return_address_offset tprog m injection stack position
+      bound slot locations frame offset type value targetValue hmemory hoffset hbound
+      halign hinject
+  exact ⟨memory, hstore, hcontents⟩
+
 end CompCert4Lean.Backend.Stackingproof
