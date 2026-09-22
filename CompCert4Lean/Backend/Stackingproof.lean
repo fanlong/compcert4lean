@@ -6185,3 +6185,113 @@ theorem set_location : set_locationStatement := by
   exact ⟨memory, hstore, hcontents⟩
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Conventions
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Separation
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Conventions1
+open CompCert4Lean.X86.Machregs
+open CompCert4Lean.X86.Stacklayout
+
+open CompCert4Lean.Backend.Bounds
+
+theorem restore_callee_save_rec_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    restore_callee_save_rec_correctStatement := by
+  intro cfg xi return_address_offset tprog function
+    bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop injection cs fb sp ls0 memory registers
+  induction registers with
+  | nil =>
+      intro ofs rs continuation hcontains hagree hbounds
+      refine ⟨rs, ?_, ?_, ?_, hagree⟩
+      · simpa [restore_callee_save_rec] using
+          (star_refl (Mach.step
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            cfg xi return_address_offset)
+            (Genv.globalenv tprog)
+            (Mach.State cs fb (Vptr sp Ptrofs.zero) continuation rs memory))
+      · simp
+      · simp
+  | cons register registers ih =>
+      intro ofs rs continuation hcontains hagree hbounds
+      let ty := mreg_type register
+      let sz := CompCert4Lean.Common.AST.typesize ty
+      let ofs1 := align ofs sz
+      rcases hcontains with ⟨hhead, htail, hdisj⟩
+      obtain ⟨value, hload, hspec⟩ :=
+        contains_get_stack (fun value' => Val.inject injection (ls0 (R register)) value')
+          memory ty sp ofs1 hhead
+      have hbounds_tail : ∀ r0, r0 ∈ registers →
+          CompCert4Lean.Backend.Bounds.mreg_within_bounds cfg (function_bounds cfg function) r0 := by
+        intro r0 hr0
+        exact hbounds r0 (by simp [hr0])
+      have hagree1 :
+          agree_unused cfg function bound_local_pos bound_outgoing_pos bound_stack_data_pos
+            used_callee_save_norepet used_callee_save_prop injection ls0
+              (Regmap.set register value rs) := by
+        intro r0 hr0
+        by_cases heq : r0 = register
+        · subst r0
+          have hreg : Regmap.set register value rs register = value := by
+            simpa [Regmap.get] using (Regmap.gss_proof val register value rs)
+          rw [hreg]
+          exact hspec
+        · have hreg : Regmap.set register value rs r0 = rs r0 := by
+            change Regmap.get r0 (Regmap.set register value rs) = Regmap.get r0 rs
+            simpa using (Regmap.gso_proof val r0 register value rs heq)
+          rw [hreg]
+          exact hagree r0 hr0
+      have hih := ih (zAdd ofs1 sz) (Regmap.set register value rs) continuation
+        htail hagree1 hbounds_tail
+      rcases hih with ⟨rs', hstar, hin, hnot, hunused⟩
+      refine ⟨rs', ?_, ?_, ?_, hunused⟩
+      · exact star_left _ _ _ _ _ _ _ _ _ _
+          (Mach.exec_Mgetstack cs fb (Vptr sp Ptrofs.zero)
+            (Ptrofs.repr ofs1) ty register
+            (restore_callee_save_rec registers (zAdd ofs1 sz) continuation) rs memory value hload)
+          hstar rfl
+      · intro r0 hr0
+        by_cases hmem : r0 ∈ registers
+        · exact hin r0 hmem
+        · have heq : r0 = register := by
+            simp at hr0
+            exact (hr0.resolve_right hmem)
+          subst r0
+          rw [hnot register (by exact hmem)]
+          have hreg : Regmap.set register value rs register = value := by
+            simpa [Regmap.get] using (Regmap.gss_proof val register value rs)
+          rw [hreg]
+          exact hspec
+      · intro r0 hr0
+        have hmem : r0 ∉ registers := by
+          intro hm
+          exact hr0 (by simp [hm])
+        rw [hnot r0 hmem]
+        have hreg : Regmap.set register value rs r0 = rs r0 := by
+          change Regmap.get r0 (Regmap.set register value rs) = Regmap.get r0 rs
+          have hne : r0 ≠ register := by
+            intro heq
+            exact hr0 (by simp [heq])
+          simpa using (Regmap.gso_proof val r0 register value rs hne)
+        exact hreg
+
+end CompCert4Lean.Backend.Stackingproof
