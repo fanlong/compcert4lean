@@ -905,3 +905,54 @@ theorem match_if_simulation : match_if_simulationStatement := by
       exact forward_simulation_identity (sem prog)
 
 end CompCert4Lean.Driver.Compiler
+
+namespace CompCert4Lean.Driver.Compiler
+
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Cfrontend
+open CompCert4Lean.Backend
+open CompCert4Lean.X86
+
+set_option maxRecDepth 4096 in
+set_option maxHeartbeats 800000 in
+theorem transf_c_program_match
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)] :
+    transf_c_program_matchStatement := by
+  intro cfg selectionOracle inlineCfg regallocOracle enumerationService
+    csyntaxLinkerCertificate clightLinkerCertificate passCertificates ctx prog target compiled
+  unfold transf_c_program transf_clight_program transf_cminor_program transf_rtl_program at compiled
+  simp only [time, print, apply_total, apply_partial] at compiled
+  repeat first
+    | contradiction
+    | split at *
+  all_goals
+    simp_all only [CompCert4Lean.Common.Errors.res.OK.injEq]
+    subst_vars
+    simp only [match_prog, CompCert's_passes, compose_passes, pass_compose,
+      pass_identity]
+    refine ⟨_, SimplExprproof.transf_program_match ctx _ _ (by assumption), ?_⟩
+    refine ⟨_, SimplLocalsproof.match_transf_program cfg _ _ (by assumption), ?_⟩
+    refine ⟨_, Cshmgenproof.transf_program_match _ _ (by assumption), ?_⟩
+    refine ⟨_, Cminorgenproof.transf_program_match _ _ (by assumption), ?_⟩
+    refine ⟨_, Selectionproof.transf_program_match cfg selectionOracle _ _ (by assumption), ?_⟩
+    refine ⟨_, RTLgenproof.transf_program_match _ _ (by assumption), ?_⟩
+    refine ⟨_, total_if_match _ _ _ _ _ (Tailcallproof.transf_program_match cfg), ?_⟩
+    refine ⟨_, Inliningproof.transf_program_match inlineCfg _ _ (by assumption), ?_⟩
+    refine ⟨_, Renumberproof.transf_program_match _, ?_⟩
+    refine ⟨_, total_if_match _ _ _ _ _ (Constpropproof.transf_program_match cfg), ?_⟩
+    refine ⟨_, total_if_match _ _ _ _ _ Renumberproof.transf_program_match, ?_⟩
+    refine ⟨_, partial_if_match _ _ _ _ _ _ (CSEproof.transf_program_match cfg) (by assumption), ?_⟩
+    refine ⟨_, partial_if_match _ _ _ _ _ _ (Deadcodeproof.transf_program_match cfg) (by assumption), ?_⟩
+    refine ⟨_, Unusedglobproof.transf_program_match _ _ (by assumption), ?_⟩
+    refine ⟨_, Allocproof.transf_program_match cfg regallocOracle _ _ (by assumption), ?_⟩
+    refine ⟨_, Tunnelingproof.transf_program_match _, ?_⟩
+    refine ⟨_, Linearizeproof.transf_program_match enumerationService _ _ (by assumption), ?_⟩
+    refine ⟨_, CleanupLabelsproof.transf_program_match _, ?_⟩
+    refine ⟨_, partial_if_match _ _ _ _ _ _ (Debugvarproof.transf_program_match cfg) (by assumption), ?_⟩
+    refine ⟨_, Stackingproof.transf_program_match cfg _ _ (by assumption), ?_⟩
+    exact ⟨target, Asmgenproof.transf_program_match _ _ compiled, rfl⟩
+
+end CompCert4Lean.Driver.Compiler
