@@ -11,6 +11,7 @@ import CompCert4Lean.Foundation.Logic
 import CompCert4Lean.Foundation.Numbers
 import CompCert4Lean.X86.Asm
 import CompCert4Lean.X86.Asmgen
+import CompCert4Lean.X86.Asmgenproof1
 
 /-!
 # Correctness surface for x86 generation
@@ -2337,5 +2338,1443 @@ theorem exec_straight_steps_goto
                 simpa [CompCert4Lean.X86.Asm.data_preg] using hr))
         · intro h
           cases h
+
+end CompCert4Lean.X86.Asmgenproof
+
+set_option maxHeartbeats 2000000
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Asmgenproof0
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Asm
+open CompCert4Lean.X86.Asmgen
+
+
+variable [binary64_certificate : BinaryNormalizeCertificate
+    (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+  [binary32_certificate : BinaryNormalizeCertificate
+    (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+
+private theorem simulation_label_case
+    (cfg : CompCert4Lean.Config.CompilerConfig)
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (prog : CompCert4Lean.Backend.Mach.program) (tprog : program)
+    (hprog : match_prog prog tprog)
+    (stack : List CompCert4Lean.Backend.Mach.stackframe) (fb : block) (sp : val)
+    (lbl : label) (code : CompCert4Lean.Backend.Mach.code)
+    (regs : CompCert4Lean.Backend.Mach.regset) (memory : mem) (target : state)
+    (hmatch : match_states prog
+      (.State stack fb sp (.Mlabel lbl :: code) regs memory) target) :
+    ∃ target', plus (CompCert4Lean.X86.Asm.step cfg xi) (Genv.globalenv tprog)
+      target E0 target' ∧
+      match_states prog (.State stack fb sp code regs memory) target' := by
+  cases hmatch with
+  | match_states_intro _ _ _ _ ep _ _ targetMemory targetRegs fn targetFn targetCode
+      hstack hfind hext hatpc hagree hparent =>
+    apply exec_straight_steps cfg xi prog tprog hprog stack fb fn targetRegs
+      (.Mlabel lbl) code ep targetFn targetCode targetMemory memory targetMemory
+      sp regs hstack hext hfind hatpc
+    intro continuation translated htrans
+    have hcode : .Plabel lbl :: continuation = translated := by
+      exact CompCert4Lean.Common.Errors.res.OK.inj htrans
+    subst translated
+    refine ⟨nextinstr targetRegs, ?_, agree_nextinstr regs sp targetRegs hagree, ?_⟩
+    · exact exec_straight_one _ _ _ _ _ _ rfl (by
+        rfl)
+    · intro impossible
+      cases impossible
+
+omit binary64_certificate binary32_certificate in
+private theorem simulation_return_case
+    (prog : CompCert4Lean.Backend.Mach.program)
+    (stack : List CompCert4Lean.Backend.Mach.stackframe) (fb : block)
+    (sp returnAddress : val) (code : CompCert4Lean.Backend.Mach.code)
+    (regs : CompCert4Lean.Backend.Mach.regset) (memory : mem) (target : state)
+    (hmatch : match_states prog
+      (.Returnstate (.Stackframe fb sp returnAddress code :: stack) regs memory) target) :
+    match_states prog (.State stack fb sp code regs memory) target := by
+  cases hmatch with
+  | match_states_return _ _ _ targetMemory targetRegs hstack hext hagree hpc =>
+    cases hstack with
+    | match_stack_cons _ _ _ _ _ fn targetFn targetCode hfind hatpc hsp htail =>
+      apply match_states.match_states_intro stack fb sp code false regs memory
+        targetMemory targetRegs fn targetFn targetCode htail hfind hext
+      · simpa [hpc, CompCert4Lean.Backend.Mach.parent_ra] using hatpc
+      · exact hagree
+      · intro impossible
+        cases impossible
+
+private theorem simulation_getstack_case
+    (cfg : CompCert4Lean.Config.CompilerConfig)
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (prog : CompCert4Lean.Backend.Mach.program) (tprog : program)
+    (hprog : match_prog prog tprog)
+    (stack : List CompCert4Lean.Backend.Mach.stackframe) (fb : block) (sp : val)
+    (ofs : ptrofs) (ty : typ) (dst : CompCert4Lean.X86.Machregs.mreg)
+    (code : CompCert4Lean.Backend.Mach.code)
+    (regs : CompCert4Lean.Backend.Mach.regset) (memory : mem) (value : val)
+    (hload : CompCert4Lean.Backend.Mach.load_stack memory sp ty ofs = some value)
+    (target : state)
+    (hmatch : match_states prog
+      (.State stack fb sp (.Mgetstack ofs ty dst :: code) regs memory) target) :
+    ∃ target', plus (CompCert4Lean.X86.Asm.step cfg xi) (Genv.globalenv tprog)
+      target E0 target' ∧
+      match_states prog (.State stack fb sp code
+        (CompCert4Lean.Backend.Mach.Regmap.set dst value regs) memory) target' := by
+  cases hmatch with
+  | match_states_intro _ _ _ _ ep _ _ targetMemory targetRegs fn targetFn targetCode
+      hstack hfind hext hatpc hagree hparent =>
+    obtain ⟨loaded, hloadTarget, hvalue⟩ := Mem.loadv_extends
+      (chunk_of_type ty) memory targetMemory (Val.offset_ptr sp ofs)
+      (Val.offset_ptr sp ofs) value hext hload (.lessdef_refl _)
+    rw [sp_val regs sp targetRegs hagree] at hloadTarget
+    apply exec_straight_steps cfg xi prog tprog hprog stack fb fn targetRegs
+      (.Mgetstack ofs ty dst) code ep targetFn targetCode targetMemory memory
+      targetMemory sp (CompCert4Lean.Backend.Mach.Regmap.set dst value regs)
+      hstack hext hfind hatpc
+    intro continuation translated htrans
+    obtain ⟨resultRegs, hexec, hresult, hother⟩ :=
+      CompCert4Lean.X86.Asmgenproof1.loadind_correct
+        (Genv.globalenv tprog) targetFn .RSP ofs ty dst continuation targetRegs
+        translated targetMemory loaded htrans hloadTarget
+    refine ⟨resultRegs, hexec, ?_, ?_⟩
+    · apply agree_set_mreg regs sp targetRegs dst value resultRegs hagree
+      · rwa [hresult]
+      · exact hother
+    · intro impossible
+      cases impossible
+
+private theorem simulation_setstack_case
+    (cfg : CompCert4Lean.Config.CompilerConfig)
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (prog : CompCert4Lean.Backend.Mach.program) (tprog : program)
+    (hprog : match_prog prog tprog)
+    (stack : List CompCert4Lean.Backend.Mach.stackframe) (fb : block) (sp : val)
+    (src : CompCert4Lean.X86.Machregs.mreg) (ofs : ptrofs) (ty : typ)
+    (code : CompCert4Lean.Backend.Mach.code)
+    (regs : CompCert4Lean.Backend.Mach.regset) (memory memory' : mem)
+    (hstore : CompCert4Lean.Backend.Mach.store_stack memory sp ty ofs (regs src) =
+      some memory') (target : state)
+    (hmatch : match_states prog
+      (.State stack fb sp (.Msetstack src ofs ty :: code) regs memory) target) :
+    ∃ target', plus (CompCert4Lean.X86.Asm.step cfg xi) (Genv.globalenv tprog)
+      target E0 target' ∧
+      match_states prog (.State stack fb sp code
+        (CompCert4Lean.Backend.Mach.undef_regs
+          (CompCert4Lean.X86.Machregs.destroyed_by_setstack ty) regs) memory') target' := by
+  cases hmatch with
+  | match_states_intro _ _ _ _ ep _ _ targetMemory targetRegs fn targetFn targetCode
+      hstack hfind hext hatpc hagree hparent =>
+    obtain ⟨resultMemory, hstoreTarget, hext'⟩ := Mem.storev_extends
+      (chunk_of_type ty) memory targetMemory (Val.offset_ptr sp ofs) (regs src)
+      memory' (Val.offset_ptr sp ofs) (targetRegs (preg_of src)) hext hstore
+      (.lessdef_refl _) (hagree.agree_mregs src)
+    rw [sp_val regs sp targetRegs hagree] at hstoreTarget
+    apply exec_straight_steps cfg xi prog tprog hprog stack fb fn targetRegs
+      (.Msetstack src ofs ty) code ep targetFn targetCode targetMemory memory'
+      resultMemory sp (CompCert4Lean.Backend.Mach.undef_regs
+        (CompCert4Lean.X86.Machregs.destroyed_by_setstack ty) regs)
+      hstack hext' hfind hatpc
+    intro continuation translated htrans
+    obtain ⟨resultRegs, hexec, hother⟩ :=
+      CompCert4Lean.X86.Asmgenproof1.storeind_correct
+        (Genv.globalenv tprog) targetFn .RSP ofs ty src continuation targetRegs
+        translated targetMemory resultMemory htrans hstoreTarget
+    refine ⟨resultRegs, hexec, ?_, ?_⟩
+    · exact agree_undef_regs regs sp _ targetRegs resultRegs hagree hother
+    · intro hparent'
+      rw [hother (.IR .RAX) rfl]
+      · exact hparent hparent'
+      · cases ty <;> simp [CompCert4Lean.X86.Machregs.destroyed_by_setstack,
+          preg_notin, preg_of]
+
+private theorem simulation_goto_case
+    (cfg : CompCert4Lean.Config.CompilerConfig)
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (prog : CompCert4Lean.Backend.Mach.program) (tprog : program)
+    (hprog : match_prog prog tprog)
+    (stack : List CompCert4Lean.Backend.Mach.stackframe) (fb : block) (sp : val)
+    (fn : CompCert4Lean.Backend.Mach.function) (lbl : label)
+    (code destination : CompCert4Lean.Backend.Mach.code)
+    (regs : CompCert4Lean.Backend.Mach.regset) (memory : mem)
+    (hfind : Genv.find_funct_ptr (Genv.globalenv prog) fb = some (.Internal fn))
+    (hlabel : CompCert4Lean.Backend.Mach.find_label lbl fn.fn_code = some destination)
+    (target : state)
+    (hmatch : match_states prog
+      (.State stack fb sp (.Mgoto lbl :: code) regs memory) target) :
+    ∃ target', plus (CompCert4Lean.X86.Asm.step cfg xi) (Genv.globalenv tprog)
+      target E0 target' ∧
+      match_states prog (.State stack fb sp destination regs memory) target' := by
+  cases hmatch with
+  | match_states_intro _ _ _ _ ep _ _ targetMemory targetRegs foundFn targetFn targetCode
+      hstack hfound hext hatpc hagree hparent =>
+    have heq : foundFn = fn := by
+      cases hfound.symm.trans hfind
+      rfl
+    subst foundFn
+    generalize hpc : targetRegs .PC = pc at hatpc
+    cases hatpc with
+    | intro _ ofs _ _ _ _ _ hfind' htrans hcode htail =>
+      obtain ⟨continuation, hcontinuation, htranslation⟩ :
+          ∃ continuation, transl_code fn code false = .OK continuation ∧
+            targetCode = .Pjmp_l lbl :: continuation := by
+        change CompCert4Lean.Common.Errors.bind (transl_code fn code false)
+          (fun continuation => .OK (.Pjmp_l lbl :: continuation)) = .OK targetCode at hcode
+        cases hcontinuation : transl_code fn code false with
+        | Error message => simp [hcontinuation, CompCert4Lean.Common.Errors.bind] at hcode
+        | OK continuation =>
+          simp [hcontinuation, CompCert4Lean.Common.Errors.bind] at hcode
+          exact ⟨continuation, rfl, (CompCert4Lean.Common.Errors.res.OK.inj hcode).symm⟩
+      obtain ⟨destinationCode, resultRegs, hgoto, hatpc', hother⟩ :=
+        find_label_goto_label prog fn targetFn lbl targetRegs targetMemory
+          destination fb ofs hfind htrans hpc hlabel
+      refine ⟨.State resultRegs targetMemory, ?_, ?_⟩
+      · apply plus_one
+        apply CompCert4Lean.X86.Asm.exec_step_internal
+        · exact hpc
+        · exact functions_transl prog tprog hprog fb fn targetFn hfind htrans
+        · exact find_instr_tail targetFn.fn_code (.Pjmp_l lbl) continuation
+            (Ptrofs.unsigned ofs) (htranslation ▸ htail)
+        · exact hgoto
+      · apply match_states.match_states_intro stack fb sp destination false regs
+          memory targetMemory resultRegs fn targetFn destinationCode hstack hfind hext hatpc'
+        · apply agree_exten regs sp targetRegs resultRegs hagree
+          intro reg hdata
+          exact hother reg (by
+            intro heq
+            subst reg
+            cases hdata)
+        · intro impossible
+          cases impossible
+
+private theorem simulation_getparam_case
+    (cfg : CompCert4Lean.Config.CompilerConfig)
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (prog : CompCert4Lean.Backend.Mach.program) (tprog : program)
+    (hprog : match_prog prog tprog)
+    (stack : List CompCert4Lean.Backend.Mach.stackframe) (fb : block) (sp : val)
+    (fn : CompCert4Lean.Backend.Mach.function) (ofs : ptrofs) (ty : typ)
+    (dst : CompCert4Lean.X86.Machregs.mreg) (code : CompCert4Lean.Backend.Mach.code)
+    (regs : CompCert4Lean.Backend.Mach.regset) (memory : mem) (value : val)
+    (hfind : Genv.find_funct_ptr (Genv.globalenv prog) fb = some (.Internal fn))
+    (hlink : CompCert4Lean.Backend.Mach.load_stack memory sp Tptr fn.fn_link_ofs =
+      some (CompCert4Lean.Backend.Mach.parent_sp stack))
+    (hload : CompCert4Lean.Backend.Mach.load_stack memory
+      (CompCert4Lean.Backend.Mach.parent_sp stack) ty ofs = some value)
+    (target : state)
+    (hmatch : match_states prog
+      (.State stack fb sp (.Mgetparam ofs ty dst :: code) regs memory) target) :
+    ∃ target', plus (CompCert4Lean.X86.Asm.step cfg xi) (Genv.globalenv tprog)
+      target E0 target' ∧
+      match_states prog (.State stack fb sp code
+        (CompCert4Lean.Backend.Mach.Regmap.set dst value
+          (CompCert4Lean.Backend.Mach.Regmap.set .AX .Vundef regs)) memory) target' := by
+  cases hmatch with
+  | match_states_intro _ _ _ _ ep _ _ targetMemory targetRegs foundFn targetFn targetCode
+      hstack hfound hext hatpc hagree hparent =>
+    have heq : foundFn = fn := by
+      cases hfound.symm.trans hfind
+      rfl
+    subst foundFn
+    obtain ⟨loadedParent, hlinkTarget, hparentValue⟩ := Mem.loadv_extends
+      (chunk_of_type Tptr) memory targetMemory (Val.offset_ptr sp fn.fn_link_ofs)
+      (Val.offset_ptr sp fn.fn_link_ofs) _ hext hlink (.lessdef_refl _)
+    have hparentEq := lessdef_parent_sp (Genv.globalenv prog) stack loadedParent
+      hstack hparentValue
+    subst loadedParent
+    rw [sp_val regs sp targetRegs hagree] at hlinkTarget
+    obtain ⟨loaded, hloadTarget, hvalue⟩ := Mem.loadv_extends
+      (chunk_of_type ty) memory targetMemory
+      (Val.offset_ptr (CompCert4Lean.Backend.Mach.parent_sp stack) ofs)
+      (Val.offset_ptr (CompCert4Lean.Backend.Mach.parent_sp stack) ofs)
+      value hext hload (.lessdef_refl _)
+    apply exec_straight_steps cfg xi prog tprog hprog stack fb fn targetRegs
+      (.Mgetparam ofs ty dst) code ep targetFn targetCode targetMemory memory
+      targetMemory sp _ hstack hext hfind hatpc
+    intro continuation translated htrans
+    have finish (middleRegs : regset) (middleCode : CompCert4Lean.X86.Asm.code)
+        (hagreeMiddle : agree (CompCert4Lean.Backend.Mach.Regmap.set .AX .Vundef regs)
+          sp middleRegs)
+        (hparentMiddle : middleRegs (.IR .RAX) = CompCert4Lean.Backend.Mach.parent_sp stack)
+        (htranslate : loadind .RAX ofs ty dst continuation = .OK middleCode) :
+        ∃ resultRegs,
+          exec_straight (Genv.globalenv tprog) targetFn middleCode middleRegs
+            targetMemory continuation resultRegs targetMemory ∧
+          agree (CompCert4Lean.Backend.Mach.Regmap.set dst value
+            (CompCert4Lean.Backend.Mach.Regmap.set .AX .Vundef regs)) sp resultRegs ∧
+          (it1_is_parent ep (.Mgetparam ofs ty dst) = true →
+            resultRegs (.IR .RAX) = CompCert4Lean.Backend.Mach.parent_sp stack) := by
+      obtain ⟨resultRegs, hexec, hresult, hother⟩ :=
+        CompCert4Lean.X86.Asmgenproof1.loadind_correct
+          (Genv.globalenv tprog) targetFn .RAX ofs ty dst continuation middleRegs
+          middleCode targetMemory loaded htranslate (by rwa [hparentMiddle])
+      refine ⟨resultRegs, hexec, ?_, ?_⟩
+      · apply agree_set_mreg _ sp middleRegs dst value resultRegs hagreeMiddle
+        · rwa [hresult]
+        · exact hother
+      · intro hparentNext
+        rw [hother (.IR .RAX) rfl]
+        · exact hparentMiddle
+        · intro heq
+          have hdst := preg_of_injective .AX dst heq
+          subst dst
+          cases hparentNext
+    cases ep with
+    | true =>
+      exact finish targetRegs translated
+        (agree_set_mreg regs sp targetRegs .AX .Vundef targetRegs hagree
+          (.lessdef_undef _) (by intros; rfl)) (hparent rfl) htrans
+    | false =>
+      change CompCert4Lean.Common.Errors.bind (loadind .RAX ofs ty dst continuation)
+        (fun middleCode => loadind .RSP fn.fn_link_ofs Tptr .AX middleCode) =
+          .OK translated at htrans
+      cases hmiddle : loadind .RAX ofs ty dst continuation with
+      | Error message => simp [hmiddle, CompCert4Lean.Common.Errors.bind] at htrans
+      | OK middleCode =>
+        simp only [hmiddle, CompCert4Lean.Common.Errors.bind] at htrans
+        obtain ⟨middleRegs, hexecFirst, hrax, hother⟩ :=
+          CompCert4Lean.X86.Asmgenproof1.loadind_correct
+            (Genv.globalenv tprog) targetFn .RSP fn.fn_link_ofs Tptr .AX middleCode
+            targetRegs translated targetMemory _ htrans hlinkTarget
+        obtain ⟨resultRegs, hexecLast, hagreeResult, hparentResult⟩ :=
+          finish middleRegs middleCode
+            (agree_set_mreg regs sp targetRegs .AX .Vundef middleRegs hagree
+              (.lessdef_undef _) hother) hrax hmiddle
+        exact ⟨resultRegs, exec_straight_trans _ _ _ _ _ _ _ _ _ _ _ hexecFirst hexecLast,
+          hagreeResult, hparentResult⟩
+
+private theorem simulation_external_case
+    (cfg : CompCert4Lean.Config.CompilerConfig)
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (prog : CompCert4Lean.Backend.Mach.program) (tprog : program)
+    (hprog : match_prog prog tprog)
+    (stack : List CompCert4Lean.Backend.Mach.stackframe) (fb : block)
+    (regs : CompCert4Lean.Backend.Mach.regset) (memory memory' : mem)
+    (ef : external_function) (args : List val) (value : val) (events : trace)
+    (hfind : Genv.find_funct_ptr (Genv.globalenv prog) fb = some (.External ef))
+    (hargs : CompCert4Lean.Backend.Mach.extcall_arguments cfg regs memory
+      (CompCert4Lean.Backend.Mach.parent_sp stack) (ef_sig ef) args)
+    (hcall : external_call xi ef (Genv.to_senv (Genv.globalenv prog))
+      args memory events value memory') (target : state)
+    (hmatch : match_states prog (.Callstate stack fb regs memory) target) :
+    ∃ target', plus (CompCert4Lean.X86.Asm.step cfg xi) (Genv.globalenv tprog)
+      target events target' ∧
+      match_states prog (.Returnstate stack
+        (CompCert4Lean.Backend.Mach.set_pair
+          (CompCert4Lean.X86.Conventions1.loc_result (ef_sig ef)) value
+          (CompCert4Lean.Backend.Mach.undef_caller_save_regs cfg regs)) memory') target' := by
+  cases hmatch with
+  | match_states_call _ _ _ _ targetMemory targetRegs hstack hext hagree hpc hra =>
+    obtain ⟨translated, htranslated, htranslation⟩ :=
+      functions_translated prog tprog hprog fb (.External ef) hfind
+    have htranslatedEq : translated = .External ef := by
+      exact (CompCert4Lean.Common.Errors.res.OK.inj htranslation).symm
+    subst translated
+    obtain ⟨targetArgs, htargetArgs, hargsLess⟩ := extcall_arguments_match
+      cfg regs memory targetMemory (CompCert4Lean.Backend.Mach.parent_sp stack)
+      targetRegs (ef_sig ef) args hagree hext hargs
+    obtain ⟨targetValue, resultMemory, htargetCall, hvalue, hext', hunchanged⟩ :=
+      external_call_mem_extends_proof xi ef _ _ _ _ _ _ _ _ hcall hext hargsLess
+    let resultRegs := Pregmap.set .PC (targetRegs .RA)
+      (set_pair (loc_external_result (ef_sig ef)) targetValue
+        (undef_caller_save_regs cfg targetRegs))
+    refine ⟨.State resultRegs resultMemory, ?_, ?_⟩
+    · apply plus_one
+      exact exec_step_external fb ef targetArgs targetValue targetRegs targetMemory
+        events resultRegs resultMemory hpc htranslated htargetArgs
+        (external_call_symbols_preserved_proof xi ef _ _ _ _ _ _ _
+          (senv_preserved prog tprog hprog) htargetCall) rfl
+    · apply match_states.match_states_return stack _ memory' resultMemory resultRegs
+        hstack hext'
+      · apply agree_set_other _ _ _ .PC (targetRegs .RA)
+        · apply agree_set_pair _ _ _ _ _ _
+          · exact agree_undef_caller_save_regs cfg regs _ targetRegs hagree
+          · exact hvalue
+        · rfl
+      · change targetRegs .RA = _
+        exact hra
+
+omit binary64_certificate binary32_certificate in
+private theorem simulation_translation_cons
+    (fn : CompCert4Lean.Backend.Mach.function)
+    (instr : CompCert4Lean.Backend.Mach.instruction)
+    (code : CompCert4Lean.Backend.Mach.code) (parent : Bool)
+    (translated : CompCert4Lean.X86.Asm.code)
+    (htrans : transl_code fn (instr :: code) parent = .OK translated) :
+    ∃ continuation,
+      transl_code fn code (it1_is_parent parent instr) = .OK continuation ∧
+      transl_instr fn instr parent continuation = .OK translated := by
+  change CompCert4Lean.Common.Errors.bind
+    (transl_code fn code (it1_is_parent parent instr))
+    (transl_instr fn instr parent) = .OK translated at htrans
+  cases htail : transl_code fn code (it1_is_parent parent instr) with
+  | Error message => simp [htail, CompCert4Lean.Common.Errors.bind] at htrans
+  | OK continuation =>
+    exact ⟨continuation, rfl, by
+      simpa only [htail, CompCert4Lean.Common.Errors.bind] using htrans⟩
+
+omit binary64_certificate binary32_certificate in
+private theorem simulation_pc_notin (regs : List CompCert4Lean.X86.Machregs.mreg) :
+    preg_notin .PC regs := by
+  apply (preg_notin_charact .PC regs).mpr
+  intro reg hmem heq
+  have hdata := preg_of_data reg
+  rw [← heq] at hdata
+  cases hdata
+
+private theorem simulation_builtin_case
+    (cfg : CompCert4Lean.Config.CompilerConfig)
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (prog : CompCert4Lean.Backend.Mach.program) (tprog : program)
+    (hprog : match_prog prog tprog)
+    (stack : List CompCert4Lean.Backend.Mach.stackframe) (fb : block) (sp : val)
+    (regs : CompCert4Lean.Backend.Mach.regset) (memory memory' : mem)
+    (ef : external_function) (args : List (builtin_arg CompCert4Lean.X86.Machregs.mreg))
+    (res : builtin_res CompCert4Lean.X86.Machregs.mreg)
+    (code : CompCert4Lean.Backend.Mach.code) (values : List val)
+    (value : val) (events : trace)
+    (hargs : eval_builtin_args (Genv.to_senv (Genv.globalenv prog)) regs sp memory args values)
+    (hcall : external_call xi ef (Genv.to_senv (Genv.globalenv prog))
+      values memory events value memory') (target : state)
+    (hmatch : match_states prog
+      (.State stack fb sp (.Mbuiltin ef args res :: code) regs memory) target) :
+    ∃ target', plus (CompCert4Lean.X86.Asm.step cfg xi) (Genv.globalenv tprog)
+      target events target' ∧
+      match_states prog (.State stack fb sp code
+        (CompCert4Lean.Backend.Mach.set_res res value
+          (CompCert4Lean.Backend.Mach.undef_regs
+            (CompCert4Lean.X86.Machregs.destroyed_by_builtin ef) regs)) memory') target' := by
+  cases hmatch with
+  | match_states_intro _ _ _ _ ep _ _ targetMemory targetRegs fn targetFn targetCode
+      hstack hfind hext hatpc hagree hparent =>
+    generalize hpc : targetRegs .PC = pc at hatpc
+    cases hatpc with
+    | intro _ ofs _ _ _ _ _ hfind' htrans hcode htail =>
+      obtain ⟨continuation, hcontinuation, htranslation⟩ :=
+        simulation_translation_cons fn (.Mbuiltin ef args res) code ep targetCode hcode
+      have hcodeEq : targetCode = .Pbuiltin ef (args.map (map_builtin_arg preg_of))
+          (map_builtin_res preg_of res) :: continuation :=
+        (CompCert4Lean.Common.Errors.res.OK.inj htranslation).symm
+      subst targetCode
+      obtain ⟨targetArgs, htargetArgs, hargsLess⟩ := builtin_args_match
+        (Genv.to_senv (Genv.globalenv prog)) regs sp targetRegs memory targetMemory
+        hagree hext args values hargs
+      obtain ⟨targetValue, resultMemory, htargetCall, hvalue, hext', hunchanged⟩ :=
+        external_call_mem_extends_proof xi ef _ _ _ _ _ _ _ _ hcall hext hargsLess
+      let intermediateRegs := set_res (map_builtin_res preg_of res) targetValue
+        (undef_regs ((CompCert4Lean.X86.Machregs.destroyed_by_builtin ef).map preg_of) targetRegs)
+      let resultRegs := nextinstr_nf intermediateRegs
+      have hresultPC : resultRegs .PC = .Vptr fb (Ptrofs.add ofs Ptrofs.one) := by
+        change Val.offset_ptr
+          ((undef_regs [.CR .ZF, .CR .CF, .CR .PF, .CR .SF, .CR .OF] intermediateRegs) .PC)
+          Ptrofs.one = _
+        rw [undef_regs_other .PC _ _ (by simp)]
+        change Val.offset_ptr (set_res (map_builtin_res preg_of res) targetValue
+          (undef_regs ((CompCert4Lean.X86.Machregs.destroyed_by_builtin ef).map preg_of)
+            targetRegs) .PC) Ptrofs.one = _
+        rw [set_res_other .PC res _ _ rfl,
+          undef_regs_other_2 .PC _ _ (simulation_pc_notin _), hpc]
+        rfl
+      refine ⟨.State resultRegs resultMemory, ?_, ?_⟩
+      · apply plus_one
+        apply exec_step_builtin fb ofs targetFn ef _ _ targetRegs targetMemory
+          targetArgs events targetValue resultRegs resultMemory hpc
+          (functions_transl prog tprog hprog fb fn targetFn hfind htrans)
+          (find_instr_tail _ _ _ _ htail)
+        · change eval_builtin_args (Genv.to_senv (Genv.globalenv tprog)) targetRegs
+            (targetRegs (.IR .RSP)) targetMemory _ targetArgs
+          have hsp : targetRegs (.IR .RSP) = sp := hagree.agree_sp
+          rw [hsp]
+          exact eval_builtin_args_preserved _ _ _ _ _ _ _ _ _ _
+            (symbols_preserved prog tprog hprog) _ _ htargetArgs
+        · exact external_call_symbols_preserved_proof xi ef _ _ _ _ _ _ _
+            (senv_preserved prog tprog hprog) htargetCall
+        · rfl
+      · apply match_states.match_states_intro stack fb sp code false _ memory'
+          resultMemory resultRegs fn targetFn continuation hstack hfind hext'
+        · rw [hresultPC]
+          exact transl_code_at_pc.intro fb _ fn code false targetFn continuation
+            hfind htrans hcontinuation
+            (code_tail_next_int _ _ _ _ (transf_function_no_overflow fn targetFn htrans) htail)
+        · apply CompCert4Lean.X86.Asmgenproof1.agree_nextinstr_nf
+          apply agree_set_res res _ _ _ _ _
+          · apply agree_undef_regs regs sp _ targetRegs _ hagree
+            intro reg hdata hnotin
+            exact undef_regs_other_2 reg _ _ hnotin
+          · exact hvalue
+        · intro impossible
+          cases impossible
+
+private theorem simulation_jumptable_case
+    (cfg : CompCert4Lean.Config.CompilerConfig)
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (prog : CompCert4Lean.Backend.Mach.program) (tprog : program)
+    (hprog : match_prog prog tprog)
+    (stack : List CompCert4Lean.Backend.Mach.stackframe) (fb : block) (sp : val)
+    (fn : CompCert4Lean.Backend.Mach.function) (arg : CompCert4Lean.X86.Machregs.mreg)
+    (table : List label) (lbl : label) (index : int)
+    (code destination : CompCert4Lean.Backend.Mach.code)
+    (regs : CompCert4Lean.Backend.Mach.regset) (memory : mem)
+    (harg : regs arg = .Vint index)
+    (hindex : CompCert4Lean.Lib.Coqlib.list_nth_z table (Int.unsigned index) = some lbl)
+    (hfind : Genv.find_funct_ptr (Genv.globalenv prog) fb = some (.Internal fn))
+    (hlabel : CompCert4Lean.Backend.Mach.find_label lbl fn.fn_code = some destination)
+    (target : state)
+    (hmatch : match_states prog
+      (.State stack fb sp (.Mjumptable arg table :: code) regs memory) target) :
+    ∃ target', plus (CompCert4Lean.X86.Asm.step cfg xi) (Genv.globalenv tprog)
+      target E0 target' ∧
+      match_states prog (.State stack fb sp destination
+        (CompCert4Lean.Backend.Mach.undef_regs
+          CompCert4Lean.X86.Machregs.destroyed_by_jumptable regs) memory) target' := by
+  cases hmatch with
+  | match_states_intro _ _ _ _ ep _ _ targetMemory targetRegs foundFn targetFn targetCode
+      hstack hfound hext hatpc hagree hparent =>
+    have heq : foundFn = fn := by
+      cases hfound.symm.trans hfind
+      rfl
+    subst foundFn
+    generalize hpc : targetRegs .PC = pc at hatpc
+    cases hatpc with
+    | intro _ ofs _ _ _ _ _ hfind' htrans hcode htail =>
+      obtain ⟨continuation, hcontinuation, htranslation⟩ :=
+        simulation_translation_cons fn (.Mjumptable arg table) code ep targetCode hcode
+      change CompCert4Lean.Common.Errors.bind (ireg_of arg)
+        (fun reg => .OK (.Pjmptbl reg table :: continuation)) = .OK targetCode at htranslation
+      cases hreg : ireg_of arg with
+      | Error message => simp [hreg, CompCert4Lean.Common.Errors.bind] at htranslation
+      | OK reg =>
+        simp only [hreg, CompCert4Lean.Common.Errors.bind] at htranslation
+        have hcodeEq := CompCert4Lean.Common.Errors.res.OK.inj htranslation
+        subst targetCode
+        have hargTarget : targetRegs (.IR reg) = .Vint index := by
+          have hless := ireg_val regs sp targetRegs arg reg hagree hreg
+          rw [harg] at hless
+          generalize htarget : targetRegs (.IR reg) = targetValue at hless
+          cases hless
+          rfl
+        let middleRegs := Pregmap.set (.IR .RAX) .Vundef
+          (Pregmap.set (.IR .RDX) .Vundef targetRegs)
+        have hpcMiddle : middleRegs .PC = .Vptr fb ofs := hpc
+        obtain ⟨destinationCode, resultRegs, hgoto, hatpc', hother⟩ :=
+          find_label_goto_label prog fn targetFn lbl middleRegs targetMemory
+            destination fb ofs hfind htrans hpcMiddle hlabel
+        refine ⟨.State resultRegs targetMemory, ?_, ?_⟩
+        · apply plus_one
+          apply exec_step_internal fb ofs targetFn (.Pjmptbl reg table) targetRegs
+            targetMemory resultRegs targetMemory hpc
+            (functions_transl prog tprog hprog fb fn targetFn hfind htrans)
+            (find_instr_tail _ _ _ _ htail)
+          dsimp only [exec_instr, Pregmap.get]
+          rw [hargTarget]
+          dsimp only
+          rw [hindex]
+          exact hgoto
+        · apply match_states.match_states_intro stack fb sp destination false _ memory
+            targetMemory resultRegs fn targetFn destinationCode hstack hfind hext hatpc'
+          · apply agree_undef_regs regs sp _ targetRegs resultRegs hagree
+            intro preg hdata hnotin
+            rw [hother preg (by intro heq; subst preg; cases hdata)]
+            change preg ≠ .IR .RAX ∧ preg ≠ .IR .RDX at hnotin
+            simp [middleRegs, Pregmap.set, hnotin.1, hnotin.2]
+          · intro impossible
+            cases impossible
+
+omit binary64_certificate binary32_certificate in
+private theorem simulation_indirect_target
+    (ge : CompCert4Lean.Backend.Mach.genv)
+    (regs : CompCert4Lean.Backend.Mach.regset) (sp : val) (targetRegs : regset)
+    (sourceReg : CompCert4Lean.X86.Machregs.mreg) (targetReg : ireg) (callee : block)
+    (hagree : agree regs sp targetRegs)
+    (hreg : ireg_of sourceReg = .OK targetReg)
+    (hfind : CompCert4Lean.Backend.Mach.find_function_ptr ge (.inl sourceReg) regs = some callee) :
+    targetRegs (.IR targetReg) = .Vptr callee Ptrofs.zero := by
+  have hsource : regs sourceReg = .Vptr callee Ptrofs.zero := by
+    unfold CompCert4Lean.Backend.Mach.find_function_ptr at hfind
+    cases hvalue : regs sourceReg <;> simp only [hvalue] at hfind <;> try cases hfind
+    rename_i pointer offset
+    split at hfind
+    · rename_i heq
+      have hoffset := Ptrofs.eq_spec_proof offset Ptrofs.zero
+      rw [heq] at hoffset
+      cases hfind
+      exact congrArg (val.Vptr callee) hoffset
+    · cases hfind
+  have hless := ireg_val regs sp targetRegs sourceReg targetReg hagree hreg
+  rw [hsource] at hless
+  generalize htarget : targetRegs (.IR targetReg) = targetValue at hless
+  cases hless
+  rfl
+
+private theorem simulation_call_case
+    (cfg : CompCert4Lean.Config.CompilerConfig)
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (prog : CompCert4Lean.Backend.Mach.program) (tprog : program)
+    (hprog : match_prog prog tprog)
+    (stack : List CompCert4Lean.Backend.Mach.stackframe) (fb : block) (sp : val)
+    (fn : CompCert4Lean.Backend.Mach.function) (sig : signature)
+    (ros : Sum CompCert4Lean.X86.Machregs.mreg ident)
+    (code : CompCert4Lean.Backend.Mach.code)
+    (regs : CompCert4Lean.Backend.Mach.regset) (memory : mem) (callee : block) (ra : ptrofs)
+    (hcallee : CompCert4Lean.Backend.Mach.find_function_ptr (Genv.globalenv prog) ros regs = some callee)
+    (hfind : Genv.find_funct_ptr (Genv.globalenv prog) fb = some (.Internal fn))
+    (hreturn : return_address_offset fn code ra) (target : state)
+    (hmatch : match_states prog
+      (.State stack fb sp (.Mcall sig ros :: code) regs memory) target) :
+    ∃ target', plus (CompCert4Lean.X86.Asm.step cfg xi) (Genv.globalenv tprog)
+      target E0 target' ∧
+      match_states prog (.Callstate (.Stackframe fb sp (.Vptr fb ra) code :: stack)
+        callee regs memory) target' := by
+  cases hmatch with
+  | match_states_intro _ _ _ _ ep _ _ targetMemory targetRegs foundFn targetFn targetCode
+      hstack hfound hext hatpc hagree hparent =>
+    have heq : foundFn = fn := by
+      cases hfound.symm.trans hfind
+      rfl
+    subst foundFn
+    generalize hpc : targetRegs .PC = pc at hatpc
+    cases hatpc with
+    | intro _ ofs _ _ _ _ _ hfind' htrans hcode htail =>
+      obtain ⟨continuation, hcontinuation, htranslation⟩ :=
+        simulation_translation_cons fn (.Mcall sig ros) code ep targetCode hcode
+      let resultRegs := Pregmap.set .RA (.Vptr fb (Ptrofs.add ofs Ptrofs.one))
+        (Pregmap.set .PC (.Vptr callee Ptrofs.zero) targetRegs)
+      obtain ⟨callInstr, hcodeEq, hstep⟩ : ∃ callInstr,
+          targetCode = callInstr :: continuation ∧
+          exec_instr (Genv.globalenv tprog) targetFn callInstr targetRegs targetMemory =
+            .Next resultRegs targetMemory := by
+        cases ros with
+        | inl sourceReg =>
+          change CompCert4Lean.Common.Errors.bind (ireg_of sourceReg)
+            (fun reg => .OK (.Pcall_r reg sig :: continuation)) = .OK targetCode at htranslation
+          cases hreg : ireg_of sourceReg with
+          | Error message => simp [hreg, CompCert4Lean.Common.Errors.bind] at htranslation
+          | OK reg =>
+            simp only [hreg, CompCert4Lean.Common.Errors.bind] at htranslation
+            refine ⟨.Pcall_r reg sig, (CompCert4Lean.Common.Errors.res.OK.inj htranslation).symm, ?_⟩
+            have harg := simulation_indirect_target _ regs sp targetRegs sourceReg reg
+              callee hagree hreg hcallee
+            dsimp only [exec_instr, Pregmap.get]
+            rw [harg, hpc]
+            rfl
+        | inr symbol =>
+          refine ⟨.Pcall_s symbol sig,
+            (CompCert4Lean.Common.Errors.res.OK.inj htranslation).symm, ?_⟩
+          change Genv.find_symbol (Genv.globalenv prog) symbol = some callee at hcallee
+          dsimp only [exec_instr, Pregmap.get]
+          simp only [hpc, Genv.symbol_address,
+            symbols_preserved prog tprog hprog, hcallee, Val.offset_ptr]
+          rfl
+      subst targetCode
+      have hreturnAt : transl_code_at_pc (Genv.globalenv prog)
+          (.Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb fn code false targetFn continuation :=
+        transl_code_at_pc.intro fb _ fn code false targetFn continuation hfind htrans
+          hcontinuation (code_tail_next_int _ _ _ _
+            (transf_function_no_overflow fn targetFn htrans) htail)
+      have hra := return_address_offset_correct (Genv.globalenv prog) fb _ fb fn code
+        targetFn continuation ra hreturnAt hreturn
+      subst ra
+      refine ⟨.State resultRegs targetMemory, ?_, ?_⟩
+      · apply plus_one
+        exact exec_step_internal fb ofs targetFn callInstr targetRegs targetMemory
+          resultRegs targetMemory hpc
+          (functions_transl prog tprog hprog fb fn targetFn hfind htrans)
+          (find_instr_tail _ _ _ _ htail) hstep
+      · apply match_states.match_states_call _ callee regs memory targetMemory resultRegs
+        · exact match_stack_cons fb sp _ code stack fn targetFn continuation
+            hfind hreturnAt hagree.agree_sp_def hstack
+        · exact hext
+        · apply agree_set_other _ _ _ .RA _
+          · exact agree_set_other regs sp targetRegs .PC _ hagree rfl
+          · rfl
+        · rfl
+        · rfl
+
+private theorem simulation_freeframe
+    (prog : CompCert4Lean.Backend.Mach.program) (ge : genv) (targetFn : function)
+    (stack : List CompCert4Lean.Backend.Mach.stackframe)
+    (fn : CompCert4Lean.Backend.Mach.function) (stk : block) (offset : ptrofs)
+    (regs : CompCert4Lean.Backend.Mach.regset) (targetRegs : regset)
+    (memory targetMemory memory' : mem)
+    (hstack : match_stack (Genv.globalenv prog) stack)
+    (hext : Mem.extends memory targetMemory)
+    (hagree : agree regs (.Vptr stk offset) targetRegs)
+    (hlink : CompCert4Lean.Backend.Mach.load_stack memory (.Vptr stk offset)
+      Tptr fn.fn_link_ofs = some (CompCert4Lean.Backend.Mach.parent_sp stack))
+    (hreturn : CompCert4Lean.Backend.Mach.load_stack memory (.Vptr stk offset)
+      Tptr fn.fn_retaddr_ofs = some (CompCert4Lean.Backend.Mach.parent_ra stack))
+    (hfree : Mem.free memory stk .Z0 fn.fn_stacksize = some memory') :
+    let resultRegs := nextinstr (Pregmap.set (.IR .RSP)
+      (CompCert4Lean.Backend.Mach.parent_sp stack)
+      (Pregmap.set .RA (CompCert4Lean.Backend.Mach.parent_ra stack) targetRegs))
+    ∃ resultMemory, Mem.extends memory' resultMemory ∧
+      exec_instr ge targetFn (.Pfreeframe fn.fn_stacksize fn.fn_retaddr_ofs fn.fn_link_ofs)
+        targetRegs targetMemory = .Next resultRegs resultMemory ∧
+      agree regs (CompCert4Lean.Backend.Mach.parent_sp stack) resultRegs := by
+  dsimp only
+  obtain ⟨loadedParent, hlinkTarget, hparentValue⟩ := Mem.loadv_extends
+    (chunk_of_type Tptr) memory targetMemory (Val.offset_ptr (.Vptr stk offset) fn.fn_link_ofs)
+    (Val.offset_ptr (.Vptr stk offset) fn.fn_link_ofs) _ hext hlink (.lessdef_refl _)
+  have hparentEq := lessdef_parent_sp (Genv.globalenv prog) stack loadedParent hstack hparentValue
+  subst loadedParent
+  obtain ⟨loadedRA, hreturnTarget, hraValue⟩ := Mem.loadv_extends
+    (chunk_of_type Tptr) memory targetMemory (Val.offset_ptr (.Vptr stk offset) fn.fn_retaddr_ofs)
+    (Val.offset_ptr (.Vptr stk offset) fn.fn_retaddr_ofs) _ hext hreturn (.lessdef_refl _)
+  have hraEq := lessdef_parent_ra (Genv.globalenv prog) stack loadedRA hstack hraValue
+  subst loadedRA
+  obtain ⟨resultMemory, hfreeTarget, hext'⟩ :=
+    Mem.free_parallel_extends memory targetMemory stk .Z0 fn.fn_stacksize memory' hext hfree
+  refine ⟨resultMemory, hext', ?_, ?_⟩
+  · have hsp : targetRegs (.IR .RSP) = .Vptr stk offset := hagree.agree_sp
+    dsimp only [exec_instr, Pregmap.get]
+    rw [hsp]
+    change Mem.loadv Mptr targetMemory (Val.offset_ptr (.Vptr stk offset) fn.fn_retaddr_ofs) =
+      some (CompCert4Lean.Backend.Mach.parent_ra stack) at hreturnTarget
+    change Mem.loadv Mptr targetMemory (Val.offset_ptr (.Vptr stk offset) fn.fn_link_ofs) =
+      some (CompCert4Lean.Backend.Mach.parent_sp stack) at hlinkTarget
+    rw [hreturnTarget]
+    dsimp only
+    rw [hlinkTarget]
+    dsimp only
+    rw [hfreeTarget]
+  · apply agree_nextinstr
+    apply agree_change_sp
+    · exact agree_set_other regs _ targetRegs .RA _ hagree rfl
+    · exact parent_sp_def (Genv.globalenv prog) stack hstack
+
+private theorem simulation_Mreturn_case
+    (cfg : CompCert4Lean.Config.CompilerConfig)
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (prog : CompCert4Lean.Backend.Mach.program) (tprog : program)
+    (hprog : match_prog prog tprog)
+    (stack : List CompCert4Lean.Backend.Mach.stackframe) (fb stk : block) (offset : ptrofs)
+    (fn : CompCert4Lean.Backend.Mach.function) (code : CompCert4Lean.Backend.Mach.code)
+    (regs : CompCert4Lean.Backend.Mach.regset) (memory memory' : mem)
+    (hfind : Genv.find_funct_ptr (Genv.globalenv prog) fb = some (.Internal fn))
+    (hlink : CompCert4Lean.Backend.Mach.load_stack memory (.Vptr stk offset)
+      Tptr fn.fn_link_ofs = some (CompCert4Lean.Backend.Mach.parent_sp stack))
+    (hreturn : CompCert4Lean.Backend.Mach.load_stack memory (.Vptr stk offset)
+      Tptr fn.fn_retaddr_ofs = some (CompCert4Lean.Backend.Mach.parent_ra stack))
+    (hfree : Mem.free memory stk .Z0 fn.fn_stacksize = some memory') (target : state)
+    (hmatch : match_states prog
+      (.State stack fb (.Vptr stk offset) (.Mreturn :: code) regs memory) target) :
+    ∃ target', plus (CompCert4Lean.X86.Asm.step cfg xi) (Genv.globalenv tprog)
+      target E0 target' ∧
+      match_states prog (.Returnstate stack regs memory') target' := by
+  cases hmatch with
+  | match_states_intro _ _ _ _ ep _ _ targetMemory targetRegs foundFn targetFn targetCode
+      hstack hfound hext hatpc hagree hparent =>
+    have heq : foundFn = fn := by
+      cases hfound.symm.trans hfind
+      rfl
+    subst foundFn
+    generalize hpc : targetRegs .PC = pc at hatpc
+    cases hatpc with
+    | intro _ ofs _ _ _ _ _ hfind' htrans hcode htail =>
+      obtain ⟨continuation, hcontinuation, htranslation⟩ :=
+        simulation_translation_cons fn .Mreturn code ep targetCode hcode
+      have hcodeEq : targetCode =
+          .Pfreeframe fn.fn_stacksize fn.fn_retaddr_ofs fn.fn_link_ofs :: .Pret :: continuation :=
+        (CompCert4Lean.Common.Errors.res.OK.inj htranslation).symm
+      subst targetCode
+      let middleRegs := nextinstr (Pregmap.set (.IR .RSP)
+        (CompCert4Lean.Backend.Mach.parent_sp stack)
+        (Pregmap.set .RA (CompCert4Lean.Backend.Mach.parent_ra stack) targetRegs))
+      obtain ⟨resultMemory, hext', hfreeTarget, hagreeMiddle⟩ :=
+        simulation_freeframe prog (Genv.globalenv tprog) targetFn stack fn stk offset
+          regs targetRegs memory targetMemory memory' hstack hext hagree hlink hreturn hfree
+      let resultRegs := Pregmap.set .PC (CompCert4Lean.Backend.Mach.parent_ra stack) middleRegs
+      have hpcMiddle : middleRegs .PC = .Vptr fb (Ptrofs.add ofs Ptrofs.one) := by
+        change Val.offset_ptr (targetRegs .PC) Ptrofs.one = _
+        rw [hpc]
+        rfl
+      have hfindTarget := functions_transl prog tprog hprog fb fn targetFn hfind htrans
+      refine ⟨.State resultRegs resultMemory, ?_, ?_⟩
+      · refine plus_two _ _ _ _ _ E0 (.State middleRegs resultMemory) E0 _ _ ?_ ?_ rfl
+        · exact exec_step_internal fb ofs targetFn _ targetRegs targetMemory middleRegs
+            resultMemory hpc hfindTarget (find_instr_tail _ _ _ _ htail) hfreeTarget
+        · exact exec_step_internal fb _ targetFn .Pret middleRegs resultMemory resultRegs
+            resultMemory hpcMiddle hfindTarget
+            (find_instr_tail _ _ _ _ (code_tail_next_int _ _ _ _
+              (transf_function_no_overflow fn targetFn htrans) htail)) rfl
+      · exact match_states.match_states_return stack regs memory' resultMemory resultRegs
+          hstack hext' (agree_set_other regs _ middleRegs .PC _ hagreeMiddle rfl) rfl
+
+private theorem simulation_tailcall_case
+    (cfg : CompCert4Lean.Config.CompilerConfig)
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (prog : CompCert4Lean.Backend.Mach.program) (tprog : program)
+    (hprog : match_prog prog tprog)
+    (stack : List CompCert4Lean.Backend.Mach.stackframe) (fb stk : block) (offset : ptrofs)
+    (fn : CompCert4Lean.Backend.Mach.function) (sig : signature)
+    (ros : Sum CompCert4Lean.X86.Machregs.mreg ident)
+    (code : CompCert4Lean.Backend.Mach.code)
+    (regs : CompCert4Lean.Backend.Mach.regset) (memory memory' : mem) (callee : block)
+    (hcallee : CompCert4Lean.Backend.Mach.find_function_ptr (Genv.globalenv prog) ros regs = some callee)
+    (hfind : Genv.find_funct_ptr (Genv.globalenv prog) fb = some (.Internal fn))
+    (hlink : CompCert4Lean.Backend.Mach.load_stack memory (.Vptr stk offset)
+      Tptr fn.fn_link_ofs = some (CompCert4Lean.Backend.Mach.parent_sp stack))
+    (hreturn : CompCert4Lean.Backend.Mach.load_stack memory (.Vptr stk offset)
+      Tptr fn.fn_retaddr_ofs = some (CompCert4Lean.Backend.Mach.parent_ra stack))
+    (hfree : Mem.free memory stk .Z0 fn.fn_stacksize = some memory') (target : state)
+    (hmatch : match_states prog
+      (.State stack fb (.Vptr stk offset) (.Mtailcall sig ros :: code) regs memory) target) :
+    ∃ target', plus (CompCert4Lean.X86.Asm.step cfg xi) (Genv.globalenv tprog)
+      target E0 target' ∧
+      match_states prog (.Callstate stack callee regs memory') target' := by
+  cases hmatch with
+  | match_states_intro _ _ _ _ ep _ _ targetMemory targetRegs foundFn targetFn targetCode
+      hstack hfound hext hatpc hagree hparent =>
+    have heq : foundFn = fn := by
+      cases hfound.symm.trans hfind
+      rfl
+    subst foundFn
+    generalize hpc : targetRegs .PC = pc at hatpc
+    cases hatpc with
+    | intro _ ofs _ _ _ _ _ hfind' htrans hcode htail =>
+      obtain ⟨continuation, hcontinuation, htranslation⟩ :=
+        simulation_translation_cons fn (.Mtailcall sig ros) code ep targetCode hcode
+      let middleRegs := nextinstr (Pregmap.set (.IR .RSP)
+        (CompCert4Lean.Backend.Mach.parent_sp stack)
+        (Pregmap.set .RA (CompCert4Lean.Backend.Mach.parent_ra stack) targetRegs))
+      obtain ⟨resultMemory, hext', hfreeTarget, hagreeMiddle⟩ :=
+        simulation_freeframe prog (Genv.globalenv tprog) targetFn stack fn stk offset
+          regs targetRegs memory targetMemory memory' hstack hext hagree hlink hreturn hfree
+      let resultRegs := Pregmap.set .PC (.Vptr callee Ptrofs.zero) middleRegs
+      obtain ⟨jumpInstr, hcodeEq, hstep⟩ : ∃ jumpInstr,
+          targetCode = .Pfreeframe fn.fn_stacksize fn.fn_retaddr_ofs fn.fn_link_ofs ::
+            jumpInstr :: continuation ∧
+          exec_instr (Genv.globalenv tprog) targetFn jumpInstr middleRegs resultMemory =
+            .Next resultRegs resultMemory := by
+        cases ros with
+        | inl sourceReg =>
+          change CompCert4Lean.Common.Errors.bind (ireg_of sourceReg)
+            (fun reg => .OK (.Pfreeframe fn.fn_stacksize fn.fn_retaddr_ofs fn.fn_link_ofs ::
+              .Pjmp_r reg sig :: continuation)) = .OK targetCode at htranslation
+          cases hreg : ireg_of sourceReg with
+          | Error message => simp [hreg, CompCert4Lean.Common.Errors.bind] at htranslation
+          | OK reg =>
+            simp only [hreg, CompCert4Lean.Common.Errors.bind] at htranslation
+            refine ⟨.Pjmp_r reg sig, (CompCert4Lean.Common.Errors.res.OK.inj htranslation).symm, ?_⟩
+            have harg := simulation_indirect_target _ regs _ targetRegs sourceReg reg
+              callee hagree hreg hcallee
+            have hnotsp : preg.IR reg ≠ .IR .RSP := by
+              rw [← ireg_of_eq sourceReg reg hreg]
+              exact preg_of_not_SP sourceReg
+            have hargMiddle : middleRegs (.IR reg) = .Vptr callee Ptrofs.zero := by
+              simpa [middleRegs, nextinstr, Pregmap.set, hnotsp] using harg
+            change outcome.Next (Pregmap.set .PC (middleRegs (.IR reg)) middleRegs) resultMemory = _
+            rw [hargMiddle]
+        | inr symbol =>
+          refine ⟨.Pjmp_s symbol sig,
+            (CompCert4Lean.Common.Errors.res.OK.inj htranslation).symm, ?_⟩
+          change Genv.find_symbol (Genv.globalenv prog) symbol = some callee at hcallee
+          dsimp only [exec_instr, Pregmap.get]
+          simp only [Genv.symbol_address, symbols_preserved prog tprog hprog, hcallee]
+          rfl
+      subst targetCode
+      have hpcMiddle : middleRegs .PC = .Vptr fb (Ptrofs.add ofs Ptrofs.one) := by
+        change Val.offset_ptr (targetRegs .PC) Ptrofs.one = _
+        rw [hpc]
+        rfl
+      have hfindTarget := functions_transl prog tprog hprog fb fn targetFn hfind htrans
+      refine ⟨.State resultRegs resultMemory, ?_, ?_⟩
+      · refine plus_two _ _ _ _ _ E0 (.State middleRegs resultMemory) E0 _ _ ?_ ?_ rfl
+        · exact exec_step_internal fb ofs targetFn _ targetRegs targetMemory middleRegs
+            resultMemory hpc hfindTarget (find_instr_tail _ _ _ _ htail) hfreeTarget
+        · exact exec_step_internal fb _ targetFn jumpInstr middleRegs resultMemory resultRegs
+            resultMemory hpcMiddle hfindTarget
+            (find_instr_tail _ _ _ _ (code_tail_next_int _ _ _ _
+              (transf_function_no_overflow fn targetFn htrans) htail)) hstep
+      · exact match_states.match_states_call stack callee regs memory' resultMemory resultRegs
+          hstack hext' (agree_set_other regs _ middleRegs .PC _ hagreeMiddle rfl) rfl rfl
+
+omit binary64_certificate binary32_certificate in
+private theorem simulation_function_code
+    (fn : CompCert4Lean.Backend.Mach.function) (targetFn : function)
+    (htrans : transf_function fn = .OK targetFn) :
+    ∃ continuation, transl_code fn fn.fn_code true = .OK continuation ∧
+      targetFn.fn_code =
+        .Pallocframe fn.fn_stacksize fn.fn_retaddr_ofs fn.fn_link_ofs :: continuation := by
+  have hfunction : transl_function fn = .OK targetFn := by
+    unfold transf_function at htrans
+    cases htf : transl_function fn with
+    | Error message => rw [htf] at htrans; cases htrans
+    | OK translated =>
+      rw [htf] at htrans
+      change (match CompCert4Lean.Lib.Coqlib.zlt Ptrofs.max_unsigned
+        (CompCert4Lean.Lib.Coqlib.list_length_z translated.fn_code) with
+        | .left _ => _
+        | .right _ => _) = CompCert4Lean.Common.Errors.res.OK targetFn at htrans
+      split at htrans
+      · cases htrans
+      · cases htrans
+        rfl
+  unfold transl_function at hfunction
+  rw [transl_code'_transl_code] at hfunction
+  cases hcode : transl_code fn fn.fn_code true with
+  | Error message => rw [hcode] at hfunction; cases hfunction
+  | OK continuation =>
+    rw [hcode] at hfunction
+    cases hfunction
+    exact ⟨continuation, rfl, rfl⟩
+
+private theorem simulation_internal_case
+    (cfg : CompCert4Lean.Config.CompilerConfig)
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (prog : CompCert4Lean.Backend.Mach.program) (tprog : program)
+    (hprog : match_prog prog tprog)
+    (stack : List CompCert4Lean.Backend.Mach.stackframe) (fb stk : block)
+    (fn : CompCert4Lean.Backend.Mach.function)
+    (regs : CompCert4Lean.Backend.Mach.regset) (memory memory1 memory2 memory3 : mem)
+    (hfind : Genv.find_funct_ptr (Genv.globalenv prog) fb = some (.Internal fn))
+    (halloc : Mem.alloc memory .Z0 fn.fn_stacksize = (memory1, stk))
+    (hlink : CompCert4Lean.Backend.Mach.store_stack memory1 (.Vptr stk Ptrofs.zero)
+      Tptr fn.fn_link_ofs (CompCert4Lean.Backend.Mach.parent_sp stack) = some memory2)
+    (hreturn : CompCert4Lean.Backend.Mach.store_stack memory2 (.Vptr stk Ptrofs.zero)
+      Tptr fn.fn_retaddr_ofs (CompCert4Lean.Backend.Mach.parent_ra stack) = some memory3)
+    (target : state)
+    (hmatch : match_states prog (.Callstate stack fb regs memory) target) :
+    ∃ target', plus (CompCert4Lean.X86.Asm.step cfg xi) (Genv.globalenv tprog)
+      target E0 target' ∧
+      match_states prog (.State stack fb (.Vptr stk Ptrofs.zero) fn.fn_code
+        (CompCert4Lean.Backend.Mach.undef_regs
+          CompCert4Lean.X86.Machregs.destroyed_at_function_entry regs) memory3) target' := by
+  cases hmatch with
+  | match_states_call _ _ _ _ targetMemory targetRegs hstack hext hagree hpc hra =>
+    obtain ⟨translated, htranslated, htranslation⟩ :=
+      functions_translated prog tprog hprog fb (.Internal fn) hfind
+    unfold CompCert4Lean.X86.Asmgen.transf_fundef transf_partial_fundef at htranslation
+    dsimp only at htranslation
+    cases htrans : transf_function fn with
+    | Error message => rw [htrans] at htranslation; cases htranslation
+    | OK targetFn =>
+      rw [htrans] at htranslation
+      cases htranslation
+      obtain ⟨continuation, hcontinuation, hcode⟩ := simulation_function_code fn targetFn htrans
+      obtain ⟨targetMemory1, hallocTarget, hext1⟩ := Mem.alloc_extends
+        memory targetMemory .Z0 fn.fn_stacksize stk memory1 .Z0 fn.fn_stacksize hext halloc
+        (ZArith.BinInt.Z.le_refl _) (ZArith.BinInt.Z.le_refl _)
+      obtain ⟨targetMemory2, hlinkTarget, hext2⟩ := Mem.storev_extends
+        (chunk_of_type Tptr) memory1 targetMemory1 _ _ memory2 _ _ hext1 hlink
+        (.lessdef_refl _) (.lessdef_refl _)
+      obtain ⟨targetMemory3, hreturnTarget, hext3⟩ := Mem.storev_extends
+        (chunk_of_type Tptr) memory2 targetMemory2 _ _ memory3 _ _ hext2 hreturn
+        (.lessdef_refl _) (.lessdef_refl _)
+      let resultRegs := nextinstr (Pregmap.set (.IR .RAX) (targetRegs (.IR .RSP))
+        (Pregmap.set (.IR .RSP) (.Vptr stk Ptrofs.zero) targetRegs))
+      have hstep : exec_instr (Genv.globalenv tprog) targetFn
+          (.Pallocframe fn.fn_stacksize fn.fn_retaddr_ofs fn.fn_link_ofs)
+          targetRegs targetMemory = .Next resultRegs targetMemory3 := by
+        dsimp only [exec_instr, Pregmap.get]
+        rw [hallocTarget]
+        dsimp only
+        have hsp : targetRegs (.IR .RSP) = CompCert4Lean.Backend.Mach.parent_sp stack := hagree.agree_sp
+        rw [hsp]
+        change Mem.storev Mptr targetMemory1 _ _ = some targetMemory2 at hlinkTarget
+        rw [hlinkTarget]
+        dsimp only
+        rw [hra]
+        change Mem.storev Mptr targetMemory2 _ _ = some targetMemory3 at hreturnTarget
+        rw [hreturnTarget]
+        dsimp only
+        dsimp only [resultRegs]
+        rw [hsp]
+      have hresultPC : resultRegs .PC = .Vptr fb (Ptrofs.add Ptrofs.zero Ptrofs.one) := by
+        change Val.offset_ptr (targetRegs .PC) Ptrofs.one = _
+        rw [hpc]
+        rfl
+      refine ⟨.State resultRegs targetMemory3, ?_, ?_⟩
+      · apply plus_one
+        apply exec_step_internal fb Ptrofs.zero targetFn _ targetRegs targetMemory
+          resultRegs targetMemory3 hpc htranslated
+        · rw [hcode]
+          rfl
+        · exact hstep
+      · apply match_states.match_states_intro stack fb (.Vptr stk Ptrofs.zero)
+          fn.fn_code true _ memory3 targetMemory3 resultRegs fn targetFn continuation
+          hstack hfind hext3
+        · rw [hresultPC]
+          apply transl_code_at_pc.intro fb _ fn fn.fn_code true targetFn continuation
+            hfind htrans hcontinuation
+          apply code_tail_next_int targetFn.fn_code Ptrofs.zero
+            (.Pallocframe fn.fn_stacksize fn.fn_retaddr_ofs fn.fn_link_ofs) continuation
+            (transf_function_no_overflow fn targetFn htrans)
+          rw [hcode]
+          constructor
+        · apply agree_nextinstr
+          apply agree_undef_regs regs (.Vptr stk Ptrofs.zero) _
+            (Pregmap.set (.IR .RSP) (.Vptr stk Ptrofs.zero) targetRegs)
+          · exact agree_change_sp regs _ targetRegs _ hagree (by intro impossible; cases impossible)
+          · intro reg hdata hnotin
+            change reg ≠ .IR .RAX ∧ reg ≠ .ST0 at hnotin
+            simp [Pregmap.set, hnotin.1]
+        · intro htrue
+          change targetRegs (.IR .RSP) = _
+          exact hagree.agree_sp
+
+omit binary64_certificate binary32_certificate in
+private theorem simulation_args_lessdef
+    (regs : CompCert4Lean.Backend.Mach.regset) (sp : val) (targetRegs : regset)
+    (hagree : agree regs sp targetRegs) (args : List CompCert4Lean.X86.Machregs.mreg) :
+    Val.lessdef_list (args.map regs) (args.map (fun reg => targetRegs (preg_of reg))) := by
+  induction args with
+  | nil => exact Val.lessdef_list_nil
+  | cons reg rest inductionHypothesis =>
+    exact Val.lessdef_list_cons _ _ _ _ (hagree.agree_mregs reg) inductionHypothesis
+
+private theorem simulation_op_case
+    (operationCorrect : CompCert4Lean.X86.Asmgenproof1.transl_op_correctStatement)
+    (cfg : CompCert4Lean.Config.CompilerConfig)
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (prog : CompCert4Lean.Backend.Mach.program) (tprog : program)
+    (hprog : match_prog prog tprog)
+    (stack : List CompCert4Lean.Backend.Mach.stackframe) (fb : block) (sp : val)
+    (op : CompCert4Lean.X86.Op.operation) (args : List CompCert4Lean.X86.Machregs.mreg)
+    (dst : CompCert4Lean.X86.Machregs.mreg) (code : CompCert4Lean.Backend.Mach.code)
+    (regs : CompCert4Lean.Backend.Mach.regset) (memory : mem) (value : val)
+    (heval : CompCert4Lean.X86.Op.eval_operation (Genv.globalenv prog) sp op
+      (args.map regs) memory = some value) (target : state)
+    (hmatch : match_states prog
+      (.State stack fb sp (.Mop op args dst :: code) regs memory) target) :
+    ∃ target', plus (CompCert4Lean.X86.Asm.step cfg xi) (Genv.globalenv tprog)
+      target E0 target' ∧
+      match_states prog (.State stack fb sp code
+        (CompCert4Lean.Backend.Mach.Regmap.set dst value
+          (CompCert4Lean.Backend.Mach.undef_regs
+            (CompCert4Lean.X86.Machregs.destroyed_by_op op) regs)) memory) target' := by
+  cases hmatch with
+  | match_states_intro _ _ _ _ ep _ _ targetMemory targetRegs fn targetFn targetCode
+      hstack hfind hext hatpc hagree hparent =>
+    have hevalTarget := (CompCert4Lean.X86.Op.eval_operation_preserved _ _ _ _
+      (Genv.globalenv prog) (Genv.globalenv tprog) (symbols_preserved prog tprog hprog)
+      sp op (args.map regs) memory).trans heval
+    obtain ⟨targetValue, hevalTarget, hvalue⟩ :=
+      CompCert4Lean.X86.Op.eval_operation_lessdef _ _ (Genv.globalenv tprog)
+        sp op _ _ value memory targetMemory (simulation_args_lessdef regs sp targetRegs hagree args)
+        hext hevalTarget
+    have hsp : sp = targetRegs (.IR .RSP) := hagree.agree_sp.symm
+    rw [hsp] at hevalTarget
+    apply exec_straight_steps cfg xi prog tprog hprog stack fb fn targetRegs
+      (.Mop op args dst) code ep targetFn targetCode targetMemory memory targetMemory
+      sp _ hstack hext hfind hatpc
+    intro continuation translated htrans
+    obtain ⟨resultRegs, hexec, hresult, hother⟩ := operationCorrect
+      (Genv.globalenv tprog) targetFn op args dst continuation translated targetRegs
+      targetMemory targetValue htrans (by simpa only [List.map_map] using hevalTarget)
+    refine ⟨resultRegs, hexec, ?_, ?_⟩
+    · exact agree_set_undef_mreg regs sp targetRegs dst value _ resultRegs hagree
+        (Val.lessdef_trans _ _ _ hvalue hresult) hother
+    · intro impossible
+      cases impossible
+
+private theorem simulation_load_case
+    (loadCorrect : CompCert4Lean.X86.Asmgenproof1.transl_load_correctStatement)
+    (cfg : CompCert4Lean.Config.CompilerConfig)
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (prog : CompCert4Lean.Backend.Mach.program) (tprog : program)
+    (hprog : match_prog prog tprog)
+    (stack : List CompCert4Lean.Backend.Mach.stackframe) (fb : block) (sp : val)
+    (chunk : memory_chunk) (addr : CompCert4Lean.X86.Op.addressing)
+    (args : List CompCert4Lean.X86.Machregs.mreg) (dst : CompCert4Lean.X86.Machregs.mreg)
+    (code : CompCert4Lean.Backend.Mach.code)
+    (regs : CompCert4Lean.Backend.Mach.regset) (memory : mem) (address value : val)
+    (haddr : CompCert4Lean.X86.Op.eval_addressing (Genv.globalenv prog) sp addr
+      (args.map regs) = some address)
+    (hload : Mem.loadv chunk memory address = some value) (target : state)
+    (hmatch : match_states prog
+      (.State stack fb sp (.Mload chunk addr args dst :: code) regs memory) target) :
+    ∃ target', plus (CompCert4Lean.X86.Asm.step cfg xi) (Genv.globalenv tprog)
+      target E0 target' ∧
+      match_states prog (.State stack fb sp code
+        (CompCert4Lean.Backend.Mach.Regmap.set dst value
+          (CompCert4Lean.Backend.Mach.undef_regs
+            (CompCert4Lean.X86.Machregs.destroyed_by_load chunk addr) regs)) memory) target' := by
+  cases hmatch with
+  | match_states_intro _ _ _ _ ep _ _ targetMemory targetRegs fn targetFn targetCode
+      hstack hfind hext hatpc hagree hparent =>
+    have haddrTarget := (CompCert4Lean.X86.Op.eval_addressing_preserved _ _ _ _
+      (Genv.globalenv prog) (Genv.globalenv tprog) (symbols_preserved prog tprog hprog)
+      sp addr (args.map regs)).trans haddr
+    obtain ⟨targetAddress, haddrTarget, haddress⟩ :=
+      CompCert4Lean.X86.Op.eval_addressing_lessdef _ _ (Genv.globalenv tprog)
+        sp addr _ _ address (simulation_args_lessdef regs sp targetRegs hagree args) haddrTarget
+    have hsp : sp = targetRegs (.IR .RSP) := hagree.agree_sp.symm
+    rw [hsp] at haddrTarget
+    obtain ⟨targetValue, hloadTarget, hvalue⟩ := Mem.loadv_extends chunk memory
+      targetMemory address targetAddress value hext hload haddress
+    apply exec_straight_steps cfg xi prog tprog hprog stack fb fn targetRegs
+      (.Mload chunk addr args dst) code ep targetFn targetCode targetMemory memory targetMemory
+      sp _ hstack hext hfind hatpc
+    intro continuation translated htrans
+    obtain ⟨resultRegs, hexec, hresult, hother⟩ := loadCorrect
+      (Genv.globalenv tprog) targetFn chunk addr args dst continuation translated targetRegs
+      targetMemory targetAddress targetValue htrans
+      (by simpa only [List.map_map] using haddrTarget) hloadTarget
+    refine ⟨resultRegs, hexec, ?_, ?_⟩
+    · apply agree_set_undef_mreg regs sp targetRegs dst value _ resultRegs hagree
+      · rwa [hresult]
+      · intro reg hdata hne hnotin
+        exact hother reg hdata hne
+    · intro impossible
+      cases impossible
+
+private theorem simulation_store_case
+    (storeCorrect : CompCert4Lean.X86.Asmgenproof1.transl_store_correctStatement)
+    (cfg : CompCert4Lean.Config.CompilerConfig)
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (prog : CompCert4Lean.Backend.Mach.program) (tprog : program)
+    (hprog : match_prog prog tprog)
+    (stack : List CompCert4Lean.Backend.Mach.stackframe) (fb : block) (sp : val)
+    (chunk : memory_chunk) (addr : CompCert4Lean.X86.Op.addressing)
+    (args : List CompCert4Lean.X86.Machregs.mreg) (src : CompCert4Lean.X86.Machregs.mreg)
+    (code : CompCert4Lean.Backend.Mach.code)
+    (regs : CompCert4Lean.Backend.Mach.regset) (memory memory' : mem) (address : val)
+    (haddr : CompCert4Lean.X86.Op.eval_addressing (Genv.globalenv prog) sp addr
+      (args.map regs) = some address)
+    (hstore : Mem.storev chunk memory address (regs src) = some memory') (target : state)
+    (hmatch : match_states prog
+      (.State stack fb sp (.Mstore chunk addr args src :: code) regs memory) target) :
+    ∃ target', plus (CompCert4Lean.X86.Asm.step cfg xi) (Genv.globalenv tprog)
+      target E0 target' ∧
+      match_states prog (.State stack fb sp code
+        (CompCert4Lean.Backend.Mach.undef_regs
+          (CompCert4Lean.X86.Machregs.destroyed_by_store chunk addr) regs) memory') target' := by
+  cases hmatch with
+  | match_states_intro _ _ _ _ ep _ _ targetMemory targetRegs fn targetFn targetCode
+      hstack hfind hext hatpc hagree hparent =>
+    have haddrTarget := (CompCert4Lean.X86.Op.eval_addressing_preserved _ _ _ _
+      (Genv.globalenv prog) (Genv.globalenv tprog) (symbols_preserved prog tprog hprog)
+      sp addr (args.map regs)).trans haddr
+    obtain ⟨targetAddress, haddrTarget, haddress⟩ :=
+      CompCert4Lean.X86.Op.eval_addressing_lessdef _ _ (Genv.globalenv tprog)
+        sp addr _ _ address (simulation_args_lessdef regs sp targetRegs hagree args) haddrTarget
+    have hsp : sp = targetRegs (.IR .RSP) := hagree.agree_sp.symm
+    rw [hsp] at haddrTarget
+    obtain ⟨resultMemory, hstoreTarget, hext'⟩ := Mem.storev_extends chunk memory
+      targetMemory address (regs src) memory' targetAddress (targetRegs (preg_of src))
+      hext hstore haddress (hagree.agree_mregs src)
+    apply exec_straight_steps cfg xi prog tprog hprog stack fb fn targetRegs
+      (.Mstore chunk addr args src) code ep targetFn targetCode targetMemory memory' resultMemory
+      sp _ hstack hext' hfind hatpc
+    intro continuation translated htrans
+    obtain ⟨resultRegs, hexec, hother⟩ := storeCorrect
+      (Genv.globalenv tprog) targetFn chunk addr args src continuation translated targetRegs
+      targetMemory targetAddress resultMemory htrans
+      (by simpa only [List.map_map] using haddrTarget) hstoreTarget
+    refine ⟨resultRegs, hexec, ?_, ?_⟩
+    · exact agree_undef_regs regs sp _ targetRegs resultRegs hagree hother
+    · intro impossible
+      cases impossible
+
+private theorem simulation_jcc_true
+    (ge : genv) (fn : function) (cond : extcond) (lbl : label)
+    (code continuation : CompCert4Lean.X86.Asm.code) (initial tested : regset) (memory : mem)
+    (regs : CompCert4Lean.Backend.Mach.regset) (sp : val)
+    (hexec : exec_straight ge fn code initial memory (mk_jcc cond lbl continuation) tested memory)
+    (hagree : agree regs sp tested)
+    (hcond : CompCert4Lean.X86.Asmgenproof1.eval_extcond cond tested = some true) :
+    ∃ jump rest result,
+      exec_straight ge fn code initial memory (jump :: rest) result memory ∧
+      agree regs sp result ∧
+      exec_instr ge fn jump result memory = goto_label fn lbl result memory := by
+  cases cond with
+  | Cond_base test =>
+    refine ⟨.Pjcc test lbl, continuation, tested, hexec, hagree, ?_⟩
+    dsimp only [exec_instr]
+    change eval_testcond test tested = some true at hcond
+    rw [hcond]
+  | Cond_or firstTest secondTest =>
+    change (match eval_testcond firstTest tested, eval_testcond secondTest tested with
+      | some first, some second => some (first || second)
+      | _, _ => none) = some true at hcond
+    cases hfirst : eval_testcond firstTest tested with
+    | none => simp [hfirst] at hcond
+    | some firstValue =>
+      cases hsecond : eval_testcond secondTest tested with
+      | none => simp [hfirst, hsecond] at hcond
+      | some secondValue =>
+        cases firstValue with
+        | true =>
+          refine ⟨.Pjcc firstTest lbl, .Pjcc secondTest lbl :: continuation,
+            tested, hexec, hagree, ?_⟩
+          dsimp only [exec_instr]
+          rw [hfirst]
+        | false =>
+          have hsecondValue : secondValue = true := by simpa [hfirst, hsecond] using hcond
+          subst secondValue
+          refine ⟨.Pjcc secondTest lbl, continuation, nextinstr tested, ?_,
+            agree_nextinstr regs sp tested hagree, ?_⟩
+          · apply exec_straight_trans _ _ _ _ _ _ _ _ _ _ _ hexec
+            apply exec_straight_one _ _ _ _ _ _ ?_ rfl
+            dsimp only [exec_instr]
+            rw [hfirst]
+          · dsimp only [exec_instr]
+            rw [CompCert4Lean.X86.Asmgenproof1.eval_testcond_nextinstr, hsecond]
+  | Cond_and firstTest secondTest =>
+    change (match eval_testcond firstTest tested, eval_testcond secondTest tested with
+      | some first, some second => some (first && second)
+      | _, _ => none) = some true at hcond
+    cases hfirst : eval_testcond firstTest tested with
+    | none => simp [hfirst] at hcond
+    | some firstValue =>
+      cases hsecond : eval_testcond secondTest tested with
+      | none => simp [hfirst, hsecond] at hcond
+      | some secondValue =>
+        have hvalues : firstValue = true ∧ secondValue = true := by
+          simpa [hfirst, hsecond] using hcond
+        rcases hvalues with ⟨rfl, rfl⟩
+        refine ⟨.Pjcc2 firstTest secondTest lbl, continuation, tested, hexec, hagree, ?_⟩
+        dsimp only [exec_instr]
+        rw [hfirst, hsecond]
+
+private theorem simulation_jcc_false
+    (ge : genv) (fn : function) (cond : extcond) (lbl : label)
+    (code continuation : CompCert4Lean.X86.Asm.code) (initial tested : regset) (memory : mem)
+    (regs : CompCert4Lean.Backend.Mach.regset) (sp : val)
+    (hexec : exec_straight ge fn code initial memory (mk_jcc cond lbl continuation) tested memory)
+    (hagree : agree regs sp tested)
+    (hcond : CompCert4Lean.X86.Asmgenproof1.eval_extcond cond tested = some false) :
+    ∃ result, exec_straight ge fn code initial memory continuation result memory ∧
+      agree regs sp result := by
+  cases cond with
+  | Cond_base test =>
+    refine ⟨nextinstr tested, ?_, agree_nextinstr regs sp tested hagree⟩
+    apply exec_straight_trans _ _ _ _ _ _ _ _ _ _ _ hexec
+    apply exec_straight_one _ _ _ _ _ _ ?_ rfl
+    dsimp only [exec_instr]
+    change eval_testcond test tested = some false at hcond
+    rw [hcond]
+  | Cond_or firstTest secondTest =>
+    change (match eval_testcond firstTest tested, eval_testcond secondTest tested with
+      | some first, some second => some (first || second)
+      | _, _ => none) = some false at hcond
+    cases hfirst : eval_testcond firstTest tested with
+    | none => simp [hfirst] at hcond
+    | some firstValue =>
+      cases hsecond : eval_testcond secondTest tested with
+      | none => simp [hfirst, hsecond] at hcond
+      | some secondValue =>
+        have hvalues : firstValue = false ∧ secondValue = false := by
+          simpa [hfirst, hsecond] using hcond
+        rcases hvalues with ⟨rfl, rfl⟩
+        refine ⟨nextinstr (nextinstr tested), ?_,
+          agree_nextinstr regs sp _ (agree_nextinstr regs sp tested hagree)⟩
+        apply exec_straight_trans _ _ _ _ _ _ _ _ _ _ _ hexec
+        apply exec_straight_two _ _ _ _ _ tested memory (nextinstr tested) memory
+          (nextinstr (nextinstr tested)) memory ?_ ?_ rfl rfl
+        · dsimp only [exec_instr]
+          rw [hfirst]
+        · dsimp only [exec_instr]
+          rw [CompCert4Lean.X86.Asmgenproof1.eval_testcond_nextinstr, hsecond]
+  | Cond_and firstTest secondTest =>
+    change (match eval_testcond firstTest tested, eval_testcond secondTest tested with
+      | some first, some second => some (first && second)
+      | _, _ => none) = some false at hcond
+    cases hfirst : eval_testcond firstTest tested with
+    | none => simp [hfirst] at hcond
+    | some firstValue =>
+      cases hsecond : eval_testcond secondTest tested with
+      | none => simp [hfirst, hsecond] at hcond
+      | some secondValue =>
+        have hvalues : (firstValue && secondValue) = false := by
+          simpa [hfirst, hsecond] using hcond
+        refine ⟨nextinstr tested, ?_, agree_nextinstr regs sp tested hagree⟩
+        apply exec_straight_trans _ _ _ _ _ _ _ _ _ _ _ hexec
+        apply exec_straight_one _ _ _ _ _ _ ?_ rfl
+        dsimp only [exec_instr]
+        rw [hfirst, hsecond]
+        cases firstValue <;> cases secondValue <;> cases hvalues <;> rfl
+
+private theorem simulation_cond_true_case
+    (conditionCorrect : CompCert4Lean.X86.Asmgenproof1.transl_cond_correctStatement)
+    (cfg : CompCert4Lean.Config.CompilerConfig)
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (prog : CompCert4Lean.Backend.Mach.program) (tprog : program)
+    (hprog : match_prog prog tprog)
+    (stack : List CompCert4Lean.Backend.Mach.stackframe) (fb : block) (sp : val)
+    (fn : CompCert4Lean.Backend.Mach.function) (cond : CompCert4Lean.X86.Op.condition)
+    (args : List CompCert4Lean.X86.Machregs.mreg) (lbl : label)
+    (code destination : CompCert4Lean.Backend.Mach.code)
+    (regs : CompCert4Lean.Backend.Mach.regset) (memory : mem)
+    (heval : CompCert4Lean.X86.Op.eval_condition cond (args.map regs) memory = some true)
+    (hfind : Genv.find_funct_ptr (Genv.globalenv prog) fb = some (.Internal fn))
+    (hlabel : CompCert4Lean.Backend.Mach.find_label lbl fn.fn_code = some destination)
+    (target : state)
+    (hmatch : match_states prog
+      (.State stack fb sp (.Mcond cond args lbl :: code) regs memory) target) :
+    ∃ target', plus (CompCert4Lean.X86.Asm.step cfg xi) (Genv.globalenv tprog)
+      target E0 target' ∧
+      match_states prog (.State stack fb sp destination
+        (CompCert4Lean.Backend.Mach.undef_regs
+          (CompCert4Lean.X86.Machregs.destroyed_by_cond cond) regs) memory) target' := by
+  cases hmatch with
+  | match_states_intro _ _ _ _ ep _ _ targetMemory targetRegs foundFn targetFn targetCode
+      hstack hfound hext hatpc hagree hparent =>
+    have heq : foundFn = fn := by
+      cases hfound.symm.trans hfind
+      rfl
+    subst foundFn
+    have hevalTarget : CompCert4Lean.X86.Op.eval_condition cond
+        (args.map (fun reg => targetRegs (preg_of reg))) targetMemory = some true := by
+      simpa only [List.map_map] using CompCert4Lean.X86.Op.eval_condition_lessdef
+        cond _ _ true memory targetMemory (simulation_args_lessdef regs sp targetRegs hagree args) hext heval
+    apply exec_straight_steps_goto cfg xi prog tprog hprog stack fb fn targetRegs
+      (.Mcond cond args lbl) code ep targetFn targetCode targetMemory memory targetMemory
+      sp _ lbl destination hstack hext hfind hlabel hatpc rfl
+    intro continuation translated htrans
+    obtain ⟨tested, hexec, hcondition, hother⟩ := conditionCorrect
+      (Genv.globalenv tprog) targetFn cond args (mk_jcc (testcond_for_condition cond) lbl continuation)
+      translated targetRegs targetMemory htrans
+    rw [hevalTarget] at hcondition
+    exact simulation_jcc_true _ _ _ _ _ _ _ _ _ _ _ hexec
+      (agree_exten regs sp targetRegs tested hagree hother) hcondition.1
+
+private theorem simulation_cond_false_case
+    (conditionCorrect : CompCert4Lean.X86.Asmgenproof1.transl_cond_correctStatement)
+    (cfg : CompCert4Lean.Config.CompilerConfig)
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+    (prog : CompCert4Lean.Backend.Mach.program) (tprog : program)
+    (hprog : match_prog prog tprog)
+    (stack : List CompCert4Lean.Backend.Mach.stackframe) (fb : block) (sp : val)
+    (cond : CompCert4Lean.X86.Op.condition)
+    (args : List CompCert4Lean.X86.Machregs.mreg) (lbl : label)
+    (code : CompCert4Lean.Backend.Mach.code)
+    (regs : CompCert4Lean.Backend.Mach.regset) (memory : mem)
+    (heval : CompCert4Lean.X86.Op.eval_condition cond (args.map regs) memory = some false)
+    (target : state)
+    (hmatch : match_states prog
+      (.State stack fb sp (.Mcond cond args lbl :: code) regs memory) target) :
+    ∃ target', plus (CompCert4Lean.X86.Asm.step cfg xi) (Genv.globalenv tprog)
+      target E0 target' ∧
+      match_states prog (.State stack fb sp code
+        (CompCert4Lean.Backend.Mach.undef_regs
+          (CompCert4Lean.X86.Machregs.destroyed_by_cond cond) regs) memory) target' := by
+  cases hmatch with
+  | match_states_intro _ _ _ _ ep _ _ targetMemory targetRegs fn targetFn targetCode
+      hstack hfind hext hatpc hagree hparent =>
+    have hevalTarget : CompCert4Lean.X86.Op.eval_condition cond
+        (args.map (fun reg => targetRegs (preg_of reg))) targetMemory = some false := by
+      simpa only [List.map_map] using CompCert4Lean.X86.Op.eval_condition_lessdef
+        cond _ _ false memory targetMemory (simulation_args_lessdef regs sp targetRegs hagree args) hext heval
+    apply exec_straight_steps cfg xi prog tprog hprog stack fb fn targetRegs
+      (.Mcond cond args lbl) code ep targetFn targetCode targetMemory memory targetMemory
+      sp _ hstack hext hfind hatpc
+    intro continuation translated htrans
+    obtain ⟨tested, hexec, hcondition, hother⟩ := conditionCorrect
+      (Genv.globalenv tprog) targetFn cond args (mk_jcc (testcond_for_condition cond) lbl continuation)
+      translated targetRegs targetMemory htrans
+    rw [hevalTarget] at hcondition
+    obtain ⟨resultRegs, hexecResult, hagreeResult⟩ := simulation_jcc_false _ _ _ _ _ _ _ _ _ _ _
+      hexec (agree_exten regs sp targetRegs tested hagree hother) hcondition.1
+    refine ⟨resultRegs, hexecResult, hagreeResult, ?_⟩
+    intro impossible
+    cases impossible
+
+theorem step_simulation_from_instruction_correctness
+    (operationCorrect : CompCert4Lean.X86.Asmgenproof1.transl_op_correctStatement)
+    (loadCorrect : CompCert4Lean.X86.Asmgenproof1.transl_load_correctStatement)
+    (storeCorrect : CompCert4Lean.X86.Asmgenproof1.transl_store_correctStatement)
+    (conditionCorrect : CompCert4Lean.X86.Asmgenproof1.transl_cond_correctStatement) :
+    step_simulationStatement := by
+  intro cfg xi prog tprog hprog source events source' hstep target hmatch
+  cases hstep with
+  | exec_Mlabel stack fb sp lbl code regs memory =>
+    exact Or.inl (simulation_label_case cfg xi prog tprog hprog stack fb sp lbl code
+      regs memory target hmatch)
+  | exec_Mgetstack stack fb sp ofs ty dst code regs memory value hload =>
+    exact Or.inl (simulation_getstack_case cfg xi prog tprog hprog stack fb sp ofs ty dst
+      code regs memory value hload target hmatch)
+  | exec_Msetstack stack fb sp src ofs ty code regs memory memory' regs' hstore hregs =>
+    subst regs'
+    exact Or.inl (simulation_setstack_case cfg xi prog tprog hprog stack fb sp src ofs ty
+      code regs memory memory' hstore target hmatch)
+  | exec_Mgetparam stack fb fn sp ofs ty dst code regs memory value regs' hfind hlink hload hregs =>
+    subst regs'
+    exact Or.inl (simulation_getparam_case cfg xi prog tprog hprog stack fb sp fn ofs ty dst
+      code regs memory value hfind hlink hload target hmatch)
+  | exec_Mop stack fb sp op args dst code regs memory value regs' heval hregs =>
+    subst regs'
+    exact Or.inl (simulation_op_case operationCorrect cfg xi prog tprog hprog stack fb sp
+      op args dst code regs memory value heval target hmatch)
+  | exec_Mload stack fb sp chunk addr args dst code regs memory address value regs' haddr hload hregs =>
+    subst regs'
+    exact Or.inl (simulation_load_case loadCorrect cfg xi prog tprog hprog stack fb sp
+      chunk addr args dst code regs memory address value haddr hload target hmatch)
+  | exec_Mstore stack fb sp chunk addr args src code regs memory memory' address regs' haddr hstore hregs =>
+    subst regs'
+    exact Or.inl (simulation_store_case storeCorrect cfg xi prog tprog hprog stack fb sp
+      chunk addr args src code regs memory memory' address haddr hstore target hmatch)
+  | exec_Mcall stack fb sp sig ros code regs memory fn callee ra hcallee hfind hreturn =>
+    exact Or.inl (simulation_call_case cfg xi prog tprog hprog stack fb sp fn sig ros
+      code regs memory callee ra hcallee hfind hreturn target hmatch)
+  | exec_Mtailcall stack fb stk offset sig ros code regs memory fn callee memory'
+      hcallee hfind hlink hreturn hfree =>
+    exact Or.inl (simulation_tailcall_case cfg xi prog tprog hprog stack fb stk offset
+      fn sig ros code regs memory memory' callee hcallee hfind hlink hreturn hfree target hmatch)
+  | exec_Mbuiltin stack fb sp regs memory ef args res code values events value regs' memory'
+      hargs hcall hregs =>
+    subst regs'
+    exact Or.inl (simulation_builtin_case cfg xi prog tprog hprog stack fb sp regs memory
+      memory' ef args res code values value events hargs hcall target hmatch)
+  | exec_Mgoto stack fb fn sp lbl code regs memory destination hfind hlabel =>
+    exact Or.inl (simulation_goto_case cfg xi prog tprog hprog stack fb sp fn lbl code
+      destination regs memory hfind hlabel target hmatch)
+  | exec_Mcond_true stack fb fn sp cond args lbl code regs memory destination regs'
+      heval hfind hlabel hregs =>
+    subst regs'
+    exact Or.inl (simulation_cond_true_case conditionCorrect cfg xi prog tprog hprog
+      stack fb sp fn cond args lbl code destination regs memory heval hfind hlabel target hmatch)
+  | exec_Mcond_false stack fb sp cond args lbl code regs memory regs' heval hregs =>
+    subst regs'
+    exact Or.inl (simulation_cond_false_case conditionCorrect cfg xi prog tprog hprog
+      stack fb sp cond args lbl code regs memory heval target hmatch)
+  | exec_Mjumptable stack fb fn sp arg table code regs memory index lbl destination regs'
+      harg hindex hfind hlabel hregs =>
+    subst regs'
+    exact Or.inl (simulation_jumptable_case cfg xi prog tprog hprog stack fb sp fn arg table
+      lbl index code destination regs memory harg hindex hfind hlabel target hmatch)
+  | exec_Mreturn stack fb stk offset code regs memory fn memory' hfind hlink hreturn hfree =>
+    exact Or.inl (simulation_Mreturn_case cfg xi prog tprog hprog stack fb stk offset fn
+      code regs memory memory' hfind hlink hreturn hfree target hmatch)
+  | exec_function_internal stack fb regs memory fn memory1 memory2 memory3 stk regs'
+      hfind halloc hlink hreturn hregs =>
+    subst regs'
+    exact Or.inl (simulation_internal_case cfg xi prog tprog hprog stack fb stk fn regs
+      memory memory1 memory2 memory3 hfind halloc hlink hreturn target hmatch)
+  | exec_function_external stack fb regs memory events regs' ef args value memory'
+      hfind hargs hcall hregs =>
+    subst regs'
+    exact Or.inl (simulation_external_case cfg xi prog tprog hprog stack fb regs memory
+      memory' ef args value events hfind hargs hcall target hmatch)
+  | exec_return =>
+    refine Or.inr ⟨Nat.zero_lt_succ 0, rfl, ?_⟩
+    exact simulation_return_case prog _ _ _ _ _ _ _ _ hmatch
+
+end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem step_simulation
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    step_simulationStatement :=
+  step_simulation_from_instruction_correctness
+    CompCert4Lean.X86.Asmgenproof1.transl_op_correct
+    CompCert4Lean.X86.Asmgenproof1.transl_load_correct
+    CompCert4Lean.X86.Asmgenproof1.transl_store_correct
+    CompCert4Lean.X86.Asmgenproof1.transl_cond_correct
 
 end CompCert4Lean.X86.Asmgenproof
