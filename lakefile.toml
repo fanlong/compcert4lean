@@ -1,6 +1,10 @@
 name = "compcert4lean"
 version = "0.1.0"
-defaultTargets = ["CompCert4Lean"]
+defaultTargets = ["CompCert4Lean", "leanCompiler"]
 
 [[lean_lib]]
 name = "CompCert4Lean"
+
+[[lean_exe]]
+name = "leanCompiler"
+root = "CompCert4Lean.Prototype.Main"

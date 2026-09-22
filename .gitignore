@@ -1,3 +1,5 @@
 /.lake/
 /.tmp/
 *.olean
+__pycache__/
+*.pyc
