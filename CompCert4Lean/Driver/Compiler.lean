@@ -1481,3 +1481,91 @@ theorem compilerPassCertificates_proof
     csyntaxLinkerCertificate clightLinkerCertificate (compiler_cshmgen_link clightLinkerCertificate)
 
 end CompCert4Lean.Driver.Compiler
+
+namespace CompCert4Lean.Driver.Compiler
+
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Cfrontend
+open CompCert4Lean.Backend
+open CompCert4Lean.X86
+
+set_option maxRecDepth 4096 in
+theorem cstrategy_semantic_preservation
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)] :
+    cstrategy_semantic_preservationStatement := by
+  intro cfg selectionOracle inlineCfg regallocOracle enumerationService
+    csyntaxLinkerCertificate clightLinkerCertificate passCertificates providers source target matched
+  simp only [match_prog, CompCert's_passes, compose_passes, pass_compose, pass_identity] at matched
+  rcases matched with ⟨program1, match1, program2, match2, program3, match3,
+    program4, match4, program5, match5, program6, match6, program7, match7,
+    program8, match8, program9, match9, program10, match10, program11, match11,
+    program12, match12, program13, match13, program14, match14, program15, match15,
+    program16, match16, program17, match17, program18, match18, program19, match19,
+    program20, match20, program21, match21, sameTarget⟩
+  subst target
+  have forward : forward_simulation (Cstrategy.semantics providers source)
+      (Asm.semantics cfg providers program21) := by
+    refine compose_forward_simulations _ _ _
+      (SimplExprproof.transl_program_correct providers _ _ match1) ?_
+    refine compose_forward_simulations _ _ _
+      (SimplLocalsproof.transf_program_correct cfg providers _ _ match2) ?_
+    refine compose_forward_simulations _ _ _
+      (Cshmgenproof.transl_program_correct providers _ _ match3) ?_
+    refine compose_forward_simulations _ _ _
+      (Cminorgenproof.transl_program_correct providers _ _ match4) ?_
+    refine compose_forward_simulations _ _ _
+      (Selectionproof.transf_program_correct cfg selectionOracle providers _ _ match5) ?_
+    refine compose_forward_simulations _ _ _
+      (RTLgenproof.transf_program_correct providers _ _ match6) ?_
+    refine compose_forward_simulations _ _ _
+      (match_if_simulation _ (RTL.semantics providers) _ _ _ _ match7
+        (Tailcallproof.transf_program_correct cfg providers)) ?_
+    refine compose_forward_simulations _ _ _
+      (Inliningproof.transf_program_correct providers inlineCfg _ _ match8) ?_
+    refine compose_forward_simulations _ _ _
+      (Renumberproof.transf_program_correct providers _ _ match9) ?_
+    refine compose_forward_simulations _ _ _
+      (match_if_simulation _ (RTL.semantics providers) _ _ _ _ match10
+        (Constpropproof.transf_program_correct cfg providers)) ?_
+    refine compose_forward_simulations _ _ _
+      (match_if_simulation _ (RTL.semantics providers) _ _ _ _ match11
+        (Renumberproof.transf_program_correct providers)) ?_
+    refine compose_forward_simulations _ _ _
+      (match_if_simulation _ (RTL.semantics providers) _ _ _ _ match12
+        (CSEproof.transf_program_correct cfg providers)) ?_
+    refine compose_forward_simulations _ _ _
+      (match_if_simulation _ (RTL.semantics providers) _ _ _ _ match13
+        (fun source target => Deadcodeproof.transf_program_correct cfg source target providers)) ?_
+    refine compose_forward_simulations _ _ _
+      (Unusedglobproof.transf_program_correct providers _ _ match14) ?_
+    refine compose_forward_simulations _ _ _
+      (Allocproof.transf_program_correct cfg regallocOracle providers _ _ match15) ?_
+    refine compose_forward_simulations _ _ _
+      (Tunnelingproof.transf_program_correct cfg providers _ _ match16) ?_
+    refine compose_forward_simulations _ _ _
+      (Linearizeproof.transf_program_correct cfg providers enumerationService _ _ match17) ?_
+    refine compose_forward_simulations _ _ _
+      (CleanupLabelsproof.transf_program_correct cfg providers _ _ match18) ?_
+    refine compose_forward_simulations _ _ _
+      (match_if_simulation _ (Linear.semantics cfg providers) _ _ _ _ match19
+        (Debugvarproof.transf_program_correct cfg providers)) ?_
+    refine compose_forward_simulations _ _ _
+      (Stackingproof.transf_program_correct cfg providers Asmgenproof0.return_address_offset
+        Asmgenproof.return_address_exists _ _
+        (Bounds.function_bounds_bound_local_pos_proof cfg)
+        (Bounds.function_bounds_bound_outgoing_pos_proof cfg)
+        (Bounds.function_bounds_bound_stack_data_pos_proof cfg)
+        (Bounds.function_bounds_used_callee_save_norepet_proof cfg)
+        (Bounds.function_bounds_used_callee_save_prop_proof cfg) match20) ?_
+    exact Asmgenproof.transf_program_correct cfg providers _ _ match21
+  refine ⟨forward, forward_to_backward_simulation _ _ ?_ ?_ ?_⟩
+  · exact factor_forward_simulation _ _ forward
+      (Asm.semantics_determinate_proof cfg providers program21).sd_traces
+  · exact atomic_receptive _ (Cstrategy.semantics_strongly_receptive providers source)
+  · exact Asm.semantics_determinate_proof cfg providers program21
+
+end CompCert4Lean.Driver.Compiler
