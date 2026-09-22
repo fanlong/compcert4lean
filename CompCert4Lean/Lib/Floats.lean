@@ -351,14 +351,28 @@ def ordered (f1 f2 : float) : Bool :=
 def of_single (f : float32) : float :=
   if isNaN32 f then of_single_nan f
   else
-    ⟨_root_.Float.Model.UnpackedFloat.pack _root_.Float.Model.Format.binary64
-      (_root_.Float.Model.UnpackedFloat.unpack _root_.Float.Model.Format.binary32 f.bits)⟩
+    match decode32 f with
+    | .B754_finite sign mantissa exponent =>
+      encode64 (Binary.binary_normalize (prec := z53) (emax := z1024)
+        (certificate := Binary.binary64_normalize_certificate_proof)
+        BinarySingleNaN.mode_NE
+        (CompCert4Lean.Flocq.Core.Zaux.cond_Zopp sign (.Zpos mantissa)) exponent sign)
+    | _ =>
+      ⟨_root_.Float.Model.UnpackedFloat.pack _root_.Float.Model.Format.binary64
+        (_root_.Float.Model.UnpackedFloat.unpack _root_.Float.Model.Format.binary32 f.bits)⟩
 
 def to_single (f : float) : float32 :=
   if isNaN64 f then to_single_nan f
   else
-    ⟨_root_.Float.Model.UnpackedFloat.pack _root_.Float.Model.Format.binary32
-      (_root_.Float.Model.UnpackedFloat.unpack _root_.Float.Model.Format.binary64 f.bits)⟩
+    match decode64 f with
+    | .B754_finite sign mantissa exponent =>
+      encode32 (Binary.binary_normalize (prec := z24) (emax := z128)
+        (certificate := Binary.binary32_normalize_certificate_proof)
+        BinarySingleNaN.mode_NE
+        (CompCert4Lean.Flocq.Core.Zaux.cond_Zopp sign (.Zpos mantissa)) exponent sign)
+    | _ =>
+      ⟨_root_.Float.Model.UnpackedFloat.pack _root_.Float.Model.Format.binary32
+        (_root_.Float.Model.UnpackedFloat.unpack _root_.Float.Model.Format.binary64 f.bits)⟩
 
 def to_int (f : float) : Option Integers.Int.int :=
   (IEEE754_extra.ZofB_range (decode64 f) Integers.Int.min_signed Integers.Int.max_signed).map
@@ -4027,5 +4041,3755 @@ theorem integer_representable_n :
     integer_representable_nStatement :=
   CompCert4Lean.Lib.IEEE754_extra.integer_representable_n
     (prec := z53) (emax := z1024)
+
+end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Flocq.IEEE754
+open CompCert4Lean.Flocq.Core
+
+private theorem manual_decode64_certificate (value : float) :
+    Binary.BinaryFloatCertificate (decode64 value) := by
+  have valid := Bits.binary_float_of_bits_aux_correct
+    (ZArith.BinInt.Z.of_nat 52) (ZArith.BinInt.Z.of_nat 11)
+    (by change (0 : Int) < 52; decide)
+    (by change (0 : Int) < 11; decide)
+    (by change (53 : Int) < 1024; decide)
+    (ZArith.BinInt.Z.of_nat value.bits.toNat)
+  exact (Binary.FF2B _ valid).property
+
+set_option maxRecDepth 10000 in
+private theorem manual_mantissa_bound64 (mantissa : positive) (exponent : Z)
+    (bounded : Binary.bounded (prec := z53) (emax := z1024) mantissa exponent = true) :
+    (posToNat mantissa : Int) < 9007199254740992 := by
+  have canonical := (Bool.and_eq_true_iff.mp bounded).1
+  change ZArith.Zbool.Zeq_bool
+    (ZArith.BinInt.Z.max
+      (ZArith.BinInt.Z.sub
+        (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa)) exponent) z53)
+      (BinarySingleNaN.emin0 z53 z1024)) exponent = true at canonical
+  simp only [ZArith.Zbool.Zeq_bool, decide_eq_true_eq] at canonical
+  have lower := ZArith.BinInt.Z.le_max_l
+    (ZArith.BinInt.Z.sub
+      (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa)) exponent) z53)
+    (BinarySingleNaN.emin0 z53 z1024)
+  rw [canonical] at lower
+  have digits : ZArith.BinInt.Z.le (Digits.Zdigits Digits.radix2 (.Zpos mantissa)) z53 := by
+    rw [← Digits.Zpos_digits2_pos]
+    change intOfZ (.Zpos (BinarySingleNaN.digits2_pos mantissa)) ≤ 53
+    change intOfZ (ZArith.BinInt.Z.sub
+      (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa)) exponent) z53) ≤
+        intOfZ exponent at lower
+    simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add, intOfZ_zOfInt] at lower
+    change intOfZ (.Zpos (BinarySingleNaN.digits2_pos mantissa)) + intOfZ exponent - 53 ≤
+      intOfZ exponent at lower
+    omega
+  have bound := Digits.Zpower_gt_Zdigits Digits.radix2 z53 (.Zpos mantissa) digits
+  change intOfZ (ZArith.BinInt.Z.abs (.Zpos mantissa)) < 9007199254740992 at bound
+  rw [ZArith.BinInt.Z.abs, intOfZ_zOfInt] at bound
+  change (((posToNat mantissa : Int).natAbs : Int)) < 9007199254740992 at bound
+  simpa only [Int.natAbs_natCast] using bound
+
+private theorem manual_positive_compare_bound64 (mantissa : positive) (exponent : Z)
+    (less : Binary.Bcompare (prec := z53) (emax := z1024)
+      (.B754_finite false mantissa exponent)
+      (.B754_finite false (posOfNat 4503599627370496) (.Zneg (posOfNat 21))) = some .Lt) :
+    intOfZ exponent < -21 ∨
+      (intOfZ exponent = -21 ∧ posToNat mantissa < 4503599627370496) := by
+  change some (match ZArith.BinInt.Z.compare exponent (.Zneg (posOfNat 21)) with
+    | .Eq => PArith.BinPos.Pos.compare_cont .Eq mantissa (posOfNat 4503599627370496)
+    | other => other) = some .Lt at less
+  have compared := Option.some.inj less
+  change (match (if intOfZ exponent < -21 then (.Lt : RCmp)
+    else if intOfZ exponent = -21 then .Eq else .Gt) with
+    | .Eq => PArith.BinPos.Pos.compare_cont .Eq mantissa (posOfNat 4503599627370496)
+    | other => other) = .Lt at compared
+  by_cases lower : intOfZ exponent < -21
+  · exact Or.inl lower
+  · right
+    have equal : intOfZ exponent = -21 := by
+      by_cases equal : intOfZ exponent = -21
+      · exact equal
+      · simp [lower, equal] at compared
+    refine ⟨equal, ?_⟩
+    have mantissa_less :
+        PArith.BinPos.Pos.compare_cont .Eq mantissa (posOfNat 4503599627370496) = .Lt := by
+      rw [if_neg lower, if_pos equal] at compared
+      exact compared
+    exact PArith.Pnat.nat_of_P_lt_Lt_compare_morphism _ _ mantissa_less
+
+private theorem manual_div_pow_int (mantissa exponent : positive) :
+    intOfZ (ZArith.BinInt.Z.div (.Zpos mantissa)
+      (ZArith.BinInt.Z.pow_pos (.Zpos (.xO .xH)) exponent)) =
+        (posToNat mantissa : Int) / (2 : Int) ^ posToNat exponent := by
+  have nonnegative : ZArith.BinInt.Z.le .Z0 (.Zpos mantissa) := by
+    change (0 : Int) ≤ posToNat mantissa
+    omega
+  have denominator : ZArith.BinInt.Z.le .Z0
+      (ZArith.BinInt.Z.pow_pos (.Zpos (.xO .xH)) exponent) := by
+    change (0 : Int) ≤ intOfZ (zOfInt ((2 : Int) ^ posToNat exponent))
+    rw [intOfZ_zOfInt]
+    exact Int.le_of_lt (Int.pow_pos (by decide))
+  rw [← ZArith.Zquot.Zquot_Zdiv_pos _ _ nonnegative denominator]
+  simp only [ZArith.BinInt.Z.quot, ZArith.BinInt.Z.pow_pos, intOfZ_zOfInt]
+  change Int.tdiv (posToNat mantissa) ((2 : Int) ^ posToNat exponent) = _
+  exact Int.tdiv_eq_ediv_of_nonneg (Int.natCast_nonneg _)
+
+private theorem manual_negative_trunc_nonpositive
+    (mantissa : positive) (exponent result : Z)
+    (converted : IEEE754_extra.ZofB (prec := z53) (emax := z1024)
+      (.B754_finite true mantissa exponent) = some result) :
+    intOfZ result ≤ 0 := by
+  cases exponent with
+  | Z0 =>
+    have equal := congrArg intOfZ (Option.some.inj converted)
+    change intOfZ (ZArith.BinInt.Z.opp (.Zpos mantissa)) = intOfZ result at equal
+    rw [ZArith.BinInt.Z.opp, intOfZ_zOfInt] at equal
+    change -(posToNat mantissa : Int) = intOfZ result at equal
+    omega
+  | Zpos shift =>
+    have equal := congrArg intOfZ (Option.some.inj converted)
+    change intOfZ (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.opp (.Zpos mantissa))
+      (ZArith.BinInt.Z.pow_pos (.Zpos (.xO .xH)) shift)) = intOfZ result at equal
+    simp only [ZArith.BinInt.Z.mul, ZArith.BinInt.Z.opp,
+      ZArith.BinInt.Z.pow_pos, intOfZ_zOfInt] at equal
+    rw [← equal]
+    apply Int.mul_nonpos_of_nonpos_of_nonneg
+    · change -(posToNat mantissa : Int) ≤ 0
+      omega
+    · exact Int.le_of_lt (Int.pow_pos (by decide))
+  | Zneg shift =>
+    have equal := congrArg intOfZ (Option.some.inj converted)
+    change intOfZ (ZArith.BinInt.Z.opp
+      (ZArith.BinInt.Z.div (.Zpos mantissa)
+        (ZArith.BinInt.Z.pow_pos (.Zpos (.xO .xH)) shift))) = intOfZ result at equal
+    rw [ZArith.BinInt.Z.opp, intOfZ_zOfInt, manual_div_pow_int] at equal
+    have nonnegative : 0 ≤ (posToNat mantissa : Int) / (2 : Int) ^ posToNat shift :=
+      Int.ediv_nonneg (Int.natCast_nonneg _) (Int.le_of_lt (Int.pow_pos (by decide)))
+    omega
+
+private theorem manual_positive_trunc_bound
+    (mantissa : positive) (exponent result : Z)
+    (mantissa_bound : (posToNat mantissa : Int) < 9007199254740992)
+    (compared : intOfZ exponent < -21 ∨
+      (intOfZ exponent = -21 ∧ posToNat mantissa < 4503599627370496))
+    (converted : IEEE754_extra.ZofB (prec := z53) (emax := z1024)
+      (.B754_finite false mantissa exponent) = some result) :
+    intOfZ result < 2147483648 := by
+  have exponent_bound : intOfZ exponent ≤ -21 := by omega
+  cases exponent with
+  | Z0 => change (0 : Int) ≤ -21 at exponent_bound; omega
+  | Zpos shift =>
+    change (posToNat shift : Int) ≤ -21 at exponent_bound
+    omega
+  | Zneg shift =>
+    have equal := congrArg intOfZ (Option.some.inj converted)
+    change intOfZ (ZArith.BinInt.Z.div (.Zpos mantissa)
+      (ZArith.BinInt.Z.pow_pos (.Zpos (.xO .xH)) shift)) = intOfZ result at equal
+    rw [manual_div_pow_int] at equal
+    rw [← equal]
+    apply (Int.ediv_lt_iff_lt_mul (Int.pow_pos (by decide))).mpr
+    rcases compared with smaller | ⟨same, mantissa_small⟩
+    · have shift_bound : 22 ≤ posToNat shift := by change -(posToNat shift : Int) < -21 at smaller; omega
+      have power_bound := Nat.pow_le_pow_right (by decide : 0 < 2) shift_bound
+      have power_bound_int : (4194304 : Int) ≤ (2 : Int) ^ posToNat shift := by
+        exact Int.ofNat_le.mpr power_bound
+      have product_bound := Int.mul_le_mul_of_nonneg_left power_bound_int
+        (by decide : (0 : Int) ≤ 2147483648)
+      omega
+    · have shift_equal : posToNat shift = 21 := by change -(posToNat shift : Int) = -21 at same; omega
+      rw [shift_equal]
+      change (posToNat mantissa : Int) < 4503599627370496
+      omega
+
+theorem Float.to_intu_to_int_1
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024] :
+    Float.to_intu_to_int_1Statement := by
+  intro value word less converted
+  have threshold : decode64 (Float.of_intu Float.ox8000_0000) =
+      Binary.B754_finite false (posOfNat 4503599627370496) (.Zneg (posOfNat 21)) := by
+    rfl
+  have compared : Binary.Bcompare (decode64 value)
+      (.B754_finite false (posOfNat 4503599627370496) (.Zneg (posOfNat 21))) = some .Lt := by
+    unfold Float.cmp Float.compare at less
+    rw [threshold] at less
+    cases comparison_result : Binary.Bcompare (decode64 value)
+        (.B754_finite false (posOfNat 4503599627370496) (.Zneg (posOfNat 21))) with
+    | none => simp [comparison_result, cmp_of_comparison] at less
+    | some ordering =>
+      cases ordering <;> simp_all [cmp_of_comparison]
+  unfold Float.to_intu at converted
+  unfold Float.to_int
+  cases range_result : IEEE754_extra.ZofB_range (decode64 value) z0 Integers.Int.max_unsigned with
+  | none => simp [range_result] at converted
+  | some result =>
+    have in_range := IEEE754_extra.ZofB_range_inversion
+      ⟨decode64 value, manual_decode64_certificate value⟩ z0 Integers.Int.max_unsigned result range_result
+    rcases in_range with ⟨nonnegative, _, truncated⟩
+    change IEEE754_extra.ZofB (decode64 value) = some result at truncated
+    have upper : intOfZ result < 2147483648 := by
+      have valid := manual_decode64_certificate value
+      cases decoded : decode64 value with
+      | B754_zero sign =>
+        rw [decoded] at truncated
+        have result_zero : z0 = result := Option.some.inj truncated
+        rw [← result_zero]
+        decide
+      | B754_infinity sign => simp [decoded, IEEE754_extra.ZofB] at truncated
+      | B754_nan sign payload => simp [decoded, IEEE754_extra.ZofB] at truncated
+      | B754_finite sign mantissa exponent =>
+        rw [decoded] at truncated compared valid
+        cases sign with
+        | false =>
+          exact manual_positive_trunc_bound mantissa exponent result
+            (manual_mantissa_bound64 mantissa exponent valid)
+            (manual_positive_compare_bound64 mantissa exponent compared) truncated
+        | true =>
+          have upper_zero := manual_negative_trunc_nonpositive mantissa exponent result truncated
+          omega
+    have minimum : ZArith.Zbool.Zle_bool Integers.Int.min_signed result = true := by
+      change (if -2147483648 ≤ intOfZ result then true else false) = true
+      have positive : (0 : Int) ≤ intOfZ result := nonnegative
+      simp only [show -2147483648 ≤ intOfZ result by omega, ↓reduceIte]
+    have maximum : ZArith.Zbool.Zle_bool result Integers.Int.max_signed = true := by
+      change (if intOfZ result ≤ 2147483647 then true else false) = true
+      simp only [show intOfZ result ≤ 2147483647 by omega, ↓reduceIte]
+    simpa only [IEEE754_extra.ZofB_range, truncated, minimum, maximum,
+      Bool.true_and, ↓reduceIte] using (show (some result).map Integers.Int.repr = some word from by
+        simpa only [range_result] using converted)
+
+end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.IEEE754
+
+private theorem conversion_decode_valid (mantissaWidth exponentWidth : Z)
+    (positiveMantissa : Zaux.Zlt .Z0 mantissaWidth)
+    (positiveExponent : Zaux.Zlt .Z0 exponentWidth)
+    (validFormat : Zaux.Zlt (Bits.prec mantissaWidth) (Bits.emax exponentWidth))
+    (word : Z) :
+    Binary.BinaryFloatCertificate
+      (Bits.binary_float_of_bits_unchecked mantissaWidth exponentWidth
+        positiveMantissa positiveExponent validFormat word) := by
+  have valid := Bits.binary_float_of_bits_aux_correct mantissaWidth exponentWidth
+    positiveMantissa positiveExponent validFormat word
+  unfold Bits.binary_float_of_bits_unchecked
+  generalize Bits.binary_float_of_bits_aux mantissaWidth exponentWidth word = decoded at *
+  cases decoded <;>
+    simpa [Binary.BinaryFloatCertificate, Binary.FF2B_unchecked, Binary.B2FF] using valid
+
+private theorem conversion_decode32_valid (value : float32) :
+    Binary.BinaryFloatCertificate (decode32 value) :=
+  by
+    have valid := Bits.binary_float_of_bits_aux_correct
+      (ZArith.BinInt.Z.of_nat 23) (ZArith.BinInt.Z.of_nat 8)
+      (by change (0 : Int) < 23; decide)
+      (by change (0 : Int) < 8; decide)
+      (by change (24 : Int) < 128; decide)
+      (ZArith.BinInt.Z.of_nat value.bits.toNat)
+    exact (Binary.FF2B _ valid).property
+
+private theorem conversion_decode64_valid (value : float) :
+    Binary.BinaryFloatCertificate (decode64 value) :=
+  by
+    have valid := Bits.binary_float_of_bits_aux_correct
+      (ZArith.BinInt.Z.of_nat 52) (ZArith.BinInt.Z.of_nat 11)
+      (by change (0 : Int) < 52; decide)
+      (by change (0 : Int) < 11; decide)
+      (by change (53 : Int) < 1024; decide)
+      (ZArith.BinInt.Z.of_nat value.bits.toNat)
+    exact (Binary.FF2B _ valid).property
+
+private theorem conversion_binary_of_bits_roundtrip
+    (value : Binary.CertifiedBinaryFloat z53 z1024) :
+    Bits.binary_float_of_bits_unchecked
+      (ZArith.BinInt.Z.of_nat 52) (ZArith.BinInt.Z.of_nat 11)
+      (by change (0 : Int) < 52; decide)
+      (by change (0 : Int) < 11; decide)
+      (by change (53 : Int) < 1024; decide)
+      (Bits.bits_of_binary_float (ZArith.BinInt.Z.of_nat 52)
+        (ZArith.BinInt.Z.of_nat 11) value.1) = value.1 := by
+  rcases value with ⟨value, hvalue⟩
+  have hsplit := Bits.split_bits_of_binary_float_correct
+    (ZArith.BinInt.Z.of_nat 52) (ZArith.BinInt.Z.of_nat 11)
+    (by change (0 : Int) < 52; decide)
+    (by change (0 : Int) < 11; decide) ⟨value, hvalue⟩
+  unfold Bits.binary_float_of_bits_unchecked Bits.binary_float_of_bits_aux
+  cases value with
+  | B754_zero sign =>
+    simp [Bits.split_bits_of_binary_float] at hsplit ⊢
+    rw [hsplit]
+    rfl
+  | B754_infinity sign =>
+    simp [Bits.split_bits_of_binary_float] at hsplit ⊢
+    rw [hsplit]
+    rfl
+  | B754_nan sign payload =>
+    simp [Bits.split_bits_of_binary_float] at hsplit ⊢
+    rw [hsplit]
+    have hEq : Bits.Zeq_bool
+        (Bits.Zsub (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 11)) Bits.Zone)
+        (Bits.Zsub (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 11)) Bits.Zone) = true :=
+      CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true _ _ rfl
+    rw [hEq]
+    have hzero : Bits.Zeq_bool
+        (Bits.Zsub (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 11)) Bits.Zone)
+        Bits.Z0 = false :=
+      CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false _ _ (by decide)
+    rw [hzero]
+    simp [Binary.FF2B_unchecked]
+    rfl
+  | B754_finite sign mantissa exponent =>
+    simp [Bits.split_bits_of_binary_float] at hsplit ⊢
+    have hparts :
+        BinarySingleNaN.canonical_mantissa0 z53 z1024 mantissa exponent = true ∧
+          ZArith.Zbool.Zle_bool exponent (ZArith.BinInt.Z.sub z1024 z53) = true := by
+      change (BinarySingleNaN.canonical_mantissa0 z53 z1024 mantissa exponent &&
+        ZArith.Zbool.Zle_bool exponent (ZArith.BinInt.Z.sub z1024 z53)) = true at hvalue
+      exact Bool.and_eq_true_iff.mp hvalue
+    have hcan := hparts.1
+    have hbound := hparts.2
+    by_cases hb : Bits.Zle_bool Bits.Z0
+        (Bits.Zsub (Bits.Zpos mantissa) (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 52))) = true
+    · simp [hb] at hsplit ⊢
+      rw [hsplit]
+      have hcanEq := ZArith.Zbool.Zeq_bool_eq _ _ hcan
+      change ZArith.BinInt.Z.max
+          (ZArith.BinInt.Z.sub
+            (ZArith.BinInt.Z.add
+              (ZArith.BinInt.Z.pos (BinarySingleNaN.digits2_pos mantissa)) exponent) z53)
+          (BinarySingleNaN.emin0 z53 z1024) = exponent at hcanEq
+      have hlowZ := ZArith.BinInt.Z.le_max_r
+        (ZArith.BinInt.Z.sub
+          (ZArith.BinInt.Z.add
+            (ZArith.BinInt.Z.pos (BinarySingleNaN.digits2_pos mantissa)) exponent) z53)
+        (BinarySingleNaN.emin0 z53 z1024)
+      rw [hcanEq] at hlowZ
+      have hboundZ := ZArith.Zbool.Zle_bool_imp_le exponent
+        (ZArith.BinInt.Z.sub z1024 z53) hbound
+      have hzadd : ∀ a b : Z,
+          intOfZ (ZArith.BinInt.Z.add a b) = intOfZ a + intOfZ b := by
+        intro a b
+        change intOfZ (zOfInt (intOfZ a + intOfZ b)) = _
+        exact intOfZ_zOfInt _
+      have hzsub : ∀ a b : Z,
+          intOfZ (ZArith.BinInt.Z.sub a b) = intOfZ a - intOfZ b := by
+        intro a b
+        change intOfZ (zOfInt (intOfZ a - intOfZ b)) = _
+        exact intOfZ_zOfInt _
+      have hem : intOfZ (Bits.emin (ZArith.BinInt.Z.of_nat 52)
+          (ZArith.BinInt.Z.of_nat 11)) = -1074 := by decide
+      have hemin64 : intOfZ (BinarySingleNaN.emin0 z53 z1024) = -1074 := by decide
+      have hone : intOfZ Bits.Zone = 1 := by decide
+      have hshift_formula : intOfZ (Bits.Zadd (Bits.Zsub exponent
+          (Bits.emin (ZArith.BinInt.Z.of_nat 52) (ZArith.BinInt.Z.of_nat 11))) Bits.Zone) =
+          intOfZ exponent + 1075 := by
+        rw [hzadd, hzsub, hem, hone]
+        omega
+      have hshift_pos : 0 <
+          intOfZ (Bits.Zadd (Bits.Zsub exponent (Bits.emin (ZArith.BinInt.Z.of_nat 52)
+            (ZArith.BinInt.Z.of_nat 11))) Bits.Zone) := by
+        rw [hshift_formula]
+        change intOfZ (BinarySingleNaN.emin0 z53 z1024) ≤ intOfZ exponent at hlowZ
+        rw [hemin64] at hlowZ
+        change intOfZ exponent ≤ 971 at hboundZ
+        omega
+      have hshift_lt : intOfZ (Bits.Zadd (Bits.Zsub exponent
+          (Bits.emin (ZArith.BinInt.Z.of_nat 52) (ZArith.BinInt.Z.of_nat 11))) Bits.Zone) < 2047 := by
+        rw [hshift_formula]
+        change intOfZ exponent ≤ 971 at hboundZ
+        omega
+      have hshift_ne_zero : Bits.Zadd (Bits.Zsub exponent
+          (Bits.emin (ZArith.BinInt.Z.of_nat 52) (ZArith.BinInt.Z.of_nat 11))) Bits.Zone ≠ Bits.Z0 := by
+        intro hz
+        have hz' := congrArg intOfZ hz
+        rw [hshift_formula] at hz'
+        have hzero' : intOfZ Bits.Z0 = 0 := by decide
+        rw [hzero'] at hz'
+        omega
+      have hshift_ne_max : Bits.Zadd (Bits.Zsub exponent
+          (Bits.emin (ZArith.BinInt.Z.of_nat 52) (ZArith.BinInt.Z.of_nat 11))) Bits.Zone ≠
+          Bits.Zsub (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 11)) Bits.Zone := by
+        intro hz
+        have hz' := congrArg intOfZ hz
+        rw [hshift_formula] at hz'
+        have hmax' : intOfZ (Bits.Zsub (Bits.Zpower Bits.Ztwo
+            (ZArith.BinInt.Z.of_nat 11)) Bits.Zone) = 2047 := by decide
+        rw [hmax'] at hz'
+        omega
+      have hzero : Bits.Zeq_bool
+          (Bits.Zadd (Bits.Zsub exponent (Bits.emin (ZArith.BinInt.Z.of_nat 52)
+            (ZArith.BinInt.Z.of_nat 11))) Bits.Zone) Bits.Z0 = false :=
+        CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false _ _ hshift_ne_zero
+      have hmax : Bits.Zeq_bool
+          (Bits.Zadd (Bits.Zsub exponent (Bits.emin (ZArith.BinInt.Z.of_nat 52)
+            (ZArith.BinInt.Z.of_nat 11))) Bits.Zone)
+          (Bits.Zsub (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 11)) Bits.Zone) = false :=
+        CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false _ _ hshift_ne_max
+      rw [hzero, hmax]
+      have hsum : Bits.Zadd (Bits.Zsub (Bits.Zpos mantissa)
+          (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 52)))
+          (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 52)) = Bits.Zpos mantissa := by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        rw [hzadd, hzsub]
+        have hpow : intOfZ (Bits.Zpower Bits.Ztwo
+            (ZArith.BinInt.Z.of_nat 52)) = 2 ^ 52 := by decide
+        rw [hpow]
+        omega
+      have hexp : Bits.Zsub
+          (Bits.Zadd (Bits.Zadd (Bits.Zsub exponent
+            (Bits.emin (ZArith.BinInt.Z.of_nat 52) (ZArith.BinInt.Z.of_nat 11))) Bits.Zone)
+            (Bits.emin (ZArith.BinInt.Z.of_nat 52) (ZArith.BinInt.Z.of_nat 11))) Bits.Zone = exponent := by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        rw [hzsub, hzadd, hzadd, hzsub]
+        rw [hem, hone]
+        omega
+      rw [hsum, hexp]
+      rfl
+    · simp [hb] at hsplit ⊢
+      rw [hsplit]
+      have hzeroEq : Bits.Zeq_bool Bits.Z0 Bits.Z0 = true :=
+        CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true _ _ rfl
+      rw [hzeroEq]
+      have hzsub : ∀ a b : Z,
+          intOfZ (ZArith.BinInt.Z.sub a b) = intOfZ a - intOfZ b := by
+        intro a b
+        change intOfZ (zOfInt (intOfZ a - intOfZ b)) = _
+        exact intOfZ_zOfInt _
+      have hltbranch : Bits.Zlt (Bits.Zsub (Bits.Zpos mantissa)
+          (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 52))) Bits.Z0 := by
+        have hs := CompCert4Lean.Flocq.Core.Zaux.Zle_bool_spec Bits.Z0
+          (Bits.Zsub (Bits.Zpos mantissa)
+            (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 52)))
+        have hs' : CompCert4Lean.Flocq.Core.Zaux.Zle_bool_prop Bits.Z0
+            (Bits.Zsub (Bits.Zpos mantissa)
+              (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 52))) false := by
+          simpa [hb] using hs
+        cases hs' with
+        | Zle_bool_false_ h => exact h
+      have hmlt : Bits.Zlt (Bits.Zpos mantissa)
+          (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 52)) := by
+        change intOfZ (Bits.Zpos mantissa) < intOfZ
+          (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 52))
+        change intOfZ (Bits.Zsub (Bits.Zpos mantissa)
+          (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 52))) < intOfZ Bits.Z0 at hltbranch
+        rw [hzsub] at hltbranch
+        have hz0 : intOfZ Bits.Z0 = 0 := by decide
+        rw [hz0] at hltbranch
+        omega
+      have hdigit_le : ZArith.BinInt.Z.le (ZArith.BinInt.Z.pos
+          (BinarySingleNaN.digits2_pos mantissa))
+          (ZArith.BinInt.Z.of_nat 52) := by
+        have habs : CompCert4Lean.Flocq.Core.Digits.Zabs (Bits.Zpos mantissa) =
+            Bits.Zpos mantissa := by
+          apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+          change intOfZ (zOfInt (Int.natAbs (Int.ofNat
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat mantissa)))) = _
+          rw [intOfZ_zOfInt]
+          exact Int.natAbs_of_nonneg (Int.natCast_nonneg _)
+        have hstrict : CompCert4Lean.Flocq.Core.Digits.Zlt
+            (CompCert4Lean.Flocq.Core.Digits.Zabs (Bits.Zpos mantissa))
+            (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 52)) := by
+          rw [habs]
+          exact hmlt
+        have hdigits := CompCert4Lean.Flocq.Core.Digits.Zdigits_le_Zpower
+          CompCert4Lean.Flocq.Core.Digits.radix2
+          (ZArith.BinInt.Z.of_nat 52) (Bits.Zpos mantissa) hstrict
+        have hdigit_eq : ZArith.BinInt.Z.pos (BinarySingleNaN.digits2_pos mantissa) =
+            CompCert4Lean.Flocq.Core.Digits.Zdigits
+              CompCert4Lean.Flocq.Core.Digits.radix2 (Bits.Zpos mantissa) := by
+          exact CompCert4Lean.Flocq.Core.Digits.Zpos_digits2_pos mantissa
+        rw [hdigit_eq]
+        exact hdigits
+      have hcanEq := ZArith.Zbool.Zeq_bool_eq _ _ hcan
+      change ZArith.BinInt.Z.max
+          (ZArith.BinInt.Z.sub
+            (ZArith.BinInt.Z.add
+              (ZArith.BinInt.Z.pos (BinarySingleNaN.digits2_pos mantissa)) exponent) z53)
+          (BinarySingleNaN.emin0 z53 z1024) = exponent at hcanEq
+      let first : Z := ZArith.BinInt.Z.sub
+        (ZArith.BinInt.Z.add
+          (ZArith.BinInt.Z.pos (BinarySingleNaN.digits2_pos mantissa)) exponent) z53
+      have hexpEmin : exponent = BinarySingleNaN.emin0 z53 z1024 := by
+        have hzadd : ∀ a b : Z,
+            intOfZ (ZArith.BinInt.Z.add a b) = intOfZ a + intOfZ b := by
+          intro a b
+          change intOfZ (zOfInt (intOfZ a + intOfZ b)) = _
+          exact intOfZ_zOfInt _
+        have hzsub : ∀ a b : Z,
+            intOfZ (ZArith.BinInt.Z.sub a b) = intOfZ a - intOfZ b := by
+          intro a b
+          change intOfZ (zOfInt (intOfZ a - intOfZ b)) = _
+          exact intOfZ_zOfInt _
+        by_cases hfirst : ZArith.BinInt.Z.le
+            (BinarySingleNaN.emin0 z53 z1024) first
+        · have hmax := ZArith.BinInt.Z.max_l first
+              (BinarySingleNaN.emin0 z53 z1024) hfirst
+          have hfirstEq : first = exponent := by
+            exact hmax.symm.trans hcanEq
+          have hfirstInt := congrArg intOfZ hfirstEq
+          change intOfZ (ZArith.BinInt.Z.pos
+              (BinarySingleNaN.digits2_pos mantissa)) ≤
+            intOfZ (ZArith.BinInt.Z.of_nat 52) at hdigit_le
+          have h52 : intOfZ (ZArith.BinInt.Z.of_nat 52) = 52 := by decide
+          rw [h52] at hdigit_le
+          change intOfZ (ZArith.BinInt.Z.sub
+              (ZArith.BinInt.Z.add
+                (ZArith.BinInt.Z.pos (BinarySingleNaN.digits2_pos mantissa)) exponent) z53) =
+            intOfZ exponent at hfirstInt
+          rw [hzsub, hzadd] at hfirstInt
+          have hz53 : intOfZ z53 = 53 := by decide
+          rw [hz53] at hfirstInt
+          omega
+        · have hfirst_le : ZArith.BinInt.Z.le first
+              (BinarySingleNaN.emin0 z53 z1024) := by
+            change intOfZ first ≤ intOfZ (BinarySingleNaN.emin0 z53 z1024)
+            change ¬ intOfZ (BinarySingleNaN.emin0 z53 z1024) ≤ intOfZ first at hfirst
+            omega
+          have hmax := ZArith.BinInt.Z.max_r first
+              (BinarySingleNaN.emin0 z53 z1024) hfirst_le
+          exact (hmax.symm.trans hcanEq).symm
+      have hzeroEmin : Bits.emin (ZArith.BinInt.Z.of_nat 52)
+          (ZArith.BinInt.Z.of_nat 11) = exponent := by
+        change BinarySingleNaN.emin0 z53 z1024 = exponent
+        exact hexpEmin.symm
+      rw [hzeroEmin]
+      simp [Binary.FF2B_unchecked]
+      rfl
+
+private theorem conversion_encode64_decode (value : Binary.CertifiedBinaryFloat z53 z1024) :
+    decode64 (encode64 value.1) = value.1 := by
+  unfold decode64 encode64
+  simp only [BitVec.toNat_ofNat]
+  have hround := conversion_binary_of_bits_roundtrip value
+  have hrange := Bits.bits_of_binary_float_range
+    (ZArith.BinInt.Z.of_nat 52) (ZArith.BinInt.Z.of_nat 11)
+    (by change (0 : Int) < 52; decide)
+    (by change (0 : Int) < 11; decide) value
+  have hnonneg : Bits.Zle Bits.Z0 (Bits.bits_of_b64 value.1) := by
+    exact hrange.1
+  have hlt : Bits.Zlt (Bits.bits_of_b64 value.1)
+      (Bits.Zpower Bits.Ztwo
+        (Bits.Zadd (Bits.Zadd (ZArith.BinInt.Z.of_nat 52)
+          (ZArith.BinInt.Z.of_nat 11)) Bits.Zone)) := by
+    exact hrange.2
+  have hnonnegInt : 0 ≤ intOfZ (Bits.bits_of_b64 value.1) := by
+    exact hnonneg
+  have hltInt : intOfZ (Bits.bits_of_b64 value.1) < 2 ^ 64 := by
+    change intOfZ (Bits.bits_of_b64 value.1) <
+      intOfZ (Bits.Zpower Bits.Ztwo
+        (Bits.Zadd (Bits.Zadd (ZArith.BinInt.Z.of_nat 52)
+          (ZArith.BinInt.Z.of_nat 11)) Bits.Zone)) at hlt
+    have hpow : intOfZ (Bits.Zpower Bits.Ztwo
+        (Bits.Zadd (Bits.Zadd (ZArith.BinInt.Z.of_nat 52)
+          (ZArith.BinInt.Z.of_nat 11)) Bits.Zone)) = 2 ^ 64 := by decide
+    rw [hpow] at hlt
+    exact hlt
+  have hnatlt : ZArith.BinInt.Z.to_nat (Bits.bits_of_b64 value.1) < 2 ^ 64 := by
+    change Int.toNat (intOfZ (Bits.bits_of_b64 value.1)) < 2 ^ 64
+    exact (Int.toNat_lt hnonnegInt).mpr hltInt
+  rw [Nat.mod_eq_of_lt hnatlt]
+  rw [ZArith.Znat.Z2Nat.id (Bits.bits_of_b64 value.1) hnonneg]
+  simpa [Bits.b64_of_bits_unchecked, Bits.binary_float_of_bits_unchecked,
+    Bits.bits_of_b64, Bits.binary64] using hround
+
+private theorem conversion_zadd_positive (n : Nat) (hn : 0 < n) :
+    ∃ p : positive,
+      Bits.Zadd (ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat n))
+          (ZArith.BinInt.Z.of_nat 8388608) = ZArith.BinInt.Z.pos p := by
+  have hpos : 0 < intOfZ
+      (Bits.Zadd (ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat n))
+        (ZArith.BinInt.Z.of_nat 8388608)) := by
+    change 0 < intOfZ (ZArith.BinInt.Z.add
+      (ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat n))
+      (ZArith.BinInt.Z.of_nat 8388608))
+    simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.pos,
+      ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    change 0 < (posToNat (PArith.BinPos.Pos.of_nat n) : Int) + 8388608
+    have hnat : posToNat (PArith.BinPos.Pos.of_nat n) = n := by
+      change posToNat (posOfNat n) = n
+      exact posToNat_posOfNat hn
+    rw [hnat]
+    omega
+  cases h : Bits.Zadd
+      (ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat n))
+      (ZArith.BinInt.Z.of_nat 8388608) with
+  | Z0 =>
+      rw [h] at hpos
+      change (0 : Int) < 0 at hpos
+      omega
+  | Zpos p => exact ⟨p, by simpa only using h⟩
+  | Zneg p =>
+      rw [h] at hpos
+      change 0 < -(posToNat p : Int) at hpos
+      omega
+
+private theorem conversion_isNaN32_decode (value : float32) :
+    Binary.is_nan (decode32 value) = isNaN32 value := by
+  unfold decode32 isNaN32 Binary.is_nan
+  change Binary.is_nan
+    (Bits.binary_float_of_bits_unchecked
+      (ZArith.BinInt.Z.of_nat 23) (ZArith.BinInt.Z.of_nat 8) _ _ _
+      (ZArith.BinInt.Z.of_nat value.bits.toNat)) = _
+  have hdiv :
+      Bits.Zdiv (ZArith.BinInt.Z.of_nat value.bits.toNat)
+          (ZArith.BinInt.Z.of_nat (2 ^ 23)) =
+        ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 23) :=
+    zdiv_nat_f64 _ _ (by decide)
+  have hmod :
+      Bits.Zmod (ZArith.BinInt.Z.of_nat value.bits.toNat)
+          (ZArith.BinInt.Z.of_nat (2 ^ 23)) =
+        ZArith.BinInt.Z.of_nat (value.bits.toNat % 2 ^ 23) :=
+    zmod_nat_f64 _ _ (by decide)
+  have hmodexp :
+      Bits.Zmod
+          (ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 23))
+          (ZArith.BinInt.Z.of_nat (2 ^ 8)) =
+        ZArith.BinInt.Z.of_nat ((value.bits.toNat / 2 ^ 23) % 2 ^ 8) :=
+    zmod_nat_f64 _ _ (by decide)
+  unfold Bits.binary_float_of_bits_unchecked Bits.binary_float_of_bits_aux
+  unfold Bits.split_bits
+  simp only []
+  rw [show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 23) =
+      ZArith.BinInt.Z.of_nat (2 ^ 23) by decide,
+    show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 8) =
+      ZArith.BinInt.Z.of_nat (2 ^ 8) by decide,
+    hdiv, hmod, hmodexp]
+  simp only [exponent32, fraction32]
+  let exponent : Nat := value.bits.toNat / 8388608 % 256
+  let mantissa : Nat := value.bits.toNat % 8388608
+  dsimp [exponent, mantissa] at *
+  have hzeroEq : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat 0) Bits.Z0 = true := by decide
+  have hzeroMax : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat 0)
+      (Bits.Zsub (ZArith.BinInt.Z.of_nat 256) Bits.Zone) = false := by decide
+  have h255Zero : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat 255) Bits.Z0 = false := by decide
+  have h255Max : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat 255)
+      (Bits.Zsub (ZArith.BinInt.Z.of_nat 256) Bits.Zone) = true := by decide
+  have hsum0 : Bits.Zadd (ZArith.BinInt.Z.of_nat 0)
+      (ZArith.BinInt.Z.of_nat 8388608) =
+      ZArith.BinInt.Z.of_nat 8388608 := by decide
+  have hsum0' : Bits.Zadd Bits.Z0
+      (ZArith.BinInt.Z.of_nat 8388608) =
+      ZArith.BinInt.Z.of_nat 8388608 := by decide
+  have h8388608 : ZArith.BinInt.Z.of_nat 8388608 =
+      ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat 8388608) := by decide
+  have hsum0pos : Bits.Zadd Bits.Z0
+      (ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat 8388608)) =
+      ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat 8388608) := by decide
+  have hzero : ZArith.BinInt.Z.of_nat 0 = Bits.Z0 := by decide
+  have h00 : Bits.Zeq_bool Bits.Z0 Bits.Z0 = true := by decide
+  have h0Max : Bits.Zeq_bool Bits.Z0
+      (Bits.Zsub (ZArith.BinInt.Z.of_nat 256) Bits.Zone) = false := by decide
+  by_cases he0 : exponent = 0
+  · have hexp0 : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent) Bits.Z0 = true := by
+      apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true
+      rw [he0]
+      decide
+    have hexp255 : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+        (Bits.Zsub (ZArith.BinInt.Z.of_nat 256) Bits.Zone) = false := by
+      apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false
+      intro h
+      have hi := congrArg intOfZ h
+      have hleft : intOfZ (ZArith.BinInt.Z.of_nat exponent) = (exponent : Int) := by
+        change intOfZ (zOfInt (Int.ofNat exponent)) = Int.ofNat exponent
+        exact intOfZ_zOfInt _
+      have hright : intOfZ (Bits.Zsub (ZArith.BinInt.Z.of_nat 256) Bits.Zone) = 255 := by decide
+      rw [hleft, hright] at hi
+      omega
+    by_cases hm0 : mantissa = 0
+    · have hmant : ZArith.BinInt.Z.of_nat mantissa = Bits.Z0 := by
+        rw [hm0]
+        decide
+      have hexp0' : Bits.Zeq_bool
+          (ZArith.BinInt.Z.of_nat (value.bits.toNat / 8388608 % 256)) Bits.Z0 = true := by
+        simpa [exponent, hzero] using hexp0
+      have hexp255' : Bits.Zeq_bool
+          (ZArith.BinInt.Z.of_nat (value.bits.toNat / 8388608 % 256))
+          (Bits.Zsub (ZArith.BinInt.Z.of_nat 256) Bits.Zone) = false := by
+        simpa [exponent] using hexp255
+      have hmant' : ZArith.BinInt.Z.of_nat (value.bits.toNat % 8388608) = Bits.Z0 := by
+        simpa [mantissa] using hmant
+      simp [Binary.is_nan, Binary.FF2B_unchecked, exponent, mantissa, hzero,
+        h00, h0Max, hzeroEq, hzeroMax, hexp0', hexp255', hmant', he0, hm0]
+    · have hmpos : 0 < mantissa := Nat.pos_of_ne_zero hm0
+      have hmz : ZArith.BinInt.Z.of_nat mantissa =
+          ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat mantissa) := by
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.pos,
+          intOfZ_zOfInt]
+        exact congrArg Int.ofNat (posToNat_posOfNat hmpos).symm
+      have hexp0' : Bits.Zeq_bool
+          (ZArith.BinInt.Z.of_nat (value.bits.toNat / 8388608 % 256)) Bits.Z0 = true := by
+        simpa [exponent] using hexp0
+      have hexp255' : Bits.Zeq_bool
+          (ZArith.BinInt.Z.of_nat (value.bits.toNat / 8388608 % 256))
+          (Bits.Zsub (ZArith.BinInt.Z.of_nat 256) Bits.Zone) = false := by
+        simpa [exponent] using hexp255
+      have hmz' : ZArith.BinInt.Z.of_nat (value.bits.toNat % 8388608) =
+          ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat (value.bits.toNat % 8388608)) := by
+        simpa [mantissa] using hmz
+      simp [Binary.is_nan, Binary.FF2B_unchecked, exponent, mantissa, hzero,
+        h00, h0Max, hzeroEq, hzeroMax, hexp0', hexp255', hmz', he0, hm0]
+  · by_cases he255 : exponent = 255
+    · have hexp0 : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent) Bits.Z0 = false := by
+        apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false
+        intro h
+        have hi := congrArg intOfZ h
+        have hleft : intOfZ (ZArith.BinInt.Z.of_nat exponent) = (exponent : Int) := by
+          change intOfZ (zOfInt (Int.ofNat exponent)) = Int.ofNat exponent
+          exact intOfZ_zOfInt _
+        have hright : intOfZ Bits.Z0 = 0 := by decide
+        rw [hleft, hright] at hi
+        omega
+      have hexp255 : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+          (Bits.Zsub (ZArith.BinInt.Z.of_nat 256) Bits.Zone) = true := by
+        apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true
+        apply intOfZ_injective
+        have hright : intOfZ (Bits.Zsub (ZArith.BinInt.Z.of_nat 256) Bits.Zone) = 255 := by decide
+        rw [hright]
+        rw [he255]
+        change intOfZ (zOfInt (Int.ofNat 255)) = (255 : Int)
+        exact intOfZ_zOfInt _
+      by_cases hm0 : mantissa = 0
+      · have hmant : ZArith.BinInt.Z.of_nat mantissa = Bits.Z0 := by
+          rw [hm0]
+          decide
+        simp [Binary.is_nan, Binary.FF2B_unchecked, exponent, mantissa, hzero,
+          h255Zero, h255Max, hexp0, hexp255, hmant, he255, hm0]
+      · have hmpos : 0 < mantissa := Nat.pos_of_ne_zero hm0
+        have hmz : ZArith.BinInt.Z.of_nat mantissa =
+            ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat mantissa) := by
+          apply intOfZ_injective
+          simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.pos,
+            intOfZ_zOfInt]
+          exact congrArg Int.ofNat (posToNat_posOfNat hmpos).symm
+        have hmraw : value.bits.toNat % 8388608 ≠ 0 := by
+          simpa [mantissa] using hm0
+        simp [Binary.is_nan, Binary.FF2B_unchecked, exponent, mantissa, hzero,
+          h255Zero, h255Max, hexp0, hexp255, hmz, he255, hm0, hmraw]
+    · have hexp0 : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent) Bits.Z0 = false := by
+        apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false
+        intro h
+        have hi := congrArg intOfZ h
+        have hleft : intOfZ (ZArith.BinInt.Z.of_nat exponent) = (exponent : Int) := by
+          change intOfZ (zOfInt (Int.ofNat exponent)) = Int.ofNat exponent
+          exact intOfZ_zOfInt _
+        have hright : intOfZ Bits.Z0 = 0 := by decide
+        rw [hleft, hright] at hi
+        omega
+      have hexp255 : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+          (Bits.Zsub (ZArith.BinInt.Z.of_nat 256) Bits.Zone) = false := by
+        apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false
+        intro h
+        have hi := congrArg intOfZ h
+        have hleft : intOfZ (ZArith.BinInt.Z.of_nat exponent) = (exponent : Int) := by
+          change intOfZ (zOfInt (Int.ofNat exponent)) = Int.ofNat exponent
+          exact intOfZ_zOfInt _
+        have hright : intOfZ (Bits.Zsub (ZArith.BinInt.Z.of_nat 256) Bits.Zone) = 255 := by decide
+        rw [hleft, hright] at hi
+        omega
+      by_cases hm0 : mantissa = 0
+      · have hmant : ZArith.BinInt.Z.of_nat mantissa = Bits.Z0 := by
+          rw [hm0]
+          decide
+        simp [Binary.is_nan, Binary.FF2B_unchecked, exponent, mantissa, hzero,
+          h00, h0Max, hsum0, hsum0', h8388608, hsum0pos, h255Zero, h255Max,
+          hexp0, hexp255, hmant, he255, hm0]
+      · have hmpos : 0 < mantissa := Nat.pos_of_ne_zero hm0
+        have hmz : ZArith.BinInt.Z.of_nat mantissa =
+            ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat mantissa) := by
+          apply intOfZ_injective
+          simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.pos,
+            intOfZ_zOfInt]
+          exact congrArg Int.ofNat (posToNat_posOfNat hmpos).symm
+        obtain ⟨p, hp⟩ := conversion_zadd_positive mantissa hmpos
+        simp [Binary.is_nan, Binary.FF2B_unchecked, exponent, mantissa, hzero,
+          h00, h0Max, hp, h255Zero, h255Max, hexp0, hexp255, hmz, he255, hm0]
+
+local instance conversion_binary32_certificate :
+    Binary.BinaryNormalizeCertificate z24 z128 :=
+  Binary.binary32_normalize_certificate_proof
+
+local instance conversion_binary64_certificate :
+    Binary.BinaryNormalizeCertificate z53 z1024 :=
+  Binary.binary64_normalize_certificate_proof
+
+private theorem conversion_model_zero (value : float32)
+    (hfields : exponent32 value = 0 ∧ fraction32 value = 0)
+    (hbit : BitVec.extractLsb 31 31 value.bits = 0#1) :
+    decode64 (⟨
+      Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
+        (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary32 value.bits)⟩ : float) =
+      Binary.B754_zero (sign32 value) := by
+  have hexponent : BitVec.extractLsb 30 23 value.bits = 0#8 := by
+    apply BitVec.eq_of_toNat_eq
+    simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow,
+      exponent32] using hfields.1
+  have hmantissa : BitVec.extractLsb 22 0 value.bits = 0#23 := by
+    apply BitVec.eq_of_toNat_eq
+    simpa [BitVec.extractLsb_toNat, fraction32] using hfields.2
+  have hsign32_eq : sign32 value =
+      ((BitVec.extractLsb 31 31 value.bits).toNat == (1 : Nat)) := by
+    simp [sign32, BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow]
+  have hsign' : sign32 value = false := by
+    rw [hsign32_eq, hbit]
+    decide
+  have hunpack : Float.Model.UnpackedFloat.unpack Float.Model.Format.binary32 value.bits =
+      Float.Model.UnpackedFloat.zero
+        (Float.Model.UnpackedFloat.Sign.ofBitVec (BitVec.extractLsb 31 31 value.bits)) := by
+    simp [Float.Model.UnpackedFloat.unpack,
+    Float.Model.UnpackedFloat.unpackExponent,
+    Float.Model.UnpackedFloat.unpackMantissa,
+    Float.Model.UnpackedFloat.unpackSign,
+    hexponent, hmantissa, hbit]
+  have hcert : Binary.BinaryFloatCertificate (prec := z53) (emax := z1024)
+      (Binary.B754_zero (sign32 value)) := by
+    simp [Binary.BinaryFloatCertificate, Binary.B2FF, Binary.valid_binary]
+  have hround := conversion_encode64_decode
+    (⟨Binary.B754_zero (sign32 value), hcert⟩ : Binary.CertifiedBinaryFloat z53 z1024)
+  have hbits : (⟨Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
+      (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary32 value.bits)⟩ : float) =
+      encode64 (Binary.B754_zero (sign32 value)) := by
+    rw [hunpack]
+    apply float.ext
+    apply BitVec.eq_of_toNat_eq
+    simp [encode64, Float.Model.UnpackedFloat.pack,
+    Float.Model.UnpackedFloat.packedZero,
+    Float.Model.UnpackedFloat.packComponents,
+    Float.Model.UnpackedFloat.Sign.ofBitVec,
+    Float.Model.UnpackedFloat.Sign.toBitVec, hbit,
+    Bits.bits_of_b64, Bits.bits_of_binary_float, Bits.join_bits, hsign']
+    decide
+  rw [hbits]
+  exact hround
+
+private theorem conversion_model_zero_neg (value : float32)
+    (hfields : exponent32 value = 0 ∧ fraction32 value = 0)
+    (hbit : BitVec.extractLsb 31 31 value.bits = 1#1) :
+    decode64 (⟨
+      Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
+        (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary32 value.bits)⟩ : float) =
+      Binary.B754_zero (sign32 value) := by
+  have hexponent : BitVec.extractLsb 30 23 value.bits = 0#8 := by
+    apply BitVec.eq_of_toNat_eq
+    simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow,
+      exponent32] using hfields.1
+  have hmantissa : BitVec.extractLsb 22 0 value.bits = 0#23 := by
+    apply BitVec.eq_of_toNat_eq
+    simpa [BitVec.extractLsb_toNat, fraction32] using hfields.2
+  have hsign32_eq : sign32 value =
+      ((BitVec.extractLsb 31 31 value.bits).toNat == (1 : Nat)) := by
+    simp [sign32, BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow]
+  have hsign' : sign32 value = true := by
+    rw [hsign32_eq, hbit]
+    decide
+  have hunpack : Float.Model.UnpackedFloat.unpack Float.Model.Format.binary32 value.bits =
+      Float.Model.UnpackedFloat.zero
+        (Float.Model.UnpackedFloat.Sign.ofBitVec (BitVec.extractLsb 31 31 value.bits)) := by
+    simp [Float.Model.UnpackedFloat.unpack,
+      Float.Model.UnpackedFloat.unpackExponent,
+      Float.Model.UnpackedFloat.unpackMantissa,
+      Float.Model.UnpackedFloat.unpackSign,
+      hexponent, hmantissa, hbit]
+  have hcert : Binary.BinaryFloatCertificate (prec := z53) (emax := z1024)
+      (Binary.B754_zero (sign32 value)) := by
+    simp [Binary.BinaryFloatCertificate, Binary.B2FF, Binary.valid_binary]
+  have hround := conversion_encode64_decode
+    (⟨Binary.B754_zero (sign32 value), hcert⟩ : Binary.CertifiedBinaryFloat z53 z1024)
+  have hbits : (⟨Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
+      (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary32 value.bits)⟩ : float) =
+      encode64 (Binary.B754_zero (sign32 value)) := by
+    rw [hunpack]
+    apply float.ext
+    apply BitVec.eq_of_toNat_eq
+    simp [encode64, Float.Model.UnpackedFloat.pack,
+      Float.Model.UnpackedFloat.packedZero,
+      Float.Model.UnpackedFloat.packComponents,
+      Float.Model.UnpackedFloat.Sign.ofBitVec,
+      Float.Model.UnpackedFloat.Sign.toBitVec, hbit,
+      Bits.bits_of_b64, Bits.bits_of_binary_float, Bits.join_bits, hsign']
+    decide
+  rw [hbits]
+  exact hround
+
+set_option maxRecDepth 100000 in
+private theorem conversion_decode32_zero_sign (value : float32)
+    (hfields : exponent32 value = 0 ∧ fraction32 value = 0) :
+    Binary.Bsign (decode32 value) = sign32 value := by
+  have hdiv :
+      Bits.Zdiv (ZArith.BinInt.Z.of_nat value.bits.toNat)
+          (ZArith.BinInt.Z.of_nat (2 ^ 23)) =
+        ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 23) :=
+    zdiv_nat_f64 _ _ (by decide)
+  have hmod :
+      Bits.Zmod (ZArith.BinInt.Z.of_nat value.bits.toNat)
+          (ZArith.BinInt.Z.of_nat (2 ^ 23)) =
+        ZArith.BinInt.Z.of_nat (value.bits.toNat % 2 ^ 23) :=
+    zmod_nat_f64 _ _ (by decide)
+  have hmodexp :
+      Bits.Zmod
+          (ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 23))
+          (ZArith.BinInt.Z.of_nat (2 ^ 8)) =
+        ZArith.BinInt.Z.of_nat ((value.bits.toNat / 2 ^ 23) % 2 ^ 8) :=
+    zmod_nat_f64 _ _ (by decide)
+  have hexpNat : value.bits.toNat / 2 ^ 23 % 2 ^ 8 = 0 := by
+    simpa [exponent32] using hfields.1
+  have hmantNat : value.bits.toNat % 2 ^ 23 = 0 := by
+    simpa [fraction32] using hfields.2
+  have hexp0 : Bits.Zeq_bool
+      (ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 23 % 2 ^ 8)) Bits.Z0 = true := by
+    rw [hexpNat]
+    decide
+  have hmant0 : ZArith.BinInt.Z.of_nat (value.bits.toNat % 2 ^ 23) = Bits.Z0 := by
+    rw [hmantNat]
+    decide
+  have hsign32_eq : sign32 value =
+      ((BitVec.extractLsb 31 31 value.bits).toNat == (1 : Nat)) := by
+    simp [sign32, BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow]
+  have hthreshold :
+      Bits.Zle_bool
+        (Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 23))
+          (ZArith.BinInt.Z.of_nat (2 ^ 8)))
+        (ZArith.BinInt.Z.of_nat value.bits.toNat) = sign32 value := by
+    have hlt : value.bits.toNat < 2 ^ 32 := value.bits.isLt
+    rcases BitVec.eq_zero_or_eq_one (BitVec.extractLsb 31 31 value.bits) with hbit | hbit
+    · have hq : value.bits.toNat / 2 ^ 31 % 2 = 0 := by
+        have hh := congrArg BitVec.toNat hbit
+        simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow] using hh
+      have hn : value.bits.toNat < 2 ^ 31 := by omega
+      have hfalse : Bits.Zle_bool
+          (Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 23))
+            (ZArith.BinInt.Z.of_nat (2 ^ 8)))
+          (ZArith.BinInt.Z.of_nat value.bits.toNat) = false := by
+        have hprod : Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 23))
+            (ZArith.BinInt.Z.of_nat (2 ^ 8)) =
+            ZArith.BinInt.Z.of_nat (2 ^ 31) := by decide
+        rw [hprod]
+        apply CompCert4Lean.Flocq.Core.Zaux.Zle_bool_false
+        change intOfZ (ZArith.BinInt.Z.of_nat value.bits.toNat) <
+          intOfZ (ZArith.BinInt.Z.of_nat (2 ^ 31))
+        simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+        exact Int.ofNat_lt.mpr hn
+      rw [hfalse]
+      rw [hsign32_eq, hbit]
+      decide
+    · have hq : value.bits.toNat / 2 ^ 31 % 2 = 1 := by
+        have hh := congrArg BitVec.toNat hbit
+        simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow] using hh
+      have hn : 2 ^ 31 ≤ value.bits.toNat := by omega
+      have htrue : Bits.Zle_bool
+          (Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 23))
+            (ZArith.BinInt.Z.of_nat (2 ^ 8)))
+          (ZArith.BinInt.Z.of_nat value.bits.toNat) = true := by
+        have hprod : Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 23))
+            (ZArith.BinInt.Z.of_nat (2 ^ 8)) =
+            ZArith.BinInt.Z.of_nat (2 ^ 31) := by decide
+        rw [hprod]
+        apply CompCert4Lean.Flocq.Core.Zaux.Zle_bool_true
+        change intOfZ (ZArith.BinInt.Z.of_nat (2 ^ 31)) ≤
+          intOfZ (ZArith.BinInt.Z.of_nat value.bits.toNat)
+        simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+        exact Int.ofNat_le.mpr hn
+      rw [htrue]
+      rw [hsign32_eq, hbit]
+      decide
+  unfold Binary.Bsign decode32
+  unfold Bits.b32_of_bits_unchecked Bits.binary_float_of_bits_unchecked
+    Bits.binary_float_of_bits_aux Bits.split_bits
+  simp only []
+  rw [show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 23) =
+        ZArith.BinInt.Z.of_nat (2 ^ 23) by decide,
+    show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 8) =
+        ZArith.BinInt.Z.of_nat (2 ^ 8) by decide,
+    hdiv, hmod, hmodexp]
+  simp [Binary.FF2B_unchecked, hexp0, hmant0, hthreshold,
+    Binary.Bsign]
+
+set_option maxRecDepth 100000 in
+private theorem conversion_decode32_infinity_sign (value : float32)
+    (hfields : exponent32 value = 2 ^ 8 - 1 ∧ fraction32 value = 0) :
+    Binary.Bsign (decode32 value) = sign32 value := by
+  have hdiv :
+      Bits.Zdiv (ZArith.BinInt.Z.of_nat value.bits.toNat)
+          (ZArith.BinInt.Z.of_nat (2 ^ 23)) =
+        ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 23) :=
+    zdiv_nat_f64 _ _ (by decide)
+  have hmod :
+      Bits.Zmod (ZArith.BinInt.Z.of_nat value.bits.toNat)
+          (ZArith.BinInt.Z.of_nat (2 ^ 23)) =
+        ZArith.BinInt.Z.of_nat (value.bits.toNat % 2 ^ 23) :=
+    zmod_nat_f64 _ _ (by decide)
+  have hmodexp :
+      Bits.Zmod
+          (ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 23))
+          (ZArith.BinInt.Z.of_nat (2 ^ 8)) =
+        ZArith.BinInt.Z.of_nat ((value.bits.toNat / 2 ^ 23) % 2 ^ 8) :=
+    zmod_nat_f64 _ _ (by decide)
+  have hexpNat : value.bits.toNat / 2 ^ 23 % 2 ^ 8 = 2 ^ 8 - 1 := by
+    simpa [exponent32] using hfields.1
+  have hmantNat : value.bits.toNat % 2 ^ 23 = 0 := by
+    simpa [fraction32] using hfields.2
+  have hexp0 : Bits.Zeq_bool
+      (ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 23 % 2 ^ 8)) Bits.Z0 = false := by
+    rw [hexpNat]
+    decide
+  have hmax : Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 8)) Bits.Zone =
+      ZArith.BinInt.Z.of_nat (2 ^ 8 - 1) := by decide
+  have hexpmax : Bits.Zeq_bool
+      (ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 23 % 2 ^ 8))
+      (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 8)) Bits.Zone) = true := by
+    rw [hexpNat, hmax]
+    decide
+  have hmant0 : ZArith.BinInt.Z.of_nat (value.bits.toNat % 2 ^ 23) = Bits.Z0 := by
+    rw [hmantNat]
+    decide
+  have hsign32_eq : sign32 value =
+      ((BitVec.extractLsb 31 31 value.bits).toNat == (1 : Nat)) := by
+    simp [sign32, BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow]
+  have hthreshold :
+      Bits.Zle_bool
+        (Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 23))
+          (ZArith.BinInt.Z.of_nat (2 ^ 8)))
+        (ZArith.BinInt.Z.of_nat value.bits.toNat) = sign32 value := by
+    have hlt : value.bits.toNat < 2 ^ 32 := value.bits.isLt
+    rcases BitVec.eq_zero_or_eq_one (BitVec.extractLsb 31 31 value.bits) with hbit | hbit
+    · have hq : value.bits.toNat / 2 ^ 31 % 2 = 0 := by
+        have hh := congrArg BitVec.toNat hbit
+        simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow] using hh
+      have hn : value.bits.toNat < 2 ^ 31 := by omega
+      have hfalse : Bits.Zle_bool
+          (Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 23))
+            (ZArith.BinInt.Z.of_nat (2 ^ 8)))
+          (ZArith.BinInt.Z.of_nat value.bits.toNat) = false := by
+        have hprod : Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 23))
+            (ZArith.BinInt.Z.of_nat (2 ^ 8)) =
+            ZArith.BinInt.Z.of_nat (2 ^ 31) := by decide
+        rw [hprod]
+        apply CompCert4Lean.Flocq.Core.Zaux.Zle_bool_false
+        change intOfZ (ZArith.BinInt.Z.of_nat value.bits.toNat) <
+          intOfZ (ZArith.BinInt.Z.of_nat (2 ^ 31))
+        simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+        exact Int.ofNat_lt.mpr hn
+      rw [hfalse, hsign32_eq, hbit]
+      decide
+    · have hq : value.bits.toNat / 2 ^ 31 % 2 = 1 := by
+        have hh := congrArg BitVec.toNat hbit
+        simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow] using hh
+      have hn : 2 ^ 31 ≤ value.bits.toNat := by omega
+      have htrue : Bits.Zle_bool
+          (Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 23))
+            (ZArith.BinInt.Z.of_nat (2 ^ 8)))
+          (ZArith.BinInt.Z.of_nat value.bits.toNat) = true := by
+        have hprod : Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 23))
+            (ZArith.BinInt.Z.of_nat (2 ^ 8)) =
+            ZArith.BinInt.Z.of_nat (2 ^ 31) := by decide
+        rw [hprod]
+        apply CompCert4Lean.Flocq.Core.Zaux.Zle_bool_true
+        change intOfZ (ZArith.BinInt.Z.of_nat (2 ^ 31)) ≤
+          intOfZ (ZArith.BinInt.Z.of_nat value.bits.toNat)
+        simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+        exact Int.ofNat_le.mpr hn
+      rw [htrue, hsign32_eq, hbit]
+      decide
+  unfold Binary.Bsign decode32
+  unfold Bits.b32_of_bits_unchecked Bits.binary_float_of_bits_unchecked
+    Bits.binary_float_of_bits_aux Bits.split_bits
+  simp only []
+  rw [show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 23) =
+        ZArith.BinInt.Z.of_nat (2 ^ 23) by decide,
+    show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 8) =
+        ZArith.BinInt.Z.of_nat (2 ^ 8) by decide,
+    hdiv, hmod, hmodexp]
+  simp [Binary.FF2B_unchecked, hexp0, hexpmax, hmant0, hthreshold,
+    Binary.Bsign]
+
+private theorem conversion_model_infinity (value : float32)
+    (hfields : exponent32 value = 2 ^ 8 - 1 ∧ fraction32 value = 0)
+    (hbit : BitVec.extractLsb 31 31 value.bits = 0#1 ∨
+      BitVec.extractLsb 31 31 value.bits = 1#1) :
+    decode64 (⟨
+      Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
+        (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary32 value.bits)⟩ : float) =
+      Binary.B754_infinity (sign32 value) := by
+  have hexponent : BitVec.extractLsb 30 23 value.bits = (255#8) := by
+    apply BitVec.eq_of_toNat_eq
+    simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow,
+      exponent32] using hfields.1
+  have hmantissa : BitVec.extractLsb 22 0 value.bits = 0#23 := by
+    apply BitVec.eq_of_toNat_eq
+    simpa [BitVec.extractLsb_toNat, fraction32] using hfields.2
+  have hsign32_eq : sign32 value =
+      ((BitVec.extractLsb 31 31 value.bits).toNat == (1 : Nat)) := by
+    simp [sign32, BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow]
+  have hunpack : Float.Model.UnpackedFloat.unpack Float.Model.Format.binary32 value.bits =
+      Float.Model.UnpackedFloat.infinity
+        (Float.Model.UnpackedFloat.Sign.ofBitVec (BitVec.extractLsb 31 31 value.bits)) := by
+    simp [Float.Model.UnpackedFloat.unpack,
+      Float.Model.UnpackedFloat.unpackExponent,
+      Float.Model.UnpackedFloat.unpackMantissa,
+      Float.Model.UnpackedFloat.unpackSign,
+      hexponent, hmantissa, hbit]
+  have hcert : Binary.BinaryFloatCertificate (prec := z53) (emax := z1024)
+      (Binary.B754_infinity (sign32 value)) := by
+    simp [Binary.BinaryFloatCertificate, Binary.B2FF, Binary.valid_binary]
+  have hround := conversion_encode64_decode
+    (⟨Binary.B754_infinity (sign32 value), hcert⟩ : Binary.CertifiedBinaryFloat z53 z1024)
+  have hbits : (⟨Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
+      (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary32 value.bits)⟩ : float) =
+      encode64 (Binary.B754_infinity (sign32 value)) := by
+    rw [hunpack]
+    apply float.ext
+    apply BitVec.eq_of_toNat_eq
+    rcases hbit with hbit | hbit
+    · simp [encode64, Float.Model.UnpackedFloat.pack,
+        Float.Model.UnpackedFloat.packedInfinity,
+        Float.Model.UnpackedFloat.packComponents,
+        Float.Model.UnpackedFloat.Sign.ofBitVec,
+        Float.Model.UnpackedFloat.Sign.toBitVec, hbit,
+        Bits.bits_of_b64, Bits.bits_of_binary_float, Bits.join_bits, hsign32_eq]
+      decide
+    · simp [encode64, Float.Model.UnpackedFloat.pack,
+        Float.Model.UnpackedFloat.packedInfinity,
+        Float.Model.UnpackedFloat.packComponents,
+        Float.Model.UnpackedFloat.Sign.ofBitVec,
+        Float.Model.UnpackedFloat.Sign.toBitVec, hbit,
+        Bits.bits_of_b64, Bits.bits_of_binary_float, Bits.join_bits, hsign32_eq]
+      decide
+  rw [hbits]
+  exact hround
+set_option maxRecDepth 100000 in
+private theorem conversion_of_single_bconv
+    (value : float32)
+    (conv_nan : Bits.binary32 →
+      IEEE754_extra.NaNResult z53 z1024)
+    (hnotnan : Binary.is_nan (decode32 value) = false) :
+    decode64 (Float.of_single value) =
+      IEEE754_extra.Bconv conv_nan BinarySingleNaN.mode_NE (decode32 value) := by
+  have hnan : isNaN32 value = false := by
+    rw [← conversion_isNaN32_decode value]
+    exact hnotnan
+  cases hvalue : decode32 value with
+  | B754_zero sign =>
+      have hvalue0 := hvalue
+      have hfields : exponent32 value = 0 ∧ fraction32 value = 0 := by
+        have hdiv :
+            Bits.Zdiv (ZArith.BinInt.Z.of_nat value.bits.toNat)
+                (ZArith.BinInt.Z.of_nat (2 ^ 23)) =
+              ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 23) :=
+          zdiv_nat_f64 _ _ (by decide)
+        have hmod :
+            Bits.Zmod (ZArith.BinInt.Z.of_nat value.bits.toNat)
+                (ZArith.BinInt.Z.of_nat (2 ^ 23)) =
+              ZArith.BinInt.Z.of_nat (value.bits.toNat % 2 ^ 23) :=
+          zmod_nat_f64 _ _ (by decide)
+        have hmodexp :
+            Bits.Zmod
+                (ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 23))
+                (ZArith.BinInt.Z.of_nat (2 ^ 8)) =
+              ZArith.BinInt.Z.of_nat ((value.bits.toNat / 2 ^ 23) % 2 ^ 8) :=
+          zmod_nat_f64 _ _ (by decide)
+        have hraw := hvalue
+        unfold decode32 at hraw
+        unfold Bits.b32_of_bits_unchecked Bits.binary_float_of_bits_unchecked
+          Bits.binary_float_of_bits_aux Bits.split_bits at hraw
+        simp only [] at hraw
+        rw [show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 23) =
+              ZArith.BinInt.Z.of_nat (2 ^ 23) by decide,
+          show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 8) =
+              ZArith.BinInt.Z.of_nat (2 ^ 8) by decide,
+          hdiv, hmod, hmodexp] at hraw
+        let exponent := value.bits.toNat / 8388608 % 256
+        let mantissa := value.bits.toNat % 8388608
+        have hzero : ZArith.BinInt.Z.of_nat 0 = Bits.Z0 := by decide
+        have zeq_true {a b : Nat} (h : a = b) :
+            Bits.Zeq_bool (ZArith.BinInt.Z.of_nat a)
+              (ZArith.BinInt.Z.of_nat b) = true := by
+          apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true
+          simpa [h]
+        have zeq_false {a b : Nat} (h : a ≠ b) :
+            Bits.Zeq_bool (ZArith.BinInt.Z.of_nat a)
+              (ZArith.BinInt.Z.of_nat b) = false := by
+          apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false
+          intro hab
+          have hi := congrArg intOfZ hab
+          simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hi
+          exact h (Int.ofNat_inj.mp hi)
+        by_cases he0 : exponent = 0
+        · by_cases hm0 : mantissa = 0
+          · exact ⟨he0, hm0⟩
+          · have hmpos : 0 < mantissa := Nat.pos_of_ne_zero hm0
+            have hmz : ZArith.BinInt.Z.of_nat mantissa =
+                ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat mantissa) := by
+              apply intOfZ_injective
+              simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.pos,
+                intOfZ_zOfInt]
+              exact congrArg Int.ofNat (posToNat_posOfNat hmpos).symm
+            have hexp0 : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent) Bits.Z0 = true :=
+              zeq_true he0
+            have hexpMax : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+                (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 8)) Bits.Zone) = false := by
+              apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false
+              intro h
+              have hi := congrArg intOfZ h
+              have hleft : intOfZ (ZArith.BinInt.Z.of_nat exponent) =
+                  (exponent : Int) := by
+                simp [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+              have hright : intOfZ
+                  (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 8)) Bits.Zone) = 255 := by decide
+              rw [hleft, hright] at hi
+              omega
+            simp [Binary.FF2B_unchecked, exponent, mantissa, hexp0, hexpMax, hmz, he0, hm0] at hraw
+            cases hraw
+        · have hexp0 : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent) Bits.Z0 = false :=
+              zeq_false he0
+          by_cases heMax : exponent = 2 ^ 8 - 1
+          · by_cases hm0 : mantissa = 0
+            · have hmz : ZArith.BinInt.Z.of_nat mantissa = Bits.Z0 := by
+                rw [hm0]
+                decide
+              have hexpMax : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+                  (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 8)) Bits.Zone) = true := by
+                apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true
+                simpa [heMax] using (show ZArith.BinInt.Z.of_nat (2 ^ 8 - 1) =
+                  Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 8)) Bits.Zone by decide)
+              simp [Binary.FF2B_unchecked, exponent, mantissa, hexp0, hexpMax, hmz, heMax, hm0] at hraw
+              cases hraw
+            · have hmpos : 0 < mantissa := Nat.pos_of_ne_zero hm0
+              have hmz : ZArith.BinInt.Z.of_nat mantissa =
+                  ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat mantissa) := by
+                apply intOfZ_injective
+                simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.pos,
+                  intOfZ_zOfInt]
+                exact congrArg Int.ofNat (posToNat_posOfNat hmpos).symm
+              have hexpMax : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+                  (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 8)) Bits.Zone) = true := by
+                apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true
+                simpa [heMax] using (show ZArith.BinInt.Z.of_nat (2 ^ 8 - 1) =
+                  Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 8)) Bits.Zone by decide)
+              simp [Binary.FF2B_unchecked, exponent, mantissa, hexp0, hexpMax, hmz, heMax, hm0] at hraw
+              cases hraw
+          · have hexpMax : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+                (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 8)) Bits.Zone) = false := by
+              apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false
+              intro h
+              have hi := congrArg intOfZ h
+              have hleft : intOfZ (ZArith.BinInt.Z.of_nat exponent) =
+                  (exponent : Int) := by
+                simp [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+              have hright : intOfZ
+                  (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 8)) Bits.Zone) = 255 := by decide
+              rw [hleft, hright] at hi
+              omega
+            simp [Binary.FF2B_unchecked, exponent, mantissa, hexp0, hexpMax, heMax] at hraw
+            cases hsum : Bits.Zadd
+                (ZArith.BinInt.Z.of_nat (value.bits.toNat % 8388608))
+                (ZArith.BinInt.Z.of_nat 8388608) <;>
+              simp [hsum] at hraw
+      have hsign32_eq : sign32 value =
+          ((BitVec.extractLsb 31 31 value.bits).toNat == (1 : Nat)) := by
+        simp [sign32, BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow]
+      rcases BitVec.eq_zero_or_eq_one (BitVec.extractLsb 31 31 value.bits) with hbit | hbit
+      · have hz := conversion_model_zero value hfields hbit
+        have hsignraw := congrArg Binary.Bsign hvalue0
+        have hdecode_sign := conversion_decode32_zero_sign value hfields
+        have hsignraw' : Binary.Bsign (decode32 value) = sign := by
+          simpa [Binary.Bsign] using hsignraw
+        have hsign : sign32 value = sign := by
+          exact hdecode_sign.symm.trans hsignraw'
+        simp only [Float.of_single, hnan, hvalue0, Bool.false_eq_true, ↓reduceIte]
+        simp only [IEEE754_extra.Bconv]
+        rw [hsign] at hz
+        exact hz
+      · have hz := conversion_model_zero_neg value hfields hbit
+        have hsignraw := congrArg Binary.Bsign hvalue0
+        have hdecode_sign := conversion_decode32_zero_sign value hfields
+        have hsignraw' : Binary.Bsign (decode32 value) = sign := by
+          simpa [Binary.Bsign] using hsignraw
+        have hsign : sign32 value = sign := by
+          exact hdecode_sign.symm.trans hsignraw'
+        simp only [Float.of_single, hnan, hvalue0, Bool.false_eq_true, ↓reduceIte]
+        simp only [IEEE754_extra.Bconv]
+        rw [hsign] at hz
+        exact hz
+  | B754_infinity sign =>
+      have hvalue0 := hvalue
+      have hfields : exponent32 value = 2 ^ 8 - 1 ∧ fraction32 value = 0 := by
+        have hdiv :
+            Bits.Zdiv (ZArith.BinInt.Z.of_nat value.bits.toNat)
+                (ZArith.BinInt.Z.of_nat (2 ^ 23)) =
+              ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 23) :=
+          zdiv_nat_f64 _ _ (by decide)
+        have hmod :
+            Bits.Zmod (ZArith.BinInt.Z.of_nat value.bits.toNat)
+                (ZArith.BinInt.Z.of_nat (2 ^ 23)) =
+              ZArith.BinInt.Z.of_nat (value.bits.toNat % 2 ^ 23) :=
+          zmod_nat_f64 _ _ (by decide)
+        have hmodexp :
+            Bits.Zmod
+                (ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 23))
+                (ZArith.BinInt.Z.of_nat (2 ^ 8)) =
+              ZArith.BinInt.Z.of_nat ((value.bits.toNat / 2 ^ 23) % 2 ^ 8) :=
+          zmod_nat_f64 _ _ (by decide)
+        have hraw := hvalue
+        unfold decode32 at hraw
+        unfold Bits.b32_of_bits_unchecked Bits.binary_float_of_bits_unchecked
+          Bits.binary_float_of_bits_aux Bits.split_bits at hraw
+        simp only [] at hraw
+        rw [show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 23) =
+              ZArith.BinInt.Z.of_nat (2 ^ 23) by decide,
+          show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 8) =
+              ZArith.BinInt.Z.of_nat (2 ^ 8) by decide,
+          hdiv, hmod, hmodexp] at hraw
+        have hzero : ZArith.BinInt.Z.of_nat 0 = Bits.Z0 := by decide
+        have hmax : Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 8)) Bits.Zone =
+            ZArith.BinInt.Z.of_nat (2 ^ 8 - 1) := by decide
+        let exponent := value.bits.toNat / 8388608 % 256
+        let mantissa := value.bits.toNat % 8388608
+        have zeq_true {a b : Nat} (h : a = b) :
+            Bits.Zeq_bool (ZArith.BinInt.Z.of_nat a)
+              (ZArith.BinInt.Z.of_nat b) = true := by
+          apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true
+          simpa [h]
+        have zeq_false {a b : Nat} (h : a ≠ b) :
+            Bits.Zeq_bool (ZArith.BinInt.Z.of_nat a)
+              (ZArith.BinInt.Z.of_nat b) = false := by
+          apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false
+          intro hab
+          have hi := congrArg intOfZ hab
+          simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hi
+          exact h (Int.ofNat_inj.mp hi)
+        have hmax_nat : 255 = 2 ^ 8 - 1 := by decide
+        by_cases he0 : exponent = 0
+        · have hexp0 := zeq_true he0
+          have hexpmax : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+              (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 8)) Bits.Zone) = false := by
+            rw [hmax]
+            exact zeq_false (by omega)
+          have hexpmaxraw : Bits.Zeq_bool
+              (ZArith.BinInt.Z.of_nat (value.bits.toNat / 8388608 % 256))
+              (ZArith.BinInt.Z.of_nat 255) = false := by
+            simpa [exponent] using (show Bits.Zeq_bool
+              (ZArith.BinInt.Z.of_nat exponent) (ZArith.BinInt.Z.of_nat 255) = false by
+              exact zeq_false (by omega))
+          by_cases hm0 : mantissa = 0
+          · have hmant := zeq_true hm0
+            simp [Binary.FF2B_unchecked, exponent, mantissa, hzero, hmax,
+              hexp0, hexpmax, hexpmaxraw, hmant, he0, hm0] at hraw
+            cases hraw
+          · have hmpos : 0 < mantissa := Nat.pos_of_ne_zero hm0
+            have hmz : ZArith.BinInt.Z.of_nat mantissa =
+                ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat mantissa) := by
+              apply intOfZ_injective
+              simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.pos, intOfZ_zOfInt]
+              exact congrArg Int.ofNat (posToNat_posOfNat hmpos).symm
+            have hmant := zeq_false hm0
+            simp [Binary.FF2B_unchecked, exponent, mantissa, hzero, hmax,
+              hexp0, hexpmax, hmant, hmz, he0, hm0] at hraw
+            cases hraw
+        · have hexp0 := zeq_false he0
+          by_cases hemax : exponent = 2 ^ 8 - 1
+          · have hexpmax : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+                (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 8)) Bits.Zone) = true := by
+              apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true
+              simpa [hemax] using (show ZArith.BinInt.Z.of_nat (2 ^ 8 - 1) =
+                Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 8)) Bits.Zone by decide)
+            have hexpmaxraw : Bits.Zeq_bool
+                (ZArith.BinInt.Z.of_nat (value.bits.toNat / 8388608 % 256))
+                (ZArith.BinInt.Z.of_nat 255) = true := by
+              simpa [exponent] using (show Bits.Zeq_bool
+                (ZArith.BinInt.Z.of_nat exponent) (ZArith.BinInt.Z.of_nat 255) = true by
+                exact zeq_true hemax)
+            by_cases hm0 : mantissa = 0
+            · constructor
+              · simpa [exponent32, exponent] using hemax
+              · simpa [fraction32, mantissa] using hm0
+            · have hmpos : 0 < mantissa := Nat.pos_of_ne_zero hm0
+              have hmz : ZArith.BinInt.Z.of_nat mantissa =
+                  ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat mantissa) := by
+                apply intOfZ_injective
+                simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.pos, intOfZ_zOfInt]
+                exact congrArg Int.ofNat (posToNat_posOfNat hmpos).symm
+              have hmant := zeq_false hm0
+              simp [Binary.FF2B_unchecked, exponent, mantissa, hzero, hmax,
+                hexp0, hexpmax, hexpmaxraw, hmz, hemax, hm0, hmant] at hraw
+              cases hraw
+          · have hexpmax : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+                (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 8)) Bits.Zone) = false := by
+              apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false
+              intro h
+              have hi := congrArg intOfZ h
+              have hleft : intOfZ (ZArith.BinInt.Z.of_nat exponent) =
+                  (exponent : Int) := by
+                simp [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+              have hright : intOfZ
+                  (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 8)) Bits.Zone) = 255 := by decide
+              rw [hleft, hright] at hi
+              omega
+            by_cases hm0 : mantissa = 0
+            · have hmz : ZArith.BinInt.Z.of_nat mantissa = Bits.Z0 := by
+                rw [hm0]
+                decide
+              have hexp0raw : Bits.Zeq_bool
+                  (ZArith.BinInt.Z.of_nat (value.bits.toNat / 8388608 % 256)) Bits.Z0 = false := by
+                simpa [exponent, hzero] using hexp0
+              have hexpmaxraw : Bits.Zeq_bool
+                  (ZArith.BinInt.Z.of_nat (value.bits.toNat / 8388608 % 256))
+                  (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 8)) Bits.Zone) = false := by
+                simpa [exponent, hmax] using hexpmax
+              have hexpmaxraw255 : Bits.Zeq_bool
+                  (ZArith.BinInt.Z.of_nat (value.bits.toNat / 8388608 % 256))
+                  (ZArith.BinInt.Z.of_nat 255) = false := by
+                simpa [exponent] using (show Bits.Zeq_bool
+                  (ZArith.BinInt.Z.of_nat exponent) (ZArith.BinInt.Z.of_nat 255) = false by
+                  exact zeq_false (by omega))
+              have hsum0 : Bits.Zadd Bits.Z0 (ZArith.BinInt.Z.of_nat 8388608) =
+                  ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat 8388608) := by decide
+              simp [Binary.FF2B_unchecked, mantissa, hm0, hzero, hmax, hexp0raw, hexpmaxraw,
+                hexpmaxraw255,
+                hmz, hsum0] at hraw
+            · have hmpos : 0 < mantissa := Nat.pos_of_ne_zero hm0
+              have hmz : ZArith.BinInt.Z.of_nat mantissa =
+                  ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat mantissa) := by
+                apply intOfZ_injective
+                simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.pos, intOfZ_zOfInt]
+                exact congrArg Int.ofNat (posToNat_posOfNat hmpos).symm
+              have hexp0raw : Bits.Zeq_bool
+                  (ZArith.BinInt.Z.of_nat (value.bits.toNat / 8388608 % 256)) Bits.Z0 = false := by
+                simpa [exponent, hzero] using hexp0
+              have hexpmaxraw : Bits.Zeq_bool
+                  (ZArith.BinInt.Z.of_nat (value.bits.toNat / 8388608 % 256))
+                  (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 8)) Bits.Zone) = false := by
+                simpa [exponent, hmax] using hexpmax
+              have hexpmaxraw255 : Bits.Zeq_bool
+                  (ZArith.BinInt.Z.of_nat (value.bits.toNat / 8388608 % 256))
+                  (ZArith.BinInt.Z.of_nat 255) = false := by
+                simpa [exponent] using (show Bits.Zeq_bool
+                  (ZArith.BinInt.Z.of_nat exponent) (ZArith.BinInt.Z.of_nat 255) = false by
+                  exact zeq_false (by omega))
+              cases hsum : Bits.Zadd
+                  (ZArith.BinInt.Z.of_nat (value.bits.toNat % 8388608))
+                  (ZArith.BinInt.Z.of_nat 8388608) <;>
+                simp [Binary.FF2B_unchecked, hzero, hmax,
+                  hexp0raw, hexpmaxraw, hexpmaxraw255, hmz, hsum] at hraw <;>
+                cases hraw
+      have hbit : BitVec.extractLsb 31 31 value.bits = 0#1 ∨
+          BitVec.extractLsb 31 31 value.bits = 1#1 :=
+        BitVec.eq_zero_or_eq_one _
+      have hz := conversion_model_infinity value hfields hbit
+      have hsignraw := congrArg Binary.Bsign hvalue0
+      have hdecode_sign := conversion_decode32_infinity_sign value hfields
+      have hsignraw' : Binary.Bsign (decode32 value) = sign := by
+        simpa [Binary.Bsign] using hsignraw
+      have hsign : sign32 value = sign := by
+        exact hdecode_sign.symm.trans hsignraw'
+      simp only [Float.of_single, hnan, hvalue0, Bool.false_eq_true, ↓reduceIte]
+      simp only [IEEE754_extra.Bconv]
+      rw [hsign] at hz
+      exact hz
+  | B754_nan sign payload =>
+      rw [hvalue] at hnotnan
+      simp [Binary.is_nan] at hnotnan
+  | B754_finite sign mantissa exponent =>
+      simp only [Float.of_single, hnan, hvalue, Bool.false_eq_true, ↓reduceIte]
+      have hnorm := Binary.binary_normalize_result_obligation_proof
+        (prec := z53) (emax := z1024) BinarySingleNaN.mode_NE
+        (CompCert4Lean.Flocq.Core.Zaux.cond_Zopp sign (.Zpos mantissa)) exponent sign
+      have hround := conversion_encode64_decode
+        (⟨Binary.binary_normalize BinarySingleNaN.mode_NE
+          (CompCert4Lean.Flocq.Core.Zaux.cond_Zopp sign (.Zpos mantissa)) exponent sign,
+          hnorm⟩ : Binary.CertifiedBinaryFloat z53 z1024)
+      simpa [IEEE754_extra.Bconv] using hround
+
+private theorem conversion_zeq_nat_true {a b : Nat} (h : a = b) :
+    Bits.Zeq_bool (ZArith.BinInt.Z.of_nat a)
+      (ZArith.BinInt.Z.of_nat b) = true := by
+  rw [h]
+  exact CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true _ _ rfl
+
+private theorem conversion_zeq_nat_false {a b : Nat} (h : a ≠ b) :
+    Bits.Zeq_bool (ZArith.BinInt.Z.of_nat a)
+      (ZArith.BinInt.Z.of_nat b) = false := by
+  apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false
+  intro hab
+  have hi := congrArg intOfZ hab
+  simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hi
+  exact h (Int.ofNat_inj.mp hi)
+
+private theorem conversion_zadd64_positive (n : Nat) (hn : 0 < n) :
+    ∃ p : positive,
+      Bits.Zadd (ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat n))
+          (ZArith.BinInt.Z.of_nat 4503599627370496) = ZArith.BinInt.Z.pos p := by
+  have hpos : 0 < intOfZ
+      (Bits.Zadd (ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat n))
+        (ZArith.BinInt.Z.of_nat 4503599627370496)) := by
+    change 0 < intOfZ (ZArith.BinInt.Z.add
+      (ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat n))
+      (ZArith.BinInt.Z.of_nat 4503599627370496))
+    simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.pos,
+      ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    change 0 < (posToNat (PArith.BinPos.Pos.of_nat n) : Int) + 4503599627370496
+    have hnat : posToNat (PArith.BinPos.Pos.of_nat n) = n := by
+      change posToNat (posOfNat n) = n
+      exact posToNat_posOfNat hn
+    rw [hnat]
+    omega
+  cases h : Bits.Zadd
+      (ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat n))
+      (ZArith.BinInt.Z.of_nat 4503599627370496) with
+  | Z0 =>
+      rw [h] at hpos
+      change (0 : Int) < 0 at hpos
+      omega
+  | Zpos p => exact ⟨p, by simpa only using h⟩
+  | Zneg p =>
+      rw [h] at hpos
+      change 0 < -(posToNat p : Int) at hpos
+      omega
+
+private theorem conversion_isNaN64_decode (value : float) :
+    Binary.is_nan (decode64 value) = isNaN64 value := by
+  unfold decode64 isNaN64 Binary.is_nan
+  change Binary.is_nan
+    (Bits.binary_float_of_bits_unchecked
+      (ZArith.BinInt.Z.of_nat 52) (ZArith.BinInt.Z.of_nat 11) _ _ _
+      (ZArith.BinInt.Z.of_nat value.bits.toNat)) = _
+  have hdiv :
+      Bits.Zdiv (ZArith.BinInt.Z.of_nat value.bits.toNat)
+          (ZArith.BinInt.Z.of_nat (2 ^ 52)) =
+        ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 52) :=
+    zdiv_nat_f64 _ _ (by decide)
+  have hmod :
+      Bits.Zmod (ZArith.BinInt.Z.of_nat value.bits.toNat)
+          (ZArith.BinInt.Z.of_nat (2 ^ 52)) =
+        ZArith.BinInt.Z.of_nat (value.bits.toNat % 2 ^ 52) :=
+    zmod_nat_f64 _ _ (by decide)
+  have hmodexp :
+      Bits.Zmod
+          (ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 52))
+          (ZArith.BinInt.Z.of_nat (2 ^ 11)) =
+        ZArith.BinInt.Z.of_nat ((value.bits.toNat / 2 ^ 52) % 2 ^ 11) :=
+    zmod_nat_f64 _ _ (by decide)
+  unfold Bits.binary_float_of_bits_unchecked Bits.binary_float_of_bits_aux
+  unfold Bits.split_bits
+  simp only []
+  rw [show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 52) =
+      ZArith.BinInt.Z.of_nat (2 ^ 52) by decide,
+    show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 11) =
+      ZArith.BinInt.Z.of_nat (2 ^ 11) by decide,
+    hdiv, hmod, hmodexp]
+  simp only [exponent64, fraction64]
+  let exponent : Nat := value.bits.toNat / 4503599627370496 % 2048
+  let mantissa : Nat := value.bits.toNat % 4503599627370496
+  dsimp [exponent, mantissa] at *
+  have hmaxz : Bits.Zsub (ZArith.BinInt.Z.of_nat 2048) Bits.Zone =
+      ZArith.BinInt.Z.of_nat 2047 := by decide
+  have hpowz : Bits.Zadd Bits.Z0
+      (ZArith.BinInt.Z.of_nat 4503599627370496) =
+      ZArith.BinInt.Z.of_nat 4503599627370496 := by decide
+  have hpowpos : Bits.Zadd Bits.Z0
+      (ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat 4503599627370496)) =
+      ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat 4503599627370496) := by decide
+  have h450 : ZArith.BinInt.Z.of_nat 4503599627370496 =
+      ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat 4503599627370496) := by decide
+  have hzero : ZArith.BinInt.Z.of_nat 0 = Bits.Z0 := by decide
+  have h00 : Bits.Zeq_bool Bits.Z0 Bits.Z0 = true := by decide
+  have h0max : Bits.Zeq_bool Bits.Z0 (ZArith.BinInt.Z.of_nat 2047) = false := by decide
+  have h2047zero : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat 2047) Bits.Z0 = false := by decide
+  have h2047eq : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat 2047)
+      (ZArith.BinInt.Z.of_nat 2047) = true := by decide
+  by_cases he0 : exponent = 0
+  · have hexp0 := conversion_zeq_nat_true he0
+    have hexpmax : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+        (Bits.Zsub (ZArith.BinInt.Z.of_nat 2048) Bits.Zone) = false := by
+      rw [hmaxz]
+      exact conversion_zeq_nat_false (by omega)
+    have hexp0' : Bits.Zeq_bool
+        (ZArith.BinInt.Z.of_nat (value.bits.toNat / 4503599627370496 % 2048)) Bits.Z0 = true := by
+      simpa [exponent, hzero] using hexp0
+    have hexpmax' : Bits.Zeq_bool
+        (ZArith.BinInt.Z.of_nat (value.bits.toNat / 4503599627370496 % 2048))
+        (Bits.Zsub (ZArith.BinInt.Z.of_nat 2048) Bits.Zone) = false := by
+      simpa [exponent] using hexpmax
+    by_cases hm0 : mantissa = 0
+    · have hmant := conversion_zeq_nat_true hm0
+      have hmant' : Bits.Zeq_bool
+          (ZArith.BinInt.Z.of_nat (value.bits.toNat % 4503599627370496)) Bits.Z0 = true := by
+        simpa [mantissa, hzero] using hmant
+      simp [Binary.is_nan, Binary.FF2B_unchecked, exponent, mantissa, hzero,
+        hmaxz, h00, h0max, hexp0, hexpmax, hexp0', hexpmax', hmant, hmant', he0, hm0]
+    · have hmpos : 0 < mantissa := Nat.pos_of_ne_zero hm0
+      have hmz : ZArith.BinInt.Z.of_nat mantissa =
+          ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat mantissa) := by
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.pos,
+          intOfZ_zOfInt]
+        exact congrArg Int.ofNat (posToNat_posOfNat hmpos).symm
+      have hmraw : ZArith.BinInt.Z.of_nat (value.bits.toNat % 4503599627370496) =
+          ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat (value.bits.toNat % 4503599627370496)) := by
+        simpa [mantissa] using hmz
+      have hmneq : value.bits.toNat % 4503599627370496 ≠ 0 := by
+        simpa [mantissa] using hm0
+      simp [Binary.is_nan, Binary.FF2B_unchecked, exponent, mantissa, hzero,
+        hmaxz, h00, h0max, hexp0, hexpmax, hexp0', hexpmax', hmraw, he0, hm0, hmneq]
+  · by_cases hemax : exponent = 2047
+    · have hexp0 := conversion_zeq_nat_false (show exponent ≠ 0 by omega)
+      have hexpmax : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+          (Bits.Zsub (ZArith.BinInt.Z.of_nat 2048) Bits.Zone) = true := by
+        rw [hmaxz]
+        exact conversion_zeq_nat_true hemax
+      have hexp0' : Bits.Zeq_bool
+          (ZArith.BinInt.Z.of_nat (value.bits.toNat / 4503599627370496 % 2048)) Bits.Z0 = false := by
+        simpa [exponent, hzero] using hexp0
+      have hexpmax' : Bits.Zeq_bool
+          (ZArith.BinInt.Z.of_nat (value.bits.toNat / 4503599627370496 % 2048))
+          (Bits.Zsub (ZArith.BinInt.Z.of_nat 2048) Bits.Zone) = true := by
+        simpa [exponent] using hexpmax
+      have hexp2047' : Bits.Zeq_bool
+          (ZArith.BinInt.Z.of_nat (value.bits.toNat / 4503599627370496 % 2048))
+          (ZArith.BinInt.Z.of_nat 2047) = true := by
+        simpa [hmaxz] using hexpmax'
+      by_cases hm0 : mantissa = 0
+      · have hmant := conversion_zeq_nat_true hm0
+        have hmant' : Bits.Zeq_bool
+            (ZArith.BinInt.Z.of_nat (value.bits.toNat % 4503599627370496)) Bits.Z0 = true := by
+          simpa [mantissa, hzero] using hmant
+        simp [Binary.is_nan, Binary.FF2B_unchecked, exponent, mantissa, hzero,
+          hmaxz, h2047zero, h2047eq, hexp0, hexpmax, hexp0', hexpmax', hexp2047', hmant, hmant', hemax, hm0]
+      · have hmpos : 0 < mantissa := Nat.pos_of_ne_zero hm0
+        have hmz : ZArith.BinInt.Z.of_nat mantissa =
+            ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat mantissa) := by
+          apply intOfZ_injective
+          simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.pos,
+            intOfZ_zOfInt]
+          exact congrArg Int.ofNat (posToNat_posOfNat hmpos).symm
+        have hmraw : ZArith.BinInt.Z.of_nat (value.bits.toNat % 4503599627370496) =
+            ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat (value.bits.toNat % 4503599627370496)) := by
+          simpa [mantissa] using hmz
+        have hmneq : value.bits.toNat % 4503599627370496 ≠ 0 := by
+          simpa [mantissa] using hm0
+        simp [Binary.is_nan, Binary.FF2B_unchecked, exponent, mantissa, hzero,
+          hmaxz, h2047zero, h2047eq, hexp0, hexpmax, hexp0', hexpmax', hexp2047', hmraw, hemax, hm0, hmneq]
+    · have hexp0 := conversion_zeq_nat_false (show exponent ≠ 0 by omega)
+      have hexpmax : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+          (Bits.Zsub (ZArith.BinInt.Z.of_nat 2048) Bits.Zone) = false := by
+        rw [hmaxz]
+        exact conversion_zeq_nat_false (by omega)
+      have hexp0' : Bits.Zeq_bool
+          (ZArith.BinInt.Z.of_nat (value.bits.toNat / 4503599627370496 % 2048)) Bits.Z0 = false := by
+        simpa [exponent, hzero] using hexp0
+      have hexpmax' : Bits.Zeq_bool
+          (ZArith.BinInt.Z.of_nat (value.bits.toNat / 4503599627370496 % 2048))
+          (Bits.Zsub (ZArith.BinInt.Z.of_nat 2048) Bits.Zone) = false := by
+        simpa [exponent] using hexpmax
+      have hexp2047' : Bits.Zeq_bool
+          (ZArith.BinInt.Z.of_nat (value.bits.toNat / 4503599627370496 % 2048))
+          (ZArith.BinInt.Z.of_nat 2047) = false := by
+        simpa [hmaxz] using hexpmax'
+      by_cases hm0 : mantissa = 0
+      · have hmant := conversion_zeq_nat_true hm0
+        have hmant' : Bits.Zeq_bool
+            (ZArith.BinInt.Z.of_nat (value.bits.toNat % 4503599627370496)) Bits.Z0 = true := by
+          simpa [mantissa, hzero] using hmant
+        simp [Binary.is_nan, Binary.FF2B_unchecked, exponent, mantissa, hzero,
+          hpowz, hpowpos, h450, hmaxz, h00, h0max, hexp0, hexpmax, hexp0', hexpmax', hexp2047', hmant, hmant', hemax, hm0]
+      · have hmpos : 0 < mantissa := Nat.pos_of_ne_zero hm0
+        have hmz : ZArith.BinInt.Z.of_nat mantissa =
+            ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat mantissa) := by
+          apply intOfZ_injective
+          simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.pos,
+            intOfZ_zOfInt]
+          exact congrArg Int.ofNat (posToNat_posOfNat hmpos).symm
+        obtain ⟨p, hp⟩ := conversion_zadd64_positive mantissa hmpos
+        have hmraw : ZArith.BinInt.Z.of_nat (value.bits.toNat % 4503599627370496) =
+            ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat (value.bits.toNat % 4503599627370496)) := by
+          simpa [mantissa] using hmz
+        have hmneq : value.bits.toNat % 4503599627370496 ≠ 0 := by
+          simpa [mantissa] using hm0
+        simp [Binary.is_nan, Binary.FF2B_unchecked, exponent, mantissa, hzero,
+          hpowz, hpowpos, hmaxz, h00, h0max, hp, hexp0, hexpmax, hexp0', hexpmax', hexp2047', hmraw, hemax, hm0, hmneq]
+
+private theorem conversion_range32_to64
+    (value : float32) (minimum1 maximum1 minimum2 maximum2 : Z)
+    (hminimum : ZArith.Zbool.Zle_bool minimum2 minimum1 = true)
+    (hmaximum : ZArith.Zbool.Zle_bool maximum1 maximum2 = true)
+    (conv_nan : Bits.binary32 → IEEE754_extra.NaNResult z53 z1024)
+    (rounding : IEEE754_extra.mode) (n : Z)
+    (hvalue : IEEE754_extra.ZofB_range (decode32 value) minimum1 maximum1 = some n) :
+    IEEE754_extra.ZofB_range
+      (IEEE754_extra.Bconv conv_nan rounding (decode32 value)) minimum2 maximum2 = some n := by
+  have hnotnan : Binary.is_nan (decode32 value) = false := by
+    unfold IEEE754_extra.ZofB_range at hvalue
+    cases hdecoded : decode32 value <;>
+      simp [hdecoded, IEEE754_extra.ZofB, Binary.is_nan] at hvalue ⊢
+  have hminimum' : IEEE754_extra.Zle minimum2 minimum1 := by
+    have hs := CompCert4Lean.Flocq.Core.Zaux.Zle_bool_spec minimum2 minimum1
+    have hs' : CompCert4Lean.Flocq.Core.Zaux.Zle_bool_prop minimum2 minimum1 true := by
+      simpa [hminimum] using hs
+    cases hs' with
+    | Zle_bool_true_ h => exact h
+  have hmaximum' : IEEE754_extra.Zle maximum1 maximum2 := by
+    have hs := CompCert4Lean.Flocq.Core.Zaux.Zle_bool_spec maximum1 maximum2
+    have hs' : CompCert4Lean.Flocq.Core.Zaux.Zle_bool_prop maximum1 maximum2 true := by
+      simpa [hmaximum] using hs
+    cases hs' with
+    | Zle_bool_true_ h => exact h
+  have hconversion := conversion_of_single_bconv value conv_nan hnotnan
+  have hrange := IEEE754_extra.ZofB_range_Bconv
+    (prec1 := z24) (emax1 := z128) (prec2 := z53) (emax2 := z1024)
+    minimum1 maximum1 minimum2 maximum2
+    (by change (24 : Int) ≤ 53; decide) (by change (128 : Int) ≤ 1024; decide)
+    hminimum' hmaximum' conv_nan rounding
+    ⟨decode32 value, conversion_decode32_valid value⟩ n hvalue
+  exact hrange
+
+theorem Float32.to_intu_double : Float32.to_intu_doubleStatement := by
+  intro value result hresult
+  unfold Float32.to_intu at hresult
+  cases hsource : IEEE754_extra.ZofB_range (decode32 value) z0 Integers.Int.max_unsigned with
+  | none => simp [hsource] at hresult
+  | some source =>
+      have hrepr : Integers.Int.repr source = result := by
+        simpa [hsource] using hresult
+      have hinversion := IEEE754_extra.ZofB_range_inversion
+        ⟨decode32 value, conversion_decode32_valid value⟩
+        z0 Integers.Int.max_unsigned source hsource
+      have hsource_eq : source = Integers.Int.unsigned result := by
+        have hu := congrArg Integers.Int.unsigned hrepr
+        rw [Integers.Int.unsigned_repr_proof_api source ⟨hinversion.1, hinversion.2.1⟩] at hu
+        simpa using hu
+      have htransport := conversion_range32_to64 value z0 Integers.Int.max_unsigned
+        z0 Integers.Int.max_unsigned (by decide) (by decide)
+        (fun _ => ⟨Binary.B754_nan false .xH, by
+          simp only [Binary.BinaryFloatCertificate, Binary.B2FF, Binary.valid_binary,
+            Binary.nan_pl]
+          constructor
+          · rfl
+          · apply CompCert4Lean.Flocq.Core.Zaux.Zlt_bool_true
+            change (1 : Int) < 53
+            decide
+          ⟩)
+        BinarySingleNaN.mode_NE source hsource
+      have hnotnan : Binary.is_nan (decode32 value) = false := by
+        unfold IEEE754_extra.ZofB_range at hsource
+        cases hdecoded : decode32 value <;>
+          simp [hdecoded, IEEE754_extra.ZofB, Binary.is_nan] at hsource ⊢
+      have hconversion := conversion_of_single_bconv value
+        (fun _ => ⟨Binary.B754_nan false .xH, by
+          simp only [Binary.BinaryFloatCertificate, Binary.B2FF, Binary.valid_binary,
+            Binary.nan_pl]
+          constructor
+          · rfl
+          · apply CompCert4Lean.Flocq.Core.Zaux.Zlt_bool_true
+            change (1 : Int) < 53
+            decide
+          ⟩) hnotnan
+      have htarget : IEEE754_extra.ZofB_range
+          (decode64 (Float.of_single value)) z0 Integers.Int.max_unsigned = some source := by
+        rw [hconversion]
+        exact htransport
+      unfold Float.to_intu
+      change Option.map Integers.Int.repr
+        (IEEE754_extra.ZofB_range (decode64 (Float.of_single value)) z0 Integers.Int.max_unsigned) = some result
+      rw [htarget]
+      simpa [hrepr]
+
+theorem Float32.to_long_double : Float32.to_long_doubleStatement := by
+  intro value result hresult
+  unfold Float32.to_long at hresult
+  cases hsource : IEEE754_extra.ZofB_range (decode32 value)
+      Integers.Int64.min_signed Integers.Int64.max_signed with
+  | none => simp [hsource] at hresult
+  | some source =>
+      have hrepr : Integers.Int64.repr source = result := by
+        simpa [hsource] using hresult
+      have hinversion := IEEE754_extra.ZofB_range_inversion
+        ⟨decode32 value, conversion_decode32_valid value⟩
+        Integers.Int64.min_signed Integers.Int64.max_signed source hsource
+      have hsource_eq : source = Integers.Int64.signed result := by
+        have hs := congrArg Integers.Int64.signed hrepr
+        rw [Integers.Int64.signed_repr_proof source ⟨hinversion.1, hinversion.2.1⟩] at hs
+        simpa using hs
+      have htransport := conversion_range32_to64 value
+        Integers.Int64.min_signed Integers.Int64.max_signed
+        Integers.Int64.min_signed Integers.Int64.max_signed (by decide) (by decide)
+        (fun _ => ⟨Binary.B754_nan false .xH, by
+          simp only [Binary.BinaryFloatCertificate, Binary.B2FF, Binary.valid_binary,
+            Binary.nan_pl]
+          constructor
+          · rfl
+          · apply CompCert4Lean.Flocq.Core.Zaux.Zlt_bool_true
+            change (1 : Int) < 53
+            decide
+          ⟩)
+        BinarySingleNaN.mode_NE source hsource
+      have hnotnan : Binary.is_nan (decode32 value) = false := by
+        unfold IEEE754_extra.ZofB_range at hsource
+        cases hdecoded : decode32 value <;>
+          simp [hdecoded, IEEE754_extra.ZofB, Binary.is_nan] at hsource ⊢
+      have hconversion := conversion_of_single_bconv value
+        (fun _ => ⟨Binary.B754_nan false .xH, by
+          simp only [Binary.BinaryFloatCertificate, Binary.B2FF, Binary.valid_binary,
+            Binary.nan_pl]
+          constructor
+          · rfl
+          · apply CompCert4Lean.Flocq.Core.Zaux.Zlt_bool_true
+            change (1 : Int) < 53
+            decide
+          ⟩) hnotnan
+      have htarget : IEEE754_extra.ZofB_range
+          (decode64 (Float.of_single value)) Integers.Int64.min_signed
+            Integers.Int64.max_signed = some source := by
+        rw [hconversion]
+        exact htransport
+      unfold Float.to_long
+      change Option.map Integers.Int64.repr
+        (IEEE754_extra.ZofB_range (decode64 (Float.of_single value))
+          Integers.Int64.min_signed Integers.Int64.max_signed) = some result
+      rw [htarget]
+      simpa [hrepr]
+
+theorem Float32.to_longu_double : Float32.to_longu_doubleStatement := by
+  intro value result hresult
+  unfold Float32.to_longu at hresult
+  cases hsource : IEEE754_extra.ZofB_range (decode32 value) z0 Integers.Int64.max_unsigned with
+  | none => simp [hsource] at hresult
+  | some source =>
+      have hrepr : Integers.Int64.repr source = result := by
+        simpa [hsource] using hresult
+      have hinversion := IEEE754_extra.ZofB_range_inversion
+        ⟨decode32 value, conversion_decode32_valid value⟩
+        z0 Integers.Int64.max_unsigned source hsource
+      have hsource_eq : source = Integers.Int64.unsigned result := by
+        have hu := congrArg Integers.Int64.unsigned hrepr
+        rw [Integers.Int64.unsigned_repr_proof source ⟨hinversion.1, hinversion.2.1⟩] at hu
+        simpa using hu
+      have htransport := conversion_range32_to64 value z0 Integers.Int64.max_unsigned
+        z0 Integers.Int64.max_unsigned (by decide) (by decide)
+        (fun _ => ⟨Binary.B754_nan false .xH, by
+          simp only [Binary.BinaryFloatCertificate, Binary.B2FF, Binary.valid_binary,
+            Binary.nan_pl]
+          constructor
+          · rfl
+          · apply CompCert4Lean.Flocq.Core.Zaux.Zlt_bool_true
+            change (1 : Int) < 53
+            decide
+          ⟩)
+        BinarySingleNaN.mode_NE source hsource
+      have hnotnan : Binary.is_nan (decode32 value) = false := by
+        unfold IEEE754_extra.ZofB_range at hsource
+        cases hdecoded : decode32 value <;>
+          simp [hdecoded, IEEE754_extra.ZofB, Binary.is_nan] at hsource ⊢
+      have hconversion := conversion_of_single_bconv value
+        (fun _ => ⟨Binary.B754_nan false .xH, by
+          simp only [Binary.BinaryFloatCertificate, Binary.B2FF, Binary.valid_binary,
+            Binary.nan_pl]
+          constructor
+          · rfl
+          · apply CompCert4Lean.Flocq.Core.Zaux.Zlt_bool_true
+            change (1 : Int) < 53
+            decide
+          ⟩) hnotnan
+      have htarget : IEEE754_extra.ZofB_range
+          (decode64 (Float.of_single value)) z0 Integers.Int64.max_unsigned = some source := by
+        rw [hconversion]
+        exact htransport
+      unfold Float.to_longu
+      change Option.map Integers.Int64.repr
+        (IEEE754_extra.ZofB_range (decode64 (Float.of_single value)) z0
+          Integers.Int64.max_unsigned) = some result
+      rw [htarget]
+      simpa [hrepr]
+
+private theorem manual_fexp_canonical64 (mantissa : positive) (exponent : Z)
+    (digits : posToNat (BinarySingleNaN.digits2_pos mantissa) = 53)
+    (minimum : -1074 ≤ intOfZ exponent) :
+    BinarySingleNaN.fexp0 z53 z1024
+      (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa)) exponent) = exponent := by
+  have digits_value : (.Zpos (BinarySingleNaN.digits2_pos mantissa) : Z) = z53 := by
+    apply intOfZ_injective
+    change (posToNat (BinarySingleNaN.digits2_pos mantissa) : Int) = 53
+    rw [digits]
+    rfl
+  have cancel : ZArith.BinInt.Z.sub (ZArith.BinInt.Z.add z53 exponent) z53 = exponent := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    omega
+  change ZArith.BinInt.Z.max
+    (ZArith.BinInt.Z.sub
+      (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa)) exponent) z53)
+    (BinarySingleNaN.emin0 z53 z1024) = exponent
+  rw [digits_value, cancel]
+  exact ZArith.BinInt.Z.max_l _ _ minimum
+
+private theorem manual_round_aux_canonical64 (sign : Bool) (mantissa : positive) (exponent : Z)
+    (digits : posToNat (BinarySingleNaN.digits2_pos mantissa) = 53)
+    (minimum : -1074 ≤ intOfZ exponent) (maximum : intOfZ exponent ≤ 971) :
+    BinarySingleNaN.binary_round_aux (prec := z53) (emax := z1024)
+      .mode_NE sign (.Zpos mantissa) exponent .loc_Exact =
+        .S754_finite sign mantissa exponent := by
+  have target := manual_fexp_canonical64 mantissa exponent digits minimum
+  have subtract : ZArith.BinInt.Z.sub exponent exponent = .Z0 := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt, Int.sub_self]
+    rfl
+  have shifted : BinarySingleNaN.shr_fexp (prec := z53) (emax := z1024)
+      (.Zpos mantissa) exponent .loc_Exact =
+        (BinarySingleNaN.shr_record_of_loc (.Zpos mantissa) .loc_Exact, exponent) := by
+    change BinarySingleNaN.shr
+      (BinarySingleNaN.shr_record_of_loc (.Zpos mantissa) .loc_Exact) exponent
+      (ZArith.BinInt.Z.sub (BinarySingleNaN.fexp0 z53 z1024
+        (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa)) exponent)) exponent) = _
+    rw [target, subtract]
+    rfl
+  unfold BinarySingleNaN.binary_round_aux
+  rw [shifted]
+  change (match (BinarySingleNaN.shr_fexp (prec := z53) (emax := z1024)
+      (.Zpos mantissa) exponent .loc_Exact).1.shr_m with
+    | .Z0 => BinarySingleNaN.S754_zero sign
+    | .Zpos result => BinarySingleNaN.binary_fit_aux (prec := z53) (emax := z1024)
+        .mode_NE sign result (BinarySingleNaN.shr_fexp (prec := z53) (emax := z1024)
+          (.Zpos mantissa) exponent .loc_Exact).2
+    | .Zneg _ => BinarySingleNaN.S754_nan) = _
+  rw [shifted]
+  change (if ZArith.Zbool.Zle_bool exponent
+    (ZArith.BinInt.Z.sub z1024 z53) then _ else _) = _
+  have fits : ZArith.Zbool.Zle_bool exponent (ZArith.BinInt.Z.sub z1024 z53) = true := by
+    change (if intOfZ exponent ≤ 971 then true else false) = true
+    simp only [maximum, ↓reduceIte]
+  rw [fits]
+  rfl
+
+private theorem manual_normalized_mantissa_digits64 (mantissa : positive)
+    (small : (posToNat mantissa).log2 ≤ 31) :
+    posToNat (BinarySingleNaN.digits2_pos
+      (posOfNat (posToNat mantissa * 2 ^ (52 - (posToNat mantissa).log2)))) = 53 := by
+  have natural_digits := quiet_nan_digits2_pos_nat
+    (posOfNat (posToNat mantissa * 2 ^ (52 - (posToNat mantissa).log2)))
+  change posToNat (BinarySingleNaN.digits2_pos
+    (posOfNat (posToNat mantissa * 2 ^ (52 - (posToNat mantissa).log2)))) =
+      (posToNat (posOfNat (posToNat mantissa * 2 ^ (52 - (posToNat mantissa).log2)))).log2 + 1 at natural_digits
+  rw [natural_digits]
+  have positive := Nat.mul_pos (posToNat_positive mantissa)
+    (Nat.two_pow_pos (52 - (posToNat mantissa).log2))
+  change (posToNat (posOfNat
+    (posToNat mantissa * 2 ^ (52 - (posToNat mantissa).log2)))).log2 + 1 = 53
+  rw [posToNat_posOfNat positive, log2_mul_pow _ _ (Nat.ne_of_gt (posToNat_positive mantissa))]
+  omega
+
+private theorem manual_lift_finite {prec emax : Z}
+    (value : BinarySingleNaN.binary_float prec emax)
+    (hnan : BinarySingleNaN.is_nan value = false)
+    (sign : Bool) (mantissa : positive) (exponent : Z)
+    (hequal : value = BinarySingleNaN.B754_finite sign mantissa exponent) :
+    Binary.BSN2B' value hnan = Binary.B754_finite sign mantissa exponent := by
+  cases hequal
+  rfl
+
+private theorem manual_fexp_canonical32 (mantissa : positive) (exponent : Z)
+    (digits : posToNat (BinarySingleNaN.digits2_pos mantissa) = 24)
+    (minimum : -149 ≤ intOfZ exponent) :
+    BinarySingleNaN.fexp0 z24 z128
+      (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa)) exponent) = exponent := by
+  have digits_value : (.Zpos (BinarySingleNaN.digits2_pos mantissa) : Z) = z24 := by
+    apply intOfZ_injective
+    change (posToNat (BinarySingleNaN.digits2_pos mantissa) : Int) = 24
+    rw [digits]
+    rfl
+  have cancel : ZArith.BinInt.Z.sub (ZArith.BinInt.Z.add z24 exponent) z24 = exponent := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    omega
+  change ZArith.BinInt.Z.max
+    (ZArith.BinInt.Z.sub
+      (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa)) exponent) z24)
+    (BinarySingleNaN.emin0 z24 z128) = exponent
+  rw [digits_value, cancel]
+  exact ZArith.BinInt.Z.max_l _ _ minimum
+
+private theorem manual_round_aux_canonical32 (sign : Bool) (mantissa : positive) (exponent : Z)
+    (digits : posToNat (BinarySingleNaN.digits2_pos mantissa) = 24)
+    (minimum : -149 ≤ intOfZ exponent) (maximum : intOfZ exponent ≤ 104) :
+    BinarySingleNaN.binary_round_aux (prec := z24) (emax := z128)
+      .mode_NE sign (.Zpos mantissa) exponent .loc_Exact =
+        .S754_finite sign mantissa exponent := by
+  have target := manual_fexp_canonical32 mantissa exponent digits minimum
+  have subtract : ZArith.BinInt.Z.sub exponent exponent = .Z0 := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt, Int.sub_self]
+    rfl
+  have shifted : BinarySingleNaN.shr_fexp (prec := z24) (emax := z128)
+      (.Zpos mantissa) exponent .loc_Exact =
+        (BinarySingleNaN.shr_record_of_loc (.Zpos mantissa) .loc_Exact, exponent) := by
+    change BinarySingleNaN.shr
+      (BinarySingleNaN.shr_record_of_loc (.Zpos mantissa) .loc_Exact) exponent
+      (ZArith.BinInt.Z.sub (BinarySingleNaN.fexp0 z24 z128
+        (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa)) exponent)) exponent) = _
+    rw [target, subtract]
+    rfl
+  unfold BinarySingleNaN.binary_round_aux
+  rw [shifted]
+  change (match (BinarySingleNaN.shr_fexp (prec := z24) (emax := z128)
+      (.Zpos mantissa) exponent .loc_Exact).1.shr_m with
+    | .Z0 => BinarySingleNaN.S754_zero sign
+    | .Zpos result => BinarySingleNaN.binary_fit_aux (prec := z24) (emax := z128)
+        .mode_NE sign result (BinarySingleNaN.shr_fexp (prec := z24) (emax := z128)
+          (.Zpos mantissa) exponent .loc_Exact).2
+    | .Zneg _ => BinarySingleNaN.S754_nan) = _
+  rw [shifted]
+  change (if ZArith.Zbool.Zle_bool exponent
+    (ZArith.BinInt.Z.sub z128 z24) then _ else _) = _
+  have fits : ZArith.Zbool.Zle_bool exponent (ZArith.BinInt.Z.sub z128 z24) = true := by
+    change (if intOfZ exponent ≤ 104 then true else false) = true
+    simp only [maximum, ↓reduceIte]
+  rw [fits]
+  rfl
+
+private theorem manual_normalized_mantissa_digits32 (mantissa : positive)
+    (small : (posToNat mantissa).log2 ≤ 23) :
+    posToNat (BinarySingleNaN.digits2_pos
+      (posOfNat (posToNat mantissa * 2 ^ (23 - (posToNat mantissa).log2)))) = 24 := by
+  have natural_digits := quiet_nan_digits2_pos_nat
+    (posOfNat (posToNat mantissa * 2 ^ (23 - (posToNat mantissa).log2)))
+  change posToNat (BinarySingleNaN.digits2_pos
+    (posOfNat (posToNat mantissa * 2 ^ (23 - (posToNat mantissa).log2)))) =
+      (posToNat (posOfNat (posToNat mantissa * 2 ^ (23 - (posToNat mantissa).log2)))).log2 + 1 at natural_digits
+  rw [natural_digits]
+  have positive := Nat.mul_pos (posToNat_positive mantissa)
+    (Nat.two_pow_pos (23 - (posToNat mantissa).log2))
+  change (posToNat (posOfNat
+    (posToNat mantissa * 2 ^ (23 - (posToNat mantissa).log2)))).log2 + 1 = 24
+  rw [posToNat_posOfNat positive, log2_mul_pow _ _ (Nat.ne_of_gt (posToNat_positive mantissa))]
+  omega
+
+private theorem manual_BofZ_positive_small32
+    [certificate : Binary.BinaryNormalizeCertificate z24 z128]
+    (mantissa : positive) (small : (posToNat mantissa).log2 < 23) :
+    IEEE754_extra.BofZ (prec := z24) (emax := z128) (.Zpos mantissa) =
+      .B754_finite false
+        (posOfNat (posToNat mantissa * 2 ^ (23 - (posToNat mantissa).log2)) )
+        (zOfInt ((posToNat mantissa).log2 - 23)) := by
+  have target : BinarySingleNaN.fexp0 z24 z128
+      (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa)) .Z0) =
+        zOfInt ((posToNat mantissa).log2 - 23) := by
+    have digits := quiet_nan_digits2_pos_nat mantissa
+    change ZArith.BinInt.Z.max
+      (ZArith.BinInt.Z.sub
+        (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa)) .Z0) z24)
+      (BinarySingleNaN.emin0 z24 z128) = _
+    have difference : ZArith.BinInt.Z.sub
+        (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa)) .Z0) z24 =
+          zOfInt ((posToNat mantissa).log2 - 23) := by
+      apply intOfZ_injective
+      simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+      change (posToNat (BinarySingleNaN.digits2_pos mantissa) : Int) + 0 - 24 = _
+      change posToNat (BinarySingleNaN.digits2_pos mantissa) =
+        (posToNat mantissa).log2 + 1 at digits
+      rw [digits]
+      omega
+    rw [difference]
+    apply ZArith.BinInt.Z.max_l
+    change -149 ≤ intOfZ (zOfInt ((posToNat mantissa).log2 - 23))
+    rw [intOfZ_zOfInt]
+    omega
+  have shift_positive : 0 < 23 - (posToNat mantissa).log2 := by omega
+  have shift_target : ZArith.BinInt.Z.sub
+      (zOfInt ((posToNat mantissa).log2 - 23)) .Z0 =
+        .Zneg (posOfNat (23 - (posToNat mantissa).log2)) := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    change (posToNat mantissa).log2 - 23 - (0 : Int) =
+      -(posToNat (posOfNat (23 - (posToNat mantissa).log2)) : Int)
+    rw [posToNat_posOfNat shift_positive]
+    omega
+  have aligned : BinarySingleNaN.shl_align_fexp (prec := z24) (emax := z128) mantissa .Z0 =
+      (posOfNat (posToNat mantissa * 2 ^ (23 - (posToNat mantissa).log2)),
+        zOfInt ((posToNat mantissa).log2 - 23)) := by
+    unfold BinarySingleNaN.shl_align_fexp
+    rw [target]
+    unfold BinarySingleNaN.shl_align Model.Rocq.Coq.Floats.SpecFloat.shl_align
+    simp only [Model.Rocq.Coq.Floats.SpecFloat.zsub]
+    rw [shift_target]
+    change (posOfNat (posToNat mantissa * 2 ^
+      posToNat (posOfNat (23 - (posToNat mantissa).log2))), _) = _
+    rw [posToNat_posOfNat shift_positive]
+  have rounded := manual_round_aux_canonical32 false
+    (posOfNat (posToNat mantissa * 2 ^ (23 - (posToNat mantissa).log2)))
+    (zOfInt ((posToNat mantissa).log2 - 23))
+    (manual_normalized_mantissa_digits32 mantissa (Nat.le_of_lt small))
+    (by rw [intOfZ_zOfInt]; omega) (by rw [intOfZ_zOfInt]; omega)
+  have round_result : BinarySingleNaN.binary_round (prec := z24) (emax := z128)
+      .mode_NE false mantissa .Z0 =
+        .S754_finite false
+          (posOfNat (posToNat mantissa * 2 ^ (23 - (posToNat mantissa).log2)))
+          (zOfInt ((posToNat mantissa).log2 - 23)) := by
+    unfold BinarySingleNaN.binary_round
+    rw [aligned]
+    exact rounded
+  have normalized : BinarySingleNaN.binary_normalize (prec := z24) (emax := z128)
+      .mode_NE (.Zpos mantissa) .Z0 false =
+        .B754_finite false
+          (posOfNat (posToNat mantissa * 2 ^ (23 - (posToNat mantissa).log2)))
+          (zOfInt ((posToNat mantissa).log2 - 23)) := by
+    change BinarySingleNaN.SF2B
+      (BinarySingleNaN.binary_round (prec := z24) (emax := z128) .mode_NE false mantissa .Z0) = _
+    rw [round_result]
+    rfl
+  change Binary.BSN2B'
+    (BinarySingleNaN.binary_normalize (prec := z24) (emax := z128)
+      .mode_NE (.Zpos mantissa) .Z0 false) _ = _
+  exact manual_lift_finite
+    (BinarySingleNaN.binary_normalize (prec := z24) (emax := z128)
+      .mode_NE (.Zpos mantissa) .Z0 false)
+    ((inferInstance : Binary.BinaryNormalizeCertificate z24 z128).is_nan_binary_normalize
+      BinarySingleNaN.mode_NE (.Zpos mantissa) .Z0 false)
+    false
+    (posOfNat (posToNat mantissa * 2 ^ (23 - (posToNat mantissa).log2)))
+    (zOfInt ((posToNat mantissa).log2 - 23))
+    normalized
+
+private theorem manual_BofZ_positive_log23
+    [certificate : Binary.BinaryNormalizeCertificate z24 z128]
+    (mantissa : positive) (hlog : (posToNat mantissa).log2 = 23) :
+    IEEE754_extra.BofZ (prec := z24) (emax := z128) (.Zpos mantissa) =
+      .B754_finite false mantissa .Z0 := by
+  have digits : posToNat (BinarySingleNaN.digits2_pos mantissa) = 24 := by
+    have natural_digits := quiet_nan_digits2_pos_nat mantissa
+    change posToNat (BinarySingleNaN.digits2_pos mantissa) =
+      (posToNat mantissa).log2 + 1 at natural_digits
+    rw [natural_digits, hlog]
+  have target : BinarySingleNaN.fexp0 z24 z128
+      (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa)) .Z0) = .Z0 := by
+    have h := manual_fexp_canonical32 mantissa .Z0 digits (by decide)
+    simpa using h
+  have aligned : BinarySingleNaN.shl_align_fexp (prec := z24) (emax := z128) mantissa .Z0 =
+      (mantissa, .Z0) := by
+    unfold BinarySingleNaN.shl_align_fexp
+    rw [target]
+    unfold BinarySingleNaN.shl_align Model.Rocq.Coq.Floats.SpecFloat.shl_align
+    simp only [Model.Rocq.Coq.Floats.SpecFloat.zsub]
+    rfl
+  have rounded := manual_round_aux_canonical32 false mantissa .Z0 digits (by decide) (by decide)
+  have round_result : BinarySingleNaN.binary_round (prec := z24) (emax := z128)
+      .mode_NE false mantissa .Z0 = .S754_finite false mantissa .Z0 := by
+    unfold BinarySingleNaN.binary_round
+    rw [aligned]
+    exact rounded
+  have normalized : BinarySingleNaN.binary_normalize (prec := z24) (emax := z128)
+      .mode_NE (.Zpos mantissa) .Z0 false = .B754_finite false mantissa .Z0 := by
+    change BinarySingleNaN.SF2B
+      (BinarySingleNaN.binary_round (prec := z24) (emax := z128) .mode_NE false mantissa .Z0) = _
+    rw [round_result]
+    rfl
+  change Binary.BSN2B'
+    (BinarySingleNaN.binary_normalize (prec := z24) (emax := z128)
+      .mode_NE (.Zpos mantissa) .Z0 false) _ = _
+  exact manual_lift_finite
+    (BinarySingleNaN.binary_normalize (prec := z24) (emax := z128)
+      .mode_NE (.Zpos mantissa) .Z0 false)
+    ((inferInstance : Binary.BinaryNormalizeCertificate z24 z128).is_nan_binary_normalize
+      BinarySingleNaN.mode_NE (.Zpos mantissa) .Z0 false)
+    false mantissa .Z0 normalized
+
+private theorem manual_BofZ_positive_small64
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024]
+    (mantissa : positive) (small : (posToNat mantissa).log2 ≤ 31) :
+    IEEE754_extra.BofZ (prec := z53) (emax := z1024) (.Zpos mantissa) =
+      .B754_finite false
+        (posOfNat (posToNat mantissa * 2 ^ (52 - (posToNat mantissa).log2)))
+        (zOfInt ((posToNat mantissa).log2 - 52)) := by
+  have target : BinarySingleNaN.fexp0 z53 z1024
+      (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa)) .Z0) =
+        zOfInt ((posToNat mantissa).log2 - 52) := by
+    have digits := quiet_nan_digits2_pos_nat mantissa
+    change ZArith.BinInt.Z.max
+      (ZArith.BinInt.Z.sub
+        (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa)) .Z0) z53)
+      (BinarySingleNaN.emin0 z53 z1024) = _
+    have difference : ZArith.BinInt.Z.sub
+        (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa)) .Z0) z53 =
+          zOfInt ((posToNat mantissa).log2 - 52) := by
+      apply intOfZ_injective
+      simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+      change (posToNat (BinarySingleNaN.digits2_pos mantissa) : Int) + 0 - 53 = _
+      change posToNat (BinarySingleNaN.digits2_pos mantissa) =
+        (posToNat mantissa).log2 + 1 at digits
+      rw [digits]
+      omega
+    rw [difference]
+    apply ZArith.BinInt.Z.max_l
+    change -1074 ≤ intOfZ (zOfInt ((posToNat mantissa).log2 - 52))
+    rw [intOfZ_zOfInt]
+    omega
+  have shift_positive : 0 < 52 - (posToNat mantissa).log2 := by omega
+  have shift_target : ZArith.BinInt.Z.sub
+      (zOfInt ((posToNat mantissa).log2 - 52)) .Z0 =
+        .Zneg (posOfNat (52 - (posToNat mantissa).log2)) := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    change (posToNat mantissa).log2 - 52 - (0 : Int) =
+      -(posToNat (posOfNat (52 - (posToNat mantissa).log2)) : Int)
+    rw [posToNat_posOfNat shift_positive]
+    omega
+  have aligned : BinarySingleNaN.shl_align_fexp (prec := z53) (emax := z1024) mantissa .Z0 =
+      (posOfNat (posToNat mantissa * 2 ^ (52 - (posToNat mantissa).log2)),
+        zOfInt ((posToNat mantissa).log2 - 52)) := by
+    unfold BinarySingleNaN.shl_align_fexp
+    rw [target]
+    unfold BinarySingleNaN.shl_align Model.Rocq.Coq.Floats.SpecFloat.shl_align
+    simp only [Model.Rocq.Coq.Floats.SpecFloat.zsub]
+    rw [shift_target]
+    change (posOfNat (posToNat mantissa * 2 ^
+      posToNat (posOfNat (52 - (posToNat mantissa).log2))), _) = _
+    rw [posToNat_posOfNat shift_positive]
+  have rounded := manual_round_aux_canonical64 false
+    (posOfNat (posToNat mantissa * 2 ^ (52 - (posToNat mantissa).log2)))
+    (zOfInt ((posToNat mantissa).log2 - 52))
+    (manual_normalized_mantissa_digits64 mantissa small)
+    (by rw [intOfZ_zOfInt]; omega) (by rw [intOfZ_zOfInt]; omega)
+  have round_result : BinarySingleNaN.binary_round (prec := z53) (emax := z1024)
+      .mode_NE false mantissa .Z0 =
+        .S754_finite false
+          (posOfNat (posToNat mantissa * 2 ^ (52 - (posToNat mantissa).log2)))
+          (zOfInt ((posToNat mantissa).log2 - 52)) := by
+    unfold BinarySingleNaN.binary_round
+    rw [aligned]
+    exact rounded
+  have normalized : BinarySingleNaN.binary_normalize (prec := z53) (emax := z1024)
+      .mode_NE (.Zpos mantissa) .Z0 false =
+        .B754_finite false
+          (posOfNat (posToNat mantissa * 2 ^ (52 - (posToNat mantissa).log2)))
+          (zOfInt ((posToNat mantissa).log2 - 52)) := by
+    change BinarySingleNaN.SF2B
+      (BinarySingleNaN.binary_round (prec := z53) (emax := z1024) .mode_NE false mantissa .Z0) = _
+    rw [round_result]
+    rfl
+  change Binary.BSN2B'
+    (BinarySingleNaN.binary_normalize (prec := z53) (emax := z1024)
+      .mode_NE (.Zpos mantissa) .Z0 false) _ = _
+  exact manual_lift_finite
+    (BinarySingleNaN.binary_normalize (prec := z53) (emax := z1024)
+      .mode_NE (.Zpos mantissa) .Z0 false)
+    ((inferInstance : Binary.BinaryNormalizeCertificate z53 z1024).is_nan_binary_normalize
+      BinarySingleNaN.mode_NE (.Zpos mantissa) .Z0 false)
+    false
+    (posOfNat (posToNat mantissa * 2 ^ (52 - (posToNat mantissa).log2)))
+    (zOfInt ((posToNat mantissa).log2 - 52))
+    normalized
+
+private theorem conversion_iter_add {α : Type} (operation : α → α)
+    (first second : Nat) (value : α) :
+    CompCert4Lean.Flocq.Core.Zaux.iter_nat operation (first + second) value =
+      CompCert4Lean.Flocq.Core.Zaux.iter_nat operation first
+        (CompCert4Lean.Flocq.Core.Zaux.iter_nat operation second value) := by
+  induction second generalizing value with
+  | zero => rfl
+  | succ second induction =>
+      change CompCert4Lean.Flocq.Core.Zaux.iter_nat operation (first + second)
+        (operation value) = _
+      exact induction (operation value)
+
+private theorem conversion_shift_succ (mantissa : positive) (count : Nat) :
+    posOfNat (posToNat mantissa * 2 ^ (count + 1)) =
+      .xO (posOfNat (posToNat mantissa * 2 ^ count)) := by
+  apply posToNat_injective
+  rw [posToNat_posOfNat (Nat.mul_pos (posToNat_positive _) (Nat.two_pow_pos _))]
+  change _ = 2 * posToNat (posOfNat (posToNat mantissa * 2 ^ count))
+  rw [posToNat_posOfNat (Nat.mul_pos (posToNat_positive _) (Nat.two_pow_pos _)),
+    Nat.pow_succ]
+  ac_rfl
+
+private theorem conversion_shift_exact (mantissa : positive) (count : Nat) :
+    CompCert4Lean.Flocq.Core.Zaux.iter_nat BinarySingleNaN.shr_1 count
+        (BinarySingleNaN.shr_record_of_loc
+          (.Zpos (posOfNat (posToNat mantissa * 2 ^ count))) .loc_Exact) =
+      BinarySingleNaN.shr_record_of_loc (.Zpos mantissa) .loc_Exact := by
+  induction count with
+  | zero => simp only [Nat.pow_zero, Nat.mul_one, posOfNat_posToNat]; rfl
+  | succ count induction =>
+      rw [conversion_shift_succ]
+      exact induction
+
+private theorem conversion_shr_count (mantissa : positive) (exponent : Int) (count : Nat) :
+    BinarySingleNaN.shr (BinarySingleNaN.shr_record_of_loc (.Zpos mantissa) .loc_Exact)
+        (zOfInt exponent) (zOfInt count) =
+      (CompCert4Lean.Flocq.Core.Zaux.iter_nat BinarySingleNaN.shr_1 count
+        (BinarySingleNaN.shr_record_of_loc (.Zpos mantissa) .loc_Exact),
+        zOfInt (exponent + count)) := by
+  rw [BinarySingleNaN.shr_nat _ _ _ (by
+    change (0 : Int) ≤ intOfZ (zOfInt count)
+    rw [intOfZ_zOfInt]
+    omega)]
+  simp only [ZArith.BinInt.Z.to_nat, intOfZ_zOfInt, Int.toNat_natCast,
+    ZArith.BinInt.Z.add]
+
+private theorem conversion_fexp32 (mantissa : positive) (exponent : Int)
+    (minimum : -126 ≤ (posToNat mantissa).log2 + exponent) :
+    BinarySingleNaN.fexp0 z24 z128
+        (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa))
+          (zOfInt exponent)) =
+      zOfInt ((posToNat mantissa).log2 + exponent - 23) := by
+  have digits := quiet_nan_digits2_pos_nat mantissa
+  change posToNat (BinarySingleNaN.digits2_pos mantissa) =
+    (posToNat mantissa).log2 + 1 at digits
+  have difference : ZArith.BinInt.Z.sub
+      (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa))
+        (zOfInt exponent)) z24 =
+      zOfInt ((posToNat mantissa).log2 + exponent - 23) := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    change (posToNat (BinarySingleNaN.digits2_pos mantissa) : Int) + exponent - 24 = _
+    rw [digits]
+    omega
+  change ZArith.BinInt.Z.max
+    (ZArith.BinInt.Z.sub
+      (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa))
+        (zOfInt exponent)) z24) (BinarySingleNaN.emin0 z24 z128) = _
+  rw [difference]
+  apply ZArith.BinInt.Z.max_l
+  change -149 ≤ intOfZ (zOfInt ((posToNat mantissa).log2 + exponent - 23))
+  rw [intOfZ_zOfInt]
+  omega
+
+private theorem conversion_align_ge (mantissa : positive) (exponent target : Int)
+    (ordered : exponent ≤ target) :
+    BinarySingleNaN.shl_align mantissa (zOfInt exponent) (zOfInt target) =
+      (mantissa, zOfInt exponent) := by
+  change (match ZArith.BinInt.Z.sub (zOfInt target) (zOfInt exponent) with
+    | .Zneg count => _
+    | _ => _) = _
+  cases difference : ZArith.BinInt.Z.sub (zOfInt target) (zOfInt exponent) with
+  | Z0 => rfl
+  | Zpos count => rfl
+  | Zneg count =>
+      have numeric := congrArg intOfZ difference
+      simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt] at numeric
+      change target - exponent = -(posToNat count : Int) at numeric
+      have positive := posToNat_positive count
+      omega
+
+private theorem conversion_round_scaled32 (mantissa : positive) (exponent : Int) (count : Nat)
+    (digits : 23 ≤ (posToNat mantissa).log2)
+    (minimum : -126 ≤ (posToNat mantissa).log2 + exponent) :
+    BinarySingleNaN.binary_round (prec := z24) (emax := z128) .mode_NE false
+        (posOfNat (posToNat mantissa * 2 ^ count)) (zOfInt (exponent - count)) =
+      BinarySingleNaN.binary_round (prec := z24) (emax := z128) .mode_NE false
+        mantissa (zOfInt exponent) := by
+  have positive := Nat.mul_pos (posToNat_positive mantissa) (Nat.two_pow_pos count)
+  have logScaled :
+      (posToNat (posOfNat (posToNat mantissa * 2 ^ count))).log2 =
+        (posToNat mantissa).log2 + count := by
+    rw [posToNat_posOfNat positive, log2_mul_pow _ _ (Nat.ne_of_gt (posToNat_positive _))]
+  have sourceTarget := conversion_fexp32 mantissa exponent minimum
+  have scaledTarget := conversion_fexp32
+    (posOfNat (posToNat mantissa * 2 ^ count)) (exponent - count)
+    (by rw [logScaled]; omega)
+  have targetEqual :
+      ((posToNat (posOfNat (posToNat mantissa * 2 ^ count))).log2 : Int) +
+          (exponent - count) - 23 =
+        (posToNat mantissa).log2 + exponent - 23 := by rw [logScaled]; omega
+  rw [targetEqual] at scaledTarget
+  unfold BinarySingleNaN.binary_round BinarySingleNaN.shl_align_fexp
+  rw [sourceTarget, scaledTarget,
+    conversion_align_ge _ _ _ (by omega),
+    conversion_align_ge _ _ _ (by omega)]
+  simp only
+  have firstEqual :
+      BinarySingleNaN.shr_fexp (prec := z24) (emax := z128)
+        (.Zpos (posOfNat (posToNat mantissa * 2 ^ count)))
+        (zOfInt (exponent - count)) .loc_Exact =
+      BinarySingleNaN.shr_fexp (prec := z24) (emax := z128)
+        (.Zpos mantissa) (zOfInt exponent) .loc_Exact := by
+    change BinarySingleNaN.shr
+      (BinarySingleNaN.shr_record_of_loc
+        (.Zpos (posOfNat (posToNat mantissa * 2 ^ count))) .loc_Exact)
+      (zOfInt (exponent - count))
+      (ZArith.BinInt.Z.sub (BinarySingleNaN.fexp0 z24 z128
+        (ZArith.BinInt.Z.add
+          (.Zpos (BinarySingleNaN.digits2_pos (posOfNat (posToNat mantissa * 2 ^ count))))
+          (zOfInt (exponent - count)))) (zOfInt (exponent - count))) =
+      BinarySingleNaN.shr
+      (BinarySingleNaN.shr_record_of_loc (.Zpos mantissa) .loc_Exact)
+      (zOfInt exponent)
+      (ZArith.BinInt.Z.sub (BinarySingleNaN.fexp0 z24 z128
+        (ZArith.BinInt.Z.add (.Zpos (BinarySingleNaN.digits2_pos mantissa))
+          (zOfInt exponent))) (zOfInt exponent))
+    rw [sourceTarget, scaledTarget]
+    have sourceCount : ZArith.BinInt.Z.sub
+        (zOfInt ((posToNat mantissa).log2 + exponent - 23)) (zOfInt exponent) =
+        zOfInt (((posToNat mantissa).log2 - 23 : Nat) : Int) := by
+      apply intOfZ_injective
+      simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+      omega
+    have scaledCount : ZArith.BinInt.Z.sub
+        (zOfInt ((posToNat mantissa).log2 + exponent - 23)) (zOfInt (exponent - count)) =
+        zOfInt ((((posToNat mantissa).log2 - 23) + count : Nat) : Int) := by
+      apply intOfZ_injective
+      simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+      omega
+    rw [sourceCount, scaledCount, conversion_shr_count, conversion_shr_count,
+      conversion_iter_add, conversion_shift_exact]
+    congr 2
+    omega
+  unfold BinarySingleNaN.binary_round_aux
+  rw [firstEqual]
+
+private theorem conversion_lift_equal {prec emax : Z}
+    (first second : BinarySingleNaN.binary_float prec emax)
+    (firstNotNaN : BinarySingleNaN.is_nan first = false)
+    (secondNotNaN : BinarySingleNaN.is_nan second = false)
+    (equal : first = second) :
+    Binary.BSN2B' first firstNotNaN = Binary.BSN2B' second secondNotNaN := by
+  cases equal
+  rfl
+
+private theorem conversion_round_canonical32 (mantissa : positive) (exponent : Int)
+    (digits : posToNat (BinarySingleNaN.digits2_pos mantissa) = 24)
+    (minimum : -149 ≤ exponent) (maximum : exponent ≤ 104) :
+    BinarySingleNaN.binary_round (prec := z24) (emax := z128)
+      .mode_NE false mantissa (zOfInt exponent) =
+        .S754_finite false mantissa (zOfInt exponent) := by
+  have target := manual_fexp_canonical32 mantissa (zOfInt exponent) digits
+    (by simpa only [intOfZ_zOfInt] using minimum)
+  unfold BinarySingleNaN.binary_round BinarySingleNaN.shl_align_fexp
+  rw [target, conversion_align_ge _ _ _ (by omega)]
+  exact manual_round_aux_canonical32 false mantissa (zOfInt exponent) digits
+    (by simpa only [intOfZ_zOfInt] using minimum)
+    (by simpa only [intOfZ_zOfInt] using maximum)
+
+set_option maxHeartbeats 1000000 in
+private theorem conversion_uint32_normalize
+    [certificate : Binary.BinaryNormalizeCertificate z24 z128]
+    (mantissa : positive) (bound : (posToNat mantissa).log2 ≤ 31) :
+    IEEE754_extra.BofZ (prec := z24) (emax := z128) (.Zpos mantissa) =
+      Binary.binary_normalize (prec := z24) (emax := z128)
+        (certificate := Binary.binary32_normalize_certificate_proof)
+        .mode_NE (.Zpos (posOfNat (posToNat mantissa * 2 ^ (52 - (posToNat mantissa).log2))))
+        (zOfInt ((posToNat mantissa).log2 - 52)) false := by
+  by_cases small : (posToNat mantissa).log2 < 23
+  · rw [manual_BofZ_positive_small32 mantissa small]
+    have positive := Nat.mul_pos (posToNat_positive mantissa)
+      (Nat.two_pow_pos (23 - (posToNat mantissa).log2))
+    have logAligned :
+        (posToNat (posOfNat (posToNat mantissa * 2 ^ (23 - (posToNat mantissa).log2)))).log2 = 23 := by
+      rw [posToNat_posOfNat positive, log2_mul_pow _ _ (Nat.ne_of_gt (posToNat_positive _))]
+      omega
+    have scaled := conversion_round_scaled32
+      (posOfNat (posToNat mantissa * 2 ^ (23 - (posToNat mantissa).log2)))
+      ((posToNat mantissa).log2 - 23) 29 (by rw [logAligned]; omega)
+      (by rw [logAligned]; omega)
+    have mantissaEqual :
+        posOfNat (posToNat (posOfNat
+          (posToNat mantissa * 2 ^ (23 - (posToNat mantissa).log2))) * 2 ^ 29) =
+        posOfNat (posToNat mantissa * 2 ^ (52 - (posToNat mantissa).log2)) := by
+      apply congrArg posOfNat
+      rw [posToNat_posOfNat positive, Nat.mul_assoc, ← Nat.pow_add]
+      have counts : 23 - (posToNat mantissa).log2 + 29 =
+          52 - (posToNat mantissa).log2 := by omega
+      rw [counts]
+    have exponentEqual : ((posToNat mantissa).log2 : Int) - 23 - (29 : Nat) =
+        (posToNat mantissa).log2 - 52 := by omega
+    rw [mantissaEqual, exponentEqual, conversion_round_canonical32 _ _
+      (manual_normalized_mantissa_digits32 mantissa (by omega)) (by omega) (by omega)] at scaled
+    symm
+    apply manual_lift_finite
+    change BinarySingleNaN.SF2B
+      (BinarySingleNaN.binary_round (prec := z24) (emax := z128) .mode_NE false
+        (posOfNat (posToNat mantissa * 2 ^ (52 - (posToNat mantissa).log2)))
+        (zOfInt ((posToNat mantissa).log2 - 52))) = _
+    rw [scaled]
+    rfl
+  · have rounded := conversion_round_scaled32 mantissa 0
+      (52 - (posToNat mantissa).log2) (by omega) (by omega)
+    have exponentEqual : (0 : Int) - (52 - (posToNat mantissa).log2 : Nat) =
+        (posToNat mantissa).log2 - 52 := by omega
+    rw [exponentEqual] at rounded
+    change BinarySingleNaN.binary_round (prec := z24) (emax := z128) .mode_NE false
+      (posOfNat (posToNat mantissa * 2 ^ (52 - (posToNat mantissa).log2)))
+      (zOfInt ((posToNat mantissa).log2 - 52)) =
+      BinarySingleNaN.binary_round .mode_NE false mantissa .Z0 at rounded
+    unfold IEEE754_extra.BofZ Binary.binary_normalize
+    apply conversion_lift_equal
+    change BinarySingleNaN.SF2B
+      (BinarySingleNaN.binary_round (prec := z24) (emax := z128) .mode_NE false mantissa .Z0) = _
+    rw [← rounded]
+    rfl
+
+set_option maxRecDepth 100000 in
+theorem Float32.of_intu_double
+    [binary32_certificate : Binary.BinaryNormalizeCertificate z24 z128]
+    [binary64_certificate : Binary.BinaryNormalizeCertificate z53 z1024] :
+    Float32.of_intu_doubleStatement := by
+  intro n
+  unfold Float32.of_intu Float.of_intu Float32.of_double Float.to_single
+  cases h : Integers.Int.unsigned n with
+  | Z0 =>
+      have hzero64 : Binary.BinaryFloatCertificate
+          (Binary.binary_normalize (prec := z53) (emax := z1024)
+            BinarySingleNaN.mode_NE .Z0 .Z0 false) :=
+        Binary.binary_normalize_result_obligation_proof
+          BinarySingleNaN.mode_NE .Z0 .Z0 false
+      have hzero64decode := conversion_encode64_decode
+        (⟨Binary.binary_normalize (prec := z53) (emax := z1024)
+          BinarySingleNaN.mode_NE .Z0 .Z0 false, hzero64⟩ :
+          Binary.CertifiedBinaryFloat z53 z1024)
+      have hzero64nan : isNaN64 (encode64
+          (Binary.binary_normalize (prec := z53) (emax := z1024)
+            BinarySingleNaN.mode_NE .Z0 .Z0 false)) = false := by
+        rw [← conversion_isNaN64_decode]
+        rw [hzero64decode]
+        rfl
+      unfold IEEE754_extra.BofZ
+      rw [hzero64decode, hzero64nan]
+      simp [Binary.binary_normalize, Binary.BSN2B', BinarySingleNaN.binary_normalize]
+      rfl
+  | Zpos p =>
+      have hu := Integers.Int.unsigned_range_proof n
+      rw [h] at hu
+      have hp_lt : posToNat p < 2 ^ 32 := by
+        have hpz := hu.2
+        have hp_pos := posToNat_positive p
+        change (posToNat p : Int) < intOfZ Integers.Int.modulus at hpz
+        have hmod : intOfZ Integers.Int.modulus = (2 : Int) ^ 32 := by decide
+        rw [hmod] at hpz
+        have hpz_nat : posToNat p < 2 ^ 32 := by
+          exact Int.ofNat_lt.mp hpz
+        exact hpz_nat
+      have hlog_lt : (posToNat p).log2 < 32 := by
+        apply (Nat.log2_lt (Nat.ne_of_gt (posToNat_positive p))).mpr
+        exact hp_lt
+      have hlog : (posToNat p).log2 ≤ 31 := by omega
+      have h64 := manual_BofZ_positive_small64 (certificate := binary64_certificate) p hlog
+      rw [h64]
+      have hcert : Binary.BinaryFloatCertificate (prec := z53) (emax := z1024)
+          (.B754_finite false
+            (posOfNat (posToNat p * 2 ^ (52 - (posToNat p).log2)))
+            (zOfInt ((posToNat p).log2 - 52))) := by
+        change Binary.bounded (prec := z53) (emax := z1024)
+          (posOfNat (posToNat p * 2 ^ (52 - (posToNat p).log2)))
+          (zOfInt ((posToNat p).log2 - 52)) = true
+        apply Bool.and_eq_true_iff.mpr
+        constructor
+        · change ZArith.Zbool.Zeq_bool _ _ = true
+          apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true
+          exact manual_fexp_canonical64
+            (posOfNat (posToNat p * 2 ^ (52 - (posToNat p).log2)))
+            (zOfInt ((posToNat p).log2 - 52))
+            (manual_normalized_mantissa_digits64 p hlog)
+            (by rw [intOfZ_zOfInt]; omega)
+        · change (if intOfZ (zOfInt ((posToNat p).log2 - 52)) ≤
+            intOfZ (ZArith.BinInt.Z.sub z1024 z53) then true else false) = true
+          rw [intOfZ_zOfInt]
+          have hemax : intOfZ (ZArith.BinInt.Z.sub z1024 z53) = 971 := by decide
+          rw [hemax]
+          have hbound : ((posToNat p).log2 : Int) - 52 ≤ 971 := by
+            have hlog_int : (posToNat p).log2 ≤ (31 : Int) := by
+              exact_mod_cast hlog
+            omega
+          simp [hbound]
+      have hdec := conversion_encode64_decode
+        (⟨.B754_finite false
+          (posOfNat (posToNat p * 2 ^ (52 - (posToNat p).log2)))
+          (zOfInt ((posToNat p).log2 - 52)), hcert⟩ :
+          Binary.CertifiedBinaryFloat z53 z1024)
+      have hnan64 : isNaN64 (encode64
+          (⟨.B754_finite false
+            (posOfNat (posToNat p * 2 ^ (52 - (posToNat p).log2)))
+            (zOfInt ((posToNat p).log2 - 52)), hcert⟩ :
+            Binary.CertifiedBinaryFloat z53 z1024).val) = false := by
+        rw [← conversion_isNaN64_decode, hdec]
+        rfl
+      rw [hnan64]
+      simp only [Bool.false_eq_true, ↓reduceIte, hdec]
+      exact congrArg encode32 (conversion_uint32_normalize p hlog)
+  | Zneg p =>
+      have hu := Integers.Int.unsigned_range_proof n
+      rw [h] at hu
+      change 0 ≤ -(posToNat p : Int) ∧ _ at hu
+      have hp_pos := posToNat_positive p
+      omega
+
+private theorem conversion_binary32_of_bits_roundtrip
+    (value : Binary.CertifiedBinaryFloat z24 z128) :
+    Bits.binary_float_of_bits_unchecked
+      (ZArith.BinInt.Z.of_nat 23) (ZArith.BinInt.Z.of_nat 8)
+      (by change (0 : Int) < 23; decide)
+      (by change (0 : Int) < 8; decide)
+      (by change (24 : Int) < 128; decide)
+      (Bits.bits_of_binary_float (ZArith.BinInt.Z.of_nat 23)
+        (ZArith.BinInt.Z.of_nat 8) value.1) = value.1 := by
+  rcases value with ⟨value, hvalue⟩
+  have hsplit := Bits.split_bits_of_binary_float_correct
+    (ZArith.BinInt.Z.of_nat 23) (ZArith.BinInt.Z.of_nat 8)
+    (by change (0 : Int) < 23; decide)
+    (by change (0 : Int) < 8; decide) ⟨value, hvalue⟩
+  unfold Bits.binary_float_of_bits_unchecked Bits.binary_float_of_bits_aux
+  cases value with
+  | B754_zero sign =>
+    simp [Bits.split_bits_of_binary_float] at hsplit ⊢
+    rw [hsplit]
+    rfl
+  | B754_infinity sign =>
+    simp [Bits.split_bits_of_binary_float] at hsplit ⊢
+    rw [hsplit]
+    rfl
+  | B754_nan sign payload =>
+    simp [Bits.split_bits_of_binary_float] at hsplit ⊢
+    rw [hsplit]
+    have hEq : Bits.Zeq_bool
+        (Bits.Zsub (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 8)) Bits.Zone)
+        (Bits.Zsub (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 8)) Bits.Zone) = true :=
+      CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true _ _ rfl
+    rw [hEq]
+    have hzero : Bits.Zeq_bool
+        (Bits.Zsub (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 8)) Bits.Zone)
+        Bits.Z0 = false :=
+      CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false _ _ (by decide)
+    rw [hzero]
+    simp [Binary.FF2B_unchecked]
+    rfl
+  | B754_finite sign mantissa exponent =>
+    simp [Bits.split_bits_of_binary_float] at hsplit ⊢
+    have hparts :
+        BinarySingleNaN.canonical_mantissa0 z24 z128 mantissa exponent = true ∧
+          ZArith.Zbool.Zle_bool exponent (ZArith.BinInt.Z.sub z128 z24) = true := by
+      change (BinarySingleNaN.canonical_mantissa0 z24 z128 mantissa exponent &&
+        ZArith.Zbool.Zle_bool exponent (ZArith.BinInt.Z.sub z128 z24)) = true at hvalue
+      exact Bool.and_eq_true_iff.mp hvalue
+    have hcan := hparts.1
+    have hbound := hparts.2
+    by_cases hb : Bits.Zle_bool Bits.Z0
+        (Bits.Zsub (Bits.Zpos mantissa) (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 23))) = true
+    · simp [hb] at hsplit ⊢
+      rw [hsplit]
+      have hcanEq := ZArith.Zbool.Zeq_bool_eq _ _ hcan
+      change ZArith.BinInt.Z.max
+          (ZArith.BinInt.Z.sub
+            (ZArith.BinInt.Z.add
+              (ZArith.BinInt.Z.pos (BinarySingleNaN.digits2_pos mantissa)) exponent) z24)
+          (BinarySingleNaN.emin0 z24 z128) = exponent at hcanEq
+      have hlowZ := ZArith.BinInt.Z.le_max_r
+        (ZArith.BinInt.Z.sub
+          (ZArith.BinInt.Z.add
+            (ZArith.BinInt.Z.pos (BinarySingleNaN.digits2_pos mantissa)) exponent) z24)
+        (BinarySingleNaN.emin0 z24 z128)
+      rw [hcanEq] at hlowZ
+      have hboundZ := ZArith.Zbool.Zle_bool_imp_le exponent
+        (ZArith.BinInt.Z.sub z128 z24) hbound
+      have hzadd : ∀ a b : Z,
+          intOfZ (ZArith.BinInt.Z.add a b) = intOfZ a + intOfZ b := by
+        intro a b
+        change intOfZ (zOfInt (intOfZ a + intOfZ b)) = _
+        exact intOfZ_zOfInt _
+      have hzsub : ∀ a b : Z,
+          intOfZ (ZArith.BinInt.Z.sub a b) = intOfZ a - intOfZ b := by
+        intro a b
+        change intOfZ (zOfInt (intOfZ a - intOfZ b)) = _
+        exact intOfZ_zOfInt _
+      have hem : intOfZ (Bits.emin (ZArith.BinInt.Z.of_nat 23)
+          (ZArith.BinInt.Z.of_nat 8)) = -149 := by decide
+      have hemin64 : intOfZ (BinarySingleNaN.emin0 z24 z128) = -149 := by decide
+      have hone : intOfZ Bits.Zone = 1 := by decide
+      have hshift_formula : intOfZ (Bits.Zadd (Bits.Zsub exponent
+          (Bits.emin (ZArith.BinInt.Z.of_nat 23) (ZArith.BinInt.Z.of_nat 8))) Bits.Zone) =
+          intOfZ exponent + 150 := by
+        rw [hzadd, hzsub, hem, hone]
+        omega
+      have hshift_pos : 0 <
+          intOfZ (Bits.Zadd (Bits.Zsub exponent (Bits.emin (ZArith.BinInt.Z.of_nat 23)
+            (ZArith.BinInt.Z.of_nat 8))) Bits.Zone) := by
+        rw [hshift_formula]
+        change intOfZ (BinarySingleNaN.emin0 z24 z128) ≤ intOfZ exponent at hlowZ
+        rw [hemin64] at hlowZ
+        change intOfZ exponent ≤ 104 at hboundZ
+        omega
+      have hshift_lt : intOfZ (Bits.Zadd (Bits.Zsub exponent
+          (Bits.emin (ZArith.BinInt.Z.of_nat 23) (ZArith.BinInt.Z.of_nat 8))) Bits.Zone) < 255 := by
+        rw [hshift_formula]
+        change intOfZ exponent ≤ 104 at hboundZ
+        omega
+      have hshift_ne_zero : Bits.Zadd (Bits.Zsub exponent
+          (Bits.emin (ZArith.BinInt.Z.of_nat 23) (ZArith.BinInt.Z.of_nat 8))) Bits.Zone ≠ Bits.Z0 := by
+        intro hz
+        have hz' := congrArg intOfZ hz
+        rw [hshift_formula] at hz'
+        have hzero' : intOfZ Bits.Z0 = 0 := by decide
+        rw [hzero'] at hz'
+        omega
+      have hshift_ne_max : Bits.Zadd (Bits.Zsub exponent
+          (Bits.emin (ZArith.BinInt.Z.of_nat 23) (ZArith.BinInt.Z.of_nat 8))) Bits.Zone ≠
+          Bits.Zsub (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 8)) Bits.Zone := by
+        intro hz
+        have hz' := congrArg intOfZ hz
+        rw [hshift_formula] at hz'
+        have hmax' : intOfZ (Bits.Zsub (Bits.Zpower Bits.Ztwo
+            (ZArith.BinInt.Z.of_nat 8)) Bits.Zone) = 255 := by decide
+        rw [hmax'] at hz'
+        omega
+      have hzero : Bits.Zeq_bool
+          (Bits.Zadd (Bits.Zsub exponent (Bits.emin (ZArith.BinInt.Z.of_nat 23)
+            (ZArith.BinInt.Z.of_nat 8))) Bits.Zone) Bits.Z0 = false :=
+        CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false _ _ hshift_ne_zero
+      have hmax : Bits.Zeq_bool
+          (Bits.Zadd (Bits.Zsub exponent (Bits.emin (ZArith.BinInt.Z.of_nat 23)
+            (ZArith.BinInt.Z.of_nat 8))) Bits.Zone)
+          (Bits.Zsub (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 8)) Bits.Zone) = false :=
+        CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false _ _ hshift_ne_max
+      rw [hzero, hmax]
+      have hsum : Bits.Zadd (Bits.Zsub (Bits.Zpos mantissa)
+          (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 23)))
+          (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 23)) = Bits.Zpos mantissa := by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        rw [hzadd, hzsub]
+        have hpow : intOfZ (Bits.Zpower Bits.Ztwo
+            (ZArith.BinInt.Z.of_nat 23)) = 2 ^ 23 := by decide
+        rw [hpow]
+        omega
+      have hexp : Bits.Zsub
+          (Bits.Zadd (Bits.Zadd (Bits.Zsub exponent
+            (Bits.emin (ZArith.BinInt.Z.of_nat 23) (ZArith.BinInt.Z.of_nat 8))) Bits.Zone)
+            (Bits.emin (ZArith.BinInt.Z.of_nat 23) (ZArith.BinInt.Z.of_nat 8))) Bits.Zone = exponent := by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        rw [hzsub, hzadd, hzadd, hzsub]
+        rw [hem, hone]
+        omega
+      rw [hsum, hexp]
+      rfl
+    · simp [hb] at hsplit ⊢
+      rw [hsplit]
+      have hzeroEq : Bits.Zeq_bool Bits.Z0 Bits.Z0 = true :=
+        CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true _ _ rfl
+      rw [hzeroEq]
+      have hzsub : ∀ a b : Z,
+          intOfZ (ZArith.BinInt.Z.sub a b) = intOfZ a - intOfZ b := by
+        intro a b
+        change intOfZ (zOfInt (intOfZ a - intOfZ b)) = _
+        exact intOfZ_zOfInt _
+      have hltbranch : Bits.Zlt (Bits.Zsub (Bits.Zpos mantissa)
+          (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 23))) Bits.Z0 := by
+        have hs := CompCert4Lean.Flocq.Core.Zaux.Zle_bool_spec Bits.Z0
+          (Bits.Zsub (Bits.Zpos mantissa)
+            (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 23)))
+        have hs' : CompCert4Lean.Flocq.Core.Zaux.Zle_bool_prop Bits.Z0
+            (Bits.Zsub (Bits.Zpos mantissa)
+              (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 23))) false := by
+          simpa [hb] using hs
+        cases hs' with
+        | Zle_bool_false_ h => exact h
+      have hmlt : Bits.Zlt (Bits.Zpos mantissa)
+          (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 23)) := by
+        change intOfZ (Bits.Zpos mantissa) < intOfZ
+          (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 23))
+        change intOfZ (Bits.Zsub (Bits.Zpos mantissa)
+          (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 23))) < intOfZ Bits.Z0 at hltbranch
+        rw [hzsub] at hltbranch
+        have hz0 : intOfZ Bits.Z0 = 0 := by decide
+        rw [hz0] at hltbranch
+        omega
+      have hdigit_le : ZArith.BinInt.Z.le (ZArith.BinInt.Z.pos
+          (BinarySingleNaN.digits2_pos mantissa))
+          (ZArith.BinInt.Z.of_nat 23) := by
+        have habs : CompCert4Lean.Flocq.Core.Digits.Zabs (Bits.Zpos mantissa) =
+            Bits.Zpos mantissa := by
+          apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+          change intOfZ (zOfInt (Int.natAbs (Int.ofNat
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat mantissa)))) = _
+          rw [intOfZ_zOfInt]
+          exact Int.natAbs_of_nonneg (Int.natCast_nonneg _)
+        have hstrict : CompCert4Lean.Flocq.Core.Digits.Zlt
+            (CompCert4Lean.Flocq.Core.Digits.Zabs (Bits.Zpos mantissa))
+            (Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 23)) := by
+          rw [habs]
+          exact hmlt
+        have hdigits := CompCert4Lean.Flocq.Core.Digits.Zdigits_le_Zpower
+          CompCert4Lean.Flocq.Core.Digits.radix2
+          (ZArith.BinInt.Z.of_nat 23) (Bits.Zpos mantissa) hstrict
+        have hdigit_eq : ZArith.BinInt.Z.pos (BinarySingleNaN.digits2_pos mantissa) =
+            CompCert4Lean.Flocq.Core.Digits.Zdigits
+              CompCert4Lean.Flocq.Core.Digits.radix2 (Bits.Zpos mantissa) := by
+          exact CompCert4Lean.Flocq.Core.Digits.Zpos_digits2_pos mantissa
+        rw [hdigit_eq]
+        exact hdigits
+      have hcanEq := ZArith.Zbool.Zeq_bool_eq _ _ hcan
+      change ZArith.BinInt.Z.max
+          (ZArith.BinInt.Z.sub
+            (ZArith.BinInt.Z.add
+              (ZArith.BinInt.Z.pos (BinarySingleNaN.digits2_pos mantissa)) exponent) z24)
+          (BinarySingleNaN.emin0 z24 z128) = exponent at hcanEq
+      let first : Z := ZArith.BinInt.Z.sub
+        (ZArith.BinInt.Z.add
+          (ZArith.BinInt.Z.pos (BinarySingleNaN.digits2_pos mantissa)) exponent) z24
+      have hexpEmin : exponent = BinarySingleNaN.emin0 z24 z128 := by
+        have hzadd : ∀ a b : Z,
+            intOfZ (ZArith.BinInt.Z.add a b) = intOfZ a + intOfZ b := by
+          intro a b
+          change intOfZ (zOfInt (intOfZ a + intOfZ b)) = _
+          exact intOfZ_zOfInt _
+        have hzsub : ∀ a b : Z,
+            intOfZ (ZArith.BinInt.Z.sub a b) = intOfZ a - intOfZ b := by
+          intro a b
+          change intOfZ (zOfInt (intOfZ a - intOfZ b)) = _
+          exact intOfZ_zOfInt _
+        by_cases hfirst : ZArith.BinInt.Z.le
+            (BinarySingleNaN.emin0 z24 z128) first
+        · have hmax := ZArith.BinInt.Z.max_l first
+              (BinarySingleNaN.emin0 z24 z128) hfirst
+          have hfirstEq : first = exponent := by
+            exact hmax.symm.trans hcanEq
+          have hfirstInt := congrArg intOfZ hfirstEq
+          change intOfZ (ZArith.BinInt.Z.pos
+              (BinarySingleNaN.digits2_pos mantissa)) ≤
+            intOfZ (ZArith.BinInt.Z.of_nat 23) at hdigit_le
+          have h52 : intOfZ (ZArith.BinInt.Z.of_nat 23) = 23 := by decide
+          rw [h52] at hdigit_le
+          change intOfZ (ZArith.BinInt.Z.sub
+              (ZArith.BinInt.Z.add
+                (ZArith.BinInt.Z.pos (BinarySingleNaN.digits2_pos mantissa)) exponent) z24) =
+            intOfZ exponent at hfirstInt
+          rw [hzsub, hzadd] at hfirstInt
+          have hz53 : intOfZ z24 = 24 := by decide
+          rw [hz53] at hfirstInt
+          omega
+        · have hfirst_le : ZArith.BinInt.Z.le first
+              (BinarySingleNaN.emin0 z24 z128) := by
+            change intOfZ first ≤ intOfZ (BinarySingleNaN.emin0 z24 z128)
+            change ¬ intOfZ (BinarySingleNaN.emin0 z24 z128) ≤ intOfZ first at hfirst
+            omega
+          have hmax := ZArith.BinInt.Z.max_r first
+              (BinarySingleNaN.emin0 z24 z128) hfirst_le
+          exact (hmax.symm.trans hcanEq).symm
+      have hzeroEmin : Bits.emin (ZArith.BinInt.Z.of_nat 23)
+          (ZArith.BinInt.Z.of_nat 8) = exponent := by
+        change BinarySingleNaN.emin0 z24 z128 = exponent
+        exact hexpEmin.symm
+      rw [hzeroEmin]
+      simp [Binary.FF2B_unchecked]
+      rfl
+
+private theorem conversion_encode32_decode (value : Binary.CertifiedBinaryFloat z24 z128) :
+    decode32 (encode32 value.1) = value.1 := by
+  unfold decode32 encode32
+  simp only [BitVec.toNat_ofNat]
+  have hround := conversion_binary32_of_bits_roundtrip value
+  have hrange := Bits.bits_of_binary_float_range
+    (ZArith.BinInt.Z.of_nat 23) (ZArith.BinInt.Z.of_nat 8)
+    (by change (0 : Int) < 23; decide)
+    (by change (0 : Int) < 8; decide) value
+  have hnonneg : Bits.Zle Bits.Z0 (Bits.bits_of_b32 value.1) := by
+    exact hrange.1
+  have hlt : Bits.Zlt (Bits.bits_of_b32 value.1)
+      (Bits.Zpower Bits.Ztwo
+        (Bits.Zadd (Bits.Zadd (ZArith.BinInt.Z.of_nat 23)
+          (ZArith.BinInt.Z.of_nat 8)) Bits.Zone)) := by
+    exact hrange.2
+  have hnonnegInt : 0 ≤ intOfZ (Bits.bits_of_b32 value.1) := by
+    exact hnonneg
+  have hltInt : intOfZ (Bits.bits_of_b32 value.1) < 2 ^ 32 := by
+    change intOfZ (Bits.bits_of_b32 value.1) <
+      intOfZ (Bits.Zpower Bits.Ztwo
+        (Bits.Zadd (Bits.Zadd (ZArith.BinInt.Z.of_nat 23)
+          (ZArith.BinInt.Z.of_nat 8)) Bits.Zone)) at hlt
+    have hpow : intOfZ (Bits.Zpower Bits.Ztwo
+        (Bits.Zadd (Bits.Zadd (ZArith.BinInt.Z.of_nat 23)
+          (ZArith.BinInt.Z.of_nat 8)) Bits.Zone)) = 2 ^ 32 := by decide
+    rw [hpow] at hlt
+    exact hlt
+  have hnatlt : ZArith.BinInt.Z.to_nat (Bits.bits_of_b32 value.1) < 2 ^ 32 := by
+    change Int.toNat (intOfZ (Bits.bits_of_b32 value.1)) < 2 ^ 32
+    exact (Int.toNat_lt hnonnegInt).mpr hltInt
+  rw [Nat.mod_eq_of_lt hnatlt]
+  rw [ZArith.Znat.Z2Nat.id (Bits.bits_of_b32 value.1) hnonneg]
+  simpa [Bits.b32_of_bits_unchecked, Bits.binary_float_of_bits_unchecked,
+    Bits.bits_of_b32, Bits.binary32] using hround
+
+private theorem conversion_narrow_model_zero (value : float)
+    (hfields : exponent64 value = 0 ∧ fraction64 value = 0)
+    (hbit : BitVec.extractLsb 63 63 value.bits = 0#1) :
+    decode32 (⟨
+      Float.Model.UnpackedFloat.pack Float.Model.Format.binary32
+        (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 value.bits)⟩ : float32) =
+      Binary.B754_zero (sign64 value) := by
+  have hexponent : BitVec.extractLsb 62 52 value.bits = 0#11 := by
+    apply BitVec.eq_of_toNat_eq
+    simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow,
+      exponent64] using hfields.1
+  have hmantissa : BitVec.extractLsb 51 0 value.bits = 0#52 := by
+    apply BitVec.eq_of_toNat_eq
+    simpa [BitVec.extractLsb_toNat, fraction64] using hfields.2
+  have hsign32_eq : sign64 value =
+      ((BitVec.extractLsb 63 63 value.bits).toNat == (1 : Nat)) := by
+    simp [sign64, BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow]
+  have hsign' : sign64 value = false := by
+    rw [hsign32_eq, hbit]
+    decide
+  have hunpack : Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 value.bits =
+      Float.Model.UnpackedFloat.zero
+        (Float.Model.UnpackedFloat.Sign.ofBitVec (BitVec.extractLsb 63 63 value.bits)) := by
+    simp [Float.Model.UnpackedFloat.unpack,
+    Float.Model.UnpackedFloat.unpackExponent,
+    Float.Model.UnpackedFloat.unpackMantissa,
+    Float.Model.UnpackedFloat.unpackSign,
+    hexponent, hmantissa, hbit]
+  have hcert : Binary.BinaryFloatCertificate (prec := z24) (emax := z128)
+      (Binary.B754_zero (sign64 value)) := by
+    simp [Binary.BinaryFloatCertificate, Binary.B2FF, Binary.valid_binary]
+  have hround := conversion_encode32_decode
+    (⟨Binary.B754_zero (sign64 value), hcert⟩ : Binary.CertifiedBinaryFloat z24 z128)
+  have hbits : (⟨Float.Model.UnpackedFloat.pack Float.Model.Format.binary32
+      (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 value.bits)⟩ : float32) =
+      encode32 (Binary.B754_zero (sign64 value)) := by
+    rw [hunpack]
+    apply float32.ext
+    apply BitVec.eq_of_toNat_eq
+    simp [encode32, Float.Model.UnpackedFloat.pack,
+    Float.Model.UnpackedFloat.packedZero,
+    Float.Model.UnpackedFloat.packComponents,
+    Float.Model.UnpackedFloat.Sign.ofBitVec,
+    Float.Model.UnpackedFloat.Sign.toBitVec, hbit,
+    Bits.bits_of_b32, Bits.bits_of_binary_float, Bits.join_bits, hsign']
+    decide
+  rw [hbits]
+  exact hround
+
+private theorem conversion_narrow_model_zero_neg (value : float)
+    (hfields : exponent64 value = 0 ∧ fraction64 value = 0)
+    (hbit : BitVec.extractLsb 63 63 value.bits = 1#1) :
+    decode32 (⟨
+      Float.Model.UnpackedFloat.pack Float.Model.Format.binary32
+        (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 value.bits)⟩ : float32) =
+      Binary.B754_zero (sign64 value) := by
+  have hexponent : BitVec.extractLsb 62 52 value.bits = 0#11 := by
+    apply BitVec.eq_of_toNat_eq
+    simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow,
+      exponent64] using hfields.1
+  have hmantissa : BitVec.extractLsb 51 0 value.bits = 0#52 := by
+    apply BitVec.eq_of_toNat_eq
+    simpa [BitVec.extractLsb_toNat, fraction64] using hfields.2
+  have hsign32_eq : sign64 value =
+      ((BitVec.extractLsb 63 63 value.bits).toNat == (1 : Nat)) := by
+    simp [sign64, BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow]
+  have hsign' : sign64 value = true := by
+    rw [hsign32_eq, hbit]
+    decide
+  have hunpack : Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 value.bits =
+      Float.Model.UnpackedFloat.zero
+        (Float.Model.UnpackedFloat.Sign.ofBitVec (BitVec.extractLsb 63 63 value.bits)) := by
+    simp [Float.Model.UnpackedFloat.unpack,
+      Float.Model.UnpackedFloat.unpackExponent,
+      Float.Model.UnpackedFloat.unpackMantissa,
+      Float.Model.UnpackedFloat.unpackSign,
+      hexponent, hmantissa, hbit]
+  have hcert : Binary.BinaryFloatCertificate (prec := z24) (emax := z128)
+      (Binary.B754_zero (sign64 value)) := by
+    simp [Binary.BinaryFloatCertificate, Binary.B2FF, Binary.valid_binary]
+  have hround := conversion_encode32_decode
+    (⟨Binary.B754_zero (sign64 value), hcert⟩ : Binary.CertifiedBinaryFloat z24 z128)
+  have hbits : (⟨Float.Model.UnpackedFloat.pack Float.Model.Format.binary32
+      (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 value.bits)⟩ : float32) =
+      encode32 (Binary.B754_zero (sign64 value)) := by
+    rw [hunpack]
+    apply float32.ext
+    apply BitVec.eq_of_toNat_eq
+    simp [encode32, Float.Model.UnpackedFloat.pack,
+      Float.Model.UnpackedFloat.packedZero,
+      Float.Model.UnpackedFloat.packComponents,
+      Float.Model.UnpackedFloat.Sign.ofBitVec,
+      Float.Model.UnpackedFloat.Sign.toBitVec, hbit,
+      Bits.bits_of_b32, Bits.bits_of_binary_float, Bits.join_bits, hsign']
+    decide
+  rw [hbits]
+  exact hround
+
+set_option maxRecDepth 100000 in
+private theorem conversion_decode64_zero_sign (value : float)
+    (hfields : exponent64 value = 0 ∧ fraction64 value = 0) :
+    Binary.Bsign (decode64 value) = sign64 value := by
+  have hdiv :
+      Bits.Zdiv (ZArith.BinInt.Z.of_nat value.bits.toNat)
+          (ZArith.BinInt.Z.of_nat (2 ^ 52)) =
+        ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 52) :=
+    zdiv_nat_f64 _ _ (by decide)
+  have hmod :
+      Bits.Zmod (ZArith.BinInt.Z.of_nat value.bits.toNat)
+          (ZArith.BinInt.Z.of_nat (2 ^ 52)) =
+        ZArith.BinInt.Z.of_nat (value.bits.toNat % 2 ^ 52) :=
+    zmod_nat_f64 _ _ (by decide)
+  have hmodexp :
+      Bits.Zmod
+          (ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 52))
+          (ZArith.BinInt.Z.of_nat (2 ^ 11)) =
+        ZArith.BinInt.Z.of_nat ((value.bits.toNat / 2 ^ 52) % 2 ^ 11) :=
+    zmod_nat_f64 _ _ (by decide)
+  have hexpNat : value.bits.toNat / 2 ^ 52 % 2 ^ 11 = 0 := by
+    simpa [exponent64] using hfields.1
+  have hmantNat : value.bits.toNat % 2 ^ 52 = 0 := by
+    simpa [fraction64] using hfields.2
+  have hexp0 : Bits.Zeq_bool
+      (ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 52 % 2 ^ 11)) Bits.Z0 = true := by
+    rw [hexpNat]
+    decide
+  have hmant0 : ZArith.BinInt.Z.of_nat (value.bits.toNat % 2 ^ 52) = Bits.Z0 := by
+    rw [hmantNat]
+    decide
+  have hsign32_eq : sign64 value =
+      ((BitVec.extractLsb 63 63 value.bits).toNat == (1 : Nat)) := by
+    simp [sign64, BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow]
+  have hthreshold :
+      Bits.Zle_bool
+        (Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 52))
+          (ZArith.BinInt.Z.of_nat (2 ^ 11)))
+        (ZArith.BinInt.Z.of_nat value.bits.toNat) = sign64 value := by
+    have hlt : value.bits.toNat < 2 ^ 64 := value.bits.isLt
+    rcases BitVec.eq_zero_or_eq_one (BitVec.extractLsb 63 63 value.bits) with hbit | hbit
+    · have hq : value.bits.toNat / 2 ^ 63 % 2 = 0 := by
+        have hh := congrArg BitVec.toNat hbit
+        simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow] using hh
+      have hn : value.bits.toNat < 2 ^ 63 := by omega
+      have hfalse : Bits.Zle_bool
+          (Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 52))
+            (ZArith.BinInt.Z.of_nat (2 ^ 11)))
+          (ZArith.BinInt.Z.of_nat value.bits.toNat) = false := by
+        have hprod : Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 52))
+            (ZArith.BinInt.Z.of_nat (2 ^ 11)) =
+            ZArith.BinInt.Z.of_nat (2 ^ 63) := by decide
+        rw [hprod]
+        apply CompCert4Lean.Flocq.Core.Zaux.Zle_bool_false
+        change intOfZ (ZArith.BinInt.Z.of_nat value.bits.toNat) <
+          intOfZ (ZArith.BinInt.Z.of_nat (2 ^ 63))
+        simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+        exact Int.ofNat_lt.mpr hn
+      rw [hfalse]
+      rw [hsign32_eq, hbit]
+      decide
+    · have hq : value.bits.toNat / 2 ^ 63 % 2 = 1 := by
+        have hh := congrArg BitVec.toNat hbit
+        simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow] using hh
+      have hn : 2 ^ 63 ≤ value.bits.toNat := by omega
+      have htrue : Bits.Zle_bool
+          (Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 52))
+            (ZArith.BinInt.Z.of_nat (2 ^ 11)))
+          (ZArith.BinInt.Z.of_nat value.bits.toNat) = true := by
+        have hprod : Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 52))
+            (ZArith.BinInt.Z.of_nat (2 ^ 11)) =
+            ZArith.BinInt.Z.of_nat (2 ^ 63) := by decide
+        rw [hprod]
+        apply CompCert4Lean.Flocq.Core.Zaux.Zle_bool_true
+        change intOfZ (ZArith.BinInt.Z.of_nat (2 ^ 63)) ≤
+          intOfZ (ZArith.BinInt.Z.of_nat value.bits.toNat)
+        simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+        exact Int.ofNat_le.mpr hn
+      rw [htrue]
+      rw [hsign32_eq, hbit]
+      decide
+  unfold Binary.Bsign decode64
+  unfold Bits.b64_of_bits_unchecked Bits.binary_float_of_bits_unchecked
+    Bits.binary_float_of_bits_aux Bits.split_bits
+  simp only []
+  rw [show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 52) =
+        ZArith.BinInt.Z.of_nat (2 ^ 52) by decide,
+    show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 11) =
+        ZArith.BinInt.Z.of_nat (2 ^ 11) by decide,
+    hdiv, hmod, hmodexp]
+  simp [Binary.FF2B_unchecked, hexp0, hmant0, hthreshold,
+    Binary.Bsign]
+
+set_option maxRecDepth 100000 in
+private theorem conversion_decode64_infinity_sign (value : float)
+    (hfields : exponent64 value = 2 ^ 11 - 1 ∧ fraction64 value = 0) :
+    Binary.Bsign (decode64 value) = sign64 value := by
+  have hdiv :
+      Bits.Zdiv (ZArith.BinInt.Z.of_nat value.bits.toNat)
+          (ZArith.BinInt.Z.of_nat (2 ^ 52)) =
+        ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 52) :=
+    zdiv_nat_f64 _ _ (by decide)
+  have hmod :
+      Bits.Zmod (ZArith.BinInt.Z.of_nat value.bits.toNat)
+          (ZArith.BinInt.Z.of_nat (2 ^ 52)) =
+        ZArith.BinInt.Z.of_nat (value.bits.toNat % 2 ^ 52) :=
+    zmod_nat_f64 _ _ (by decide)
+  have hmodexp :
+      Bits.Zmod
+          (ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 52))
+          (ZArith.BinInt.Z.of_nat (2 ^ 11)) =
+        ZArith.BinInt.Z.of_nat ((value.bits.toNat / 2 ^ 52) % 2 ^ 11) :=
+    zmod_nat_f64 _ _ (by decide)
+  have hexpNat : value.bits.toNat / 2 ^ 52 % 2 ^ 11 = 2 ^ 11 - 1 := by
+    simpa [exponent64] using hfields.1
+  have hmantNat : value.bits.toNat % 2 ^ 52 = 0 := by
+    simpa [fraction64] using hfields.2
+  have hexp0 : Bits.Zeq_bool
+      (ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 52 % 2 ^ 11)) Bits.Z0 = false := by
+    rw [hexpNat]
+    decide
+  have hmax : Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 11)) Bits.Zone =
+      ZArith.BinInt.Z.of_nat (2 ^ 11 - 1) := by decide
+  have hexpmax : Bits.Zeq_bool
+      (ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 52 % 2 ^ 11))
+      (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 11)) Bits.Zone) = true := by
+    rw [hexpNat, hmax]
+    decide
+  have hmant0 : ZArith.BinInt.Z.of_nat (value.bits.toNat % 2 ^ 52) = Bits.Z0 := by
+    rw [hmantNat]
+    decide
+  have hsign32_eq : sign64 value =
+      ((BitVec.extractLsb 63 63 value.bits).toNat == (1 : Nat)) := by
+    simp [sign64, BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow]
+  have hthreshold :
+      Bits.Zle_bool
+        (Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 52))
+          (ZArith.BinInt.Z.of_nat (2 ^ 11)))
+        (ZArith.BinInt.Z.of_nat value.bits.toNat) = sign64 value := by
+    have hlt : value.bits.toNat < 2 ^ 64 := value.bits.isLt
+    rcases BitVec.eq_zero_or_eq_one (BitVec.extractLsb 63 63 value.bits) with hbit | hbit
+    · have hq : value.bits.toNat / 2 ^ 63 % 2 = 0 := by
+        have hh := congrArg BitVec.toNat hbit
+        simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow] using hh
+      have hn : value.bits.toNat < 2 ^ 63 := by omega
+      have hfalse : Bits.Zle_bool
+          (Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 52))
+            (ZArith.BinInt.Z.of_nat (2 ^ 11)))
+          (ZArith.BinInt.Z.of_nat value.bits.toNat) = false := by
+        have hprod : Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 52))
+            (ZArith.BinInt.Z.of_nat (2 ^ 11)) =
+            ZArith.BinInt.Z.of_nat (2 ^ 63) := by decide
+        rw [hprod]
+        apply CompCert4Lean.Flocq.Core.Zaux.Zle_bool_false
+        change intOfZ (ZArith.BinInt.Z.of_nat value.bits.toNat) <
+          intOfZ (ZArith.BinInt.Z.of_nat (2 ^ 63))
+        simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+        exact Int.ofNat_lt.mpr hn
+      rw [hfalse, hsign32_eq, hbit]
+      decide
+    · have hq : value.bits.toNat / 2 ^ 63 % 2 = 1 := by
+        have hh := congrArg BitVec.toNat hbit
+        simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow] using hh
+      have hn : 2 ^ 63 ≤ value.bits.toNat := by omega
+      have htrue : Bits.Zle_bool
+          (Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 52))
+            (ZArith.BinInt.Z.of_nat (2 ^ 11)))
+          (ZArith.BinInt.Z.of_nat value.bits.toNat) = true := by
+        have hprod : Bits.Zmul (ZArith.BinInt.Z.of_nat (2 ^ 52))
+            (ZArith.BinInt.Z.of_nat (2 ^ 11)) =
+            ZArith.BinInt.Z.of_nat (2 ^ 63) := by decide
+        rw [hprod]
+        apply CompCert4Lean.Flocq.Core.Zaux.Zle_bool_true
+        change intOfZ (ZArith.BinInt.Z.of_nat (2 ^ 63)) ≤
+          intOfZ (ZArith.BinInt.Z.of_nat value.bits.toNat)
+        simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+        exact Int.ofNat_le.mpr hn
+      rw [htrue, hsign32_eq, hbit]
+      decide
+  unfold Binary.Bsign decode64
+  unfold Bits.b64_of_bits_unchecked Bits.binary_float_of_bits_unchecked
+    Bits.binary_float_of_bits_aux Bits.split_bits
+  simp only []
+  rw [show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 52) =
+        ZArith.BinInt.Z.of_nat (2 ^ 52) by decide,
+    show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 11) =
+        ZArith.BinInt.Z.of_nat (2 ^ 11) by decide,
+    hdiv, hmod, hmodexp]
+  simp [Binary.FF2B_unchecked, hexp0, hexpmax, hmant0, hthreshold,
+    Binary.Bsign]
+
+private theorem conversion_narrow_model_infinity (value : float)
+    (hfields : exponent64 value = 2 ^ 11 - 1 ∧ fraction64 value = 0)
+    (hbit : BitVec.extractLsb 63 63 value.bits = 0#1 ∨
+      BitVec.extractLsb 63 63 value.bits = 1#1) :
+    decode32 (⟨
+      Float.Model.UnpackedFloat.pack Float.Model.Format.binary32
+        (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 value.bits)⟩ : float32) =
+      Binary.B754_infinity (sign64 value) := by
+  have hexponent : BitVec.extractLsb 62 52 value.bits = (2047#11) := by
+    apply BitVec.eq_of_toNat_eq
+    simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow,
+      exponent64] using hfields.1
+  have hmantissa : BitVec.extractLsb 51 0 value.bits = 0#52 := by
+    apply BitVec.eq_of_toNat_eq
+    simpa [BitVec.extractLsb_toNat, fraction64] using hfields.2
+  have hsign32_eq : sign64 value =
+      ((BitVec.extractLsb 63 63 value.bits).toNat == (1 : Nat)) := by
+    simp [sign64, BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow]
+  have hunpack : Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 value.bits =
+      Float.Model.UnpackedFloat.infinity
+        (Float.Model.UnpackedFloat.Sign.ofBitVec (BitVec.extractLsb 63 63 value.bits)) := by
+    simp [Float.Model.UnpackedFloat.unpack,
+      Float.Model.UnpackedFloat.unpackExponent,
+      Float.Model.UnpackedFloat.unpackMantissa,
+      Float.Model.UnpackedFloat.unpackSign,
+      hexponent, hmantissa, hbit]
+  have hcert : Binary.BinaryFloatCertificate (prec := z24) (emax := z128)
+      (Binary.B754_infinity (sign64 value)) := by
+    simp [Binary.BinaryFloatCertificate, Binary.B2FF, Binary.valid_binary]
+  have hround := conversion_encode32_decode
+    (⟨Binary.B754_infinity (sign64 value), hcert⟩ : Binary.CertifiedBinaryFloat z24 z128)
+  have hbits : (⟨Float.Model.UnpackedFloat.pack Float.Model.Format.binary32
+      (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 value.bits)⟩ : float32) =
+      encode32 (Binary.B754_infinity (sign64 value)) := by
+    rw [hunpack]
+    apply float32.ext
+    apply BitVec.eq_of_toNat_eq
+    rcases hbit with hbit | hbit
+    · simp [encode32, Float.Model.UnpackedFloat.pack,
+        Float.Model.UnpackedFloat.packedInfinity,
+        Float.Model.UnpackedFloat.packComponents,
+        Float.Model.UnpackedFloat.Sign.ofBitVec,
+        Float.Model.UnpackedFloat.Sign.toBitVec, hbit,
+        Bits.bits_of_b32, Bits.bits_of_binary_float, Bits.join_bits, hsign32_eq]
+      decide
+    · simp [encode32, Float.Model.UnpackedFloat.pack,
+        Float.Model.UnpackedFloat.packedInfinity,
+        Float.Model.UnpackedFloat.packComponents,
+        Float.Model.UnpackedFloat.Sign.ofBitVec,
+        Float.Model.UnpackedFloat.Sign.toBitVec, hbit,
+        Bits.bits_of_b32, Bits.bits_of_binary_float, Bits.join_bits, hsign32_eq]
+      decide
+  rw [hbits]
+  exact hround
+set_option maxRecDepth 100000 in
+private theorem conversion_to_single_bconv
+    (value : float)
+    (conv_nan : Bits.binary64 →
+      IEEE754_extra.NaNResult z24 z128)
+    (hnotnan : Binary.is_nan (decode64 value) = false) :
+    decode32 (Float.to_single value) =
+      IEEE754_extra.Bconv conv_nan BinarySingleNaN.mode_NE (decode64 value) := by
+  have hnan : isNaN64 value = false := by
+    rw [← conversion_isNaN64_decode value]
+    exact hnotnan
+  cases hvalue : decode64 value with
+  | B754_zero sign =>
+      have hvalue0 := hvalue
+      have hfields : exponent64 value = 0 ∧ fraction64 value = 0 := by
+        have hdiv :
+            Bits.Zdiv (ZArith.BinInt.Z.of_nat value.bits.toNat)
+                (ZArith.BinInt.Z.of_nat (2 ^ 52)) =
+              ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 52) :=
+          zdiv_nat_f64 _ _ (by decide)
+        have hmod :
+            Bits.Zmod (ZArith.BinInt.Z.of_nat value.bits.toNat)
+                (ZArith.BinInt.Z.of_nat (2 ^ 52)) =
+              ZArith.BinInt.Z.of_nat (value.bits.toNat % 2 ^ 52) :=
+          zmod_nat_f64 _ _ (by decide)
+        have hmodexp :
+            Bits.Zmod
+                (ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 52))
+                (ZArith.BinInt.Z.of_nat (2 ^ 11)) =
+              ZArith.BinInt.Z.of_nat ((value.bits.toNat / 2 ^ 52) % 2 ^ 11) :=
+          zmod_nat_f64 _ _ (by decide)
+        have hraw := hvalue
+        unfold decode64 at hraw
+        unfold Bits.b64_of_bits_unchecked Bits.binary_float_of_bits_unchecked
+          Bits.binary_float_of_bits_aux Bits.split_bits at hraw
+        simp only [] at hraw
+        rw [show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 52) =
+              ZArith.BinInt.Z.of_nat (2 ^ 52) by decide,
+          show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 11) =
+              ZArith.BinInt.Z.of_nat (2 ^ 11) by decide,
+          hdiv, hmod, hmodexp] at hraw
+        let exponent := value.bits.toNat / 4503599627370496 % 2048
+        let mantissa := value.bits.toNat % 4503599627370496
+        have hzero : ZArith.BinInt.Z.of_nat 0 = Bits.Z0 := by decide
+        have zeq_true {a b : Nat} (h : a = b) :
+            Bits.Zeq_bool (ZArith.BinInt.Z.of_nat a)
+              (ZArith.BinInt.Z.of_nat b) = true := by
+          apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true
+          simpa [h]
+        have zeq_false {a b : Nat} (h : a ≠ b) :
+            Bits.Zeq_bool (ZArith.BinInt.Z.of_nat a)
+              (ZArith.BinInt.Z.of_nat b) = false := by
+          apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false
+          intro hab
+          have hi := congrArg intOfZ hab
+          simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hi
+          exact h (Int.ofNat_inj.mp hi)
+        by_cases he0 : exponent = 0
+        · by_cases hm0 : mantissa = 0
+          · exact ⟨he0, hm0⟩
+          · have hmpos : 0 < mantissa := Nat.pos_of_ne_zero hm0
+            have hmz : ZArith.BinInt.Z.of_nat mantissa =
+                ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat mantissa) := by
+              apply intOfZ_injective
+              simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.pos,
+                intOfZ_zOfInt]
+              exact congrArg Int.ofNat (posToNat_posOfNat hmpos).symm
+            have hexp0 : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent) Bits.Z0 = true :=
+              zeq_true he0
+            have hexpMax : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+                (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 11)) Bits.Zone) = false := by
+              apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false
+              intro h
+              have hi := congrArg intOfZ h
+              have hleft : intOfZ (ZArith.BinInt.Z.of_nat exponent) =
+                  (exponent : Int) := by
+                simp [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+              have hright : intOfZ
+                  (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 11)) Bits.Zone) = 2047 := by decide
+              rw [hleft, hright] at hi
+              omega
+            simp [Binary.FF2B_unchecked, exponent, mantissa, hexp0, hexpMax, hmz, he0, hm0] at hraw
+            cases hraw
+        · have hexp0 : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent) Bits.Z0 = false :=
+              zeq_false he0
+          by_cases heMax : exponent = 2 ^ 11 - 1
+          · by_cases hm0 : mantissa = 0
+            · have hmz : ZArith.BinInt.Z.of_nat mantissa = Bits.Z0 := by
+                rw [hm0]
+                decide
+              have hexpMax : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+                  (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 11)) Bits.Zone) = true := by
+                apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true
+                simpa [heMax] using (show ZArith.BinInt.Z.of_nat (2 ^ 11 - 1) =
+                  Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 11)) Bits.Zone by decide)
+              simp [Binary.FF2B_unchecked, exponent, mantissa, hexp0, hexpMax, hmz, heMax, hm0] at hraw
+              cases hraw
+            · have hmpos : 0 < mantissa := Nat.pos_of_ne_zero hm0
+              have hmz : ZArith.BinInt.Z.of_nat mantissa =
+                  ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat mantissa) := by
+                apply intOfZ_injective
+                simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.pos,
+                  intOfZ_zOfInt]
+                exact congrArg Int.ofNat (posToNat_posOfNat hmpos).symm
+              have hexpMax : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+                  (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 11)) Bits.Zone) = true := by
+                apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true
+                simpa [heMax] using (show ZArith.BinInt.Z.of_nat (2 ^ 11 - 1) =
+                  Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 11)) Bits.Zone by decide)
+              simp [Binary.FF2B_unchecked, exponent, mantissa, hexp0, hexpMax, hmz, heMax, hm0] at hraw
+              cases hraw
+          · have hexpMax : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+                (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 11)) Bits.Zone) = false := by
+              apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false
+              intro h
+              have hi := congrArg intOfZ h
+              have hleft : intOfZ (ZArith.BinInt.Z.of_nat exponent) =
+                  (exponent : Int) := by
+                simp [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+              have hright : intOfZ
+                  (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 11)) Bits.Zone) = 2047 := by decide
+              rw [hleft, hright] at hi
+              omega
+            simp [Binary.FF2B_unchecked, exponent, mantissa, hexp0, hexpMax, heMax] at hraw
+            cases hsum : Bits.Zadd
+                (ZArith.BinInt.Z.of_nat (value.bits.toNat % 4503599627370496))
+                (ZArith.BinInt.Z.of_nat 4503599627370496) <;>
+              simp [hsum] at hraw
+      have hsign32_eq : sign64 value =
+          ((BitVec.extractLsb 63 63 value.bits).toNat == (1 : Nat)) := by
+        simp [sign64, BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow]
+      rcases BitVec.eq_zero_or_eq_one (BitVec.extractLsb 63 63 value.bits) with hbit | hbit
+      · have hz := conversion_narrow_model_zero value hfields hbit
+        have hsignraw := congrArg Binary.Bsign hvalue0
+        have hdecode_sign := conversion_decode64_zero_sign value hfields
+        have hsignraw' : Binary.Bsign (decode64 value) = sign := by
+          simpa [Binary.Bsign] using hsignraw
+        have hsign : sign64 value = sign := by
+          exact hdecode_sign.symm.trans hsignraw'
+        simp only [Float.to_single, hnan, hvalue0, Bool.false_eq_true, ↓reduceIte]
+        simp only [IEEE754_extra.Bconv]
+        rw [hsign] at hz
+        exact hz
+      · have hz := conversion_narrow_model_zero_neg value hfields hbit
+        have hsignraw := congrArg Binary.Bsign hvalue0
+        have hdecode_sign := conversion_decode64_zero_sign value hfields
+        have hsignraw' : Binary.Bsign (decode64 value) = sign := by
+          simpa [Binary.Bsign] using hsignraw
+        have hsign : sign64 value = sign := by
+          exact hdecode_sign.symm.trans hsignraw'
+        simp only [Float.to_single, hnan, hvalue0, Bool.false_eq_true, ↓reduceIte]
+        simp only [IEEE754_extra.Bconv]
+        rw [hsign] at hz
+        exact hz
+  | B754_infinity sign =>
+      have hvalue0 := hvalue
+      have hfields : exponent64 value = 2 ^ 11 - 1 ∧ fraction64 value = 0 := by
+        have hdiv :
+            Bits.Zdiv (ZArith.BinInt.Z.of_nat value.bits.toNat)
+                (ZArith.BinInt.Z.of_nat (2 ^ 52)) =
+              ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 52) :=
+          zdiv_nat_f64 _ _ (by decide)
+        have hmod :
+            Bits.Zmod (ZArith.BinInt.Z.of_nat value.bits.toNat)
+                (ZArith.BinInt.Z.of_nat (2 ^ 52)) =
+              ZArith.BinInt.Z.of_nat (value.bits.toNat % 2 ^ 52) :=
+          zmod_nat_f64 _ _ (by decide)
+        have hmodexp :
+            Bits.Zmod
+                (ZArith.BinInt.Z.of_nat (value.bits.toNat / 2 ^ 52))
+                (ZArith.BinInt.Z.of_nat (2 ^ 11)) =
+              ZArith.BinInt.Z.of_nat ((value.bits.toNat / 2 ^ 52) % 2 ^ 11) :=
+          zmod_nat_f64 _ _ (by decide)
+        have hraw := hvalue
+        unfold decode64 at hraw
+        unfold Bits.b64_of_bits_unchecked Bits.binary_float_of_bits_unchecked
+          Bits.binary_float_of_bits_aux Bits.split_bits at hraw
+        simp only [] at hraw
+        rw [show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 52) =
+              ZArith.BinInt.Z.of_nat (2 ^ 52) by decide,
+          show Bits.Zpower Bits.Ztwo (ZArith.BinInt.Z.of_nat 11) =
+              ZArith.BinInt.Z.of_nat (2 ^ 11) by decide,
+          hdiv, hmod, hmodexp] at hraw
+        have hzero : ZArith.BinInt.Z.of_nat 0 = Bits.Z0 := by decide
+        have hmax : Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 11)) Bits.Zone =
+            ZArith.BinInt.Z.of_nat (2 ^ 11 - 1) := by decide
+        let exponent := value.bits.toNat / 4503599627370496 % 2048
+        let mantissa := value.bits.toNat % 4503599627370496
+        have zeq_true {a b : Nat} (h : a = b) :
+            Bits.Zeq_bool (ZArith.BinInt.Z.of_nat a)
+              (ZArith.BinInt.Z.of_nat b) = true := by
+          apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true
+          simpa [h]
+        have zeq_false {a b : Nat} (h : a ≠ b) :
+            Bits.Zeq_bool (ZArith.BinInt.Z.of_nat a)
+              (ZArith.BinInt.Z.of_nat b) = false := by
+          apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false
+          intro hab
+          have hi := congrArg intOfZ hab
+          simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hi
+          exact h (Int.ofNat_inj.mp hi)
+        have hmax_nat : 2047 = 2 ^ 11 - 1 := by decide
+        by_cases he0 : exponent = 0
+        · have hexp0 := zeq_true he0
+          have hexpmax : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+              (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 11)) Bits.Zone) = false := by
+            rw [hmax]
+            exact zeq_false (by omega)
+          have hexpmaxraw : Bits.Zeq_bool
+              (ZArith.BinInt.Z.of_nat (value.bits.toNat / 4503599627370496 % 2048))
+              (ZArith.BinInt.Z.of_nat 2047) = false := by
+            simpa [exponent] using (show Bits.Zeq_bool
+              (ZArith.BinInt.Z.of_nat exponent) (ZArith.BinInt.Z.of_nat 2047) = false by
+              exact zeq_false (by omega))
+          by_cases hm0 : mantissa = 0
+          · have hmant := zeq_true hm0
+            simp [Binary.FF2B_unchecked, exponent, mantissa, hzero, hmax,
+              hexp0, hexpmax, hexpmaxraw, hmant, he0, hm0] at hraw
+            cases hraw
+          · have hmpos : 0 < mantissa := Nat.pos_of_ne_zero hm0
+            have hmz : ZArith.BinInt.Z.of_nat mantissa =
+                ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat mantissa) := by
+              apply intOfZ_injective
+              simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.pos, intOfZ_zOfInt]
+              exact congrArg Int.ofNat (posToNat_posOfNat hmpos).symm
+            have hmant := zeq_false hm0
+            simp [Binary.FF2B_unchecked, exponent, mantissa, hzero, hmax,
+              hexp0, hexpmax, hmant, hmz, he0, hm0] at hraw
+            cases hraw
+        · have hexp0 := zeq_false he0
+          by_cases hemax : exponent = 2 ^ 11 - 1
+          · have hexpmax : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+                (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 11)) Bits.Zone) = true := by
+              apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_true
+              simpa [hemax] using (show ZArith.BinInt.Z.of_nat (2 ^ 11 - 1) =
+                Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 11)) Bits.Zone by decide)
+            have hexpmaxraw : Bits.Zeq_bool
+                (ZArith.BinInt.Z.of_nat (value.bits.toNat / 4503599627370496 % 2048))
+                (ZArith.BinInt.Z.of_nat 2047) = true := by
+              simpa [exponent] using (show Bits.Zeq_bool
+                (ZArith.BinInt.Z.of_nat exponent) (ZArith.BinInt.Z.of_nat 2047) = true by
+                exact zeq_true hemax)
+            by_cases hm0 : mantissa = 0
+            · constructor
+              · simpa [exponent64, exponent] using hemax
+              · simpa [fraction64, mantissa] using hm0
+            · have hmpos : 0 < mantissa := Nat.pos_of_ne_zero hm0
+              have hmz : ZArith.BinInt.Z.of_nat mantissa =
+                  ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat mantissa) := by
+                apply intOfZ_injective
+                simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.pos, intOfZ_zOfInt]
+                exact congrArg Int.ofNat (posToNat_posOfNat hmpos).symm
+              have hmant := zeq_false hm0
+              simp [Binary.FF2B_unchecked, exponent, mantissa, hzero, hmax,
+                hexp0, hexpmax, hexpmaxraw, hmz, hemax, hm0, hmant] at hraw
+              cases hraw
+          · have hexpmax : Bits.Zeq_bool (ZArith.BinInt.Z.of_nat exponent)
+                (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 11)) Bits.Zone) = false := by
+              apply CompCert4Lean.Flocq.Core.Zaux.Zeq_bool_false
+              intro h
+              have hi := congrArg intOfZ h
+              have hleft : intOfZ (ZArith.BinInt.Z.of_nat exponent) =
+                  (exponent : Int) := by
+                simp [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+              have hright : intOfZ
+                  (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 11)) Bits.Zone) = 2047 := by decide
+              rw [hleft, hright] at hi
+              omega
+            by_cases hm0 : mantissa = 0
+            · have hmz : ZArith.BinInt.Z.of_nat mantissa = Bits.Z0 := by
+                rw [hm0]
+                decide
+              have hexp0raw : Bits.Zeq_bool
+                  (ZArith.BinInt.Z.of_nat (value.bits.toNat / 4503599627370496 % 2048)) Bits.Z0 = false := by
+                simpa [exponent, hzero] using hexp0
+              have hexpmaxraw : Bits.Zeq_bool
+                  (ZArith.BinInt.Z.of_nat (value.bits.toNat / 4503599627370496 % 2048))
+                  (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 11)) Bits.Zone) = false := by
+                simpa [exponent, hmax] using hexpmax
+              have hexpmaxraw255 : Bits.Zeq_bool
+                  (ZArith.BinInt.Z.of_nat (value.bits.toNat / 4503599627370496 % 2048))
+                  (ZArith.BinInt.Z.of_nat 2047) = false := by
+                simpa [exponent] using (show Bits.Zeq_bool
+                  (ZArith.BinInt.Z.of_nat exponent) (ZArith.BinInt.Z.of_nat 2047) = false by
+                  exact zeq_false (by omega))
+              have hsum0 : Bits.Zadd Bits.Z0 (ZArith.BinInt.Z.of_nat 4503599627370496) =
+                  ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat 4503599627370496) := by decide
+              simp [Binary.FF2B_unchecked, mantissa, hm0, hzero, hmax, hexp0raw, hexpmaxraw,
+                hexpmaxraw255,
+                hmz, hsum0] at hraw
+            · have hmpos : 0 < mantissa := Nat.pos_of_ne_zero hm0
+              have hmz : ZArith.BinInt.Z.of_nat mantissa =
+                  ZArith.BinInt.Z.pos (PArith.BinPos.Pos.of_nat mantissa) := by
+                apply intOfZ_injective
+                simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.pos, intOfZ_zOfInt]
+                exact congrArg Int.ofNat (posToNat_posOfNat hmpos).symm
+              have hexp0raw : Bits.Zeq_bool
+                  (ZArith.BinInt.Z.of_nat (value.bits.toNat / 4503599627370496 % 2048)) Bits.Z0 = false := by
+                simpa [exponent, hzero] using hexp0
+              have hexpmaxraw : Bits.Zeq_bool
+                  (ZArith.BinInt.Z.of_nat (value.bits.toNat / 4503599627370496 % 2048))
+                  (Bits.Zsub (ZArith.BinInt.Z.of_nat (2 ^ 11)) Bits.Zone) = false := by
+                simpa [exponent, hmax] using hexpmax
+              have hexpmaxraw255 : Bits.Zeq_bool
+                  (ZArith.BinInt.Z.of_nat (value.bits.toNat / 4503599627370496 % 2048))
+                  (ZArith.BinInt.Z.of_nat 2047) = false := by
+                simpa [exponent] using (show Bits.Zeq_bool
+                  (ZArith.BinInt.Z.of_nat exponent) (ZArith.BinInt.Z.of_nat 2047) = false by
+                  exact zeq_false (by omega))
+              cases hsum : Bits.Zadd
+                  (ZArith.BinInt.Z.of_nat (value.bits.toNat % 4503599627370496))
+                  (ZArith.BinInt.Z.of_nat 4503599627370496) <;>
+                simp [Binary.FF2B_unchecked, hzero, hmax,
+                  hexp0raw, hexpmaxraw, hexpmaxraw255, hmz, hsum] at hraw <;>
+                cases hraw
+      have hbit : BitVec.extractLsb 63 63 value.bits = 0#1 ∨
+          BitVec.extractLsb 63 63 value.bits = 1#1 :=
+        BitVec.eq_zero_or_eq_one _
+      have hz := conversion_narrow_model_infinity value hfields hbit
+      have hsignraw := congrArg Binary.Bsign hvalue0
+      have hdecode_sign := conversion_decode64_infinity_sign value hfields
+      have hsignraw' : Binary.Bsign (decode64 value) = sign := by
+        simpa [Binary.Bsign] using hsignraw
+      have hsign : sign64 value = sign := by
+        exact hdecode_sign.symm.trans hsignraw'
+      simp only [Float.to_single, hnan, hvalue0, Bool.false_eq_true, ↓reduceIte]
+      simp only [IEEE754_extra.Bconv]
+      rw [hsign] at hz
+      exact hz
+  | B754_nan sign payload =>
+      rw [hvalue] at hnotnan
+      simp [Binary.is_nan] at hnotnan
+  | B754_finite sign mantissa exponent =>
+      simp only [Float.to_single, hnan, hvalue, Bool.false_eq_true, ↓reduceIte]
+      have hnorm := Binary.binary_normalize_result_obligation_proof
+        (prec := z24) (emax := z128) BinarySingleNaN.mode_NE
+        (CompCert4Lean.Flocq.Core.Zaux.cond_Zopp sign (.Zpos mantissa)) exponent sign
+      have hround := conversion_encode32_decode
+        (⟨Binary.binary_normalize BinarySingleNaN.mode_NE
+          (CompCert4Lean.Flocq.Core.Zaux.cond_Zopp sign (.Zpos mantissa)) exponent sign,
+          hnorm⟩ : Binary.CertifiedBinaryFloat z24 z128)
+      simpa [IEEE754_extra.Bconv] using hround
+
+private theorem conversion_build_nan_eq {precision maximum : Z}
+    (value : Binary.binary_float precision maximum) (isNaN : Binary.is_nan value = true) :
+    Binary.build_nan ⟨value, isNaN⟩ = value := by
+  cases value <;> first | rfl | contradiction
+
+private theorem conversion_of_single_correspondence (value : float32) :
+    decode64 (Float.of_single value) =
+      IEEE754_extra.Bconv (prec1 := z24) (emax1 := z128) (prec2 := z53) (emax2 := z1024)
+        (fun _ => ⟨decode64 (Float.of_single_nan value),
+          Float.of_single_nan_result_obligation_proof value (conversion_decode32_valid value)⟩)
+        BinarySingleNaN.mode_NE (decode32 value) := by
+  cases isNaN : Binary.is_nan (decode32 value) with
+  | false => exact conversion_of_single_bconv value _ isNaN
+  | true =>
+      have rawNaN : isNaN32 value = true := by
+        rw [← conversion_isNaN32_decode, isNaN]
+      rw [Float.of_single, rawNaN]
+      simp only [↓reduceIte]
+      cases decoded : decode32 value <;>
+        simp only [decoded, Binary.is_nan] at isNaN
+      all_goals first | contradiction | skip
+      change _ = Binary.build_nan _
+      exact (conversion_build_nan_eq _ _).symm
+
+private theorem conversion_to_single_correspondence (value : float) :
+    decode32 (Float.to_single value) =
+      IEEE754_extra.Bconv (prec1 := z53) (emax1 := z1024) (prec2 := z24) (emax2 := z128)
+        (fun _ => ⟨decode32 (Float.to_single_nan value),
+          Float.to_single_nan_result_obligation_proof value (conversion_decode64_valid value)⟩)
+        BinarySingleNaN.mode_NE (decode64 value) := by
+  cases isNaN : Binary.is_nan (decode64 value) with
+  | false => exact conversion_to_single_bconv value _ isNaN
+  | true =>
+      have rawNaN : isNaN64 value = true := by
+        rw [← conversion_isNaN64_decode, isNaN]
+      rw [Float.to_single, rawNaN]
+      simp only [↓reduceIte]
+      cases decoded : decode64 value <;>
+        simp only [decoded, Binary.is_nan] at isNaN
+      all_goals first | contradiction | skip
+      change _ = Binary.build_nan _
+      exact (conversion_build_nan_eq _ _).symm
+
+private theorem conversion_widen_exact
+    (ctx : CompCert4Lean.Foundation.FlocqReal.ExactRealContext)
+    (value : float32) (finite : Binary.is_finite (decode32 value) = true) :
+    Binary.Exact.B2R ctx (decode64 (Float.of_single value)) = Binary.Exact.B2R ctx (decode32 value) ∧
+      Binary.is_finite (decode64 (Float.of_single value)) = true ∧
+      Binary.Bsign (decode64 (Float.of_single value)) = Binary.Bsign (decode32 value) := by
+  rw [conversion_of_single_correspondence]
+  exact IEEE754_extra.Bconv_widen_exact (prec1 := z24) (emax1 := z128)
+    (prec2 := z53) (emax2 := z1024) ctx
+    (by change (24 : Int) ≤ 53; decide) (by change (128 : Int) ≤ 1024; decide) _
+    BinarySingleNaN.mode_NE ⟨decode32 value, conversion_decode32_valid value⟩ finite
+
+private theorem conversion_lift_projections {precision maximum : Z}
+    (ctx : CompCert4Lean.Foundation.FlocqReal.ExactRealContext)
+    (value : BinarySingleNaN.binary_float precision maximum)
+    (notNaN : BinarySingleNaN.is_nan value = false) :
+    Binary.Exact.B2R ctx (Binary.BSN2B' value notNaN) = BinarySingleNaN.Exact.B2R ctx value ∧
+      Binary.is_finite (Binary.BSN2B' value notNaN) = BinarySingleNaN.is_finite value ∧
+      Binary.Bsign (Binary.BSN2B' value notNaN) = BinarySingleNaN.Bsign value ∧
+      Binary.B2FF (Binary.BSN2B' value notNaN) = Binary.SF2FF (BinarySingleNaN.B2SF value) := by
+  cases value <;> first | exact ⟨rfl, rfl, rfl, rfl⟩ | contradiction
+
+private theorem conversion_normalize32_correct
+    (ctx : CompCert4Lean.Foundation.FlocqReal.ExactRealContext)
+    (magnitude : Binary.Exact.Magnitude ctx) :
+    Binary.binary_normalize_correctStatement (prec := z24) (emax := z128) ctx magnitude := by
+  intro rounding mantissa exponent zeroSign
+  have correct := BinarySingleNaN.binary_normalize_correct (prec := z24) (emax := z128)
+    ctx magnitude rounding mantissa exponent zeroSign
+  have projections := conversion_lift_projections ctx
+    (BinarySingleNaN.binary_normalize (prec := z24) (emax := z128) rounding mantissa exponent zeroSign)
+    (Binary.binary32_normalize_certificate_proof.is_nan_binary_normalize rounding mantissa exponent zeroSign)
+  dsimp only at correct ⊢
+  simp only [Binary.binary_normalize, projections.1, projections.2.1,
+    projections.2.2.1, projections.2.2.2]
+  split <;> rename_i condition
+  · rw [if_pos condition] at correct
+    exact correct
+  · rw [if_neg condition] at correct
+    exact congrArg Binary.SF2FF correct
+
+private theorem conversion_to_single_finite (value : float)
+    (sign : Bool) (mantissa : positive) (exponent : Z)
+    (decoded : decode64 value = .B754_finite sign mantissa exponent) :
+    Float.to_single value = encode32
+      (Binary.binary_normalize (prec := z24) (emax := z128) BinarySingleNaN.mode_NE
+        (CompCert4Lean.Flocq.Core.Zaux.cond_Zopp sign (.Zpos mantissa)) exponent sign) := by
+  have notNaN : isNaN64 value = false := by
+    rw [← conversion_isNaN64_decode, decoded]
+    rfl
+  simp only [Float.to_single, notNaN, Bool.false_eq_true, ↓reduceIte, decoded]
+
+private theorem conversion_narrow_normalization (value : float)
+    (sign : Bool) (mantissa : positive) (exponent : Z)
+    (decoded : decode64 value = .B754_finite sign mantissa exponent) :
+    decode32 (Float.to_single value) =
+      Binary.binary_normalize (prec := z24) (emax := z128) BinarySingleNaN.mode_NE
+        (CompCert4Lean.Flocq.Core.Zaux.cond_Zopp sign (.Zpos mantissa)) exponent sign := by
+  rw [conversion_to_single_finite value sign mantissa exponent decoded]
+  exact conversion_encode32_decode ⟨_, Binary.binary_normalize_result_obligation_proof _ _ _ _⟩
+
+private theorem conversion_strict_of_nonzero {precision maximum : Z}
+    (ctx : CompCert4Lean.Foundation.FlocqReal.ExactRealContext)
+    (value : Binary.binary_float precision maximum)
+    (finite : Binary.is_finite value = true)
+    (nonzero : Binary.Exact.B2R ctx value ≠ Binary.Exact.R0 ctx) :
+    Binary.is_finite_strict value = true := by
+  cases value <;> first | rfl | contradiction | exact False.elim (nonzero rfl)
+
+private theorem conversion_narrow_representable
+    (ctx : CompCert4Lean.Foundation.FlocqReal.ExactRealContext)
+    (magnitude : Binary.Exact.Magnitude ctx)
+    (original : Binary.CertifiedBinaryFloat z24 z128)
+    (strict : Binary.is_finite_strict original.val = true)
+    (nonzero : Binary.Exact.B2R ctx original.val ≠ Binary.Exact.R0 ctx)
+    (sign : Bool) (mantissa : positive) (exponent : Z)
+    (sameValue : Binary.Exact.F2R ctx
+      (CompCert4Lean.Flocq.Core.Defs.Float CompCert4Lean.Flocq.Core.Zaux.radix2
+        (CompCert4Lean.Flocq.Core.Zaux.cond_Zopp sign (.Zpos mantissa)) exponent) =
+      Binary.Exact.B2R ctx original.val) :
+    Binary.binary_normalize (prec := z24) (emax := z128) BinarySingleNaN.mode_NE
+      (CompCert4Lean.Flocq.Core.Zaux.cond_Zopp sign (.Zpos mantissa)) exponent sign = original.val := by
+  have correct := conversion_normalize32_correct ctx magnitude BinarySingleNaN.mode_NE
+    (CompCert4Lean.Flocq.Core.Zaux.cond_Zopp sign (.Zpos mantissa)) exponent sign
+  dsimp only at correct
+  rw [sameValue] at correct
+  have fixed := CompCert4Lean.Flocq.Core.Generic_fmt.round_generic ctx magnitude
+    CompCert4Lean.Flocq.Core.Zaux.radix2 (Binary.fexp (prec := z24) (emax := z128))
+    (Binary.Exact.round_mode ctx BinarySingleNaN.mode_NE)
+    (BinarySingleNaN.valid_rnd_round_mode_proof ctx BinarySingleNaN.mode_NE)
+    (Binary.Exact.B2R ctx original.val) (Binary.generic_format_B2R ctx magnitude original)
+  change Binary.Exact.round magnitude Binary.radix2 (Binary.fexp (prec := z24) (emax := z128))
+    (Binary.Exact.round_mode ctx BinarySingleNaN.mode_NE) (Binary.Exact.B2R ctx original.val) =
+    Binary.Exact.B2R ctx original.val at fixed
+  rw [fixed] at correct
+  have bounded := BinarySingleNaN.abs_B2R_lt_emax ctx (Binary.B2BSN original.val)
+    (Binary.B2BSN_result_obligation_proof original)
+  rw [Binary.B2R_B2BSN ctx original] at bounded
+  have inRange := CompCert4Lean.Flocq.Core.Raux.Rlt_bool_true ctx _ _ bounded
+  change Binary.Exact.Rlt_bool ctx (Binary.Exact.Rabs ctx (Binary.Exact.B2R ctx original.val))
+    (Binary.Exact.bpow ctx Binary.radix2 z128) = true at inRange
+  rw [inRange, if_pos rfl] at correct
+  apply Binary.B2R_inj ctx
+    ⟨_, Binary.binary_normalize_result_obligation_proof _ _ _ _⟩ original
+    (conversion_strict_of_nonzero ctx _ correct.2.1 (by rw [correct.1]; exact nonzero)) strict
+  exact correct.1
+
+set_option backward.isDefEq.respectTransparency false in
+private theorem conversion_finite32_roundtrip
+    (ctx : CompCert4Lean.Foundation.FlocqReal.ExactRealContext)
+    (magnitude : Binary.Exact.Magnitude ctx)
+    (value : Binary.CertifiedBinaryFloat z24 z128)
+    (finite : Binary.is_finite value.val = true) :
+    Float.to_single (Float.of_single (encode32 value.val)) = encode32 value.val := by
+  rcases value with ⟨value, valid⟩
+  cases value with
+  | B754_zero sign => dsimp only; cases sign <;> decide
+  | B754_infinity sign => contradiction
+  | B754_nan sign payload => contradiction
+  | B754_finite sign mantissa exponent =>
+      have decoded := conversion_encode32_decode
+        (⟨.B754_finite sign mantissa exponent, valid⟩ : Binary.CertifiedBinaryFloat z24 z128)
+      dsimp only at decoded
+      have exactValue := conversion_widen_exact ctx
+        (encode32 (.B754_finite sign mantissa exponent)) (by rw [decoded]; rfl)
+      rw [decoded] at exactValue
+      have nonzero : Binary.Exact.B2R ctx
+          (Binary.B754_finite (prec := z24) (emax := z128) sign mantissa exponent) ≠
+            Binary.Exact.R0 ctx := by
+        apply CompCert4Lean.Flocq.Core.Float_prop.F2R_neq_0 ctx
+          CompCert4Lean.Flocq.Core.Zaux.radix2
+        change CompCert4Lean.Flocq.Core.Zaux.cond_Zopp sign (.Zpos mantissa) ≠ .Z0
+        cases sign
+        · intro impossible
+          cases impossible
+        · intro impossible
+          have numeric := congrArg intOfZ impossible
+          change intOfZ (zOfInt (-(posToNat mantissa : Int))) = 0 at numeric
+          rw [intOfZ_zOfInt] at numeric
+          have positive := posToNat_positive mantissa
+          omega
+      cases wide : decode64 (Float.of_single (encode32
+          (Binary.B754_finite sign mantissa exponent))) with
+      | B754_zero wideSign =>
+          rw [wide] at exactValue
+          exact False.elim (nonzero exactValue.1.symm)
+      | B754_infinity wideSign => simp [wide, Binary.is_finite] at exactValue
+      | B754_nan wideSign payload => simp [wide, Binary.is_finite] at exactValue
+      | B754_finite wideSign wideMantissa wideExponent =>
+          rw [conversion_to_single_finite _ _ _ _ wide]
+          apply congrArg encode32
+          apply conversion_narrow_representable ctx magnitude
+            ⟨.B754_finite sign mantissa exponent, valid⟩ rfl nonzero
+          have equality := exactValue.1
+          rw [wide] at equality
+          exact equality
 
 end CompCert4Lean.Lib.Floats
