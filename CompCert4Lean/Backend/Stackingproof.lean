@@ -6327,3 +6327,577 @@ theorem transl_builtin_args_correct : transl_builtin_args_correctStatement := by
         Val.inject_list.inject_list_cons _ _ _ _ hvalue hvalues⟩
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.Backend.Conventions
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Lineartyping
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Separation
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Conventions1
+open CompCert4Lean.X86.Machregs
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.Stacklayout
+
+section
+
+set_option maxHeartbeats 8000000
+set_option backward.isDefEq.respectTransparency false
+set_option backward.isDefEq.respectTransparency.types false
+
+private theorem stacking_sep_rotate (first second third : massert) :
+    massert_imp (sepconj first (sepconj second third))
+      (sepconj second (sepconj third first)) := by
+  refine ⟨fun memory hmemory => (sep_assoc _ _ _).1.1 memory
+    ((sep_comm _ _).1.1 memory hmemory), ?_⟩
+  intro block offset hfoot
+  rcases hfoot with hsecond | hthird | hfirst
+  · exact Or.inr (Or.inl hsecond)
+  · exact Or.inr (Or.inr hthird)
+  · exact Or.inl hfirst
+
+private theorem stacking_sep_rotate_back (first second third : massert) :
+    massert_imp (sepconj first (sepconj second third))
+      (sepconj third (sepconj first second)) := by
+  refine ⟨fun memory hmemory => (sep_comm _ _).1.1 memory
+    ((sep_assoc _ _ _).2.1 memory hmemory), ?_⟩
+  intro block offset hfoot
+  rcases hfoot with hthird | hfirst | hsecond
+  · exact Or.inr (Or.inr hthird)
+  · exact Or.inl hfirst
+  · exact Or.inr (Or.inl hsecond)
+
+private theorem stacking_sep_right (first second third : massert)
+    (himp : massert_imp second third) :
+    massert_imp (sepconj first second) (sepconj first third) := by
+  refine ⟨fun memory hmemory => sep_imp _ _ _ _ memory hmemory
+    ⟨fun _ proof => proof, fun _ _ proof => proof⟩ himp, ?_⟩
+  intro block offset hfoot
+  exact hfoot.elim Or.inl (fun hthird => Or.inr (himp.2 _ _ hthird))
+
+theorem transf_step_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    transf_step_correctStatement := by
+  intro cfg xi return_address_offset hreturn prog tprog hlocal houtgoing hstack
+    hnorep hcallee hprog source trace successor hstep htyped target hmatch
+  change CompCert4Lean.Common.AST.program (CompCert4Lean.Common.AST.fundef Linear.function) Unit at prog
+  change CompCert4Lean.Common.AST.program (CompCert4Lean.Common.AST.fundef Mach.function) Unit at tprog
+  cases hstep <;> cases hmatch
+  case exec_Llabel.match_states_intro =>
+    rename_i sourceStack function label code locations memory sourceSp targetStack
+      fb targetSp registers targetMemory injection translated hfind htransf hinject
+      hstacks htail hregs hlocs hsep
+    rw [transl_code_eq]
+    refine ⟨_, plus_one _ _ _ _ _ _ _ (Mach.exec_Mlabel _ _ _ _ _ _ _), ?_⟩
+    exact match_states_intro _ _ _ _ _ _ _ _ _ _ _ _ _
+      hstacks htransf hfind hregs hlocs hinject
+      (is_tail_cons_left _ _ _ _ htail) hsep
+  case exec_Lgoto.match_states_intro =>
+    rename_i sourceStack function label code locations memory successorCode hlabel
+      sourceSp targetStack fb targetSp registers targetMemory injection translated
+      hfind htransf hinject hstacks htail hregs hlocs hsep
+    rw [transl_code_eq]
+    refine ⟨_, plus_one _ _ _ _ _ _ _ (Mach.exec_Mgoto _ _ _ _ _ _ _ _ _
+      hfind (transl_find_label cfg function translated label successorCode htransf hlabel)), ?_⟩
+    exact match_states_intro _ _ _ _ _ _ _ _ _ _ _ _ _
+      hstacks htransf hfind hregs hlocs hinject
+      (find_label_tail _ _ _ hlabel) hsep
+  case exec_Lop.match_states_intro =>
+    rename_i sourceStack function operation args result code locations memory value
+      resultLocations hresult sourceSp targetStack fb targetSp registers targetMemory
+      injection translated hfind htransf hinject hstacks heval htail hregs hlocs hsep
+    subst resultLocations
+    have hbound := function_is_within_bounds cfg function _ (is_tail_in _ _ _ _ htail)
+    obtain ⟨targetValue, heval', hvalue⟩ := eval_operation_inject _ _ (Genv.globalenv prog)
+      injection (globalenv_inject_preserves_globals _ _ _ _ _ hsep.2.1.2.1.2.1)
+      sourceSp targetSp _ hinject operation _ _ value memory targetMemory
+      (agree_reglist _ _ _ _ hregs) hsep.2.1.2.1.1 heval
+    rw [transl_code_eq]
+    refine ⟨_, plus_one _ _ _ _ _ _ _ (Mach.exec_Mop _ _ _ _ _ _ _ _ _ targetValue _ ?_ rfl), ?_⟩
+    · rw [eval_operation_preserved _ _ _ _ _ _ (symbols_preserved cfg prog tprog hprog)]
+      exact heval'
+    · refine match_states_intro _ _ _ _ _ _ _ _ _ _ _ _ _
+        hstacks htransf hfind ?_ ?_ hinject (is_tail_cons_left _ _ _ _ htail) ?_
+      · rw [transl_destroyed_by_op]
+        exact agree_regs_set_reg _ _ _ _ _ _ (agree_regs_undef_regs _ _ _ _ hregs) hvalue
+      · exact agree_locs_set_reg return_address_offset tprog cfg function
+          (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _
+          (agree_locs_undef_locs return_address_offset tprog cfg function
+            (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ hlocs
+            (destroyed_by_op_caller_save cfg operation)) hbound
+      · exact frame_set_reg return_address_offset tprog cfg function
+          (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _ _ _ _ _ _ _
+          (frame_undef_regs return_address_offset tprog cfg function
+            (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _ _ _ _ _ _ hsep)
+  case exec_Lgetstack.match_states_intro =>
+    rename_i sourceStack function slot offset type destination code locations memory
+      resultLocations hresult sourceSp targetStack fb targetSp registers targetMemory
+      injection translated hfind htransf hinject hstacks htail hregs hlocs hsep
+    subst resultLocations
+    have hbound := function_is_within_bounds cfg function _ (is_tail_in _ _ _ _ htail)
+    have hvalid := wt_state_getstack cfg _ _ _ _ _ _ _ _ _ _ htyped
+    rw [transl_code_eq]
+    cases slot with
+    | Local =>
+      obtain ⟨targetValue, hload, hvalue⟩ := frame_get_local return_address_offset tprog
+        cfg function (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _)
+        offset type _ _ _ _ _ _ _ _ hsep hbound.1 hvalid
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (Mach.exec_Mgetstack _ _ _ _ _ _ _ _ _ targetValue hload), ?_⟩
+      refine match_states_intro _ _ _ _ _ _ _ _ _ _ _ _ _
+        hstacks htransf hfind ?_ ?_ hinject (is_tail_cons_left _ _ _ _ htail) ?_
+      · exact agree_regs_set_reg _ _ _ _ _ _ hregs hvalue
+      · exact agree_locs_set_reg return_address_offset tprog cfg function
+          (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _ hlocs hbound.2
+      · exact frame_set_reg return_address_offset tprog cfg function
+          (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _ _ _ _ _ _ _ hsep
+    | Outgoing =>
+      obtain ⟨targetValue, hload, hvalue⟩ := frame_get_outgoing return_address_offset tprog
+        cfg function (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _)
+        offset type _ _ _ _ _ _ _ _ hsep hbound.1 hvalid
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (Mach.exec_Mgetstack _ _ _ _ _ _ _ _ _ targetValue hload), ?_⟩
+      refine match_states_intro _ _ _ _ _ _ _ _ _ _ _ _ _
+        hstacks htransf hfind ?_ ?_ hinject (is_tail_cons_left _ _ _ _ htail) ?_
+      · exact agree_regs_set_reg _ _ _ _ _ _ hregs hvalue
+      · exact agree_locs_set_reg return_address_offset tprog cfg function
+          (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _ hlocs hbound.2
+      · exact frame_set_reg return_address_offset tprog cfg function
+          (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _ _ _ _ _ _ _ hsep
+
+    | Incoming =>
+      have hmember : S Incoming offset type ∈ regs_of_rpairs (loc_parameters cfg function.fn_sig) := by
+        revert hvalid
+        unfold slot_valid
+        run_tac
+          Lean.Elab.Tactic.liftMetaTactic fun goal => goal.withContext do
+            let target ← goal.getType
+            let expanded ← Lean.Meta.transform target (pre := fun expression => do
+              match expression.getAppFn.constName? with
+              | some name =>
+                  if Lean.Name.isPrefixOf `_private name then
+                    let reduced ← Lean.Meta.withTransparency .all <| Lean.Meta.whnf expression
+                    return Lean.TransformStep.done reduced
+                  else
+                    return Lean.TransformStep.continue
+              | none => return Lean.TransformStep.continue)
+            let goal ← Lean.Meta.withTransparency .all <| goal.change expanded
+            return [goal]
+        dsimp only
+        intro hvalid
+        have hmemberCheck := (Bool.and_eq_true_iff.mp hvalid).1
+        split at hmemberCheck
+        · assumption
+        · contradiction
+      have hargument := incoming_slot_in_parameters cfg offset type function.fn_sig hmember
+      have hstacksOriginal := hstacks
+      cases hstacks
+      case match_stacks_empty hpossible =>
+        exact (hpossible _ hargument).elim
+      case match_stacks_cons =>
+        rename_i caller callerSp callerLocations callerCode callerStack callerBlock callerTargetSp
+          callerReturn callerTargetCode callerTargetStack callerTranslated hcallerTail hcallerFind
+          hcallerTransf hcallerCode hcallerInject hcallerReturn hcallerLocs hcallerStacks hargs
+        obtain ⟨targetValue, hload, hvalue⟩ := frame_get_outgoing return_address_offset tprog
+          cfg caller (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _)
+          offset type _ _ _ _ _ _ _ _
+          ((sep_assoc _ _ _).1.1 _ hsep.2.1) (hargs _ _ hargument)
+          (slot_outgoing_argument_valid cfg caller offset type _ hargument)
+        have hlink := frame_get_parent return_address_offset tprog cfg function
+          (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _ _ _ _ _ hsep
+        refine ⟨_, plus_one _ _ _ _ _ _ _ (Mach.exec_Mgetparam _ _ _ _ _ _ _ _ _ _
+          targetValue _ hfind ?_ hload rfl), ?_⟩
+        · simpa only [unfold_transf_function cfg function translated htransf] using hlink
+        · refine match_states_intro _ _ _ _ _ _ _ _ _ _ _ _ _
+            hstacksOriginal htransf hfind ?_ ?_ hinject (is_tail_cons_left _ _ _ _ htail) ?_
+          · apply agree_regs_set_reg _ _ _ _ _ _
+              (agree_regs_undef_regs _ _ _ _ hregs)
+            rw [hlocs.agree_incoming _ _ hmember]
+            exact hvalue
+          · exact agree_locs_set_reg return_address_offset tprog cfg function
+              (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _
+              (agree_locs_undef_locs return_address_offset tprog cfg function
+                (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ hlocs (by rfl)) hbound.2
+          · exact frame_set_reg return_address_offset tprog cfg function
+              (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _ _ _ _ _ _ _
+              (frame_undef_regs return_address_offset tprog cfg function
+                (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _ _ _ _ _ _ hsep)
+  case exec_Lcond_false.match_states_intro =>
+    rename_i sourceStack function condition args label code locations memory
+      resultLocations heval hresult sourceSp targetStack fb targetSp registers
+      targetMemory injection translated hfind htransf hinject hstacks htail hregs hlocs hsep
+    subst resultLocations
+    rw [transl_code_eq]
+    refine ⟨_, plus_one _ _ _ _ _ _ _ (Mach.exec_Mcond_false _ _ _ _ _ _ _ _ _ _
+      (eval_condition_inject _ _ _ _ _ _ _ (agree_reglist _ _ _ _ hregs)
+        hsep.2.1.2.1.1 heval) rfl), ?_⟩
+    refine match_states_intro _ _ _ _ _ _ _ _ _ _ _ _ _
+      hstacks htransf hfind (agree_regs_undef_regs _ _ _ _ hregs) ?_
+      hinject (is_tail_cons_left _ _ _ _ htail) ?_
+    · exact agree_locs_undef_locs return_address_offset tprog cfg function
+        (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ hlocs
+        (destroyed_by_cond_caller_save cfg condition)
+    · exact frame_undef_regs return_address_offset tprog cfg function
+        (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _ _ _ _ _ _ hsep
+  case exec_Lcond_true.match_states_intro =>
+    rename_i sourceStack function condition args label code locations memory
+      resultLocations successorCode heval hresult hlabel sourceSp targetStack fb targetSp
+      registers targetMemory injection translated hfind htransf hinject hstacks htail hregs hlocs hsep
+    subst resultLocations
+    rw [transl_code_eq]
+    refine ⟨_, plus_one _ _ _ _ _ _ _ (Mach.exec_Mcond_true _ _ _ _ _ _ _ _ _ _ _ _
+      (eval_condition_inject _ _ _ _ _ _ _ (agree_reglist _ _ _ _ hregs)
+        hsep.2.1.2.1.1 heval) hfind
+      (transl_find_label cfg function translated label successorCode htransf hlabel) rfl), ?_⟩
+    refine match_states_intro _ _ _ _ _ _ _ _ _ _ _ _ _
+      hstacks htransf hfind (agree_regs_undef_regs _ _ _ _ hregs) ?_
+      hinject (find_label_tail _ _ _ hlabel) ?_
+    · exact agree_locs_undef_locs return_address_offset tprog cfg function
+        (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ hlocs
+        (destroyed_by_cond_caller_save cfg condition)
+    · exact frame_undef_regs return_address_offset tprog cfg function
+        (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _ _ _ _ _ _ hsep
+  case exec_Ljumptable.match_states_intro =>
+    rename_i sourceStack function arg table code locations memory index label successorCode
+      resultLocations harg hnth hlabel hresult sourceSp targetStack fb targetSp
+      registers targetMemory injection translated hfind htransf hinject hstacks htail hregs hlocs hsep
+    subst resultLocations
+    have harg' : registers arg = Vint index := by
+      have hinjected := hregs arg
+      rw [harg] at hinjected
+      generalize htarget : registers arg = targetValue at hinjected
+      cases hinjected
+      rfl
+    rw [transl_code_eq]
+    refine ⟨_, plus_one _ _ _ _ _ _ _ (Mach.exec_Mjumptable _ _ _ _ _ _ _ _ _ _ _ _ _
+      harg' hnth hfind
+      (transl_find_label cfg function translated label successorCode htransf hlabel) rfl), ?_⟩
+    refine match_states_intro _ _ _ _ _ _ _ _ _ _ _ _ _
+      hstacks htransf hfind (agree_regs_undef_regs _ _ _ _ hregs) ?_
+      hinject (find_label_tail _ _ _ hlabel) ?_
+    · exact agree_locs_undef_locs return_address_offset tprog cfg function
+        (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ hlocs
+        (destroyed_by_jumptable_caller_save cfg)
+    · exact frame_undef_regs return_address_offset tprog cfg function
+        (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _ _ _ _ _ _ hsep
+  case exec_Lload.match_states_intro =>
+    rename_i sourceStack function chunk addr args destination code locations memory
+      address value resultLocations hload hresult sourceSp targetStack fb targetSp
+      registers targetMemory injection translated hfind htransf hinject hstacks haddr htail hregs hlocs hsep
+    subst resultLocations
+    have hbound := function_is_within_bounds cfg function _ (is_tail_in _ _ _ _ htail)
+    obtain ⟨targetAddress, haddr', haddress⟩ := eval_addressing_inject _ _ (Genv.globalenv prog)
+      injection (globalenv_inject_preserves_globals _ _ _ _ _ hsep.2.1.2.1.2.1)
+      sourceSp targetSp _ hinject addr _ _ address (agree_reglist _ _ _ _ hregs) haddr
+    obtain ⟨loadedValue, hload', hinjected⟩ := loadv_parallel_rule _ _ _ _ _ _ _
+      hsep.2.1.2.1.1 hload haddress
+    obtain ⟨targetValue, hsimplified, hlessdef⟩ := simplify_load_correct _ _ _ _ hload'
+    have hvalue : Val.inject injection value targetValue := by
+      cases hlessdef with
+      | lessdef_refl => exact hinjected
+      | lessdef_undef => cases hinjected; exact Val.val_inject_undef _ _
+    rw [transl_code_eq]
+    refine ⟨_, plus_one _ _ _ _ _ _ _ (Mach.exec_Mload _ _ _ _ _ _ _ _ _ _
+      targetAddress targetValue _ ?_ hsimplified rfl), ?_⟩
+    · rw [eval_addressing_preserved _ _ _ _ _ _ (symbols_preserved cfg prog tprog hprog)]
+      exact haddr'
+    · refine match_states_intro _ _ _ _ _ _ _ _ _ _ _ _ _
+        hstacks htransf hfind ?_ ?_ hinject (is_tail_cons_left _ _ _ _ htail) ?_
+      · rw [simplify_load_destroyed, transl_destroyed_by_load]
+        exact agree_regs_set_reg _ _ _ _ _ _ (agree_regs_undef_regs _ _ _ _ hregs) hvalue
+      · exact agree_locs_set_reg return_address_offset tprog cfg function
+          (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _
+          (agree_locs_undef_locs return_address_offset tprog cfg function
+            (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ hlocs
+            (destroyed_by_load_caller_save cfg chunk addr)) hbound
+      · exact frame_set_reg return_address_offset tprog cfg function
+          (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _ _ _ _ _ _ _
+          (frame_undef_regs return_address_offset tprog cfg function
+            (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _ _ _ _ _ _ hsep)
+  case exec_Lstore.match_states_intro =>
+    rename_i sourceStack function chunk addr args sourceReg code locations memory
+      successorMemory address resultLocations hstore hresult sourceSp targetStack fb targetSp
+      registers targetMemory injection translated hfind htransf hinject hstacks haddr htail hregs hlocs hsep
+    subst resultLocations
+    obtain ⟨targetAddress, haddr', haddress⟩ := eval_addressing_inject _ _ (Genv.globalenv prog)
+      injection (globalenv_inject_preserves_globals _ _ _ _ _ hsep.2.1.2.1.2.1)
+      sourceSp targetSp _ hinject addr _ _ address (agree_reglist _ _ _ _ hregs) haddr
+    obtain ⟨successorTargetMemory, hstore', hsep'⟩ := storev_parallel_rule _ _ _ _ _ _ _ _ _ _
+      ((sep_swap3 _ _ _ _).1.1 _ hsep) hstore haddress (hregs sourceReg)
+    have hsep'' := (sep_swap3 _ _ _ _).2.1 _ hsep'
+    rw [transl_code_eq]
+    refine ⟨_, plus_one _ _ _ _ _ _ _ (Mach.exec_Mstore _ _ _ _ _ _ _ _ _ _
+      successorTargetMemory targetAddress _ ?_ (simplify_store_correct _ _ _ _ _ hstore') rfl), ?_⟩
+    · rw [eval_addressing_preserved _ _ _ _ _ _ (symbols_preserved cfg prog tprog hprog)]
+      exact haddr'
+    · refine match_states_intro _ _ _ _ _ _ _ _ _ _ _ _ _
+        hstacks htransf hfind ?_ ?_ hinject (is_tail_cons_left _ _ _ _ htail) ?_
+      · rw [simplify_store_destroyed, transl_destroyed_by_store]
+        exact agree_regs_undef_regs _ _ _ _ hregs
+      · exact agree_locs_undef_locs return_address_offset tprog cfg function
+          (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ hlocs
+          (destroyed_by_store_caller_save cfg chunk addr)
+      · exact frame_undef_regs return_address_offset tprog cfg function
+          (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _ _ _ _ _ _ hsep''
+
+
+  case exec_Lsetstack.match_states_intro =>
+    rename_i sourceStack function sourceReg slot offset type code locations memory
+      resultLocations hresult sourceSp targetStack fb targetSp registers targetMemory
+      injection translated hfind htransf hinject hstacks htail hregs hlocs hsep
+    subst resultLocations
+    have hbound := function_is_within_bounds cfg function _ (is_tail_in _ _ _ _ htail)
+    obtain ⟨hvalid, hwritable⟩ := wt_state_setstack cfg _ _ _ _ _ _ _ _ _ _ htyped
+    have hsepU := frame_undef_regs return_address_offset tprog cfg function
+      (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _ _ _ _ _ (destroyed_by_setstack type) hsep
+    cases slot with
+    | Incoming => cases hwritable
+    | Local =>
+      obtain ⟨successorTargetMemory, hstore, hsep'⟩ := frame_set_local return_address_offset tprog
+        cfg function (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _)
+        offset type (locations (R sourceReg)) (registers sourceReg) injection targetSp
+        _ _ _ _ _ _ hsepU hbound hvalid (hregs sourceReg)
+      rw [transl_code_eq]
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (Mach.exec_Msetstack _ _ _ _ _ _ _ _ _
+        successorTargetMemory _ hstore rfl), ?_⟩
+      refine match_states_intro _ _ _ _ _ _ _ _ _ _ _ _ _
+        hstacks htransf hfind (agree_regs_set_slot _ _ _ _ _ _ _
+          (agree_regs_undef_regs _ _ _ _ hregs)) ?_
+        hinject (is_tail_cons_left _ _ _ _ htail) hsep'
+      exact agree_locs_set_slot cfg function (hlocal _) (houtgoing _) (hstack _)
+        (hnorep _) (hcallee _) _ _ _ _ _ _
+        (agree_locs_undef_locs return_address_offset tprog cfg function
+          (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ hlocs
+          (destroyed_by_setstack_caller_save cfg type)) hwritable
+    | Outgoing =>
+      obtain ⟨successorTargetMemory, hstore, hsep'⟩ := frame_set_outgoing return_address_offset tprog
+        cfg function (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _)
+        offset type (locations (R sourceReg)) (registers sourceReg) injection targetSp
+        _ _ _ _ _ _ hsepU hbound hvalid (hregs sourceReg)
+      rw [transl_code_eq]
+      refine ⟨_, plus_one _ _ _ _ _ _ _ (Mach.exec_Msetstack _ _ _ _ _ _ _ _ _
+        successorTargetMemory _ hstore rfl), ?_⟩
+      refine match_states_intro _ _ _ _ _ _ _ _ _ _ _ _ _
+        hstacks htransf hfind (agree_regs_set_slot _ _ _ _ _ _ _
+          (agree_regs_undef_regs _ _ _ _ hregs)) ?_
+        hinject (is_tail_cons_left _ _ _ _ htail) hsep'
+      exact agree_locs_set_slot cfg function (hlocal _) (houtgoing _) (hstack _)
+        (hnorep _) (hcallee _) _ _ _ _ _ _
+        (agree_locs_undef_locs return_address_offset tprog cfg function
+          (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ hlocs
+          (destroyed_by_setstack_caller_save cfg type)) hwritable
+
+  case exec_Lcall.match_states_intro =>
+    rename_i sourceStack function signature callee code locations memory calledFunction
+      hcalled hsignature sourceSp targetStack fb targetSp registers targetMemory
+      injection translated hfind htransf hinject hstacks htail hregs hlocs hsep
+    subst signature
+    have hbound := function_is_within_bounds cfg function _ (is_tail_in _ _ _ _ htail)
+    obtain ⟨calledBlock, targetFunction, hcalled', htargetFunction, htranslated⟩ :=
+      find_function_translated cfg prog tprog hprog _ _ _ _ _ _ hregs
+        hsep.2.1.2.1.2.1 hcalled
+    have htargetTail := is_tail_transf_function cfg function translated _ htransf htail
+    rw [transl_code_eq] at htargetTail
+    obtain ⟨returnOffset, hreturnOffset⟩ := hreturn _ _ _ _ htargetTail
+    rw [transl_code_eq]
+    refine ⟨_, plus_one _ _ _ _ _ _ _ (Mach.exec_Mcall _ _ _ _ _ _ _ _ _ _
+      returnOffset hcalled' hfind hreturnOffset), ?_⟩
+    refine match_states_call _ _ _ _ _ _ _ _ _ _ ?_ htranslated htargetFunction hregs ?_
+    · refine match_stacks.match_stacks_cons _ _ _ _ _ _ _ _ _ _ _ _
+        (is_tail_cons_left _ _ _ _ htail) hfind htransf rfl hinject
+        (Val.Vptr_has_type _ _) hlocs ?_ hstacks
+      intro offset type hmember
+      exact Int.le_trans (loc_arguments_bounded cfg _ _ _ hmember) hbound
+    · exact (sep_assoc _ _ _).2.1 _ hsep
+  case exec_Lreturn.match_states_intro =>
+    rename_i sourceStack function sourceSp code locations memory successorMemory hfree
+      targetStack fb targetSp registers targetMemory injection translated
+      hfind htransf hstacks hinject htail hregs hlocs hsep
+    obtain ⟨restored, successorTargetMemory, hlink, hretaddr, hfree', hrestore,
+      hregs', hcallee', hsep'⟩ := function_epilogue_correct cfg xi return_address_offset
+        tprog function (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _)
+        translated htransf _ _ _ _ _ _ _ _ _ _ _ _
+        (Mach.Mreturn :: transl_code cfg (make_env cfg (function_bounds cfg function)) code)
+        targetStack fb ((sep_swap23 _ _ _ _).1.1 _ hsep) hregs hlocs hinject hfree
+    rw [transl_code_eq]
+    refine ⟨_, ?_, match_states_return _ _ _ _ _ _ _ _ hstacks hregs'
+      ((sep_swap _ _ _).1.1 _ hsep')⟩
+    exact plus_right _ _ _ _ _ _ _ _ _ _ hrestore
+      (Mach.exec_Mreturn _ _ _ _ _ _ _ _ successorTargetMemory hfind hlink hretaddr hfree') rfl
+
+  case exec_Ltailcall.match_states_intro =>
+    rename_i sourceStack function sourceSp signature callee code locations memory resultLocations
+      calledFunction successorMemory hresult hcalled hsignature hfree targetStack fb targetSp
+      registers targetMemory injection translated hfind htransf hstacks hinject htail hregs hlocs hsep
+    subst resultLocations
+    subst signature
+    obtain ⟨restored, successorTargetMemory, hlink, hretaddr, hfree', hrestore,
+      hregs', hcallee', hsep'⟩ := function_epilogue_correct cfg xi return_address_offset
+        tprog function (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _)
+        translated htransf _ _ _ _ _ _ _ _ _ _ _ _
+        (Mach.Mtailcall (Linear.funsig calledFunction) callee ::
+          transl_code cfg (make_env cfg (function_bounds cfg function)) code)
+        targetStack fb ((sep_swap23 _ _ _ _).1.1 _ hsep) hregs hlocs hinject hfree
+    obtain ⟨calledBlock, targetFunction, hcalled', htargetFunction, htranslated⟩ :=
+      find_function_translated cfg prog tprog hprog _ _ _ _ _ _ hregs'
+        hsep'.2.1.2.1 hcalled
+    rw [transl_code_eq]
+    refine ⟨_, ?_, match_states_call _ _ _ _ _ _ _ _ _ _ ?_ htranslated htargetFunction
+      hregs' ((sep_swap _ _ _).1.1 _ hsep')⟩
+    · exact plus_right _ _ _ _ _ _ _ _ _ _ hrestore
+        (Mach.exec_Mtailcall _ _ _ _ _ _ _ _ _ _ _ successorTargetMemory
+          hcalled' hfind hlink hretaddr hfree') rfl
+    · exact match_stacks_change_sig cfg tprog _ injection hlocal houtgoing hstack hnorep
+        hcallee _ _ _ hstacks (zero_size_arguments_tailcall_possible cfg _
+          (wt_state_tailcall cfg _ _ _ _ _ _ _ _ htyped))
+  case exec_function_internal.match_states_call =>
+    rename_i sourceStack function locations memory resultLocations successorMemory sourceSp halloc
+      hresult targetStack fb registers targetMemory injection translated hfind htransf hstacks hregs hsep
+    cases htranslation : transf_function cfg function with
+    | Error message => simp [Stacking.transf_fundef, transf_partial_fundef, htranslation] at htransf
+    | OK targetFunction =>
+      simp only [Stacking.transf_fundef, transf_partial_fundef, htranslation] at htransf
+      cases htransf
+      obtain ⟨hcalleeAgree, harguments⟩ := wt_callstate_agree cfg _ _ _ _ htyped
+      obtain ⟨newInjection, resultRegisters, allocatedMemory, targetSp, linkedMemory,
+        savedMemory, finalMemory, halloc', hlink, hreturnStore, hsave, hregs', hlocs',
+        hsep', hinject', hincr⟩ := function_prologue_correct cfg xi return_address_offset
+          prog tprog function (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _)
+          targetFunction htranslation injection locations (Linear.parent_locset sourceStack)
+          resultLocations registers (Mach.undef_regs destroyed_at_function_entry registers)
+          memory targetMemory successorMemory sourceSp (Mach.parent_sp targetStack)
+          (Mach.parent_ra targetStack) targetStack fb
+          (transl_code cfg (make_env cfg (function_bounds cfg function)) function.fn_code) _
+          hregs hcalleeAgree harguments (wt_callstate_wt_regs cfg _ _ _ _ htyped) hresult rfl halloc
+          (match_stacks_type_sp cfg tprog injection hlocal houtgoing hstack hnorep hcallee _ _ _ hstacks)
+          (match_stacks_type_retaddr cfg tprog injection hlocal houtgoing hstack hnorep hcallee _ _ _ hstacks)
+          ((stacking_sep_rotate _ _ _).1 _ hsep)
+      have hsepReordered := (stacking_sep_right _ _ _ (stacking_sep_rotate_back _ _ _)).1 _ hsep'
+      have hstackUpdated := stack_contents_change_meminj return_address_offset tprog cfg _
+        injection newInjection hlocal houtgoing hstack hnorep hcallee hincr _ _ _
+        ((sep_swap _ _ _).1.1 _ hsepReordered)
+      refine ⟨_, ?_, match_states_intro _ _ _ _ _ _ _ _ _ _ _ _ _
+        (match_stacks_change_meminj cfg tprog injection newInjection hlocal houtgoing hstack hnorep
+          hcallee hincr _ _ _ hstacks) htranslation hfind hregs' hlocs' hinject'
+        (is_tail.refl _) ((sep_swap _ _ _).1.1 _ hstackUpdated)⟩
+      refine plus_left _ _
+        (Mach.exec_function_internal _ _ _ _ _ _ _ _ _ _ hfind halloc' hlink hreturnStore rfl) ?_ rfl
+      rw [unfold_transf_function cfg function targetFunction htranslation]
+      exact hsave
+
+  case exec_function_external.match_states_call =>
+    rename_i sourceStack externalFunction args value locations resultLocations memory successorMemory
+      hargs hresult hcall targetStack fb registers targetMemory injection translated
+      hfind htransf hstacks hregs hsep
+    subst resultLocations
+    subst args
+    have htranslated : translated = .External externalFunction := by
+      simpa [Stacking.transf_fundef, transf_partial_fundef] using htransf.symm
+    subst translated
+    obtain ⟨hcalleeAgree, harguments⟩ := wt_callstate_agree cfg _ _ _ _ htyped
+    obtain ⟨targetArgs, htargetArgs, hargsInject⟩ := transl_external_arguments cfg return_address_offset
+      tprog injection sourceStack targetStack _ hlocal houtgoing hstack hnorep hcallee hstacks
+      locations registers hregs hcalleeAgree harguments targetMemory hsep.1
+    obtain ⟨newInjection, targetValue, successorTargetMemory, hcall', hvalue, hsep', hincr, hseparated⟩ :=
+      external_call_parallel_rule xi _ _ _ (Genv.globalenv prog) _ _ _ _ _ _ _ _ _ hcall
+        ((stacking_sep_rotate _ _ _).1 _ hsep) hargsInject
+    refine ⟨_, plus_one _ _ _ _ _ _ _ (Mach.exec_function_external _ _ _ _ _ _ _ targetArgs
+      targetValue successorTargetMemory hfind htargetArgs
+      (external_call_symbols_preserved_proof xi externalFunction _ _ _ _ _ _ _
+        (senv_preserved cfg prog tprog hprog) hcall') rfl), ?_⟩
+    refine match_states_return _ _ _ _ _ _ _ _
+      (match_stacks_change_meminj cfg tprog injection newInjection hlocal houtgoing hstack hnorep
+        hcallee hincr _ _ _ hstacks) ?_ ?_
+    · exact agree_regs_set_pair _ _ _ _ _ _
+        (agree_regs_undef_caller_save_regs _ _ _ _ (agree_regs_inject_incr _ _ _ _ hregs hincr)) hvalue
+    · exact stack_contents_change_meminj return_address_offset tprog cfg _ injection newInjection
+        hlocal houtgoing hstack hnorep hcallee hincr _ _ _
+        ((stacking_sep_rotate_back _ _ _).1 _ hsep')
+  case exec_Lbuiltin.match_states_intro =>
+    rename_i sourceStack function locations memory externalFunction args result code argumentValues value
+      resultLocations successorMemory hresult hcall sourceSp targetStack fb targetSp registers targetMemory
+      injection translated hfind htransf hinject hstacks hargs htail hregs hlocs hsep
+    subst resultLocations
+    have hbound := function_is_within_bounds cfg function _ (is_tail_in _ _ _ _ htail)
+    have hvalid := wt_state_builtin cfg _ _ _ _ _ _ _ _ _ htyped
+    obtain ⟨targetArgs, htargetArgs, hargsInject⟩ := transl_builtin_args_correct cfg return_address_offset
+      prog tprog function (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _)
+      injection memory targetMemory locations (Linear.parent_locset sourceStack) registers sourceSp
+      targetSp (Mach.parent_sp targetStack) (Mach.parent_ra targetStack) hinject hregs
+      (sep_drop2 _ _ _ _ hsep) args argumentValues hargs
+      ((CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.forallb_forall _ _).mp hvalid) hbound.2
+    have hsepCall := (stacking_sep_rotate _ _ _).1 _ ((sep_assoc _ _ _).2.1 _ hsep)
+    obtain ⟨newInjection, targetValue, successorTargetMemory, hcall', hvalue, hsep', hincr, hseparated⟩ :=
+      external_call_parallel_rule xi _ _ _ (Genv.globalenv prog) _ _ _ _ _ _ _ _ _ hcall hsepCall hargsInject
+    have hsepReordered := (sep_assoc _ _ _).1.1 _ ((stacking_sep_rotate_back _ _ _).1 _ hsep')
+    have hstackUpdated := stack_contents_change_meminj return_address_offset tprog cfg _
+      injection newInjection hlocal houtgoing hstack hnorep hcallee hincr _ _ _
+      ((sep_swap _ _ _).1.1 _ hsepReordered)
+    have hframeUpdated := frame_contents_incr return_address_offset tprog cfg function
+      (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _ _ _ _ _ _
+      ((sep_swap _ _ _).1.1 _ hstackUpdated) hincr
+    rw [transl_code_eq]
+    refine ⟨_, plus_one _ _ _ _ _ _ _ (Mach.exec_Mbuiltin _ _ _ _ _ _ _ _ _ targetArgs
+      _ targetValue _ successorTargetMemory
+      (eval_builtin_args_preserved _ _ _ _ _ _ _ _ _ _ (symbols_preserved cfg prog tprog hprog)
+        _ _ htargetArgs)
+      (external_call_symbols_preserved_proof xi externalFunction _ _ _ _ _ _ _
+        (senv_preserved cfg prog tprog hprog) hcall') rfl), ?_⟩
+    refine match_states_intro _ _ _ _ _ _ _ _ _ _ _ _ _
+      (match_stacks_change_meminj cfg tprog injection newInjection hlocal houtgoing hstack hnorep
+        hcallee hincr _ _ _ hstacks) htransf hfind ?_ ?_
+      (hincr _ _ _ hinject) (is_tail_cons_left _ _ _ _ htail) ?_
+    · exact agree_regs_set_res _ _ _ _ _ _
+        (agree_regs_undef_regs _ _ _ _ (agree_regs_inject_incr _ _ _ _ hregs hincr)) hvalue
+    · exact agree_locs_set_res return_address_offset tprog cfg function
+        (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _
+        (agree_locs_undef_regs return_address_offset tprog cfg function
+          (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ hlocs
+          (fun register hmem => hbound.1 register (Or.inr hmem)))
+        (fun register hmem => hbound.1 register (Or.inl hmem))
+    · exact frame_set_res return_address_offset tprog cfg function
+        (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _ _ _ _ _ _ _
+        (frame_undef_regs return_address_offset tprog cfg function
+          (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ _ _ _ _ _ _ hframeUpdated)
+  case exec_return.match_states_return =>
+    rename_i sourceStack function sourceSp savedLocations code locations memory targetStack
+      registers targetMemory injection signature hstacks hregs hsep
+    obtain ⟨hcalleeAgree, houtgoingUndef⟩ := wt_returnstate_agree cfg _ _ _ htyped
+    cases hstacks
+    rename_i sourceSp fb targetSp returnAddress targetCode callerStack translated
+      hfind hreturnType htransf hinject htail hcode hstacks hlocs hargs
+    subst targetCode
+    refine ⟨_, plus_one _ _ _ _ _ _ _ (Mach.exec_return _ _ _ _ _ _ _), ?_⟩
+    refine match_states_intro _ _ _ _ _ _ _ _ _ _ _ _ _ hstacks htransf hfind hregs ?_ hinject htail ?_
+    · exact agree_locs_return return_address_offset tprog cfg function
+        (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _) _ _ _ hlocs hcalleeAgree
+    · apply frame_contents_exten return_address_offset tprog cfg function
+        (hlocal _) (houtgoing _) (hstack _) (hnorep _) (hcallee _)
+        savedLocations (Linear.parent_locset sourceStack) locations (Linear.parent_locset sourceStack)
+        _ _ _ _ _ _ ?_ ?_ (fun _ _ => rfl) ((sep_assoc _ _ _).1.1 _ hsep)
+      · intro offset type
+        rw [hcalleeAgree (S Local offset type) (by simp [callee_save_loc])]
+        exact Val.lessdef_refl _
+      · intro offset type
+        rw [houtgoingUndef type offset]
+        exact Val.lessdef_undef _
+
+end
+
+end CompCert4Lean.Backend.Stackingproof
