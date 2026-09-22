@@ -5312,3 +5312,1688 @@ theorem transl_sel_correct
       exact (preserved register data other).trans (unchanged register data)
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.Asmgenproof0
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Asm
+open CompCert4Lean.X86.Asmgenproof1
+
+variable
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+
+theorem operation_signed32_execution
+    (environment : genv) (function : Asm.function) (registers : regset) (memory : mem)
+    (continuation : code)
+    (defined : Val.divs (registers (.IR .RAX)) (registers (.IR .RCX)) ≠ none ∨
+      Val.mods (registers (.IR .RAX)) (registers (.IR .RCX)) ≠ none) :
+    ∃ result, exec_straight environment function
+        (.Pcltd :: .Pidivl .RCX :: continuation) registers memory continuation result memory ∧
+      Val.divs (registers (.IR .RAX)) (registers (.IR .RCX)) = some (result (.IR .RAX)) ∧
+      Val.mods (registers (.IR .RAX)) (registers (.IR .RCX)) = some (result (.IR .RDX)) ∧
+      (∀ register, data_preg register = true → register ≠ .IR .RAX → register ≠ .IR .RDX →
+        result register = registers register) := by
+  obtain ⟨high, low, divisor, quotient, remainder, shifted, numerator, denominator, divided,
+      quotientValue, remainderValue⟩ := divs_mods_exists
+    (registers (.IR .RAX)) (registers (.IR .RCX)) defined
+  let middle := nextinstr_nf (Pregmap.set (.IR .RDX) (.Vint high) registers)
+  let result := nextinstr_nf (Pregmap.set (.IR .RAX) (.Vint quotient)
+    (Pregmap.set (.IR .RDX) (.Vint remainder) middle))
+  refine ⟨result, ?_, quotientValue, remainderValue, ?_⟩
+  · apply exec_straight_two environment function _ _ continuation registers memory middle memory
+      result memory ?_ ?_ rfl rfl
+    · dsimp only [exec_instr, Pregmap.get]
+      rw [shifted]
+    · dsimp only [exec_instr, Pregmap.get]
+      have highValue : middle (.IR .RDX) = .Vint high := rfl
+      have lowValue : middle (.IR .RAX) = .Vint low := numerator
+      have divisorValue : middle (.IR .RCX) = .Vint divisor := denominator
+      rw [highValue, lowValue, divisorValue]
+      dsimp only
+      rw [divided]
+  · intro register data notRAX notRDX
+    dsimp only [result]
+    apply (nextinstr_nf_inv1 register _ data).trans
+    simp only [Pregmap.set, notRAX, notRDX, ↓reduceIte]
+    dsimp only [middle]
+    apply (nextinstr_nf_inv1 register _ data).trans
+    simp [Pregmap.set, notRDX]
+
+theorem operation_unsigned32_execution
+    (environment : genv) (function : Asm.function) (registers : regset) (memory : mem)
+    (continuation : code)
+    (defined : Val.divu (registers (.IR .RAX)) (registers (.IR .RCX)) ≠ none ∨
+      Val.modu (registers (.IR .RAX)) (registers (.IR .RCX)) ≠ none) :
+    ∃ result, exec_straight environment function
+        (.Pxorl_r .RDX :: .Pdivl .RCX :: continuation) registers memory continuation result memory ∧
+      Val.divu (registers (.IR .RAX)) (registers (.IR .RCX)) = some (result (.IR .RAX)) ∧
+      Val.modu (registers (.IR .RAX)) (registers (.IR .RCX)) = some (result (.IR .RDX)) ∧
+      (∀ register, data_preg register = true → register ≠ .IR .RAX → register ≠ .IR .RDX →
+        result register = registers register) := by
+  obtain ⟨low, divisor, quotient, remainder, numerator, denominator, divided,
+      quotientValue, remainderValue⟩ := divu_modu_exists
+    (registers (.IR .RAX)) (registers (.IR .RCX)) defined
+  let middle := nextinstr_nf (Pregmap.set (.IR .RDX) (.Vint Int.zero) registers)
+  let result := nextinstr_nf (Pregmap.set (.IR .RAX) (.Vint quotient)
+    (Pregmap.set (.IR .RDX) (.Vint remainder) middle))
+  refine ⟨result, ?_, quotientValue, remainderValue, ?_⟩
+  · apply exec_straight_two environment function _ _ continuation registers memory middle memory
+      result memory ?_ ?_ rfl rfl
+    · rfl
+    · dsimp only [exec_instr, Pregmap.get]
+      have highValue : middle (.IR .RDX) = .Vint Int.zero := rfl
+      have lowValue : middle (.IR .RAX) = .Vint low := numerator
+      have divisorValue : middle (.IR .RCX) = .Vint divisor := denominator
+      rw [highValue, lowValue, divisorValue]
+      dsimp only
+      rw [divided]
+  · intro register data notRAX notRDX
+    dsimp only [result]
+    apply (nextinstr_nf_inv1 register _ data).trans
+    simp only [Pregmap.set, notRAX, notRDX, ↓reduceIte]
+    dsimp only [middle]
+    apply (nextinstr_nf_inv1 register _ data).trans
+    simp [Pregmap.set, notRDX]
+
+theorem operation_signed64_execution
+    (environment : genv) (function : Asm.function) (registers : regset) (memory : mem)
+    (continuation : code)
+    (defined : Val.divls (registers (.IR .RAX)) (registers (.IR .RCX)) ≠ none ∨
+      Val.modls (registers (.IR .RAX)) (registers (.IR .RCX)) ≠ none) :
+    ∃ result, exec_straight environment function
+        (.Pcqto :: .Pidivq .RCX :: continuation) registers memory continuation result memory ∧
+      Val.divls (registers (.IR .RAX)) (registers (.IR .RCX)) = some (result (.IR .RAX)) ∧
+      Val.modls (registers (.IR .RAX)) (registers (.IR .RCX)) = some (result (.IR .RDX)) ∧
+      (∀ register, data_preg register = true → register ≠ .IR .RAX → register ≠ .IR .RDX →
+        result register = registers register) := by
+  obtain ⟨high, low, divisor, quotient, remainder, shifted, numerator, denominator, divided,
+      quotientValue, remainderValue⟩ := divls_modls_exists
+    (registers (.IR .RAX)) (registers (.IR .RCX)) defined
+  let middle := nextinstr_nf (Pregmap.set (.IR .RDX) (.Vlong high) registers)
+  let result := nextinstr_nf (Pregmap.set (.IR .RAX) (.Vlong quotient)
+    (Pregmap.set (.IR .RDX) (.Vlong remainder) middle))
+  refine ⟨result, ?_, quotientValue, remainderValue, ?_⟩
+  · apply exec_straight_two environment function _ _ continuation registers memory middle memory
+      result memory ?_ ?_ rfl rfl
+    · dsimp only [exec_instr, Pregmap.get]
+      rw [shifted]
+    · dsimp only [exec_instr, Pregmap.get]
+      have highValue : middle (.IR .RDX) = .Vlong high := rfl
+      have lowValue : middle (.IR .RAX) = .Vlong low := numerator
+      have divisorValue : middle (.IR .RCX) = .Vlong divisor := denominator
+      rw [highValue, lowValue, divisorValue]
+      dsimp only
+      rw [divided]
+  · intro register data notRAX notRDX
+    dsimp only [result]
+    apply (nextinstr_nf_inv1 register _ data).trans
+    simp only [Pregmap.set, notRAX, notRDX, ↓reduceIte]
+    dsimp only [middle]
+    apply (nextinstr_nf_inv1 register _ data).trans
+    simp [Pregmap.set, notRDX]
+
+theorem operation_unsigned64_execution
+    (environment : genv) (function : Asm.function) (registers : regset) (memory : mem)
+    (continuation : code)
+    (defined : Val.divlu (registers (.IR .RAX)) (registers (.IR .RCX)) ≠ none ∨
+      Val.modlu (registers (.IR .RAX)) (registers (.IR .RCX)) ≠ none) :
+    ∃ result, exec_straight environment function
+        (.Pxorq_r .RDX :: .Pdivq .RCX :: continuation) registers memory continuation result memory ∧
+      Val.divlu (registers (.IR .RAX)) (registers (.IR .RCX)) = some (result (.IR .RAX)) ∧
+      Val.modlu (registers (.IR .RAX)) (registers (.IR .RCX)) = some (result (.IR .RDX)) ∧
+      (∀ register, data_preg register = true → register ≠ .IR .RAX → register ≠ .IR .RDX →
+        result register = registers register) := by
+  obtain ⟨low, divisor, quotient, remainder, numerator, denominator, divided,
+      quotientValue, remainderValue⟩ := divlu_modlu_exists
+    (registers (.IR .RAX)) (registers (.IR .RCX)) defined
+  let middle := nextinstr_nf (Pregmap.set (.IR .RDX) (.Vlong Int64.zero) registers)
+  let result := nextinstr_nf (Pregmap.set (.IR .RAX) (.Vlong quotient)
+    (Pregmap.set (.IR .RDX) (.Vlong remainder) middle))
+  refine ⟨result, ?_, quotientValue, remainderValue, ?_⟩
+  · apply exec_straight_two environment function _ _ continuation registers memory middle memory
+      result memory ?_ ?_ rfl rfl
+    · rfl
+    · dsimp only [exec_instr, Pregmap.get]
+      have highValue : middle (.IR .RDX) = .Vlong Int64.zero := rfl
+      have lowValue : middle (.IR .RAX) = .Vlong low := numerator
+      have divisorValue : middle (.IR .RCX) = .Vlong divisor := denominator
+      rw [highValue, lowValue, divisorValue]
+      dsimp only
+      rw [divided]
+  · intro register data notRAX notRDX
+    dsimp only [result]
+    apply (nextinstr_nf_inv1 register _ data).trans
+    simp only [Pregmap.set, notRAX, notRDX, ↓reduceIte]
+    dsimp only [middle]
+    apply (nextinstr_nf_inv1 register _ data).trans
+    simp [Pregmap.set, notRDX]
+
+
+open CompCert4Lean.X86.Asmgen
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Common.Errors
+
+def operation_correct_case (operation : operation) : Prop :=
+  ∀ (environment : genv) (function : Asm.function) (arguments : List CompCert4Lean.X86.Machregs.mreg)
+    (destination : CompCert4Lean.X86.Machregs.mreg) (continuation generated : code)
+    (registers : regset) (memory : mem) (value : val),
+    transl_op operation arguments destination continuation = .OK generated →
+    eval_operation environment (registers (.IR .RSP)) operation
+      (arguments.map (fun register => registers (preg_of register))) memory = some value →
+    ∃ result, exec_straight environment function generated registers memory continuation result memory ∧
+      Val.lessdef value (result (preg_of destination)) ∧
+      (∀ register, data_preg register = true → register ≠ preg_of destination →
+        preg_notin register (CompCert4Lean.X86.Machregs.destroyed_by_op operation) →
+        result register = registers register)
+
+omit binary64_certificate binary32_certificate in
+private theorem operation_assertion {Result : Type}
+    (source destination : CompCert4Lean.X86.Machregs.mreg) (continuation : res Result) (output : Result)
+    (translated : (match CompCert4Lean.Backend.Mach.RegEq.eq source destination with
+      | .left _ => continuation
+      | .right _ => assertion_failed) = .OK output) :
+    source = destination ∧ continuation = .OK output := by
+  cases comparison : CompCert4Lean.Backend.Mach.RegEq.eq source destination with
+  | left equal => exact ⟨equal, by simpa only [comparison] using translated⟩
+  | right different => rw [comparison] at translated; cases translated
+
+theorem operation_Odiv_correct : operation_correct_case .Odiv := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | nil => cases translated
+    | cons second remaining =>
+      cases remaining with
+      | cons third tail => cases translated
+      | nil =>
+        dsimp only [transl_op] at translated
+        obtain ⟨first_equal, translated⟩ := operation_assertion first .AX _ _ translated
+        subst first
+        obtain ⟨second_equal, translated⟩ := operation_assertion second .CX _ _ translated
+        subst second
+        obtain ⟨destination_equal, translated⟩ := operation_assertion destination .AX _ _ translated
+        subst destination
+        cases translated
+        change Val.divs (registers (.IR .RAX)) (registers (.IR .RCX)) = some value at evaluated
+        obtain ⟨result, executed, quotientValue, remainderValue, preserved⟩ :=
+          operation_signed32_execution environment function registers memory continuation
+            (Or.inl (by rw [evaluated]; intro impossible; cases impossible))
+        refine ⟨result, executed, ?_, ?_⟩
+        · have result_equal : value = result (.IR .RAX) :=
+            Option.some.inj (evaluated.symm.trans quotientValue)
+          rw [result_equal]
+          exact Val.lessdef_refl _
+        · intro register data distinct notDestroyed
+          change register ≠ .IR .RAX ∧ register ≠ .IR .RDX at notDestroyed
+          exact preserved register data notDestroyed.1 notDestroyed.2
+
+theorem operation_Omod_correct : operation_correct_case .Omod := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | nil => cases translated
+    | cons second remaining =>
+      cases remaining with
+      | cons third tail => cases translated
+      | nil =>
+        dsimp only [transl_op] at translated
+        obtain ⟨first_equal, translated⟩ := operation_assertion first .AX _ _ translated
+        subst first
+        obtain ⟨second_equal, translated⟩ := operation_assertion second .CX _ _ translated
+        subst second
+        obtain ⟨destination_equal, translated⟩ := operation_assertion destination .DX _ _ translated
+        subst destination
+        cases translated
+        change Val.mods (registers (.IR .RAX)) (registers (.IR .RCX)) = some value at evaluated
+        obtain ⟨result, executed, quotientValue, remainderValue, preserved⟩ :=
+          operation_signed32_execution environment function registers memory continuation
+            (Or.inr (by rw [evaluated]; intro impossible; cases impossible))
+        refine ⟨result, executed, ?_, ?_⟩
+        · have result_equal : value = result (.IR .RDX) :=
+            Option.some.inj (evaluated.symm.trans remainderValue)
+          rw [result_equal]
+          exact Val.lessdef_refl _
+        · intro register data distinct notDestroyed
+          change register ≠ .IR .RAX ∧ register ≠ .IR .RDX at notDestroyed
+          exact preserved register data notDestroyed.1 notDestroyed.2
+
+theorem operation_Odivu_correct : operation_correct_case .Odivu := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | nil => cases translated
+    | cons second remaining =>
+      cases remaining with
+      | cons third tail => cases translated
+      | nil =>
+        dsimp only [transl_op] at translated
+        obtain ⟨first_equal, translated⟩ := operation_assertion first .AX _ _ translated
+        subst first
+        obtain ⟨second_equal, translated⟩ := operation_assertion second .CX _ _ translated
+        subst second
+        obtain ⟨destination_equal, translated⟩ := operation_assertion destination .AX _ _ translated
+        subst destination
+        cases translated
+        change Val.divu (registers (.IR .RAX)) (registers (.IR .RCX)) = some value at evaluated
+        obtain ⟨result, executed, quotientValue, remainderValue, preserved⟩ :=
+          operation_unsigned32_execution environment function registers memory continuation
+            (Or.inl (by rw [evaluated]; intro impossible; cases impossible))
+        refine ⟨result, executed, ?_, ?_⟩
+        · have result_equal : value = result (.IR .RAX) :=
+            Option.some.inj (evaluated.symm.trans quotientValue)
+          rw [result_equal]
+          exact Val.lessdef_refl _
+        · intro register data distinct notDestroyed
+          change register ≠ .IR .RAX ∧ register ≠ .IR .RDX at notDestroyed
+          exact preserved register data notDestroyed.1 notDestroyed.2
+
+theorem operation_Omodu_correct : operation_correct_case .Omodu := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | nil => cases translated
+    | cons second remaining =>
+      cases remaining with
+      | cons third tail => cases translated
+      | nil =>
+        dsimp only [transl_op] at translated
+        obtain ⟨first_equal, translated⟩ := operation_assertion first .AX _ _ translated
+        subst first
+        obtain ⟨second_equal, translated⟩ := operation_assertion second .CX _ _ translated
+        subst second
+        obtain ⟨destination_equal, translated⟩ := operation_assertion destination .DX _ _ translated
+        subst destination
+        cases translated
+        change Val.modu (registers (.IR .RAX)) (registers (.IR .RCX)) = some value at evaluated
+        obtain ⟨result, executed, quotientValue, remainderValue, preserved⟩ :=
+          operation_unsigned32_execution environment function registers memory continuation
+            (Or.inr (by rw [evaluated]; intro impossible; cases impossible))
+        refine ⟨result, executed, ?_, ?_⟩
+        · have result_equal : value = result (.IR .RDX) :=
+            Option.some.inj (evaluated.symm.trans remainderValue)
+          rw [result_equal]
+          exact Val.lessdef_refl _
+        · intro register data distinct notDestroyed
+          change register ≠ .IR .RAX ∧ register ≠ .IR .RDX at notDestroyed
+          exact preserved register data notDestroyed.1 notDestroyed.2
+
+theorem operation_Odivl_correct : operation_correct_case .Odivl := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | nil => cases translated
+    | cons second remaining =>
+      cases remaining with
+      | cons third tail => cases translated
+      | nil =>
+        dsimp only [transl_op] at translated
+        obtain ⟨first_equal, translated⟩ := operation_assertion first .AX _ _ translated
+        subst first
+        obtain ⟨second_equal, translated⟩ := operation_assertion second .CX _ _ translated
+        subst second
+        obtain ⟨destination_equal, translated⟩ := operation_assertion destination .AX _ _ translated
+        subst destination
+        cases translated
+        change Val.divls (registers (.IR .RAX)) (registers (.IR .RCX)) = some value at evaluated
+        obtain ⟨result, executed, quotientValue, remainderValue, preserved⟩ :=
+          operation_signed64_execution environment function registers memory continuation
+            (Or.inl (by rw [evaluated]; intro impossible; cases impossible))
+        refine ⟨result, executed, ?_, ?_⟩
+        · have result_equal : value = result (.IR .RAX) :=
+            Option.some.inj (evaluated.symm.trans quotientValue)
+          rw [result_equal]
+          exact Val.lessdef_refl _
+        · intro register data distinct notDestroyed
+          change register ≠ .IR .RAX ∧ register ≠ .IR .RDX at notDestroyed
+          exact preserved register data notDestroyed.1 notDestroyed.2
+
+theorem operation_Omodl_correct : operation_correct_case .Omodl := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | nil => cases translated
+    | cons second remaining =>
+      cases remaining with
+      | cons third tail => cases translated
+      | nil =>
+        dsimp only [transl_op] at translated
+        obtain ⟨first_equal, translated⟩ := operation_assertion first .AX _ _ translated
+        subst first
+        obtain ⟨second_equal, translated⟩ := operation_assertion second .CX _ _ translated
+        subst second
+        obtain ⟨destination_equal, translated⟩ := operation_assertion destination .DX _ _ translated
+        subst destination
+        cases translated
+        change Val.modls (registers (.IR .RAX)) (registers (.IR .RCX)) = some value at evaluated
+        obtain ⟨result, executed, quotientValue, remainderValue, preserved⟩ :=
+          operation_signed64_execution environment function registers memory continuation
+            (Or.inr (by rw [evaluated]; intro impossible; cases impossible))
+        refine ⟨result, executed, ?_, ?_⟩
+        · have result_equal : value = result (.IR .RDX) :=
+            Option.some.inj (evaluated.symm.trans remainderValue)
+          rw [result_equal]
+          exact Val.lessdef_refl _
+        · intro register data distinct notDestroyed
+          change register ≠ .IR .RAX ∧ register ≠ .IR .RDX at notDestroyed
+          exact preserved register data notDestroyed.1 notDestroyed.2
+
+theorem operation_Odivlu_correct : operation_correct_case .Odivlu := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | nil => cases translated
+    | cons second remaining =>
+      cases remaining with
+      | cons third tail => cases translated
+      | nil =>
+        dsimp only [transl_op] at translated
+        obtain ⟨first_equal, translated⟩ := operation_assertion first .AX _ _ translated
+        subst first
+        obtain ⟨second_equal, translated⟩ := operation_assertion second .CX _ _ translated
+        subst second
+        obtain ⟨destination_equal, translated⟩ := operation_assertion destination .AX _ _ translated
+        subst destination
+        cases translated
+        change Val.divlu (registers (.IR .RAX)) (registers (.IR .RCX)) = some value at evaluated
+        obtain ⟨result, executed, quotientValue, remainderValue, preserved⟩ :=
+          operation_unsigned64_execution environment function registers memory continuation
+            (Or.inl (by rw [evaluated]; intro impossible; cases impossible))
+        refine ⟨result, executed, ?_, ?_⟩
+        · have result_equal : value = result (.IR .RAX) :=
+            Option.some.inj (evaluated.symm.trans quotientValue)
+          rw [result_equal]
+          exact Val.lessdef_refl _
+        · intro register data distinct notDestroyed
+          change register ≠ .IR .RAX ∧ register ≠ .IR .RDX at notDestroyed
+          exact preserved register data notDestroyed.1 notDestroyed.2
+
+theorem operation_Omodlu_correct : operation_correct_case .Omodlu := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | nil => cases translated
+    | cons second remaining =>
+      cases remaining with
+      | cons third tail => cases translated
+      | nil =>
+        dsimp only [transl_op] at translated
+        obtain ⟨first_equal, translated⟩ := operation_assertion first .AX _ _ translated
+        subst first
+        obtain ⟨second_equal, translated⟩ := operation_assertion second .CX _ _ translated
+        subst second
+        obtain ⟨destination_equal, translated⟩ := operation_assertion destination .DX _ _ translated
+        subst destination
+        cases translated
+        change Val.modlu (registers (.IR .RAX)) (registers (.IR .RCX)) = some value at evaluated
+        obtain ⟨result, executed, quotientValue, remainderValue, preserved⟩ :=
+          operation_unsigned64_execution environment function registers memory continuation
+            (Or.inr (by rw [evaluated]; intro impossible; cases impossible))
+        refine ⟨result, executed, ?_, ?_⟩
+        · have result_equal : value = result (.IR .RDX) :=
+            Option.some.inj (evaluated.symm.trans remainderValue)
+          rw [result_equal]
+          exact Val.lessdef_refl _
+        · intro register data distinct notDestroyed
+          change register ≠ .IR .RAX ∧ register ≠ .IR .RDX at notDestroyed
+          exact preserved register data notDestroyed.1 notDestroyed.2
+
+
+theorem operation_Ocmp_correct (condition : condition) :
+    operation_correct_case (.Ocmp condition) := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  dsimp only [transl_op] at translated
+  obtain ⟨target, mapped, translated⟩ := bind_inversion _ _ _ _ _ translated
+  have mapping := ireg_of_eq _ _ mapped
+  obtain ⟨middle, firstExecuted, tested, middlePreserved⟩ :=
+    transl_cond_correct environment function condition arguments
+      (mk_setcc (testcond_for_condition condition) target continuation) generated
+      registers memory translated
+  obtain ⟨result, secondExecuted, resultValue, resultPreserved⟩ :=
+    mk_setcc_correct environment function (testcond_for_condition condition)
+      target continuation middle memory
+  refine ⟨result, ?_, ?_, ?_⟩
+  · exact exec_straight_trans environment function _ _ _ _ _ _ _ _ _
+      firstExecuted secondExecuted
+  · rw [mapping, resultValue]
+    dsimp only [eval_operation] at evaluated
+    cases evaluated
+    cases conditionValue : eval_condition condition
+        (arguments.map (fun register => registers (preg_of register))) memory with
+    | none => exact Val.lessdef_undef _
+    | some outcome =>
+      rw [conditionValue] at tested
+      rw [tested.1]
+      exact Val.lessdef_refl _
+  · intro register data distinct excluded
+    change register ≠ .IR .RAX ∧ register ≠ .IR .RCX at excluded
+    exact (resultPreserved register data excluded
+      (by simpa only [mapping] using distinct)).trans (middlePreserved register data)
+
+
+theorem operation_Osel_correct (condition : condition) (type : CompCert4Lean.Common.AST.typ) :
+    operation_correct_case (.Osel condition type) := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | nil => cases translated
+    | cons second rest =>
+      dsimp only [transl_op] at translated
+      obtain ⟨firstEqual, assertedCode⟩ := operation_assertion first destination
+        (CompCert4Lean.Common.Errors.bind (ireg_of destination) fun target =>
+          CompCert4Lean.Common.Errors.bind (ireg_of second) fun source =>
+            transl_sel condition rest target source continuation) generated translated
+      subst first
+      obtain ⟨target, mapped, targetCode⟩ := bind_inversion _ _ _ _ _ assertedCode
+      obtain ⟨source, secondMapped, selectedCode⟩ := bind_inversion _ _ _ _ _ targetCode
+      have mapping := ireg_of_eq _ _ mapped
+      have secondMapping := ireg_of_eq _ _ secondMapped
+      obtain ⟨result, executed, resultValue, preserved⟩ :=
+        transl_sel_correct environment function type condition rest target source
+          continuation generated registers memory selectedCode
+      refine ⟨result, executed, ?_, ?_⟩
+      · change some (Val.select
+          (eval_condition condition (rest.map (fun register => registers (preg_of register))) memory)
+          (registers (preg_of destination)) (registers (preg_of second)) type) = some value at evaluated
+        have valueEqual := Option.some.inj evaluated
+        rw [← valueEqual, mapping, secondMapping]
+        exact resultValue
+      · intro register data distinct excluded
+        exact preserved register data (by simpa only [mapping] using distinct)
+
+
+theorem operation_Oshrximm_correct (amount : int) :
+    operation_correct_case (.Oshrximm amount) := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | cons second rest => cases translated
+    | nil =>
+      dsimp only [transl_op] at translated
+      obtain ⟨firstEqual, sourceCode⟩ := operation_assertion first .AX _ _ translated
+      subst first
+      obtain ⟨destinationEqual, targetCode⟩ := operation_assertion destination .AX _ _ sourceCode
+      subst destination
+      change Val.shrx (registers (.IR .RAX)) (.Vint amount) = some value at evaluated
+      obtain ⟨result, executed, resultValue, preserved⟩ :=
+        mk_shrximm_correct environment function amount continuation generated registers value memory
+          targetCode evaluated
+      refine ⟨result, executed, ?_, ?_⟩
+      · change Val.lessdef value (result (.IR .RAX))
+        rw [resultValue]
+        exact Val.lessdef_refl _
+      · intro register data distinct excluded
+        exact preserved register data distinct excluded
+
+
+theorem operation_Oshrxlimm_correct (amount : int) :
+    operation_correct_case (.Oshrxlimm amount) := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | cons second rest => cases translated
+    | nil =>
+      dsimp only [transl_op] at translated
+      obtain ⟨firstEqual, sourceCode⟩ := operation_assertion first .AX _ _ translated
+      subst first
+      obtain ⟨destinationEqual, targetCode⟩ := operation_assertion destination .AX _ _ sourceCode
+      subst destination
+      change Val.shrxl (registers (.IR .RAX)) (.Vint amount) = some value at evaluated
+      obtain ⟨result, executed, resultValue, preserved⟩ :=
+        mk_shrxlimm_correct environment function amount continuation generated registers value memory
+          targetCode evaluated
+      refine ⟨result, executed, ?_, ?_⟩
+      · change Val.lessdef value (result (.IR .RAX))
+        rw [resultValue]
+        exact Val.lessdef_refl _
+      · intro register data distinct excluded
+        exact preserved register data distinct excluded
+
+
+theorem operation_Omulhs_correct : operation_correct_case .Omulhs := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | nil => cases translated
+    | cons second remaining =>
+      cases remaining with
+      | cons third rest => cases translated
+      | nil =>
+        dsimp only [transl_op] at translated
+        obtain ⟨firstEqual, sourceCode⟩ := operation_assertion first .AX _ _ translated
+        subst first
+        obtain ⟨destinationEqual, targetCode⟩ := operation_assertion destination .DX _ _ sourceCode
+        subst destination
+        obtain ⟨source, mapped, generatedCode⟩ := bind_inversion _ _ _ _ _ targetCode
+        have mapping := ireg_of_eq _ _ mapped
+        change res.OK (.Pimull_r source :: continuation) = res.OK generated at generatedCode
+        cases generatedCode
+        let result := nextinstr_nf (Pregmap.set (.IR .RAX)
+          (Val.mul (registers (.IR .RAX)) (registers (.IR source)))
+          (Pregmap.set (.IR .RDX)
+            (Val.mulhs (registers (.IR .RAX)) (registers (.IR source))) registers))
+        refine ⟨result, ?_, ?_, ?_⟩
+        · exact exec_straight_one _ continuation registers memory result memory rfl rfl
+        · change some (Val.mulhs (registers (.IR .RAX)) (registers (preg_of second))) =
+            some value at evaluated
+          have valueEqual := Option.some.inj evaluated
+          rw [mapping] at valueEqual
+          change Val.lessdef value (Val.mulhs (registers (.IR .RAX)) (registers (.IR source)))
+          rw [valueEqual]
+          exact Val.lessdef_refl _
+        · intro register data distinct excluded
+          change register ≠ .IR .RAX ∧ register ≠ .IR .RDX at excluded
+          dsimp only [result]
+          apply (nextinstr_nf_inv1 register _ data).trans
+          simp only [Pregmap.set, excluded.1, excluded.2, ↓reduceIte]
+
+
+theorem operation_Omulhu_correct : operation_correct_case .Omulhu := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | nil => cases translated
+    | cons second remaining =>
+      cases remaining with
+      | cons third rest => cases translated
+      | nil =>
+        dsimp only [transl_op] at translated
+        obtain ⟨firstEqual, sourceCode⟩ := operation_assertion first .AX _ _ translated
+        subst first
+        obtain ⟨destinationEqual, targetCode⟩ := operation_assertion destination .DX _ _ sourceCode
+        subst destination
+        obtain ⟨source, mapped, generatedCode⟩ := bind_inversion _ _ _ _ _ targetCode
+        have mapping := ireg_of_eq _ _ mapped
+        change res.OK (.Pmull_r source :: continuation) = res.OK generated at generatedCode
+        cases generatedCode
+        let result := nextinstr_nf (Pregmap.set (.IR .RAX)
+          (Val.mul (registers (.IR .RAX)) (registers (.IR source)))
+          (Pregmap.set (.IR .RDX)
+            (Val.mulhu (registers (.IR .RAX)) (registers (.IR source))) registers))
+        refine ⟨result, ?_, ?_, ?_⟩
+        · exact exec_straight_one _ continuation registers memory result memory rfl rfl
+        · change some (Val.mulhu (registers (.IR .RAX)) (registers (preg_of second))) =
+            some value at evaluated
+          have valueEqual := Option.some.inj evaluated
+          rw [mapping] at valueEqual
+          change Val.lessdef value (Val.mulhu (registers (.IR .RAX)) (registers (.IR source)))
+          rw [valueEqual]
+          exact Val.lessdef_refl _
+        · intro register data distinct excluded
+          change register ≠ .IR .RAX ∧ register ≠ .IR .RDX at excluded
+          dsimp only [result]
+          apply (nextinstr_nf_inv1 register _ data).trans
+          simp only [Pregmap.set, excluded.1, excluded.2, ↓reduceIte]
+
+
+theorem operation_Omullhs_correct : operation_correct_case .Omullhs := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | nil => cases translated
+    | cons second remaining =>
+      cases remaining with
+      | cons third rest => cases translated
+      | nil =>
+        dsimp only [transl_op] at translated
+        obtain ⟨firstEqual, sourceCode⟩ := operation_assertion first .AX _ _ translated
+        subst first
+        obtain ⟨destinationEqual, targetCode⟩ := operation_assertion destination .DX _ _ sourceCode
+        subst destination
+        obtain ⟨source, mapped, generatedCode⟩ := bind_inversion _ _ _ _ _ targetCode
+        have mapping := ireg_of_eq _ _ mapped
+        change res.OK (.Pimulq_r source :: continuation) = res.OK generated at generatedCode
+        cases generatedCode
+        let result := nextinstr_nf (Pregmap.set (.IR .RAX)
+          (Val.mull (registers (.IR .RAX)) (registers (.IR source)))
+          (Pregmap.set (.IR .RDX)
+            (Val.mullhs (registers (.IR .RAX)) (registers (.IR source))) registers))
+        refine ⟨result, ?_, ?_, ?_⟩
+        · exact exec_straight_one _ continuation registers memory result memory rfl rfl
+        · change some (Val.mullhs (registers (.IR .RAX)) (registers (preg_of second))) =
+            some value at evaluated
+          have valueEqual := Option.some.inj evaluated
+          rw [mapping] at valueEqual
+          change Val.lessdef value (Val.mullhs (registers (.IR .RAX)) (registers (.IR source)))
+          rw [valueEqual]
+          exact Val.lessdef_refl _
+        · intro register data distinct excluded
+          change register ≠ .IR .RAX ∧ register ≠ .IR .RDX at excluded
+          dsimp only [result]
+          apply (nextinstr_nf_inv1 register _ data).trans
+          simp only [Pregmap.set, excluded.1, excluded.2, ↓reduceIte]
+
+
+theorem operation_Omullhu_correct : operation_correct_case .Omullhu := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | nil => cases translated
+    | cons second remaining =>
+      cases remaining with
+      | cons third rest => cases translated
+      | nil =>
+        dsimp only [transl_op] at translated
+        obtain ⟨firstEqual, sourceCode⟩ := operation_assertion first .AX _ _ translated
+        subst first
+        obtain ⟨destinationEqual, targetCode⟩ := operation_assertion destination .DX _ _ sourceCode
+        subst destination
+        obtain ⟨source, mapped, generatedCode⟩ := bind_inversion _ _ _ _ _ targetCode
+        have mapping := ireg_of_eq _ _ mapped
+        change res.OK (.Pmulq_r source :: continuation) = res.OK generated at generatedCode
+        cases generatedCode
+        let result := nextinstr_nf (Pregmap.set (.IR .RAX)
+          (Val.mull (registers (.IR .RAX)) (registers (.IR source)))
+          (Pregmap.set (.IR .RDX)
+            (Val.mullhu (registers (.IR .RAX)) (registers (.IR source))) registers))
+        refine ⟨result, ?_, ?_, ?_⟩
+        · exact exec_straight_one _ continuation registers memory result memory rfl rfl
+        · change some (Val.mullhu (registers (.IR .RAX)) (registers (preg_of second))) =
+            some value at evaluated
+          have valueEqual := Option.some.inj evaluated
+          rw [mapping] at valueEqual
+          change Val.lessdef value (Val.mullhu (registers (.IR .RAX)) (registers (.IR source)))
+          rw [valueEqual]
+          exact Val.lessdef_refl _
+        · intro register data distinct excluded
+          change register ≠ .IR .RAX ∧ register ≠ .IR .RDX at excluded
+          dsimp only [result]
+          apply (nextinstr_nf_inv1 register _ data).trans
+          simp only [Pregmap.set, excluded.1, excluded.2, ↓reduceIte]
+
+
+theorem operation_Omove_correct : operation_correct_case .Omove := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | cons second rest => cases translated
+    | nil =>
+      obtain ⟨result, executed, resultValue, preserved⟩ :=
+        mk_mov_correct environment function (preg_of destination) (preg_of first)
+          continuation generated registers memory translated
+      refine ⟨result, executed, ?_, ?_⟩
+      · change some (registers (preg_of first)) = some value at evaluated
+        rw [resultValue, Option.some.inj evaluated]
+        exact Val.lessdef_refl _
+      · intro register data distinct excluded
+        exact preserved register data distinct
+
+
+theorem operation_Ocast8signed_correct : operation_correct_case .Ocast8signed := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | cons second rest => cases translated
+    | nil =>
+      dsimp only [transl_op] at translated
+      obtain ⟨source, sourceMapped, sourceCode⟩ := bind_inversion _ _ _ _ _ translated
+      obtain ⟨target, targetMapped, targetCode⟩ := bind_inversion _ _ _ _ _ sourceCode
+      have sourceMapping := ireg_of_eq _ _ sourceMapped
+      have targetMapping := ireg_of_eq _ _ targetMapped
+      obtain ⟨result, executed, resultValue, preserved⟩ :=
+        mk_intconv_correct environment function .Pmovsb_rr (Val.sign_ext (ZArith.BinInt.Z.of_nat 8))
+          target source continuation generated registers memory targetCode
+          (by intros; rfl)
+      refine ⟨result, executed, ?_, ?_⟩
+      · change some (Val.sign_ext (ZArith.BinInt.Z.of_nat 8) (registers (preg_of first))) =
+          some value at evaluated
+        have valueEqual := Option.some.inj evaluated
+        rw [sourceMapping] at valueEqual
+        rw [targetMapping, resultValue, valueEqual]
+        exact Val.lessdef_refl _
+      · intro register data distinct excluded
+        exact preserved register data (by simpa only [targetMapping] using distinct) excluded
+
+
+theorem operation_Ocast8unsigned_correct : operation_correct_case .Ocast8unsigned := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | cons second rest => cases translated
+    | nil =>
+      dsimp only [transl_op] at translated
+      obtain ⟨source, sourceMapped, sourceCode⟩ := bind_inversion _ _ _ _ _ translated
+      obtain ⟨target, targetMapped, targetCode⟩ := bind_inversion _ _ _ _ _ sourceCode
+      have sourceMapping := ireg_of_eq _ _ sourceMapped
+      have targetMapping := ireg_of_eq _ _ targetMapped
+      obtain ⟨result, executed, resultValue, preserved⟩ :=
+        mk_intconv_correct environment function .Pmovzb_rr (Val.zero_ext (ZArith.BinInt.Z.of_nat 8))
+          target source continuation generated registers memory targetCode
+          (by intros; rfl)
+      refine ⟨result, executed, ?_, ?_⟩
+      · change some (Val.zero_ext (ZArith.BinInt.Z.of_nat 8) (registers (preg_of first))) =
+          some value at evaluated
+        have valueEqual := Option.some.inj evaluated
+        rw [sourceMapping] at valueEqual
+        rw [targetMapping, resultValue, valueEqual]
+        exact Val.lessdef_refl _
+      · intro register data distinct excluded
+        exact preserved register data (by simpa only [targetMapping] using distinct) excluded
+
+
+theorem operation_Ointconst_correct (constant : int) :
+    operation_correct_case (.Ointconst constant) := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | cons first rest => cases translated
+  | nil =>
+    dsimp only [transl_op] at translated
+    obtain ⟨target, mapped, targetCode⟩ := bind_inversion _ _ _ _ _ translated
+    have mapping := ireg_of_eq _ _ mapped
+    change res.OK ((if Int.eq constant Int.zero then .Pxorl_r target
+      else .Pmovl_ri target constant) :: continuation) = res.OK generated at targetCode
+    cases targetCode
+    let result := nextinstr_nf (Pregmap.set (.IR target) (.Vint constant) registers)
+    have executed : exec_instr environment function
+        (if Int.eq constant Int.zero then .Pxorl_r target else .Pmovl_ri target constant)
+        registers memory = .Next result memory := by
+      cases zeroTest : Int.eq constant Int.zero with
+      | false => rfl
+      | true =>
+        have constantZero : constant = Int.zero := by
+          simpa only [zeroTest, ↓reduceIte] using Int.eq_spec_proof constant Int.zero
+        subst constant
+        rfl
+    refine ⟨result, exec_straight_one _ continuation registers memory result memory executed rfl, ?_, ?_⟩
+    · change some (.Vint constant) = some value at evaluated
+      rw [mapping]
+      have resultValue : result (.IR target) = .Vint constant := by
+        dsimp only [result]
+        apply (nextinstr_nf_inv1 (.IR target) _ rfl).trans
+        simp [Pregmap.set]
+      rw [resultValue, Option.some.inj evaluated]
+      exact Val.lessdef_refl _
+    · intro register data distinct excluded
+      dsimp only [result]
+      apply (nextinstr_nf_inv1 register _ data).trans
+      have targetDistinct : register ≠ .IR target := by simpa only [mapping] using distinct
+      simp only [Pregmap.set, targetDistinct, ↓reduceIte]
+
+
+theorem operation_Olongconst_correct (constant : int64) :
+    operation_correct_case (.Olongconst constant) := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | cons first rest => cases translated
+  | nil =>
+    dsimp only [transl_op] at translated
+    obtain ⟨target, mapped, targetCode⟩ := bind_inversion _ _ _ _ _ translated
+    have mapping := ireg_of_eq _ _ mapped
+    change res.OK ((if Int64.eq constant Int64.zero then .Pxorq_r target
+      else .Pmovq_ri target constant) :: continuation) = res.OK generated at targetCode
+    cases targetCode
+    let result := nextinstr_nf (Pregmap.set (.IR target) (.Vlong constant) registers)
+    have executed : exec_instr environment function
+        (if Int64.eq constant Int64.zero then .Pxorq_r target else .Pmovq_ri target constant)
+        registers memory = .Next result memory := by
+      cases zeroTest : Int64.eq constant Int64.zero with
+      | false => rfl
+      | true =>
+        have constantZero : constant = Int64.zero := by
+          simpa only [zeroTest, ↓reduceIte] using Int64.eq_spec_proof constant Int64.zero
+        subst constant
+        rfl
+    refine ⟨result, exec_straight_one _ continuation registers memory result memory executed rfl, ?_, ?_⟩
+    · change some (.Vlong constant) = some value at evaluated
+      rw [mapping]
+      have resultValue : result (.IR target) = .Vlong constant := by
+        dsimp only [result]
+        apply (nextinstr_nf_inv1 (.IR target) _ rfl).trans
+        simp [Pregmap.set]
+      rw [resultValue, Option.some.inj evaluated]
+      exact Val.lessdef_refl _
+    · intro register data distinct excluded
+      dsimp only [result]
+      apply (nextinstr_nf_inv1 register _ data).trans
+      have targetDistinct : register ≠ .IR target := by simpa only [mapping] using distinct
+      simp only [Pregmap.set, targetDistinct, ↓reduceIte]
+
+
+theorem operation_Ofloatconst_correct (constant : CompCert4Lean.Lib.Floats.float) :
+    operation_correct_case (.Ofloatconst constant) := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | cons first rest => cases translated
+  | nil =>
+    dsimp only [transl_op] at translated
+    obtain ⟨target, mapped, targetCode⟩ := bind_inversion _ _ _ _ _ translated
+    have mapping := freg_of_eq _ _ mapped
+    cases equality : CompCert4Lean.Lib.Floats.Float.eq_dec constant CompCert4Lean.Lib.Floats.Float.zero with
+    | left constantZero =>
+      simp only [equality] at targetCode
+      subst constant
+      change res.OK (.Pxorpd_f target :: continuation) = res.OK generated at targetCode
+      cases targetCode
+      let result := nextinstr_nf (Pregmap.set (.FR target)
+        (.Vfloat CompCert4Lean.Lib.Floats.Float.zero) registers)
+      refine ⟨result, exec_straight_one _ continuation registers memory result memory rfl rfl, ?_, ?_⟩
+      · change some (.Vfloat CompCert4Lean.Lib.Floats.Float.zero) = some value at evaluated
+        have resultValue : result (.FR target) = .Vfloat CompCert4Lean.Lib.Floats.Float.zero := by
+          dsimp only [result]
+          apply (nextinstr_nf_inv1 (.FR target) _ rfl).trans
+          simp [Pregmap.set]
+        rw [mapping, resultValue, Option.some.inj evaluated]
+        exact Val.lessdef_refl _
+      · intro register data distinct excluded
+        dsimp only [result]
+        apply (nextinstr_nf_inv1 register _ data).trans
+        have targetDistinct : register ≠ .FR target := by simpa only [mapping] using distinct
+        simp only [Pregmap.set, targetDistinct, ↓reduceIte]
+    | right constantNonzero =>
+      simp only [equality] at targetCode
+      change res.OK (.Pmovsd_fi target constant :: continuation) = res.OK generated at targetCode
+      cases targetCode
+      let result := nextinstr (Pregmap.set (.FR target) (.Vfloat constant) registers)
+      refine ⟨result, exec_straight_one _ continuation registers memory result memory rfl rfl, ?_, ?_⟩
+      · change some (.Vfloat constant) = some value at evaluated
+        have resultValue : result (.FR target) = .Vfloat constant := by
+          dsimp only [result]
+          apply (nextinstr_inv (.FR target) _ (by intro impossible; cases impossible)).trans
+          simp [Pregmap.set]
+        rw [mapping, resultValue, Option.some.inj evaluated]
+        exact Val.lessdef_refl _
+      · intro register data distinct excluded
+        have notPC : register ≠ .PC := by
+          intro identical
+          subst register
+          cases data
+        dsimp only [result]
+        apply (nextinstr_inv register _ notPC).trans
+        have targetDistinct : register ≠ .FR target := by simpa only [mapping] using distinct
+        simp only [Pregmap.set, targetDistinct, ↓reduceIte]
+
+
+theorem operation_Osingleconst_correct (constant : CompCert4Lean.Lib.Floats.float32) :
+    operation_correct_case (.Osingleconst constant) := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | cons first rest => cases translated
+  | nil =>
+    dsimp only [transl_op] at translated
+    obtain ⟨target, mapped, targetCode⟩ := bind_inversion _ _ _ _ _ translated
+    have mapping := freg_of_eq _ _ mapped
+    cases equality : CompCert4Lean.Lib.Floats.Float32.eq_dec constant CompCert4Lean.Lib.Floats.Float32.zero with
+    | left constantZero =>
+      simp only [equality] at targetCode
+      subst constant
+      change res.OK (.Pxorps_f target :: continuation) = res.OK generated at targetCode
+      cases targetCode
+      let result := nextinstr_nf (Pregmap.set (.FR target)
+        (.Vsingle CompCert4Lean.Lib.Floats.Float32.zero) registers)
+      refine ⟨result, exec_straight_one _ continuation registers memory result memory rfl rfl, ?_, ?_⟩
+      · change some (.Vsingle CompCert4Lean.Lib.Floats.Float32.zero) = some value at evaluated
+        have resultValue : result (.FR target) = .Vsingle CompCert4Lean.Lib.Floats.Float32.zero := by
+          dsimp only [result]
+          apply (nextinstr_nf_inv1 (.FR target) _ rfl).trans
+          simp [Pregmap.set]
+        rw [mapping, resultValue, Option.some.inj evaluated]
+        exact Val.lessdef_refl _
+      · intro register data distinct excluded
+        dsimp only [result]
+        apply (nextinstr_nf_inv1 register _ data).trans
+        have targetDistinct : register ≠ .FR target := by simpa only [mapping] using distinct
+        simp only [Pregmap.set, targetDistinct, ↓reduceIte]
+    | right constantNonzero =>
+      simp only [equality] at targetCode
+      change res.OK (.Pmovss_fi target constant :: continuation) = res.OK generated at targetCode
+      cases targetCode
+      let result := nextinstr (Pregmap.set (.FR target) (.Vsingle constant) registers)
+      refine ⟨result, exec_straight_one _ continuation registers memory result memory rfl rfl, ?_, ?_⟩
+      · change some (.Vsingle constant) = some value at evaluated
+        have resultValue : result (.FR target) = .Vsingle constant := by
+          dsimp only [result]
+          apply (nextinstr_inv (.FR target) _ (by intro impossible; cases impossible)).trans
+          simp [Pregmap.set]
+        rw [mapping, resultValue, Option.some.inj evaluated]
+        exact Val.lessdef_refl _
+      · intro register data distinct excluded
+        have notPC : register ≠ .PC := by
+          intro identical
+          subst register
+          cases data
+        dsimp only [result]
+        apply (nextinstr_inv register _ notPC).trans
+        have targetDistinct : register ≠ .FR target := by simpa only [mapping] using distinct
+        simp only [Pregmap.set, targetDistinct, ↓reduceIte]
+
+
+theorem operation_Ointoffloat_correct : operation_correct_case .Ointoffloat := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | cons second rest => cases translated
+    | nil =>
+      dsimp only [transl_op] at translated
+      obtain ⟨target, targetMapped, targetCode⟩ := bind_inversion _ _ _ _ _ translated
+      obtain ⟨source, sourceMapped, sourceCode⟩ := bind_inversion _ _ _ _ _ targetCode
+      have targetMapping := ireg_of_eq _ _ targetMapped
+      have sourceMapping := freg_of_eq _ _ sourceMapped
+      change res.OK (.Pcvttsd2si_rf target source :: continuation) = res.OK generated at sourceCode
+      cases sourceCode
+      change Val.intoffloat (registers (preg_of first)) = some value at evaluated
+      rw [sourceMapping] at evaluated
+      let result := nextinstr (Pregmap.set (.IR target) value registers)
+      have executed : exec_instr environment function (.Pcvttsd2si_rf target source)
+          registers memory = .Next result memory := by
+        dsimp only [exec_instr, Pregmap.get]
+        rw [evaluated]
+        rfl
+      refine ⟨result, exec_straight_one _ continuation registers memory result memory executed rfl, ?_, ?_⟩
+      · have resultValue : result (.IR target) = value := by
+          dsimp only [result]
+          apply (nextinstr_inv (.IR target) _ (by intro impossible; cases impossible)).trans
+          simp [Pregmap.set]
+        rw [targetMapping, resultValue]
+        exact Val.lessdef_refl _
+      · intro register data distinct excluded
+        have notPC : register ≠ .PC := by
+          intro identical
+          subst register
+          cases data
+        dsimp only [result]
+        apply (nextinstr_inv register _ notPC).trans
+        have targetDistinct : register ≠ .IR target := by simpa only [targetMapping] using distinct
+        simp only [Pregmap.set, targetDistinct, ↓reduceIte]
+
+
+theorem operation_Ofloatofint_correct : operation_correct_case .Ofloatofint := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | cons second rest => cases translated
+    | nil =>
+      dsimp only [transl_op] at translated
+      obtain ⟨target, targetMapped, targetCode⟩ := bind_inversion _ _ _ _ _ translated
+      obtain ⟨source, sourceMapped, sourceCode⟩ := bind_inversion _ _ _ _ _ targetCode
+      have targetMapping := freg_of_eq _ _ targetMapped
+      have sourceMapping := ireg_of_eq _ _ sourceMapped
+      change res.OK (.Pcvtsi2sd_fr target source :: continuation) = res.OK generated at sourceCode
+      cases sourceCode
+      change Val.floatofint (registers (preg_of first)) = some value at evaluated
+      rw [sourceMapping] at evaluated
+      let result := nextinstr (Pregmap.set (.FR target) value registers)
+      have executed : exec_instr environment function (.Pcvtsi2sd_fr target source)
+          registers memory = .Next result memory := by
+        dsimp only [exec_instr, Pregmap.get]
+        rw [evaluated]
+        rfl
+      refine ⟨result, exec_straight_one _ continuation registers memory result memory executed rfl, ?_, ?_⟩
+      · have resultValue : result (.FR target) = value := by
+          dsimp only [result]
+          apply (nextinstr_inv (.FR target) _ (by intro impossible; cases impossible)).trans
+          simp [Pregmap.set]
+        rw [targetMapping, resultValue]
+        exact Val.lessdef_refl _
+      · intro register data distinct excluded
+        have notPC : register ≠ .PC := by
+          intro identical
+          subst register
+          cases data
+        dsimp only [result]
+        apply (nextinstr_inv register _ notPC).trans
+        have targetDistinct : register ≠ .FR target := by simpa only [targetMapping] using distinct
+        simp only [Pregmap.set, targetDistinct, ↓reduceIte]
+
+
+theorem operation_Ointofsingle_correct : operation_correct_case .Ointofsingle := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | cons second rest => cases translated
+    | nil =>
+      dsimp only [transl_op] at translated
+      obtain ⟨target, targetMapped, targetCode⟩ := bind_inversion _ _ _ _ _ translated
+      obtain ⟨source, sourceMapped, sourceCode⟩ := bind_inversion _ _ _ _ _ targetCode
+      have targetMapping := ireg_of_eq _ _ targetMapped
+      have sourceMapping := freg_of_eq _ _ sourceMapped
+      change res.OK (.Pcvttss2si_rf target source :: continuation) = res.OK generated at sourceCode
+      cases sourceCode
+      change Val.intofsingle (registers (preg_of first)) = some value at evaluated
+      rw [sourceMapping] at evaluated
+      let result := nextinstr (Pregmap.set (.IR target) value registers)
+      have executed : exec_instr environment function (.Pcvttss2si_rf target source)
+          registers memory = .Next result memory := by
+        dsimp only [exec_instr, Pregmap.get]
+        rw [evaluated]
+        rfl
+      refine ⟨result, exec_straight_one _ continuation registers memory result memory executed rfl, ?_, ?_⟩
+      · have resultValue : result (.IR target) = value := by
+          dsimp only [result]
+          apply (nextinstr_inv (.IR target) _ (by intro impossible; cases impossible)).trans
+          simp [Pregmap.set]
+        rw [targetMapping, resultValue]
+        exact Val.lessdef_refl _
+      · intro register data distinct excluded
+        have notPC : register ≠ .PC := by
+          intro identical
+          subst register
+          cases data
+        dsimp only [result]
+        apply (nextinstr_inv register _ notPC).trans
+        have targetDistinct : register ≠ .IR target := by simpa only [targetMapping] using distinct
+        simp only [Pregmap.set, targetDistinct, ↓reduceIte]
+
+
+theorem operation_Osingleofint_correct : operation_correct_case .Osingleofint := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | cons second rest => cases translated
+    | nil =>
+      dsimp only [transl_op] at translated
+      obtain ⟨target, targetMapped, targetCode⟩ := bind_inversion _ _ _ _ _ translated
+      obtain ⟨source, sourceMapped, sourceCode⟩ := bind_inversion _ _ _ _ _ targetCode
+      have targetMapping := freg_of_eq _ _ targetMapped
+      have sourceMapping := ireg_of_eq _ _ sourceMapped
+      change res.OK (.Pcvtsi2ss_fr target source :: continuation) = res.OK generated at sourceCode
+      cases sourceCode
+      change Val.singleofint (registers (preg_of first)) = some value at evaluated
+      rw [sourceMapping] at evaluated
+      let result := nextinstr (Pregmap.set (.FR target) value registers)
+      have executed : exec_instr environment function (.Pcvtsi2ss_fr target source)
+          registers memory = .Next result memory := by
+        dsimp only [exec_instr, Pregmap.get]
+        rw [evaluated]
+        rfl
+      refine ⟨result, exec_straight_one _ continuation registers memory result memory executed rfl, ?_, ?_⟩
+      · have resultValue : result (.FR target) = value := by
+          dsimp only [result]
+          apply (nextinstr_inv (.FR target) _ (by intro impossible; cases impossible)).trans
+          simp [Pregmap.set]
+        rw [targetMapping, resultValue]
+        exact Val.lessdef_refl _
+      · intro register data distinct excluded
+        have notPC : register ≠ .PC := by
+          intro identical
+          subst register
+          cases data
+        dsimp only [result]
+        apply (nextinstr_inv register _ notPC).trans
+        have targetDistinct : register ≠ .FR target := by simpa only [targetMapping] using distinct
+        simp only [Pregmap.set, targetDistinct, ↓reduceIte]
+
+
+theorem operation_Olongoffloat_correct : operation_correct_case .Olongoffloat := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | cons second rest => cases translated
+    | nil =>
+      dsimp only [transl_op] at translated
+      obtain ⟨target, targetMapped, targetCode⟩ := bind_inversion _ _ _ _ _ translated
+      obtain ⟨source, sourceMapped, sourceCode⟩ := bind_inversion _ _ _ _ _ targetCode
+      have targetMapping := ireg_of_eq _ _ targetMapped
+      have sourceMapping := freg_of_eq _ _ sourceMapped
+      change res.OK (.Pcvttsd2sl_rf target source :: continuation) = res.OK generated at sourceCode
+      cases sourceCode
+      change Val.longoffloat (registers (preg_of first)) = some value at evaluated
+      rw [sourceMapping] at evaluated
+      let result := nextinstr (Pregmap.set (.IR target) value registers)
+      have executed : exec_instr environment function (.Pcvttsd2sl_rf target source)
+          registers memory = .Next result memory := by
+        dsimp only [exec_instr, Pregmap.get]
+        rw [evaluated]
+        rfl
+      refine ⟨result, exec_straight_one _ continuation registers memory result memory executed rfl, ?_, ?_⟩
+      · have resultValue : result (.IR target) = value := by
+          dsimp only [result]
+          apply (nextinstr_inv (.IR target) _ (by intro impossible; cases impossible)).trans
+          simp [Pregmap.set]
+        rw [targetMapping, resultValue]
+        exact Val.lessdef_refl _
+      · intro register data distinct excluded
+        have notPC : register ≠ .PC := by
+          intro identical
+          subst register
+          cases data
+        dsimp only [result]
+        apply (nextinstr_inv register _ notPC).trans
+        have targetDistinct : register ≠ .IR target := by simpa only [targetMapping] using distinct
+        simp only [Pregmap.set, targetDistinct, ↓reduceIte]
+
+
+theorem operation_Ofloatoflong_correct : operation_correct_case .Ofloatoflong := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | cons second rest => cases translated
+    | nil =>
+      dsimp only [transl_op] at translated
+      obtain ⟨target, targetMapped, targetCode⟩ := bind_inversion _ _ _ _ _ translated
+      obtain ⟨source, sourceMapped, sourceCode⟩ := bind_inversion _ _ _ _ _ targetCode
+      have targetMapping := freg_of_eq _ _ targetMapped
+      have sourceMapping := ireg_of_eq _ _ sourceMapped
+      change res.OK (.Pcvtsl2sd_fr target source :: continuation) = res.OK generated at sourceCode
+      cases sourceCode
+      change Val.floatoflong (registers (preg_of first)) = some value at evaluated
+      rw [sourceMapping] at evaluated
+      let result := nextinstr (Pregmap.set (.FR target) value registers)
+      have executed : exec_instr environment function (.Pcvtsl2sd_fr target source)
+          registers memory = .Next result memory := by
+        dsimp only [exec_instr, Pregmap.get]
+        rw [evaluated]
+        rfl
+      refine ⟨result, exec_straight_one _ continuation registers memory result memory executed rfl, ?_, ?_⟩
+      · have resultValue : result (.FR target) = value := by
+          dsimp only [result]
+          apply (nextinstr_inv (.FR target) _ (by intro impossible; cases impossible)).trans
+          simp [Pregmap.set]
+        rw [targetMapping, resultValue]
+        exact Val.lessdef_refl _
+      · intro register data distinct excluded
+        have notPC : register ≠ .PC := by
+          intro identical
+          subst register
+          cases data
+        dsimp only [result]
+        apply (nextinstr_inv register _ notPC).trans
+        have targetDistinct : register ≠ .FR target := by simpa only [targetMapping] using distinct
+        simp only [Pregmap.set, targetDistinct, ↓reduceIte]
+
+
+theorem operation_Olongofsingle_correct : operation_correct_case .Olongofsingle := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | cons second rest => cases translated
+    | nil =>
+      dsimp only [transl_op] at translated
+      obtain ⟨target, targetMapped, targetCode⟩ := bind_inversion _ _ _ _ _ translated
+      obtain ⟨source, sourceMapped, sourceCode⟩ := bind_inversion _ _ _ _ _ targetCode
+      have targetMapping := ireg_of_eq _ _ targetMapped
+      have sourceMapping := freg_of_eq _ _ sourceMapped
+      change res.OK (.Pcvttss2sl_rf target source :: continuation) = res.OK generated at sourceCode
+      cases sourceCode
+      change Val.longofsingle (registers (preg_of first)) = some value at evaluated
+      rw [sourceMapping] at evaluated
+      let result := nextinstr (Pregmap.set (.IR target) value registers)
+      have executed : exec_instr environment function (.Pcvttss2sl_rf target source)
+          registers memory = .Next result memory := by
+        dsimp only [exec_instr, Pregmap.get]
+        rw [evaluated]
+        rfl
+      refine ⟨result, exec_straight_one _ continuation registers memory result memory executed rfl, ?_, ?_⟩
+      · have resultValue : result (.IR target) = value := by
+          dsimp only [result]
+          apply (nextinstr_inv (.IR target) _ (by intro impossible; cases impossible)).trans
+          simp [Pregmap.set]
+        rw [targetMapping, resultValue]
+        exact Val.lessdef_refl _
+      · intro register data distinct excluded
+        have notPC : register ≠ .PC := by
+          intro identical
+          subst register
+          cases data
+        dsimp only [result]
+        apply (nextinstr_inv register _ notPC).trans
+        have targetDistinct : register ≠ .IR target := by simpa only [targetMapping] using distinct
+        simp only [Pregmap.set, targetDistinct, ↓reduceIte]
+
+
+theorem operation_Osingleoflong_correct : operation_correct_case .Osingleoflong := by
+  intro environment function arguments destination continuation generated registers memory value translated evaluated
+  cases arguments with
+  | nil => cases translated
+  | cons first remaining =>
+    cases remaining with
+    | cons second rest => cases translated
+    | nil =>
+      dsimp only [transl_op] at translated
+      obtain ⟨target, targetMapped, targetCode⟩ := bind_inversion _ _ _ _ _ translated
+      obtain ⟨source, sourceMapped, sourceCode⟩ := bind_inversion _ _ _ _ _ targetCode
+      have targetMapping := freg_of_eq _ _ targetMapped
+      have sourceMapping := ireg_of_eq _ _ sourceMapped
+      change res.OK (.Pcvtsl2ss_fr target source :: continuation) = res.OK generated at sourceCode
+      cases sourceCode
+      change Val.singleoflong (registers (preg_of first)) = some value at evaluated
+      rw [sourceMapping] at evaluated
+      let result := nextinstr (Pregmap.set (.FR target) value registers)
+      have executed : exec_instr environment function (.Pcvtsl2ss_fr target source)
+          registers memory = .Next result memory := by
+        dsimp only [exec_instr, Pregmap.get]
+        rw [evaluated]
+        rfl
+      refine ⟨result, exec_straight_one _ continuation registers memory result memory executed rfl, ?_, ?_⟩
+      · have resultValue : result (.FR target) = value := by
+          dsimp only [result]
+          apply (nextinstr_inv (.FR target) _ (by intro impossible; cases impossible)).trans
+          simp [Pregmap.set]
+        rw [targetMapping, resultValue]
+        exact Val.lessdef_refl _
+      · intro register data distinct excluded
+        have notPC : register ≠ .PC := by
+          intro identical
+          subst register
+          cases data
+        dsimp only [result]
+        apply (nextinstr_inv register _ notPC).trans
+        have targetDistinct : register ≠ .FR target := by simpa only [targetMapping] using distinct
+        simp only [Pregmap.set, targetDistinct, ↓reduceIte]
+
+
+theorem operation_single_assignment
+    (environment : genv) (function : Asm.function) (instruction : instruction)
+    (continuation : code) (registers : regset) (memory : mem) (destination : preg) (value : val)
+    (destinationData : data_preg destination = true)
+    (executed : exec_instr environment function instruction registers memory =
+      .Next (nextinstr (Pregmap.set destination value registers)) memory) :
+    ∃ result, exec_straight environment function (instruction :: continuation) registers memory
+        continuation result memory ∧ Val.lessdef value (result destination) ∧
+      (∀ register, data_preg register = true → register ≠ destination → result register = registers register) := by
+  have destinationNotPC : destination ≠ .PC := by
+    intro identical
+    subst destination
+    cases destinationData
+  let result := nextinstr (Pregmap.set destination value registers)
+  refine ⟨result, exec_straight_one _ continuation registers memory result memory executed ?_, ?_, ?_⟩
+  · simp [result, nextinstr, nextinstr, undef_regs, Pregmap.set, Pregmap.get,
+      Ne.symm destinationNotPC]
+  · have resultValue : result destination = value := by
+      dsimp only [result]
+      apply (nextinstr_inv destination _ destinationNotPC).trans
+      simp [Pregmap.set]
+    rw [resultValue]
+    exact Val.lessdef_refl _
+  · intro register registerData distinct
+    have registerNotPC : register ≠ .PC := by
+      intro identical
+      subst register
+      cases registerData
+    dsimp only [result]
+    apply (nextinstr_inv register _ registerNotPC).trans
+    simp only [Pregmap.set, distinct, ↓reduceIte]
+
+
+theorem operation_single_assignment_nf
+    (environment : genv) (function : Asm.function) (instruction : instruction)
+    (continuation : code) (registers : regset) (memory : mem) (destination : preg) (value : val)
+    (destinationData : data_preg destination = true)
+    (executed : exec_instr environment function instruction registers memory =
+      .Next (nextinstr_nf (Pregmap.set destination value registers)) memory) :
+    ∃ result, exec_straight environment function (instruction :: continuation) registers memory
+        continuation result memory ∧ Val.lessdef value (result destination) ∧
+      (∀ register, data_preg register = true → register ≠ destination → result register = registers register) := by
+  have destinationNotPC : destination ≠ .PC := by
+    intro identical
+    subst destination
+    cases destinationData
+  let result := nextinstr_nf (Pregmap.set destination value registers)
+  refine ⟨result, exec_straight_one _ continuation registers memory result memory executed ?_, ?_, ?_⟩
+  · simp [result, nextinstr_nf, nextinstr, undef_regs, Pregmap.set, Pregmap.get,
+      Ne.symm destinationNotPC]
+  · have resultValue : result destination = value := by
+      dsimp only [result]
+      apply (nextinstr_nf_inv1 destination _ destinationData).trans
+      simp [Pregmap.set]
+    rw [resultValue]
+    exact Val.lessdef_refl _
+  · intro register registerData distinct
+    have registerNotPC : register ≠ .PC := by
+      intro identical
+      subst register
+      cases registerData
+    dsimp only [result]
+    apply (nextinstr_nf_inv1 register _ registerData).trans
+    simp only [Pregmap.set, distinct, ↓reduceIte]
+
+
+theorem operation_single_assignment_clobbers
+    (environment : genv) (function : Asm.function) (instruction : instruction)
+    (continuation : code) (registers : regset) (memory : mem) (destination : preg) (value : val)
+    (destroyed : List CompCert4Lean.X86.Machregs.mreg)
+    (destinationData : data_preg destination = true)
+    (executed : exec_instr environment function instruction registers memory =
+      .Next (nextinstr (Pregmap.set destination value registers)) memory) :
+    ∃ result, exec_straight environment function (instruction :: continuation) registers memory
+        continuation result memory ∧ Val.lessdef value (result destination) ∧
+      (∀ register, data_preg register = true → register ≠ destination →
+        preg_notin register destroyed → result register = registers register) := by
+  obtain ⟨result, execution, computed, preserved⟩ := operation_single_assignment
+    environment function instruction continuation registers memory destination value destinationData executed
+  exact ⟨result, execution, computed, fun register data distinct _ => preserved register data distinct⟩
+
+theorem operation_single_assignment_nf_clobbers
+    (environment : genv) (function : Asm.function) (instruction : instruction)
+    (continuation : code) (registers : regset) (memory : mem) (destination : preg) (value : val)
+    (destroyed : List CompCert4Lean.X86.Machregs.mreg)
+    (destinationData : data_preg destination = true)
+    (executed : exec_instr environment function instruction registers memory =
+      .Next (nextinstr_nf (Pregmap.set destination value registers)) memory) :
+    ∃ result, exec_straight environment function (instruction :: continuation) registers memory
+        continuation result memory ∧ Val.lessdef value (result destination) ∧
+      (∀ register, data_preg register = true → register ≠ destination →
+        preg_notin register destroyed → result register = registers register) := by
+  obtain ⟨result, execution, computed, preserved⟩ := operation_single_assignment_nf
+    environment function instruction continuation registers memory destination value destinationData executed
+  exact ⟨result, execution, computed, fun register data distinct _ => preserved register data distinct⟩
+
+end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Asmgenproof0
+open CompCert4Lean.X86.Asm
+open CompCert4Lean.X86.Asmgen
+open CompCert4Lean.X86.Asmgenproof1
+
+variable [CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+  (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+variable [CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+  (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+
+theorem operation_address64_execution (environment : genv) (function : function)
+    (address : addrmode) (destination : ireg) (continuation : code)
+    (registers : regset) (memory : CompCert4Lean.Common.Memory.mem) :
+    ∃ resultRegisters, exec_straight environment function
+      (match normalize_addrmode_64 address with
+        | (actualAddress, none) => .Pleaq destination actualAddress :: continuation
+        | (actualAddress, some delta) =>
+          .Pleaq destination actualAddress :: .Paddq_ri destination delta :: continuation)
+      registers memory continuation resultRegisters memory ∧
+      resultRegisters (.IR destination) = eval_addrmode64 environment address registers ∧
+      (∀ register, data_preg register = true → register ≠ .IR destination →
+        resultRegisters register = registers register) := by
+  have semantic := normalize_addrmode_64_correct environment address registers
+  generalize normalized : normalize_addrmode_64 address = normalizedAddress at *
+  rcases normalizedAddress with ⟨actualAddress, delta⟩
+  cases delta with
+  | none =>
+    refine ⟨nextinstr (Pregmap.set (.IR destination)
+      (eval_addrmode64 environment actualAddress registers) registers), ?_, ?_, ?_⟩
+    · apply exec_straight_one
+      · rfl
+      · simp [nextinstr, Pregmap.set, Pregmap.get]
+    · simpa [nextinstr, Pregmap.set, Pregmap.get] using semantic.symm
+    · intro register data different
+      cases register <;> simp_all [nextinstr, Pregmap.set, Pregmap.get, data_preg]
+  | some delta =>
+    let middle := nextinstr (Pregmap.set (.IR destination)
+      (eval_addrmode64 environment actualAddress registers) registers)
+    let result := nextinstr_nf (Pregmap.set (.IR destination)
+      (Val.addl (middle (.IR destination)) (.Vlong delta)) middle)
+    refine ⟨result, ?_, ?_, ?_⟩
+    · apply exec_straight_two environment function _ _ continuation registers memory
+        middle memory result memory
+      · rfl
+      · rfl
+      · simp [middle, nextinstr, Pregmap.set, Pregmap.get]
+      · simp [result, nextinstr_nf, nextinstr, undef_regs, Pregmap.set, Pregmap.get]
+    · simpa [result, middle, nextinstr_nf, nextinstr, undef_regs,
+        Pregmap.set, Pregmap.get] using semantic.symm
+    · intro register data different
+      cases register <;> simp_all [result, middle, nextinstr_nf, nextinstr,
+        undef_regs, Pregmap.set, Pregmap.get, data_preg]
+
+
+theorem operation_address64_operation (environment : genv) (function : function)
+    (address : CompCert4Lean.X86.Op.addressing)
+    (arguments : List CompCert4Lean.X86.Machregs.mreg)
+    (destination : CompCert4Lean.X86.Machregs.mreg) (continuation generated : code)
+    (registers : regset) (memory : CompCert4Lean.Common.Memory.mem) (value : val)
+    (translated : transl_op (.Oleal address) arguments destination continuation = .OK generated)
+    (evaluated : CompCert4Lean.X86.Op.eval_operation environment (registers (.IR .RSP))
+      (.Oleal address) (arguments.map (fun register => registers (preg_of register))) memory = some value) :
+    ∃ resultRegisters, exec_straight environment function generated registers memory
+      continuation resultRegisters memory ∧
+      Val.lessdef value (resultRegisters (preg_of destination)) ∧
+      (∀ register, data_preg register = true → register ≠ preg_of destination →
+        resultRegisters register = registers register) := by
+  change CompCert4Lean.Common.Errors.bind (transl_addressing address arguments)
+    (fun addressMode => CompCert4Lean.Common.Errors.bind (ireg_of destination)
+      (fun physical => .OK (match normalize_addrmode_64 addressMode with
+        | (actualAddress, none) => .Pleaq physical actualAddress :: continuation
+        | (actualAddress, some delta) =>
+          .Pleaq physical actualAddress :: .Paddq_ri physical delta :: continuation))) =
+      .OK generated at translated
+  obtain ⟨addressMode, addressTranslated, translated⟩ :=
+    CompCert4Lean.Common.Errors.bind_inversion _ _ _ _ _ translated
+  obtain ⟨physical, destinationTranslated, translated⟩ :=
+    CompCert4Lean.Common.Errors.bind_inversion _ _ _ _ _ translated
+  cases translated
+  have destinationMapped := ireg_of_eq destination physical destinationTranslated
+  change CompCert4Lean.X86.Op.eval_addressing64 environment (registers (.IR .RSP)) address
+    (arguments.map (fun register => registers (preg_of register))) = some value at evaluated
+  have addressValue := transl_addressing_mode_64_correct environment address arguments addressMode
+    registers value addressTranslated evaluated
+  obtain ⟨resultRegisters, executed, computed, preserved⟩ :=
+    operation_address64_execution environment function addressMode physical continuation registers memory
+  refine ⟨resultRegisters, executed, ?_, ?_⟩
+  · simpa only [destinationMapped, computed] using addressValue
+  · simpa only [destinationMapped] using preserved
+
+
+theorem operation_address32_operation (environment : genv) (function : function)
+    (address : CompCert4Lean.X86.Op.addressing)
+    (arguments : List CompCert4Lean.X86.Machregs.mreg)
+    (destination : CompCert4Lean.X86.Machregs.mreg) (continuation generated : code)
+    (registers : regset) (memory : CompCert4Lean.Common.Memory.mem) (value : val)
+    (translated : transl_op (.Olea address) arguments destination continuation = .OK generated)
+    (evaluated : CompCert4Lean.X86.Op.eval_operation environment (registers (.IR .RSP))
+      (.Olea address) (arguments.map (fun register => registers (preg_of register))) memory = some value) :
+    ∃ resultRegisters, exec_straight environment function generated registers memory
+      continuation resultRegisters memory ∧
+      Val.lessdef value (resultRegisters (preg_of destination)) ∧
+      (∀ register, data_preg register = true → register ≠ preg_of destination →
+        resultRegisters register = registers register) := by
+  change CompCert4Lean.Common.Errors.bind (transl_addressing address arguments)
+    (fun addressMode => CompCert4Lean.Common.Errors.bind (ireg_of destination)
+      (fun physical => .OK (.Pleal physical (normalize_addrmode_32 addressMode) :: continuation))) =
+      .OK generated at translated
+  obtain ⟨addressMode, addressTranslated, translated⟩ :=
+    CompCert4Lean.Common.Errors.bind_inversion _ _ _ _ _ translated
+  obtain ⟨physical, destinationTranslated, translated⟩ :=
+    CompCert4Lean.Common.Errors.bind_inversion _ _ _ _ _ translated
+  cases translated
+  have destinationMapped := ireg_of_eq destination physical destinationTranslated
+  change CompCert4Lean.X86.Op.eval_addressing32 environment (registers (.IR .RSP)) address
+    (arguments.map (fun register => registers (preg_of register))) = some value at evaluated
+  have addressValue := transl_addressing_mode_32_correct environment address arguments addressMode
+    registers value addressTranslated evaluated
+  refine ⟨nextinstr (Pregmap.set (.IR physical)
+    (eval_addrmode32 environment (normalize_addrmode_32 addressMode) registers) registers), ?_, ?_, ?_⟩
+  · apply exec_straight_one
+    · rfl
+    · simp [nextinstr, Pregmap.set, Pregmap.get]
+  · simpa [destinationMapped, nextinstr, Pregmap.set, Pregmap.get,
+      normalize_addrmode_32_correct environment addressMode registers] using addressValue
+  · intro register data different
+    rw [destinationMapped] at different
+    cases register <;> simp_all [nextinstr, Pregmap.set, Pregmap.get, data_preg]
+
+
+end CompCert4Lean.X86.Asmgenproof1
+
+set_option backward.isDefEq.respectTransparency false
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.X86.Asm
+open CompCert4Lean.X86.Asmgen
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Backend.Asmgenproof0
+
+open Lean Meta Elab Tactic in
+elab "operation_result" : tactic => withMainContext do
+  let .some hypothesis := (← getLCtx).findFromUserName? `evaluated
+    | throwError "missing evaluation"
+  let type ← instantiateMVars hypothesis.type
+  let .some (_, left, _) := type.eq? | throwError "expected equality"
+  let identifier := mkIdent hypothesis.userName
+  if left.getAppFn.isConstOf ``Option.some then
+    evalTactic (← `(tactic| cases $identifier:ident))
+  else if left.getAppFn.isConstOf ``Option.none then
+    evalTactic (← `(tactic| cases $identifier:ident))
+
+private theorem operation_register_assertion {Result : Type}
+    (left right : CompCert4Lean.X86.Machregs.mreg) (code : res Result) (output : Result)
+    (success : (match CompCert4Lean.Backend.Mach.RegEq.eq left right with
+      | .left _ => code | .right _ => assertion_failed) = .OK output) :
+    left = right ∧ code = .OK output := by
+  cases equal : CompCert4Lean.Backend.Mach.RegEq.eq left right with
+  | left identical =>
+      simp only [equal] at success
+      exact ⟨identical, success⟩
+  | right different =>
+      simp only [equal, assertion_failed] at success
+      contradiction
+
+open Lean Meta Elab Tactic in
+elab "operation_translation" : tactic => withMainContext do
+  let .some hypothesis := (← getLCtx).findFromUserName? `translated
+    | throwError "missing translation"
+  let type ← instantiateMVars hypothesis.type
+  let .some (_, left, _) := type.eq? | throwError "expected equality"
+  let identifier := mkIdent hypothesis.userName
+  let head := left.headBeta.getAppFn.constName!.toString
+  if head.endsWith ".assertMregEq" then
+    evalTactic (← `(tactic|
+      (obtain ⟨identical, remaining⟩ := operation_register_assertion _ _ _ _ $identifier:ident
+       clear $identifier:ident
+       have $identifier:ident := remaining
+       clear remaining
+       subst_vars)))
+  else if head.endsWith ".bindRes" then
+    evalTactic (← `(tactic|
+      (obtain ⟨physical, mapped, remaining⟩ := bind_inversion _ _ _ _ _ $identifier:ident
+       clear $identifier:ident
+       have $identifier:ident := remaining
+       clear remaining
+       first
+       | (have mapping := ireg_of_eq _ _ mapped
+          simp only [mapping] at *)
+       | (have mapping := freg_of_eq _ _ mapped
+          simp only [mapping] at *))))
+  else if head.endsWith ".fail" || head.endsWith ".pure" || head.endsWith ".OK" then
+    evalTactic (← `(tactic| cases $identifier:ident))
+  else throwError "translation reduced"
+
+set_option maxHeartbeats 2000000 in
+set_option synthInstance.maxHeartbeats 200000 in
+theorem transl_op_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    transl_op_correctStatement
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) := by
+  intro environment function operation arguments destination continuation generated registers memory value
+    translated evaluated
+  have destination_data := preg_of_data destination
+  cases operation
+  case Ofloatconst => exact operation_Ofloatconst_correct _ _ _ _ _ _ _ _ _ _ translated evaluated
+  case Osingleconst => exact operation_Osingleconst_correct _ _ _ _ _ _ _ _ _ _ translated evaluated
+  case Ointoffloat => exact operation_Ointoffloat_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Ofloatofint => exact operation_Ofloatofint_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Ointofsingle => exact operation_Ointofsingle_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Osingleofint => exact operation_Osingleofint_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Olongoffloat => exact operation_Olongoffloat_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Ofloatoflong => exact operation_Ofloatoflong_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Olongofsingle => exact operation_Olongofsingle_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Osingleoflong => exact operation_Osingleoflong_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Odiv => exact operation_Odiv_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Omod => exact operation_Omod_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Odivu => exact operation_Odivu_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Omodu => exact operation_Omodu_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Odivl => exact operation_Odivl_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Omodl => exact operation_Omodl_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Odivlu => exact operation_Odivlu_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Omodlu => exact operation_Omodlu_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Ocmp => exact operation_Ocmp_correct _ _ _ _ _ _ _ _ _ _ translated evaluated
+  case Osel => exact operation_Osel_correct _ _ _ _ _ _ _ _ _ _ _ translated evaluated
+  case Oshrximm => exact operation_Oshrximm_correct _ _ _ _ _ _ _ _ _ _ translated evaluated
+  case Oshrxlimm => exact operation_Oshrxlimm_correct _ _ _ _ _ _ _ _ _ _ translated evaluated
+  case Omulhs => exact operation_Omulhs_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Omulhu => exact operation_Omulhu_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Omullhs => exact operation_Omullhs_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Omullhu => exact operation_Omullhu_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Omove => exact operation_Omove_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Ocast8signed => exact operation_Ocast8signed_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Ocast8unsigned => exact operation_Ocast8unsigned_correct _ _ _ _ _ _ _ _ _ translated evaluated
+  case Ointconst => exact operation_Ointconst_correct _ _ _ _ _ _ _ _ _ _ translated evaluated
+  case Olongconst => exact operation_Olongconst_correct _ _ _ _ _ _ _ _ _ _ translated evaluated
+  case Oleal =>
+    obtain ⟨result, executed, computed, preserved⟩ :=
+      operation_address64_operation _ _ _ _ _ _ _ _ _ _ translated evaluated
+    exact ⟨result, executed, computed, fun register data distinct _ => preserved register data distinct⟩
+  case Olea =>
+    obtain ⟨result, executed, computed, preserved⟩ :=
+      operation_address32_operation _ _ _ _ _ _ _ _ _ _ translated evaluated
+    exact ⟨result, executed, computed, fun register data distinct _ => preserved register data distinct⟩
+  all_goals
+    rcases arguments with _ | ⟨first, _ | ⟨second, _ | ⟨third, rest⟩⟩⟩
+  all_goals dsimp only [transl_op] at translated
+  all_goals
+    simp only [List.map_cons, List.map_nil] at evaluated
+    dsimp only [eval_operation] at evaluated
+    operation_result
+  all_goals
+    repeat operation_translation
+  all_goals try
+    first
+    | (apply operation_single_assignment_clobbers <;> first | assumption | rfl)
+    | (apply operation_single_assignment_nf_clobbers <;> first | assumption | rfl)
+
+end CompCert4Lean.X86.Asmgenproof1
