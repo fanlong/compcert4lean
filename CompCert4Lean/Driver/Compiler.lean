@@ -1594,3 +1594,20 @@ theorem c_semantic_preservation
       csyntaxLinkerCertificate clightLinkerCertificate passCertificates providers source target matched).2
 
 end CompCert4Lean.Driver.Compiler
+
+namespace CompCert4Lean.Driver.Compiler
+
+theorem transf_c_program_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)] :
+    transf_c_program_correctStatement := by
+  intro cfg selectionOracle inlineCfg regallocOracle enumerationService
+    csyntaxLinkerCertificate clightLinkerCertificate passCertificates context providers source target compiled
+  exact c_semantic_preservation cfg selectionOracle inlineCfg regallocOracle enumerationService
+    csyntaxLinkerCertificate clightLinkerCertificate passCertificates providers source target
+    (transf_c_program_match cfg selectionOracle inlineCfg regallocOracle enumerationService
+      csyntaxLinkerCertificate clightLinkerCertificate passCertificates context source target compiled)
+
+end CompCert4Lean.Driver.Compiler
