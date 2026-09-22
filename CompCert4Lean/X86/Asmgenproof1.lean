@@ -5020,3 +5020,228 @@ theorem transl_store_correct
     exact nextinstr_nf_inv1 register registers data
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.X86.Asm
+open CompCert4Lean.X86.Asmgen
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Backend.Asmgenproof0
+
+private theorem condition_int_zero (number : CompCert4Lean.Lib.Integers.int)
+    (tested : CompCert4Lean.Lib.Integers.Int.eq number CompCert4Lean.Lib.Integers.Int.zero = true) :
+    number = CompCert4Lean.Lib.Integers.Int.zero := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext
+  exact of_decide_eq_true tested
+
+private theorem condition_long_zero (number : CompCert4Lean.Lib.Integers.int64)
+    (tested : CompCert4Lean.Lib.Integers.Int64.eq number CompCert4Lean.Lib.Integers.Int64.zero = true) :
+    number = CompCert4Lean.Lib.Integers.Int64.zero := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext
+  exact of_decide_eq_true tested
+
+private theorem condition_float_preserved (left right : val) (registers : regset) (register : preg)
+    (zero : register ≠ .CR .ZF) (carry : register ≠ .CR .CF) (parity : register ≠ .CR .PF)
+    (sign : register ≠ .CR .SF) (overflow : register ≠ .CR .OF) :
+    compare_floats left right registers register = registers register :=
+  compare_floats_inv left right registers register zero carry parity sign overflow
+
+private theorem condition_float32_preserved (left right : val) (registers : regset) (register : preg)
+    (zero : register ≠ .CR .ZF) (carry : register ≠ .CR .CF) (parity : register ≠ .CR .PF)
+    (sign : register ≠ .CR .SF) (overflow : register ≠ .CR .OF) :
+    compare_floats32 left right registers register = registers register :=
+  compare_floats32_inv left right registers register zero carry parity sign overflow
+
+private theorem negated_int_comparison (comparison : CompCert4Lean.Lib.Integers.comparison)
+    (left right : val) (result : Bool) (evaluated : Val.cmp_bool comparison left right = some result) :
+    Val.cmp_bool (CompCert4Lean.Lib.Integers.negate_comparison comparison) left right = some (!result) := by
+  rw [Val.negate_cmp_bool comparison left right, evaluated]
+  rfl
+
+private theorem negated_uint_comparison (comparison : CompCert4Lean.Lib.Integers.comparison)
+    (left right : val) (memory : mem) (result : Bool)
+    (evaluated : Val.cmpu_bool (Mem.valid_pointer memory) comparison left right = some result) :
+    Val.cmpu_bool (Mem.valid_pointer memory)
+      (CompCert4Lean.Lib.Integers.negate_comparison comparison) left right = some (!result) := by
+  rw [Val.negate_cmpu_bool (Mem.valid_pointer memory) comparison left right, evaluated]
+  rfl
+
+private theorem negated_long_comparison (comparison : CompCert4Lean.Lib.Integers.comparison)
+    (left right : val) (result : Bool) (evaluated : Val.cmpl_bool comparison left right = some result) :
+    Val.cmpl_bool (CompCert4Lean.Lib.Integers.negate_comparison comparison) left right = some (!result) := by
+  rw [Val.negate_cmpl_bool comparison left right, evaluated]
+  rfl
+
+private theorem negated_ulong_comparison (comparison : CompCert4Lean.Lib.Integers.comparison)
+    (left right : val) (memory : mem) (result : Bool)
+    (evaluated : Val.cmplu_bool (Mem.valid_pointer memory) comparison left right = some result) :
+    Val.cmplu_bool (Mem.valid_pointer memory)
+      (CompCert4Lean.Lib.Integers.negate_comparison comparison) left right = some (!result) := by
+  rw [Val.negate_cmplu_bool (Mem.valid_pointer memory) comparison left right, evaluated]
+  rfl
+
+private theorem and_self_int_comparison (comparison : CompCert4Lean.Lib.Integers.comparison) (value : val) :
+    Val.cmp_bool comparison (Val.and value value) Vzero = Val.cmp_bool comparison value Vzero := by
+  cases value <;> try rfl
+  case Vint integer =>
+    change some (CompCert4Lean.Lib.Integers.Int.cmp comparison
+      (CompCert4Lean.Lib.Integers.Int.and integer integer) _) = _
+    rw [CompCert4Lean.Lib.Integers.Int.and_idem_proof integer]
+    rfl
+
+private theorem and_self_long_comparison (comparison : CompCert4Lean.Lib.Integers.comparison) (value : val) :
+    Val.cmpl_bool comparison (Val.andl value value) (.Vlong CompCert4Lean.Lib.Integers.Int64.zero) =
+      Val.cmpl_bool comparison value (.Vlong CompCert4Lean.Lib.Integers.Int64.zero) := by
+  cases value <;> try rfl
+  case Vlong integer =>
+    change some (CompCert4Lean.Lib.Integers.Int64.cmp comparison
+      (CompCert4Lean.Lib.Integers.Int64.and integer integer) _) = _
+    rw [CompCert4Lean.Lib.Integers.Int64.and_idem_proof integer]
+    rfl
+
+private theorem float_condition (negative : Bool) (comparison : CompCert4Lean.Lib.Integers.comparison)
+    (left right : val) (registers : regset) (memory : mem) :
+    let condition := if negative then Cnotcompf comparison else Ccompf comparison
+    let final := nextinstr (compare_floats (swap_floats comparison left right)
+      (swap_floats comparison right left) registers)
+    match eval_condition condition [left, right] memory with
+    | none => True
+    | some result => eval_extcond (testcond_for_condition condition) final = some result ∧
+        eval_extcond (testcond_for_condition (negate_condition condition)) final = some (!result) := by
+  cases negative <;> cases left <;> cases right <;>
+    simp only [Bool.false_eq_true, if_false, if_true, eval_condition, Val.cmpf_bool,
+      Option.map_none, Option.map_some, negate_condition]
+  all_goals try trivial
+  all_goals
+    rename_i left right
+    have positive := testcond_for_float_comparison_correct comparison left right registers
+    have negative := testcond_for_neg_float_comparison_correct comparison left right registers
+    cases comparison <;> simp_all [swap_floats, testcond_for_condition]
+
+private theorem float32_condition (negative : Bool) (comparison : CompCert4Lean.Lib.Integers.comparison)
+    (left right : val) (registers : regset) (memory : mem) :
+    let condition := if negative then Cnotcompfs comparison else Ccompfs comparison
+    let final := nextinstr (compare_floats32 (swap_floats comparison left right)
+      (swap_floats comparison right left) registers)
+    match eval_condition condition [left, right] memory with
+    | none => True
+    | some result => eval_extcond (testcond_for_condition condition) final = some result ∧
+        eval_extcond (testcond_for_condition (negate_condition condition)) final = some (!result) := by
+  cases negative <;> cases left <;> cases right <;>
+    simp only [Bool.false_eq_true, if_false, if_true, eval_condition, Val.cmpfs_bool,
+      Option.map_none, Option.map_some, negate_condition]
+  all_goals try trivial
+  all_goals
+    rename_i left right
+    have positive := testcond_for_float32_comparison_correct comparison left right registers
+    have negative := testcond_for_neg_float32_comparison_correct comparison left right registers
+    cases comparison <;> simp_all [swap_floats, testcond_for_condition]
+
+private theorem mask_condition (negative : Bool) (mask : CompCert4Lean.Lib.Integers.int)
+    (value : val) (registers : regset) (memory : mem) :
+    let condition := if negative then Cmasknotzero mask else Cmaskzero mask
+    let final := nextinstr (compare_ints (Val.and value (.Vint mask)) Vzero registers memory)
+    match eval_condition condition [value] memory with
+    | none => True
+    | some result => eval_extcond (testcond_for_condition condition) final = some result ∧
+        eval_extcond (testcond_for_condition (negate_condition condition)) final = some (!result) := by
+  cases value <;> cases negative <;>
+    simp only [Bool.false_eq_true, if_false, if_true, eval_condition, Val.maskzero_bool,
+      Option.map_none, Option.map_some, negate_condition, testcond_for_condition, eval_extcond]
+  all_goals try trivial
+  all_goals
+    rename_i integer
+    have equal := testcond_for_signed_comparison_32_correct .Ceq
+      (.Vint (CompCert4Lean.Lib.Integers.Int.and integer mask)) Vzero registers memory
+      (CompCert4Lean.Lib.Integers.Int.eq (CompCert4Lean.Lib.Integers.Int.and integer mask)
+        CompCert4Lean.Lib.Integers.Int.zero) rfl
+    have unequal := testcond_for_signed_comparison_32_correct .Cne
+      (.Vint (CompCert4Lean.Lib.Integers.Int.and integer mask)) Vzero registers memory
+      (!(CompCert4Lean.Lib.Integers.Int.eq (CompCert4Lean.Lib.Integers.Int.and integer mask)
+        CompCert4Lean.Lib.Integers.Int.zero)) rfl
+    first
+    | exact ⟨equal, unequal⟩
+    | constructor
+      · exact unequal
+      · simp only [Bool.not_not]
+        exact equal
+
+theorem transl_cond_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    transl_cond_correctStatement := by
+  intro environment function condition arguments continuation generated registers memory translated
+  cases condition <;>
+    rcases arguments with _ | ⟨first, _ | ⟨second, _ | ⟨third, rest⟩⟩⟩ <;>
+    simp only [transl_cond] at translated
+  all_goals try contradiction
+  all_goals
+    obtain ⟨first_register, first_mapped, translated⟩ := bind_inversion _ _ _ _ _ translated
+    first
+    | have first_preg := ireg_of_eq _ _ first_mapped
+    | have first_preg := freg_of_eq _ _ first_mapped
+    try
+      obtain ⟨second_register, second_mapped, translated⟩ := bind_inversion _ _ _ _ _ translated
+      first
+      | have second_preg := ireg_of_eq _ _ second_mapped
+      | have second_preg := freg_of_eq _ _ second_mapped
+    simp only [List.map_cons, List.map_nil, eval_condition]
+    simp_all only [first_preg]
+    try simp_all only [second_preg]
+    try simp only [floatcomp, floatcomp32] at translated
+    try split at translated
+  all_goals
+    try
+      rename_i zero_test
+      first
+      | have zero := condition_int_zero _ zero_test
+        subst_vars
+      | have zero := condition_long_zero _ zero_test
+        subst_vars
+    injection translated with generated_equal
+    subst generated
+    refine ⟨?_, ?_, ?_, ?_⟩
+    rotate_left
+    · apply exec_straight_one
+      · rfl
+      · simp [nextinstr, compare_ints, compare_longs, Pregmap.set, Pregmap.get,
+          condition_float_preserved, condition_float32_preserved]
+    · first
+      | exact float_condition false _ _ _ _ memory
+      | exact float_condition true _ _ _ _ memory
+      | exact float32_condition false _ _ _ _ memory
+      | exact float32_condition true _ _ _ _ memory
+      | exact mask_condition false _ _ _ memory
+      | exact mask_condition true _ _ _ memory
+      | skip
+      all_goals
+        simp only [testcond_for_condition, negate_condition, eval_extcond, Pregmap.get]
+        split
+        · trivial
+        · rename_i result evaluated
+          constructor
+          all_goals first
+            | apply testcond_for_signed_comparison_32_correct
+            | apply testcond_for_unsigned_comparison_32_correct
+            | apply testcond_for_signed_comparison_64_correct
+            | apply testcond_for_unsigned_comparison_64_correct
+          all_goals try rw [and_self_int_comparison]
+          all_goals try rw [and_self_long_comparison]
+          all_goals first
+            | exact evaluated
+            | exact negated_int_comparison _ _ _ _ evaluated
+            | exact negated_uint_comparison _ _ _ _ _ evaluated
+            | exact negated_long_comparison _ _ _ _ evaluated
+            | exact negated_ulong_comparison _ _ _ _ _ evaluated
+    · intro register data
+      cases register <;>
+        simp_all [nextinstr, compare_ints, compare_longs, Pregmap.set, Pregmap.get, data_preg,
+          condition_float_preserved, condition_float32_preserved]
+
+end CompCert4Lean.X86.Asmgenproof1
