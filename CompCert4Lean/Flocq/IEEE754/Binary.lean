@@ -643,7 +643,8 @@ def binary_normalize_correctStatement (ctx : ExactRealContext)
         (Exact.Rlt_bool ctx x (Exact.R0 ctx))
 
 def bounded_canonical_lt_emaxStatement (ctx : ExactRealContext)
-    (magnitude : Exact.Magnitude ctx) : Prop :=
+    (magnitude : Exact.Magnitude ctx) [Core.FLX.Prec_gt_0 prec]
+    [BinarySingleNaN.Prec_lt_emax prec emax] : Prop :=
   ∀ (mx : positive) (ex : Z),
     Exact.canonical magnitude radix2 (fexp (prec := prec) (emax := emax))
       (Float radix2 (Zpos mx) ex) →
@@ -2248,5 +2249,17 @@ theorem binary_normalize_correct :
   · rw [if_neg condition] at result
     apply eq_binary_overflow_FF2SF
     exact fields.2.2.2.trans result
+
+end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem bounded_canonical_lt_emax :
+    ∀ {prec emax : Z} (ctx : ExactRealContext)
+      (magnitude : Exact.Magnitude ctx) [Core.FLX.Prec_gt_0 prec]
+      [BinarySingleNaN.Prec_lt_emax prec emax],
+      bounded_canonical_lt_emaxStatement (prec := prec) (emax := emax) ctx magnitude := by
+  intro prec emax ctx magnitude positivePrecision exponentLimit
+  exact BinarySingleNaN.bounded_canonical_lt_emax (prec := prec) (emax := emax) ctx magnitude
 
 end CompCert4Lean.Flocq.IEEE754.Binary
