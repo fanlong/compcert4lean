@@ -4748,3 +4748,17 @@ theorem mk_setcc_base_correct
           Pregmap.set, Pregmap.get, data_preg]
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem mk_setcc_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    mk_setcc_correctStatement := by
+  exact mk_setcc_base_correct
+
+end CompCert4Lean.X86.Asmgenproof1
