@@ -4673,3 +4673,78 @@ theorem normalize_addrmode_64_correct : normalize_addrmode_64_correctStatement :
         exact shifted
 
 end CompCert4Lean.X86.Asmgenproof1
+
+set_option backward.isDefEq.respectTransparency false
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.X86.Asm
+open CompCert4Lean.X86.Asmgen
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Asmgenproof0
+
+private theorem setcc_flags_preserved (condition : testcond) (destination : ireg)
+    (value : val) (registers : regset) :
+    eval_testcond condition (Pregmap.set .PC
+      (Val.offset_ptr (registers .PC) CompCert4Lean.Lib.Integers.Ptrofs.one)
+      (Pregmap.set (.IR destination) value registers)) = eval_testcond condition registers := by
+  exact (eval_testcond_nextinstr condition _).trans
+    (eval_testcond_set_ireg condition registers destination value)
+
+private theorem setcc_and_values (first second : Option Bool) :
+    Val.and (Val.of_optbool first) (Val.of_optbool second) =
+      Val.of_optbool (match first, second with
+        | some left, some right => some (left && right)
+        | _, _ => none) := by
+  cases first with
+  | none => cases second <;> rfl
+  | some first =>
+    cases second with
+    | none => cases first <;> rfl
+    | some second => cases first <;> cases second <;> rfl
+
+private theorem setcc_or_values (first second : Option Bool) :
+    Val.or (Val.of_optbool first) (Val.of_optbool second) =
+      Val.of_optbool (match first, second with
+        | some left, some right => some (left || right)
+        | _, _ => none) := by
+  cases first with
+  | none => cases second <;> rfl
+  | some first =>
+    cases second with
+    | none => cases first <;> rfl
+    | some second => cases first <;> cases second <;> rfl
+
+theorem mk_setcc_base_correct
+    [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    mk_setcc_base_correctStatement := by
+  intro environment function condition destination continuation registers memory
+  cases condition with
+  | Cond_base condition =>
+    refine ⟨?_, ?_, ?_, ?_⟩
+    rotate_left
+    · constructor <;> rfl
+    · simp [nextinstr, Pregmap.set, eval_extcond]
+    · intro register data excluded distinct
+      cases register <;> simp_all [nextinstr, Pregmap.set, Pregmap.get, data_preg]
+  | Cond_and first second | Cond_or first second =>
+    cases destination
+    all_goals
+      refine ⟨?_, ?_, ?_, ?_⟩
+      rotate_left
+      · apply (exec_straight_three environment function) <;> rfl
+      · try simp only [eval_testcond_nextinstr, eval_testcond_set_ireg]
+        simp [nextinstr_nf, nextinstr, undef_regs, Pregmap.set, Pregmap.get,
+          eval_extcond, setcc_and_values, setcc_or_values,
+          eval_testcond_nextinstr, eval_testcond_set_ireg, setcc_flags_preserved]
+        all_goals cases eval_testcond first registers <;>
+          cases eval_testcond second registers <;> simp [Bool.and_comm, Bool.or_comm]
+      · intro register data excluded distinct
+        cases register <;> simp_all [nextinstr_nf, nextinstr, undef_regs,
+          Pregmap.set, Pregmap.get, data_preg]
+
+end CompCert4Lean.X86.Asmgenproof1
