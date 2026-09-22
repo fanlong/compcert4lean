@@ -1569,3 +1569,28 @@ theorem cstrategy_semantic_preservation
   · exact Asm.semantics_determinate_proof cfg providers program21
 
 end CompCert4Lean.Driver.Compiler
+
+namespace CompCert4Lean.Driver.Compiler
+
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Cfrontend
+open CompCert4Lean.X86
+
+theorem c_semantic_preservation
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)] :
+    c_semantic_preservationStatement := by
+  intro cfg selectionOracle inlineCfg regallocOracle enumerationService
+    csyntaxLinkerCertificate clightLinkerCertificate passCertificates providers source target matched
+  exact compose_backward_simulation _ _ _
+    (Asm.semantics_determinate_proof cfg providers target).sd_traces
+    (factor_backward_simulation _ _
+      (Cstrategy.strategy_simulation providers source)
+      (Csem.semantics_single_events providers source)
+      (Cstrategy.semantics_strongly_receptive providers source).ssr_well_behaved)
+    (cstrategy_semantic_preservation cfg selectionOracle inlineCfg regallocOracle enumerationService
+      csyntaxLinkerCertificate clightLinkerCertificate passCertificates providers source target matched).2
+
+end CompCert4Lean.Driver.Compiler
