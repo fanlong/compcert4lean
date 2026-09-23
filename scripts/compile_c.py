@@ -40,6 +40,7 @@ def parse_args(argv=None):
     parser.add_argument("-L", action=OrderedInput)
     parser.add_argument("-l", action=OrderedInput)
     parser.add_argument("-O", choices=["0", "1", "2", "3"], default="0")
+    parser.add_argument("-std", choices=["c99", "c11", "c18"], default="c99")
     parser.add_argument("-shared", action="store_true")
     parser.add_argument("-r", dest="relocatable", action="store_true")
     parser.add_argument("-fpic", "-fPIC", dest="pic", action="store_true")
@@ -65,7 +66,7 @@ def parse_args(argv=None):
             normalized.append("--link-arg=" + argument)
         elif argument.startswith("-"):
             normalized.append(argument)
-            if argument in {"-o", "-I", "-D", "-U", "-L", "-l", "--compcert-root",
+            if argument in {"-o", "-I", "-D", "-U", "-L", "-l", "-std", "--compcert-root",
                             "--compile-timeout", "--link-timeout"}:
                 value = next(arguments, None)
                 if value is None:

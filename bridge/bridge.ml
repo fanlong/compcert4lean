@@ -27,6 +27,10 @@ let configure request =
   Clflags.option_fpie := false;
   Clflags.option_fcommon := false;
   optimization := "O0";
+  let standard = match member "standard" request with
+   | `Null -> "c99"
+   | `String ("c99" | "c11" | "c18" as selected) -> selected
+   | _ -> failwith "invalid C standard" in
   (match member "configuration" request with
    | `Null -> ()
    | `Assoc fields as config ->
@@ -68,6 +72,7 @@ let configure request =
   Clflags.option_Obranchless := false;
   Clflags.option_g := false;
   Camlcoq.use_canonical_atoms := false;
+  CommonOptions.set_std standard;
   Frontend.init ()
 
 let configuration_json (source : Csyntax.program) =

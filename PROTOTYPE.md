@@ -77,6 +77,10 @@ Accepted options include `-o`, `-S`, `-c`, `-r`, `-shared`, `-I`, `-D`, `-U`,
 work for the single-letter value options. The last optimization option wins;
 `-O`, `-O1`, `-O2`, and `-O3` select the same normalized O2 profile. Other
 optimization levels and individual optimization tuning flags are rejected.
+`-std=c99`, `-std=c11`, and `-std=c18` select the C standard; the default
+remains C99. The choice uses CompCert's `CommonOptions.set_std` API for both
+preprocessing and frontend diagnostics, and is recorded in compilation
+metadata. It does not alter the Csyntax interchange format.
 Input and library order is preserved, including archive placement. Each C file
 has its own live bridge and Lean invocation. Default outputs are `a.out`, `<stem>.s`,
 and `<stem>.o`, respectively, in the caller's working directory. Paths are

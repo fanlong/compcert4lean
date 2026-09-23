@@ -103,8 +103,8 @@ def prepare(root):
     sources = [REPO / "bridge" / filename for filename in ("primitives.ml", "codecs.ml", "bridge.ml")]
     includes = [root / directory for directory in
                 ("extraction", "lib", "common", "x86", "backend", "cfrontend", "cparser", "driver", "export", "debug")]
-    objects = execute([root / "tools/modorder", ".depend.extr", "driver/Frontend.cmx",
-                       "backend/PrintAsm.cmx", "x86/Asmexpand.cmx"], cwd=root).decode().split()
+    objects = execute([root / "tools/modorder", ".depend.extr", "driver/CommonOptions.cmx",
+                       "driver/Frontend.cmx", "backend/PrintAsm.cmx", "x86/Asmexpand.cmx"], cwd=root).decode().split()
     digest = hashlib.sha256()
     digest.update(str(root).encode())
     for path in [*sources, *(root / name for name in objects)]:
@@ -221,6 +221,7 @@ def compile_source(options, *, prepared=False, artifact_dir=None, timeout=None):
                 "outputs": list(map(str, outputs)), "allocator": ALLOCATOR, "timeout_seconds": timeout,
                 "configuration": {"pic": options.pic, "pie": False, "common": options.common,
                                   "optimization": options.optimization},
+                "standard": options.std,
                 "language": options.language, "preprocessor": options.preprocessor, "stages": [],
                 "versions": json.loads((BUILD / "versions.json").read_text()), "success": False}
     stage = "frontend"
@@ -250,6 +251,7 @@ def compile_source(options, *, prepared=False, artifact_dir=None, timeout=None):
                 try:
                     record("frontend", lambda: bridge.request({"root": str(root), "source": str(source),
                            "preprocessor": options.preprocessor, "language": options.language,
+                           "standard": options.std,
                            "configuration": metadata["configuration"],
                            "preprocessed": str(unit / "input.i"), "csyntax": str(unit / "csyntax.json")}))
                     record("lean", lambda: execute([LEAN, unit / "csyntax.json", unit / "asm.json"], cwd=REPO,
