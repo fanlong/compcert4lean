@@ -1,5 +1,6 @@
 import CompCert4Lean.Prototype.Json
 import CompCert4Lean.Allocator.Allocator
+import CompCert4Lean.Prototype.RuntimeHelpers
 
 namespace CompCert4Lean.Prototype
 
@@ -28,16 +29,18 @@ instance : Lib.IEEE754_extra.Bexact_inverse_certificate (z 24) (z 128) :=
 
 def cfg := Config.pinnedLinuxX86_64 false 0 false false false false false
 
-def selectionOracle : Selection.SelectionOracle :=
-  { compileSwitch := fun _ default cases =>
-      cases.foldr (fun (key, target) rest => .CTifeq key target rest) (.CTaction default)
-    ifConversionHeuristic := fun _ _ _ _ _ _ => false }
+def optimizedCfg := Config.pinnedLinuxX86_64 false 2 true true true true false
+
+def selectionFor (configuration : Config.CompilerConfig) : Selection.SelectionOracle :=
+  { compileSwitch := compileSwitch
+    ifConversionHeuristic := ifConversion configuration.options.optimConstprop }
+
+def selectionOracle : Selection.SelectionOracle := selectionFor cfg
 
 def inlineCfg : Inlining.InliningConfig :=
   { enabled := false, functionsCalledOnce := false,
     inlineStatus := fun _ => .noinline, isStatic := fun _ => false }
 
-def enumeration : Linearize.EnumerationService := fun source =>
-  (PTree.elements source.fn_code).map Prod.fst
+def enumeration : Linearize.EnumerationService := enumerateBlocks
 
 end CompCert4Lean.Prototype

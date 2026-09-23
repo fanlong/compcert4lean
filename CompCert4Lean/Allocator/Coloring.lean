@@ -17,6 +17,7 @@ structure ColoringState where
   activeMoves : IndexSet := {}
   stack : List Nat := []
   coalesced : Nat := 0
+  degrees : Array Nat := #[]
 
 def nodeClass (function : XFunction) (graph : Interference) (index : Nat) : Nat :=
   match (variableInfo function index).fixed with
@@ -43,8 +44,21 @@ def adjacent (function : XFunction) (state : ColoringState) (index : Nat) : Inde
         nodeClass function state.graph other == nodeClass function state.graph index
     then result.insert other else result) {}
 
+def uncachedDegree (function : XFunction) (state : ColoringState) (index : Nat) : Nat :=
+  (state.graph.adjacency[index]?.getD {}).foldl (fun count other =>
+    if (state.active.contains other || precolored function other) && registerNode function other &&
+        nodeClass function state.graph other == nodeClass function state.graph index
+    then count + 1 else count) 0
+
 def degree (function : XFunction) (state : ColoringState) (index : Nat) : Nat :=
-  (adjacent function state index).size
+  match state.degrees[index]? with
+  | some value => value
+  | none => uncachedDegree function state index
+
+def refreshDegrees (function : XFunction) (indices : IndexSet) (state : ColoringState) : ColoringState :=
+  let degrees := indices.foldl (fun degrees index =>
+    degrees.set! index (uncachedDegree function state index)) state.degrees
+  { state with degrees }
 
 def pendingMoves (state : ColoringState) (index : Nat) : IndexSet :=
   (state.nodeMoves[index]?.getD {}).foldl (fun result move =>
@@ -76,6 +90,9 @@ def removeNode (context : AllocationContext) (function : XFunction)
     (index : Nat) (state : ColoringState) : ColoringState :=
   let neighbors := adjacent function state index
   let state := { state with active := state.active.erase index, stack := index :: state.stack }
+  let degrees := neighbors.foldl (fun degrees neighbor =>
+    degrees.set! neighbor ((degrees[neighbor]?.getD 0) - 1)) state.degrees
+  let state := { state with degrees }
   let state := enableMoves (neighbors.insert index) state
   refreshNodes context function (neighbors.insert index) state
 
@@ -144,7 +161,9 @@ def combineNodes (context : AllocationContext) (function : XFunction)
     nodeMoves := state.nodeMoves.set! left combinedMoves
     coalesced := state.coalesced + 1 }
   state := enableMoves (neighbors.insert left) state
-  return refreshNodes context function ((neighbors.insert left).insert right) state
+  let affected := (neighbors.insert left).insert right
+  state := refreshDegrees function affected state
+  return refreshNodes context function affected state
 
 def coalesceMove (context : AllocationContext) (function : XFunction)
     (move : Nat) (state : ColoringState) : ColoringState :=
@@ -209,6 +228,8 @@ def initialColoring (context : AllocationContext) (function : XFunction)
             moves := state.moves.push (left, right)
             workMoves := state.workMoves.insert move
             nodeMoves := nodeMoves.set! right ((state.nodeMoves[right]?.getD {}).insert move) }
+  let degrees := (List.range function.variables.size).toArray.map (uncachedDegree function state)
+  state := { state with degrees }
   return refreshNodes context function active state
 
 def slotWords (type : typ) : Nat := (intOfZ (Backend.Locations.typesize type)).toNat

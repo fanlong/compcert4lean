@@ -59,3 +59,12 @@ native compiler is a diagnostic projection of the fixed O0 pipeline through
 allocation, with validation; it does not change normal compilation. Comparison
 results include local LTL spill/reload counts, remaining moves, stack words and
 warm compilation time against pinned CompCert.
+# O2 interference degree cache
+
+O2 inlining exposes larger interference graphs. `ColoringState.degrees` caches
+active same-class neighbor counts; removal decrements affected neighbors and
+coalescing recomputes the changed neighborhood. This avoids rebuilding ordered
+neighbor sets for every Briggs/George test, worklist reclassification and spill
+candidate comparison. `testDegreeCache` compares cached counts against the
+uncached definition across coalescing, freezing and removal. All emitted
+allocations still pass the unchanged Lean allocation validator.

@@ -12,3 +12,7 @@ root = "CompCert4Lean.Prototype.Main"
 [[lean_exe]]
 name = "allocatorTests"
 root = "tests.allocator.Main"
+
+[[lean_exe]]
+name = "coreDiagnostics"
+root = "tests.prototype.CSEReproducer"

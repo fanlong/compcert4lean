@@ -8,19 +8,24 @@ def reportResult {α : Type} : Common.Errors.res α → Except String α
   | .OK value => .ok value
   | .Error errors => .error (errorText errors)
 
-def allocationReport (configuration : Config.CompilerConfig) (context : Allocator.AllocationContext)
+def allocationReport (configuration : Config.CompilerConfig) (inlining : Inlining.InliningConfig)
+    (context : Allocator.AllocationContext)
     (source : Csyntax.program) (fresh : SimplExpr.FreshIdentContext) : Except String Json := do
   let options := configuration.options
-  if options.optimTailcalls || options.optimConstprop || options.optimCSE || options.optimRedundancy then
-    throw "allocation diagnostics require the fixed O0 pass configuration"
   let clight ← reportResult (SimplExpr.transl_program fresh source)
   let clight ← reportResult (SimplLocals.transf_program configuration clight)
   let csharp ← reportResult (Cshmgen.transl_program clight)
   let cminor ← reportResult (Cminorgen.transl_program csharp)
-  let selected ← reportResult (Selection.sel_program configuration selectionOracle cminor)
+  let selected ← reportResult (Selection.sel_program configuration (selectionFor configuration) cminor)
   let rtl ← reportResult (RTLgen.transl_program selected)
-  let rtl ← reportResult (Inlining.transf_program inlineCfg rtl)
-  let rtl ← reportResult (Unusedglob.transform_program (Renumber.transf_program rtl))
+  let rtl := if options.optimTailcalls then Tailcall.transf_program configuration rtl else rtl
+  let rtl ← reportResult (Inlining.transf_program inlining rtl)
+  let rtl := Renumber.transf_program rtl
+  let rtl := if options.optimConstprop then
+    Renumber.transf_program (Constprop.transf_program configuration rtl) else rtl
+  let rtl ← reportResult (if options.optimCSE then CSE.transf_program configuration rtl else .OK rtl)
+  let rtl ← reportResult (if options.optimRedundancy then Deadcode.transf_program configuration rtl else .OK rtl)
+  let rtl ← reportResult (Unusedglob.transform_program rtl)
   let mut reports := #[]
   for (identifier, definition) in rtl.prog_defs do
     if let .Gfun (.Internal function) := definition then

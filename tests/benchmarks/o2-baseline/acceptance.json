@@ -1,0 +1,27 @@
+{
+  "milestone_complete": true,
+  "investigation_complete": true,
+  "all_o2_tests_passed": false,
+  "o0_counts": {
+    "pass": 139,
+    "fail": 0,
+    "timeout": 0,
+    "unavailable": 0,
+    "excluded": 9
+  },
+  "o2_counts": {
+    "pass": 138,
+    "fail": 0,
+    "timeout": 1,
+    "unavailable": 0,
+    "excluded": 9
+  },
+  "benchmark_workloads": 29,
+  "benchmarks_all_passed": true,
+  "core_failure_dossiers": [
+    "cse-predecessor-sharing"
+  ],
+  "unresolved_failures": [],
+  "checks": ".lake/prototype/o2-verification-vz3at0f7",
+  "correctness_nonzero_exit_required": true
+}

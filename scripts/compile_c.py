@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile and link C, assembly, objects and libraries through Lean (x86-64 O0)."""
+"""Compile and link C, assembly, objects and libraries through Lean (x86-64)."""
 
 import argparse
 from pathlib import Path
@@ -39,7 +39,7 @@ def parse_args(argv=None):
     parser.add_argument("-U", dest="undefine", action=PreprocessorOption, default=[])
     parser.add_argument("-L", action=OrderedInput)
     parser.add_argument("-l", action=OrderedInput)
-    parser.add_argument("-O", choices=["0"], default="0")
+    parser.add_argument("-O", choices=["0", "1", "2", "3"], default="0")
     parser.add_argument("-shared", action="store_true")
     parser.add_argument("-r", dest="relocatable", action="store_true")
     parser.add_argument("-fpic", "-fPIC", dest="pic", action="store_true")
@@ -59,11 +59,13 @@ def parse_args(argv=None):
     for argument in arguments:
         if argument == "--":
             normalized.extend("--input=" + value for value in arguments)
+        elif argument == "-O":
+            normalized.append("-O2")
         elif argument.startswith("-Wl,"):
             normalized.append("--link-arg=" + argument)
         elif argument.startswith("-"):
             normalized.append(argument)
-            if argument in {"-o", "-I", "-D", "-U", "-L", "-l", "-O", "--compcert-root",
+            if argument in {"-o", "-I", "-D", "-U", "-L", "-l", "--compcert-root",
                             "--compile-timeout", "--link-timeout"}:
                 value = next(arguments, None)
                 if value is None:
@@ -72,6 +74,7 @@ def parse_args(argv=None):
         else:
             normalized.append("--input=" + argument)
     options = parser.parse_args(normalized)
+    options.optimization = "O0" if options.O == "0" else "O2"
     sources = [Path(value) for kind, value in options.inputs if kind == "input"]
     if not sources:
         parser.error("at least one input file is required")

@@ -54,6 +54,9 @@ class AllocatorInterchangeTests(unittest.TestCase):
             modified["format"] = version
             if version.endswith("v1"):
                 modified.pop("configuration")
+            else:
+                modified["configuration"].pop("optimization")
+                modified["configuration"].pop("functions")
             malformed.write_text(json.dumps(modified))
             execute([LEAN, malformed, target], timeout=10)
             self.assertNotIn("allocationContext", json.loads(target.read_text()))

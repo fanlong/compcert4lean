@@ -17,9 +17,17 @@ SWITCH = "compcert-3.17"
 ALLOCATOR = "irc"
 BUILD = REPO / ".lake" / "prototype"
 LEAN = REPO / ".lake" / "build" / "bin" / "leanCompiler"
-REFERENCE_FLAGS = ["-O0", "-fno-inline", "-fno-inline-functions-called-once",
-                   "-fno-if-conversion", "-ffloat-const-prop", "0",
-                   "-fno-pic", "-fno-pie", "-fno-common"]
+def reference_flags(optimization="O0"):
+    if optimization not in {"O0", "O2"}:
+        raise ValueError("unsupported normalized optimization profile")
+    enabled = optimization == "O2"
+    prefix = "-f" if enabled else "-fno-"
+    return ["-" + optimization, prefix + "inline", prefix + "inline-functions-called-once",
+            prefix + "if-conversion", "-ffloat-const-prop", "2" if enabled else "0",
+            "-fno-pic", "-fno-pie", "-fno-common"]
+
+
+REFERENCE_FLAGS = reference_flags()
 
 
 class CompileError(RuntimeError):
@@ -211,7 +219,8 @@ def compile_source(options, *, prepared=False, artifact_dir=None, timeout=None):
     folder.mkdir(parents=True, exist_ok=True)
     metadata = {"inputs": options.inputs, "input_sha256": {str(source): hashlib.sha256(source.read_bytes()).hexdigest() for source in inputs},
                 "outputs": list(map(str, outputs)), "allocator": ALLOCATOR, "timeout_seconds": timeout,
-                "configuration": {"pic": options.pic, "pie": False, "common": options.common},
+                "configuration": {"pic": options.pic, "pie": False, "common": options.common,
+                                  "optimization": options.optimization},
                 "language": options.language, "preprocessor": options.preprocessor, "stages": [],
                 "versions": json.loads((BUILD / "versions.json").read_text()), "success": False}
     stage = "frontend"

@@ -222,12 +222,32 @@ def testReloadReuse : Except String Unit := do
   let (_, reduced) ← insertSpills function (setOfList [1]) 21
   require (reused >= 2 && reduced < reused) "reload reuse or progressive reduction failed"
 
+def testDegreeCache : Except String Unit := do
+  let source := pressure 35 false
+  let types ← match RTLtyping.type_function Prototype.cfg source with
+    | .OK types => pure types
+    | .Error _ => throw "degree cache fixture typing"
+  let function ← buildXTL Prototype.cfg source types
+  let live ← analyzeLiveness function
+  let graph := buildInterference Prototype.cfg function live
+  let mut state := initialColoring {} function graph
+  for _ in [:300] do
+    for index in state.active.toList do
+      require (degree function state index == uncachedDegree function state index) "stale interference degree"
+    if let some move := state.workMoves.toList.head? then
+      state := coalesceMove {} function move state
+    else if let some index := state.active.toList.head? then
+      state := removeNode {} function index (freezeMoves {} function index state)
+    else break
+  require state.active.isEmpty "degree cache fixture did not drain"
+
 def tests : Except String (List (String × AllocationStats)) := do
   testBasic
   let results ← testPressure
   testCallsAndConstraints
   testBuiltins
   testReloadReuse
+  testDegreeCache
   return results
 
 end AllocatorTests

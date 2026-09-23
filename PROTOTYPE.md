@@ -69,12 +69,14 @@ python3 scripts/small_tests.py --suite regression
 ```
 
 Accepted options include `-o`, `-S`, `-c`, `-r`, `-shared`, `-I`, `-D`, `-U`,
-`-L`, `-l`, `-Wl,...`, `-O0`, `-fpic`/`-fno-pic`, `-fcommon`/`-fno-common`,
+`-L`, `-l`, `-Wl,...`, `-O0`, `-O`/`-O1`/`-O2`/`-O3`, `-fpic`/`-fno-pic`, `-fcommon`/`-fno-common`,
 `--compcert-root`, and `--keep-temps`. CompCert language flags include `-fall`,
 `-fnone`, and positive/negative forms of `-fstruct-passing`, `-flongdouble`,
 `-fvararg-calls`, `-funprototyped`, `-fpacked-structs`,
 `-funstructured-switch`, and `-finline-asm`. Both attached and separate values
-work for the single-letter options. Other optimization levels are rejected.
+work for the single-letter value options. The last optimization option wins;
+`-O`, `-O1`, `-O2`, and `-O3` select the same normalized O2 profile. Other
+optimization levels and individual optimization tuning flags are rejected.
 Input and library order is preserved, including archive placement. Each C file
 has its own live bridge and Lean invocation. Default outputs are `a.out`, `<stem>.s`,
 and `<stem>.o`, respectively, in the caller's working directory. Paths are
@@ -87,11 +89,14 @@ before preparation or compilation. Outputs are published only after all
 compilation/link stages succeed. Compilation and assembly/link stage limits
 default to 300 seconds, configurable with `--compile-timeout` and `--link-timeout`.
 
-The fixed profile is System V x86-64, optimization/inlining/debug disabled,
-non-PIC/non-PIE, and `-fno-common` by default. PIC and common symbols are explicit
-options; PIE remains unsupported. The same settings are used by the Lean
-driver, bridge, reference compiler, and assembler/linker where applicable.
-These O0 pass settings are independent of the optimized register allocator.
+The target is System V x86-64, non-PIC/non-PIE and `-fno-common` by default.
+Compilation without an optimization option remains O0. O2 enables tail calls,
+constant propagation, CSE, redundancy elimination, inlining, functions-called-once
+inlining, normal if-conversion, and full floating-point constant propagation.
+Size optimization, aggressive branchless conversion and debugging stay disabled.
+PIC and common symbols are explicit options; PIE remains unsupported. Python,
+the frontend/printer bridge, Lean and reference compilation use the same profile.
+Both levels use the optimized allocator and upstream switch/layout policies.
 
 ## Adapters and allocator
 
@@ -103,15 +108,21 @@ fresh-identifier context. Composite definitions are serialized; Lean rebuilds
 their environment with `Ctypes.build_composite_env` and carries the resulting
 checked equality in the source program.
 
-`compcert4lean-prototype-v2` JSON uses tagged arrays with exact arities and a
-required `configuration` object containing boolean `pic`, `pie`, `common` and
-`symbols`. Each symbol entry is `[identifier, {storage, definedHere, size}]`;
+`compcert4lean-prototype-v3` JSON uses tagged arrays with exact arities and a
+required `configuration` object containing boolean `pic`, `pie`, `common`,
+`optimization` (`O0` or `O2`), `functions`, and `symbols`. Each function entry is
+`[identifier, {inline, static}]`, with inline status `inline`, `noinline` or
+`none` and boolean static linkage taken directly from CompCert's frontend.
+The function metadata must cover exactly the source function definitions.
+Each symbol entry is `[identifier, {storage, definedHere, size}]`;
 storage is `default`, `extern` or `static`, and size is null or a canonical
 nonnegative signed-64-bit decimal string. These facts come directly from
 CompCert's `C2C.decl_atom`, and populate the existing Lean relocation context.
 The assembly result echoes the configuration; the live printer rejects a
-mismatch with its original snapshot. Legacy v1 non-PIC source JSON remains
-accepted, with its original default configuration and output version.
+mismatch with its original snapshot, including optimization and function facts.
+Legacy v1 and v2 source JSON remain accepted as O0, with their original
+configuration schemas and output versions. The target suffix must match the
+normalized optimization profile.
 Integers and identifiers are canonical decimal strings, including integers
 beyond JavaScript's exact range. Fixed-width integers use unsigned bits;
 float32/float64 use their 32/64-bit representations, preserving NaN payloads
@@ -132,7 +143,7 @@ allocator tests. Reserved callee-save registers flow from the frontend through
 the optional `allocationContext` interchange field. The smoke suite deliberately
 corrupts a proposal's stack size and requires validator rejection.
 
-`allocationContext` is optional in both v1 and v2. Its only field is `reserved`,
+`allocationContext` is optional in all three versions. Its only field is `reserved`,
 an array of distinct canonical callee-save names: `RBX`, `RBP`, `R12`–`R15`.
 Absence means no reservations. The frontend normalizes repeated pragmas; Lean
 validates and echoes the context; the bridge compares it with its frontend
@@ -186,3 +197,36 @@ reproducibility and the initial correctness baseline. The suite reports compiler
 failures without replacing Lean output with reference output.
 Current allocator validation and pinned-compiler measurements are recorded in
 `tests/allocator/ACCEPTANCE.md`.
+
+## Optimized correctness and benchmarks
+
+`scripts/small_tests.py --optimization O2` runs the same 139 applicable cases
+and retains the nine existing exclusions; its default remains O0. The seed is
+20260922 and compilation, linking and execution deadlines default to 300 seconds.
+`scripts/benchmarks.py` compiles all 29 workloads independently through Lean O2,
+pinned CompCert O2 and GCC O2 before any measurement. It checks the actual
+workload, warms up once, and records seven serial samples per compiler on one
+CPU, rotating compiler order. GCC uses GNU C99, baseline x86-64, generic tuning,
+and non-PIE linking. Compression roundtrips use a deterministic 1 MiB repetition
+of the vendored LICENSE; SPASS uses `problem.dfg` for timing and retains
+`small_problem.dfg` in correctness. Sources and expected output bytes are unchanged.
+
+```bash
+python3 scripts/guarded.py python3 tests/prototype/verify_o2.py
+python3 scripts/guarded.py python3 scripts/small_tests.py --optimization O2 --jobs 4
+python3 scripts/guarded.py python3 scripts/benchmarks.py --jobs 4
+```
+
+Allocation reports and malformed-allocation checks run the selected optimized
+pipeline. `.lake/build/bin/leanCompiler --diagnose input.json output.json folder`
+replays that same profile through the existing diagnostic companion, recording
+pass completion times and RTL function sizes. It preserves failing pass errors.
+
+For GCC, the CompCert compression flag `-U__GNUC__` is omitted: native GCC
+must retain its compiler identity for glibc's type declarations. CompCert and
+Lean retain the upstream flag. `benchmarks.py --retry-from RUN --artifacts NEW`
+rebuilds and remeasures all three pipelines for each failed workload on the
+original CPU, retaining successful workload samples and recording their original
+run identity. The original attempt stays unchanged. `--report-only RUN
+--observations FILE` attaches assembly-backed work-elimination observations
+without changing timing samples.

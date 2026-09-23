@@ -62,7 +62,7 @@ def integration_checks(root, folder, compile_timeout, run_timeout):
     invalid = folder / "invalid.c"
     invalid.write_text("int main( { this is invalid C; }\n")
     expect_failure([sys.executable, REPO / "scripts/compile_c.py", invalid], folder / "invalid-c", timeout=compile_timeout)
-    expect_failure([*command, "-O2"], folder / "unsupported-option", timeout=compile_timeout)
+    expect_failure([*command, "-O4"], folder / "unsupported-option", timeout=compile_timeout)
     protected_output = folder / "must survive link error"
     protected_output.write_bytes(b"previous output\n")
     expect_failure([*command, "-lcompcert4lean_nonexistent_test_library", "-o", protected_output],

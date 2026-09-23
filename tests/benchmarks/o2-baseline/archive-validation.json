@@ -1,0 +1,9 @@
+{
+  "success": true,
+  "archive_sha256": "8c82508db57896672a8f9747bade1f16773beb7b971ae06982927540249a43bb",
+  "archive_members_verified": 31715,
+  "benchmark_executables_verified": 87,
+  "benchmark_samples_verified": 609,
+  "o2_failing_exit_preserved": true,
+  "preservation_and_guard_checks": true
+}

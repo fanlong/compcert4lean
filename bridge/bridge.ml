@@ -2,9 +2,11 @@ open Primitives
 open Codecs
 open Camlcoq
 
-let format_version = "compcert4lean-prototype-v2"
+let format_version = "compcert4lean-prototype-v3"
 let member name value = Yojson.Basic.Util.member name value
 let text name value = Yojson.Basic.Util.to_string (member name value)
+let optimization = ref "O0"
+let target () = "x86_64-linux-sysv-" ^ !optimization
 
 let language_options = [
   "longdouble", Clflags.option_flongdouble;
@@ -24,11 +26,17 @@ let configure request =
   Clflags.option_fpic := false;
   Clflags.option_fpie := false;
   Clflags.option_fcommon := false;
+  optimization := "O0";
   (match member "configuration" request with
    | `Null -> ()
    | `Assoc fields as config ->
-       if List.sort compare (List.map fst fields) <> ["common"; "pic"; "pie"]
+       if not (List.mem (List.sort compare (List.map fst fields))
+           [["common"; "pic"; "pie"]; ["common"; "optimization"; "pic"; "pie"]])
        then failwith "invalid configuration fields";
+       (match member "optimization" config with
+        | `Null -> ()
+        | `String ("O0" | "O2" as profile) -> optimization := profile
+        | _ -> failwith "invalid optimization profile");
        Clflags.option_fpic := Yojson.Basic.Util.to_bool (member "pic" config);
        Clflags.option_fcommon := Yojson.Basic.Util.to_bool (member "common" config);
        if Yojson.Basic.Util.to_bool (member "pie" config)
@@ -47,19 +55,22 @@ let configure request =
          let name = String.sub flag (String.length prefix) (String.length flag - String.length prefix) in
          (List.assoc name language_options) := enabled)
        (Yojson.Basic.Util.to_list flags));
-  Clflags.option_ffloatconstprop := 0;
-  Clflags.option_ftailcalls := false;
-  Clflags.option_fconstprop := false;
-  Clflags.option_fcse := false;
-  Clflags.option_fredundancy := false;
-  Clflags.option_fifconversion := false;
-  Clflags.option_finline := false;
-  Clflags.option_finline_functions_called_once := false;
+  let enabled = !optimization = "O2" in
+  Clflags.option_ffloatconstprop := (if enabled then 2 else 0);
+  Clflags.option_ftailcalls := enabled;
+  Clflags.option_fconstprop := enabled;
+  Clflags.option_fcse := enabled;
+  Clflags.option_fredundancy := enabled;
+  Clflags.option_fifconversion := enabled;
+  Clflags.option_finline := enabled;
+  Clflags.option_finline_functions_called_once := enabled;
+  Clflags.option_Osize := false;
+  Clflags.option_Obranchless := false;
   Clflags.option_g := false;
   Camlcoq.use_canonical_atoms := false;
   Frontend.init ()
 
-let configuration_json () =
+let configuration_json (source : Csyntax.program) =
   let symbols = Hashtbl.fold (fun identifier facts result ->
     let storage = match facts.C2C.a_storage with
       | C.Storage_default -> "default"
@@ -73,6 +84,16 @@ let configuration_json () =
     C2C.decl_atom [] in
   `Assoc ["pic", `Bool !Clflags.option_fpic; "pie", `Bool false;
           "common", `Bool !Clflags.option_fcommon;
+          "optimization", `String !optimization;
+          "functions", `List (List.filter_map (fun (identifier, definition) ->
+            match definition with
+            | AST.Gfun _ ->
+                let status = match C2C.atom_inline identifier with
+                  | C2C.Inline -> "inline" | C2C.Noinline -> "noinline"
+                  | C2C.No_specifier -> "none" in
+                Some (`List [enc_pos identifier; `Assoc ["inline", `String status;
+                  "static", `Bool (C2C.atom_is_static identifier)]])
+            | AST.Gvar _ -> None) source.prog_defs);
           "symbols", `List (List.map snd (List.sort (fun (left, _) (right, _) -> compare left right) symbols))]
 
 let canonical_register_name = function
@@ -91,7 +112,7 @@ let allocation_context_json () =
 
 let source_json configuration (source : Csyntax.program) =
   `Assoc ["format", `String format_version;
-          "target", `String "x86_64-linux-sysv-O0";
+          "target", `String (target ());
           "configuration", configuration;
           "allocationContext", allocation_context_json ();
           "fresh", enc_pos (Camlcoq.first_unused_ident ());
@@ -273,11 +294,17 @@ let check_program_compatibility (program : Asm.program) =
 let print_assembly configuration allocation_context input output =
   let data = Yojson.Basic.from_file input in
   let version = text "format" data in
-  if (version <> format_version && version <> "compcert4lean-prototype-v1") ||
-     text "target" data <> "x86_64-linux-sysv-O0"
+  if not (List.mem version [format_version; "compcert4lean-prototype-v2"; "compcert4lean-prototype-v1"]) ||
+     text "target" data <> target () ||
+     (version <> format_version && !optimization <> "O0")
   then failwith "unsupported assembly interchange version/target";
   let compatible =
     if version = format_version then Yojson.Basic.equal (member "configuration" data) configuration
+    else if version = "compcert4lean-prototype-v2" then
+      let legacy = match configuration with
+        | `Assoc fields -> `Assoc (List.filter (fun (name, _) -> name <> "optimization" && name <> "functions") fields)
+        | _ -> assert false in
+      Yojson.Basic.equal (member "configuration" data) legacy
     else member "configuration" data = `Null &&
          not !Clflags.option_fpic && not !Clflags.option_fpie && not !Clflags.option_fcommon in
   if not compatible then
@@ -316,7 +343,7 @@ let run () =
   Frontend.preprocess input preprocessed;
   let source = Frontend.parse_c_file input preprocessed in
   Diagnostics.raise_on_errors ();
-  let configuration = configuration_json () in
+  let configuration = configuration_json source in
   let allocation_context = allocation_context_json () in
   Yojson.Basic.to_file (text "csyntax" request) (source_json configuration source);
   respond ["phase", `String "frontend"];

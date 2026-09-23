@@ -15,7 +15,7 @@ import tempfile
 import time
 
 from compile_c import parse_args as compiler_options
-from prototype import BUILD, REFERENCE_FLAGS, REPO, SWITCH, CompileError
+from prototype import BUILD, REPO, SWITCH, CompileError, reference_flags
 from prototype import compile_source, execute, prepare, tool_environment
 
 CORPUS = REPO / "tests/small-tests"
@@ -99,7 +99,7 @@ class Stages:
             target = output.parent / (output.name + f"-{index:03d}" + (".s" if assembly else ".o"))
             if pipeline == "lean":
                 artifacts = self.folder / f"compile-{len(self.records):03d}"
-                arguments = [str(source), "-S" if assembly else "-c", *flags,
+                arguments = [str(source), "-" + self.options.optimization, "-S" if assembly else "-c", *flags,
                              "-o", str(target), "--compcert-root", str(self.root),
                              "--link-timeout", str(self.options.link_timeout)]
                 try:
@@ -110,9 +110,10 @@ class Stages:
                         self.records[-1]["compiler"] = json.loads((artifacts / "result.json").read_text())
                     self.records[-1]["artifacts"] = str(artifacts)
             else:
-                compiler = ([self.root / "ccomp", "-stdlib", self.root / "runtime", *REFERENCE_FLAGS]
-                            if pipeline == "reference" else ["gcc", "-O0", "-m64", "-fno-pie", "-fno-common"])
-                source_flags = flags if pipeline == "reference" else [flag for flag in flags if not flag.startswith("-fstruct")]
+                compiler = ([self.root / "ccomp", "-stdlib", self.root / "runtime", *reference_flags(self.options.optimization)]
+                            if pipeline == "reference" else ["gcc", "-" + self.options.optimization, "-m64",
+                                "-march=x86-64", "-mtune=generic", "-std=gnu99", "-fno-pie", "-fno-common"])
+                source_flags = flags if pipeline == "reference" else gcc_flags(flags)
                 self.command("compile", [*compiler, "-S", *source_flags, source, "-o", target.with_suffix(".s")],
                              env=tool_environment(self.root), category="reference_failure")
                 if not assembly:
@@ -126,6 +127,14 @@ class Stages:
     def link(self, objects, output, *, shared=False, libraries=()):
         self.command("link", ["gcc", "-m64", "-shared" if shared else "-no-pie", *objects,
                               *libraries, self.root / "runtime/libcompcert.a", "-o", output], category="link_failure")
+
+
+def gcc_flags(flags):
+    compcert_only = {"-fall", "-fnone", "-U__GNUC__"}
+    for name in ["struct-passing", "longdouble", "vararg-calls", "unprototyped",
+                 "packed-structs", "unstructured-switch", "inline-asm"]:
+        compcert_only.update({"-f" + name, "-fno-" + name})
+    return [flag for flag in flags if flag not in compcert_only]
 
 
 def generate_abi(folder, root, options, specification):
@@ -191,6 +200,9 @@ def run_pipeline(case, pipeline, folder, root, options, fixtures):
         if kind == "compile":
             result["verdict"] = "pass"
             return result
+        result["executable_sha256"] = digest(output)
+        result["check_input_sha256"] = {name: digest(CORPUS / check[name])
+                                        for name in ["expected", "stdin", "input"] if name in check}
         expected = (CORPUS / check["expected"]).read_bytes() if "expected" in check else None
         if kind == "interpreter":
             expected = stages.command("reference-interpreter", [root / "ccomp", "-stdlib", root / "runtime",
@@ -255,7 +267,8 @@ def write_report(folder, summary):
                                             for verdict in ["pass", "fail", "timeout", "unavailable"]} for pipeline in PIPELINES}
     summary["complete"] = "finished" in summary and len(summary["cases"]) == len(summary["selected"])
     summary["success"] = summary["complete"] and all(case["verdict"] == "pass" for case in summary["cases"])
-    lines = ["# Small-test correctness report", "", "Target: Linux System V x86-64, O0, iterated register coalescing allocator.", "",
+    optimization = summary.get("options", {}).get("optimization", "O0")
+    lines = ["# Small-test correctness report", "", f"Target: Linux System V x86-64, {optimization}, iterated register coalescing allocator.", "",
              "Run complete: " + str(summary["complete"]) + ".", "",
              "Counts: " + ", ".join(f"{name}={count}" for name, count in summary["counts"].items()), "",
              "Pipeline counts: " + json.dumps(summary["pipeline_counts"], sort_keys=True), "",
@@ -284,6 +297,7 @@ def parse_args(argv=None):
     parser.add_argument("--test", action="append", default=[], help="case ID glob (repeatable)")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--jobs", type=int, default=1)
+    parser.add_argument("--optimization", choices=["O0", "O2"], default="O0")
     parser.add_argument("--compile-timeout", type=float, default=300)
     parser.add_argument("--link-timeout", type=float, default=300)
     parser.add_argument("--run-timeout", type=float, default=300)

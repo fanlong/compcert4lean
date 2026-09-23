@@ -1,6 +1,8 @@
 import CompCert4Lean.Prototype.Codecs
 import CompCert4Lean.Prototype.Services
 import CompCert4Lean.Prototype.AllocationReport
+import CompCert4Lean.Driver.Diagnostics
+import CompCert4Lean.Prototype.AllocationTrace
 
 namespace CompCert4Lean.Prototype
 
@@ -8,7 +10,7 @@ open Lean Foundation.Numbers.Rocq.Coq
 open CompCert4Lean.Allocator
 open CompCert4Lean.X86.Machregs
 
-def formatVersion := "compcert4lean-prototype-v2"
+def formatVersion := "compcert4lean-prototype-v3"
 def codecFuel := 4096
 
 def getField (value : Json) (name : String) : CodecResult Json := value.getObjVal? name
@@ -63,14 +65,51 @@ def decodeLinkage (value : Json) : CodecResult Config.SymbolLinkageFacts := do
     return Int64.ofInt number) (← getField value "size")
   return { storage, definedHere, size }
 
+def decodeOptimization (value : Json) : CodecResult Bool := do
+  let version ← (← getField value "format").getStr?
+  if version == formatVersion then
+    match ← (← getField (← getField value "configuration") "optimization").getStr? with
+    | "O0" => return false
+    | "O2" => return true
+    | _ => throw "unsupported optimization profile"
+  else return false
+
+def decodeInlining (value : Json) : CodecResult Backend.Inlining.InliningConfig := do
+  if (← (← getField value "format").getStr?) != formatVersion then return inlineCfg
+  let enabled ← decodeOptimization value
+  let fresh ← dec_pos codecFuel (← getField value "fresh")
+  let functions ← decList (decPair (dec_pos codecFuel) (fun entry => do
+    exactFields entry ["inline", "static"]
+    let status ← match ← (← getField entry "inline").getStr? with
+      | "inline" => pure Backend.Inlining.InlineStatus.inline
+      | "noinline" => pure Backend.Inlining.InlineStatus.noinline
+      | "none" => pure Backend.Inlining.InlineStatus.noSpecifier
+      | _ => throw "invalid inline status"
+    let isStatic ← (← getField entry "static").getBool?
+    return (status, isStatic))) (← getField (← getField value "configuration") "functions")
+  let identifiers := functions.map Prod.fst
+  unless identifiers.eraseDups.length == identifiers.length do throw "duplicate function metadata"
+  unless identifiers.all (fun identifier => posToNat identifier < posToNat fresh) do
+    throw "function metadata exceeds fresh identifier boundary"
+  return { enabled, functionsCalledOnce := enabled
+           inlineStatus := fun identifier =>
+             ((functions.find? (fun pair => pair.1 == identifier)).map (fun pair => pair.2.1)).getD .noSpecifier
+           isStatic := fun identifier =>
+             ((functions.find? (fun pair => pair.1 == identifier)).map (fun pair => pair.2.2)).getD false }
+
 def decodeConfiguration (value : Json) : CodecResult Config.CompilerConfig := do
   let version ← (← getField value "format").getStr?
   if version == "compcert4lean-prototype-v1" then
     if (value.getObjVal? "configuration").isOk then throw "legacy input cannot specify configuration"
     return cfg
-  unless version == formatVersion do throw "unsupported interchange version"
+  unless version == formatVersion || version == "compcert4lean-prototype-v2" do
+    throw "unsupported interchange version"
   let config ← getField value "configuration"
-  exactFields config ["pic", "pie", "common", "symbols"]
+  exactFields config (if version == formatVersion then
+    ["pic", "pie", "common", "symbols", "optimization", "functions"]
+    else ["pic", "pie", "common", "symbols"])
+  let base := if ← decodeOptimization value then optimizedCfg else cfg
+  let _ ← decodeInlining value
   let pic ← (← getField config "pic").getBool?
   let pie ← (← getField config "pie").getBool?
   if pie then throw "PIE is not supported by this profile"
@@ -86,14 +125,22 @@ def decodeConfiguration (value : Json) : CodecResult Config.CompilerConfig := do
       pie := pie
       common := common
       facts := fun identifier => (symbols.find? (fun pair => pair.1 == identifier)).map Prod.snd }
-  return { cfg with relocation := relocation }
+  return { base with relocation := relocation }
 
 def decodeSource (value : Json) : CodecResult (Cfrontend.Csyntax.program × Cfrontend.SimplExpr.FreshIdentContext) := do
   let _ ← decodeConfiguration value
-  unless (← (← getField value "target").getStr?) == "x86_64-linux-sysv-O0" do
+  let target := if ← decodeOptimization value then "x86_64-linux-sysv-O2" else "x86_64-linux-sysv-O0"
+  unless (← (← getField value "target").getStr?) == target do
     throw "unsupported target configuration"
   let fresh ← dec_pos codecFuel (← getField value "fresh")
   let definitions ← decList (decPair (dec_pos codecFuel) (dec_CGlobdef codecFuel)) (← getField value "definitions")
+  if (← (← getField value "format").getStr?) == formatVersion then
+    let metadata ← decList (decPair (dec_pos codecFuel) pure)
+      (← getField (← getField value "configuration") "functions")
+    let functions := definitions.filterMap (fun (identifier, definition) => match definition with
+      | .Gfun _ => some identifier | _ => none)
+    unless metadata.length == functions.length && metadata.all (fun pair => functions.contains pair.1) do
+      throw "function metadata does not match source definitions"
   let publicSymbols ← decList (dec_pos codecFuel) (← getField value "public")
   let mainIdent ← dec_pos codecFuel (← getField value "main")
   let types ← decList (dec_Ctypes_composite_definition codecFuel) (← getField value "composites")
@@ -111,7 +158,7 @@ def encodeTarget (input : Json) (target : X86.Asm.program) : CodecResult Json :=
   let allocationContext := match input.getObjVal? "allocationContext" with
     | .ok context => [("allocationContext", context)]
     | .error _ => []
-  return Json.mkObj ([("format", ← getField input "format"), ("target", .str "x86_64-linux-sysv-O0"),
+  return Json.mkObj ([("format", ← getField input "format"), ("target", ← getField input "target"),
     ("allocator", .str "irc"), ("program", ← enc_AProgram codecFuel target)] ++
     configuration ++ allocationContext)
 
@@ -119,19 +166,67 @@ def compileJson (value : Json) : CodecResult Json := do
   let (source, fresh) ← decodeSource value
   let configuration ← decodeConfiguration value
   let allocationContext ← decodeAllocationContext value
-  match Driver.Compiler.transf_c_program configuration selectionOracle inlineCfg
+  let inlining ← decodeInlining value
+  match Driver.Compiler.transf_c_program configuration (selectionFor configuration) inlining
       (Allocator.regalloc configuration allocationContext) enumeration fresh source with
   | .Error errors => throw ("Lean compiler: " ++ errorText errors)
   | .OK target => encodeTarget value target
 
+def diagnoseJson (value : Json) (folder : System.FilePath) (allocation : Bool := false) : IO (CodecResult Json) := do
+  let decoded := do
+    let source ← decodeSource value
+    let configuration ← decodeConfiguration value
+    let inlining ← decodeInlining value
+    let context ← decodeAllocationContext value
+    return (source, configuration, inlining, context)
+  match decoded with
+  | .error message => return .error message
+  | .ok ((source, fresh), configuration, inlining, context) =>
+      IO.FS.createDirAll folder
+      let started ← IO.monoMsNow
+      let emit (stage : String) (details : Json := .null) : IO Unit := do
+        let elapsed := (← IO.monoMsNow) - started
+        let record := Json.mkObj [("stage", .str stage), ("milliseconds", toJson elapsed), ("details", details)]
+        IO.FS.writeFile (folder / (stage ++ ".json")) (record.compress ++ "\n")
+        (← IO.getStderr).putStrLn (stage ++ ": " ++ toString elapsed ++ " ms")
+      let sink : Driver.Diagnostics.DiagnosticSink :=
+        { clight := fun _ => emit "clight"
+          cminor := fun _ => emit "cminor"
+          rtl := fun tag program => do
+            emit ("rtl-" ++ toString (intOfZ tag))
+              (.arr ((program.prog_defs.filterMap (fun (identifier, definition) => match definition with
+                | .Gfun (.Internal function) => some (Json.mkObj [
+                    ("identifier", toJson (posToNat identifier)),
+                    ("nodes", toJson (Lib.Maps.PTree.elements function.fn_code).length)])
+                | _ => none)).toArray))
+            if allocation && intOfZ tag == 8 then
+              traceAllocation configuration context program (fun stage => emit stage)
+          ltl := fun _ => emit "ltl"
+          mach := fun _ => emit "mach" }
+      emit "start" ((value.getObjVal? "configuration").toOption.getD .null)
+      match ← Driver.Diagnostics.transf_c_program sink configuration (selectionFor configuration) inlining
+          (Allocator.regalloc configuration context) enumeration fresh source with
+      | .Error errors => return .error ("Lean compiler: " ++ errorText errors)
+      | .OK target => emit "assembly"; return encodeTarget value target
+
 def run (args : List String) : IO UInt32 := do
   match args with
+  | [mode, input, output, folder] =>
+      unless mode == "--diagnose" || mode == "--diagnose-allocation" do return 2
+      let text ← IO.FS.readFile input
+      match Json.parse text with
+      | .error message => IO.eprintln message; return 1
+      | .ok value =>
+          match ← diagnoseJson value folder (mode == "--diagnose-allocation") with
+          | .error message => IO.eprintln message; return 1
+          | .ok target => IO.FS.writeFile output (target.compress ++ "\n"); return 0
   | ["--allocator-report", input, output] =>
       let text ← IO.FS.readFile input
       let result := do
         let input ← Json.parse text
         let (source, fresh) ← decodeSource input
-        allocationReport (← decodeConfiguration input) (← decodeAllocationContext input) source fresh
+        allocationReport (← decodeConfiguration input) (← decodeInlining input)
+          (← decodeAllocationContext input) source fresh
       match result with
       | .error message => (← IO.getStderr).putStrLn message; return 1
       | .ok report => IO.FS.writeFile output (report.compress ++ "\n"); return 0
@@ -142,10 +237,11 @@ def run (args : List String) : IO UInt32 := do
         let (source, fresh) ← decodeSource input
         let configuration ← decodeConfiguration input
         let allocationContext ← decodeAllocationContext input
+        let inlining ← decodeInlining input
         let corrupt : Backend.Allocation.RegallocOracle := fun function => do
           let proposed ← Allocator.regalloc configuration allocationContext function
           .OK { proposed with fn_stacksize := ZArith.BinInt.Z.add function.fn_stacksize (z 1) }
-        match Driver.Compiler.transf_c_program configuration selectionOracle inlineCfg corrupt enumeration fresh source with
+        match Driver.Compiler.transf_c_program configuration (selectionFor configuration) inlining corrupt enumeration fresh source with
         | .Error errors => throw (errorText errors)
         | .OK _ => pure ()
       match result with

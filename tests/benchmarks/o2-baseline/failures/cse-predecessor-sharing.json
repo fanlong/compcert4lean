@@ -1,0 +1,31 @@
+{
+  "id": "cse-predecessor-sharing",
+  "classification": "compiler_core_performance_defect",
+  "investigation_complete": true,
+  "affected_correctness_cases": ["abi/layout"],
+  "affected_benchmark_workloads": [],
+  "core_definition": "CompCert4Lean.Backend.Kildall.BBlock_solver.basic_block_map",
+  "core_source": "CompCert4Lean/Backend/Kildall.lean",
+  "pass": "CSE.analyze / BBlock_solver.fixpoint",
+  "expected": "Share one predecessor map across node lookups, as in pinned CompCert extraction; compile the applicable fixture within its 300-second stage deadline.",
+  "actual": "The Lean closure rebuilds the predecessor map on every lookup. The 39194-node layout function reaches CSE after less than one second and compilation times out at 300 seconds.",
+  "reproducer": "tests/prototype/CSEReproducer.lean",
+  "commands": [
+    "python3 scripts/guarded.py lake build coreDiagnostics",
+    "python3 scripts/guarded.py .lake/build/bin/coreDiagnostics",
+    "python3 scripts/guarded.py python3 scripts/small_tests.py --optimization O2 --test abi/layout --seed 20260922"
+  ],
+  "evidence": {
+    "diagnostic_capture": ".lake/prototype/layout-diagnostic-1",
+    "original_attempt": ".lake/prototype/o2-correctness-attempt-1",
+    "isolated_replay_guard": ".lake/prototype/guard/compute/20260923T041109-4737c17b",
+    "native_definition": ".lake/build/ir/CompCert4Lean/Backend/Kildall.c",
+    "reference_definition": "../CompCert/extraction/Kildall.ml:303",
+    "input_validation": "Every synthetic RTL chain passes RTLtyping.type_function; the actual fixture is accepted by the pinned frontend and reference compiler.",
+    "provider_independence": "The isolated native replay invokes core Kildall and CSE directly without frontend, codecs, selection, allocator, or enumeration services.",
+    "control": "A diagnostic-only shared-predecessor function is definitionally equal by rfl, returns identical block heads, and scales approximately linearly; it is never injected into production compilation."
+  },
+  "production_core_changed": false,
+  "test_verdict_preserved": "timeout",
+  "test_exit_status_preserved": 1
+}
