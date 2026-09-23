@@ -23,7 +23,11 @@ REFERENCE_FLAGS = ["-O0", "-fno-inline", "-fno-inline-functions-called-once",
 
 
 class CompileError(RuntimeError):
-    pass
+    def __init__(self, message, *, stage=None, category=None, timed_out=False):
+        super().__init__(message)
+        self.stage = stage
+        self.category = category
+        self.timed_out = timed_out
 
 
 def revision(root):
@@ -31,19 +35,22 @@ def revision(root):
 
 
 def terminate(process):
-    if process.poll() is None:
+    try:
         os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
     process.wait()
 
 
-def execute(command, *, cwd=None, timeout=None, env=None, log=None):
+def execute(command, *, cwd=None, timeout=None, env=None, log=None, stdin=None):
     command = [str(argument) for argument in command]
     started = time.monotonic()
     process = subprocess.Popen(command, cwd=cwd, env=env, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, start_new_session=True)
+                               stderr=subprocess.PIPE, stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
+                               start_new_session=True)
     timed_out = False
     try:
-        stdout, stderr = process.communicate(timeout=timeout)
+        stdout, stderr = process.communicate(input=stdin, timeout=timeout)
     except subprocess.TimeoutExpired:
         timed_out = True
         terminate(process)
@@ -58,7 +65,7 @@ def execute(command, *, cwd=None, timeout=None, env=None, log=None):
         log.with_suffix(".json").write_text(json.dumps(result, indent=2) + "\n")
     if timed_out or process.returncode:
         detail = "timed out" if timed_out else f"exited {process.returncode}"
-        raise CompileError(f"{command[0]} {detail}: {stderr.decode(errors='replace')[-6000:]}")
+        raise CompileError(f"{command[0]} {detail}: {stderr.decode(errors='replace')[-6000:]}", timed_out=timed_out)
     return stdout
 
 
@@ -117,6 +124,7 @@ class Bridge:
     def __init__(self, root, folder, deadline):
         self.deadline = deadline
         self.buffer = b""
+        self.stderr_path = folder / "bridge.stderr"
         self.stderr = (folder / "bridge.stderr").open("wb")
         command = [str(BUILD / "bridge" / "bridge")]
         (folder / "bridge-command.json").write_text(json.dumps(command) + "\n")
@@ -133,10 +141,11 @@ class Bridge:
             while b"\n" not in self.buffer:
                 remaining = self.deadline - time.monotonic()
                 if remaining <= 0 or not select.select([self.process.stdout], [], [], remaining)[0]:
-                    raise CompileError("CompCert bridge timed out")
+                    raise CompileError("CompCert bridge timed out", timed_out=True)
                 chunk = os.read(self.process.stdout.fileno(), 65536)
                 if not chunk:
-                    raise CompileError("CompCert bridge failed; see bridge.stderr")
+                    detail = self.stderr_path.read_text(errors="replace")[-6000:]
+                    raise CompileError("CompCert bridge failed: " + detail)
                 self.buffer += chunk
             line, self.buffer = self.buffer.split(b"\n", 1)
             response = json.loads(line)
@@ -149,59 +158,125 @@ class Bridge:
 
     def close(self):
         terminate(self.process)
+        self.process.stdin.close()
+        self.process.stdout.close()
         self.stderr.close()
         self.transcript.close()
 
 
-def compile_source(options, *, prepared=False, artifact_dir=None, timeout=120):
+def validate_inputs(options):
+    inputs = [Path(value).resolve() for kind, value in options.inputs if kind == "input"]
+    for source in inputs:
+        if not source.is_file():
+            raise CompileError(f"input does not exist: {source}")
+        if source.suffix not in {".c", ".s", ".S", ".o", ".a", ".so"} and ".so." not in source.name:
+            raise CompileError(f"unsupported input: {source}")
+        if options.assembly and source.suffix != ".c":
+            raise CompileError("-S requires C source inputs")
+        if options.object and source.suffix not in {".c", ".s", ".S"}:
+            raise CompileError("-c requires C or assembly inputs")
+    outputs = ([options.output.resolve()] if options.output else
+               [Path(source.stem + (".s" if options.assembly else ".o")).resolve() for source in inputs])
+    if len(set(outputs)) != len(outputs):
+        raise CompileError("output-name collision; compile these inputs separately with -o")
+    if any(output in inputs for output in outputs):
+        raise CompileError("output must differ from every input")
+    for output in outputs:
+        if output.is_dir() or not output.parent.is_dir():
+            raise CompileError(f"invalid output path: {output}")
+    return inputs, outputs
+
+
+def publish_output(source, output):
+    descriptor, temporary = tempfile.mkstemp(prefix="." + output.name + "-", dir=output.parent)
+    os.close(descriptor)
+    try:
+        shutil.copy2(source, temporary)
+        os.replace(temporary, output)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def compile_source(options, *, prepared=False, artifact_dir=None, timeout=None):
     root = options.compcert_root.resolve()
+    inputs, outputs = validate_inputs(options)
     if not prepared:
         prepare(root)
+    timeout = options.compile_timeout if timeout is None else timeout
     if timeout <= 0:
         raise CompileError("compilation timeout must be positive")
-    source = options.source.resolve()
-    output = options.output.resolve()
-    if source == output:
-        raise CompileError("output must differ from source")
-    if not source.is_file():
-        raise CompileError(f"source does not exist: {source}")
     folder = Path(artifact_dir) if artifact_dir else Path(tempfile.mkdtemp(prefix="compile-", dir=BUILD))
+    folder = folder.resolve()
     folder.mkdir(parents=True, exist_ok=True)
-    preprocessor = options.preprocessor
-    metadata = {"source": str(source), "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
-                "output": str(output), "allocator": ALLOCATOR, "timeout_seconds": timeout,
+    metadata = {"inputs": options.inputs, "input_sha256": {str(source): hashlib.sha256(source.read_bytes()).hexdigest() for source in inputs},
+                "outputs": list(map(str, outputs)), "allocator": ALLOCATOR, "timeout_seconds": timeout,
+                "configuration": {"pic": options.pic, "pie": False, "common": options.common},
+                "language": options.language, "preprocessor": options.preprocessor, "stages": [],
                 "versions": json.loads((BUILD / "versions.json").read_text()), "success": False}
-    deadline = time.monotonic() + timeout
-    bridge = None
+    stage = "frontend"
+    def record(name, action):
+        nonlocal stage
+        stage = name
+        started = time.monotonic()
+        try:
+            result = action()
+        except Exception as error:
+            metadata["stages"].append({"stage": name, "input": str(source) if name != "link" else None,
+                                       "status": "timeout" if getattr(error, "timed_out", False) else "failed",
+                                       "seconds": time.monotonic() - started, "error": str(error)})
+            raise
+        metadata["stages"].append({"stage": name, "input": str(source) if name != "link" else None,
+                                   "status": "passed", "seconds": time.monotonic() - started})
+        return result
     try:
-        bridge = Bridge(root, folder, deadline)
-        bridge.request({"root": str(root), "source": str(source), "preprocessor": preprocessor,
-                        "preprocessed": str(folder / "input.i"), "csyntax": str(folder / "csyntax.json")})
-        execute([LEAN, folder / "csyntax.json", folder / "asm.json"], cwd=REPO,
-                timeout=max(0.001, deadline - time.monotonic()), log=folder / "lean")
-        bridge.request({"operation": "print", "input": str(folder / "asm.json"), "output": str(folder / "output.s")})
-        bridge.process.wait(timeout=max(0.001, deadline - time.monotonic()))
-        if bridge.process.returncode:
-            raise CompileError("CompCert assembly printer failed")
-        generated = folder / "output.s"
-        if not options.assembly:
-            generated = folder / ("output.o" if options.object else "output")
-            command = ["gcc", "-m64", "-fno-pic", "-fno-pie", "-fno-common"]
-            command += ["-c"] if options.object else ["-no-pie"]
-            command += [folder / "output.s", "-o", generated]
-            if not options.object:
-                command += ["-L" + value for value in options.library_path]
-                command += [root / "runtime/libcompcert.a", *["-l" + value for value in options.library]]
-            execute(command, timeout=max(0.001, deadline - time.monotonic()), log=folder / "gcc")
-        if generated.resolve() != output:
-            shutil.copy2(generated, output)
+        built = []
+        for index, source in enumerate(inputs):
+            unit = folder if len(inputs) == 1 else folder / f"unit-{index:03d}-{source.stem}"
+            unit.mkdir(exist_ok=True)
+            generated = source
+            if source.suffix == ".c":
+                deadline = time.monotonic() + timeout
+                bridge = Bridge(root, unit, deadline)
+                try:
+                    record("frontend", lambda: bridge.request({"root": str(root), "source": str(source),
+                           "preprocessor": options.preprocessor, "language": options.language,
+                           "configuration": metadata["configuration"],
+                           "preprocessed": str(unit / "input.i"), "csyntax": str(unit / "csyntax.json")}))
+                    record("lean", lambda: execute([LEAN, unit / "csyntax.json", unit / "asm.json"], cwd=REPO,
+                           timeout=max(0.001, deadline - time.monotonic()), log=unit / "lean"))
+                    record("assembly_print", lambda: bridge.request({"operation": "print", "input": str(unit / "asm.json"),
+                           "output": str(unit / "output.s")}))
+                    generated = unit / "output.s"
+                finally:
+                    bridge.close()
+            if not options.assembly and source.suffix in {".c", ".s", ".S"}:
+                assembly = generated
+                generated = unit / "output.o"
+                record("assemble", lambda: execute(["gcc", "-m64", "-c", *options.preprocessor,
+                       assembly, "-o", generated], timeout=options.link_timeout, log=unit / "assemble"))
+            built.append(generated)
+        if options.assembly or options.object:
+            publications = list(zip(built, outputs))
+        else:
+            compiled = iter(built)
+            arguments = [str(next(compiled)) if kind == "input" else value for kind, value in options.inputs]
+            generated = folder / "output"
+            mode = "-shared" if options.shared else "-r" if options.relocatable else "-no-pie"
+            runtime = [] if options.relocatable else [root / "runtime/libcompcert.a"]
+            record("link", lambda: execute(["gcc", "-m64", mode, *arguments, *runtime, "-o", generated],
+                   timeout=options.link_timeout, log=folder / "link"))
+            publications = [(generated, outputs[0])]
+        for generated, output in publications:
+            publish_output(generated, output)
         metadata["success"] = True
     except Exception as error:
         metadata["error"] = str(error)
-        raise CompileError(f"{error}\nArtifacts: {folder}") from error
+        timed_out = getattr(error, "timed_out", False)
+        category = "timeout" if timed_out else {"frontend": "frontend_rejection", "lean": "lean_rejection",
+                    "assembly_print": "assembly_failure", "assemble": "assembly_failure", "link": "link_failure"}.get(stage, "harness_failure")
+        metadata.update(stage=stage, category=category)
+        raise CompileError(f"{error}\nArtifacts: {folder}", stage=stage, category=category, timed_out=timed_out) from error
     finally:
-        if bridge:
-            bridge.close()
         (folder / "result.json").write_text(json.dumps(metadata, indent=2) + "\n")
     if not options.keep_temps and artifact_dir is None:
         shutil.rmtree(folder)

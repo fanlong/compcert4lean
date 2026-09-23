@@ -1,9 +1,11 @@
-# Single-file Linux compiler prototype
+# Linux compiler framework
 
-`scripts/compile_c.py` compiles one C source file through the pinned CompCert
+`scripts/compile_c.py` compiles each C source file through the pinned CompCert
 frontend, the existing Lean `Compiler.transf_c_program`, CompCert's assembly
 expansion/printer, and GCC's assembler/linker. The result is an x86-64 Linux
-ELF executable, assembly source, or relocatable object. All compiler passes and
+ELF executable, shared library, assembly source, or relocatable object. It accepts
+C and assembly sources, objects, archives and shared libraries in link order.
+All compiler passes and
 the Lean typing/allocation validators remain in the pipeline.
 
 ## Setup
@@ -57,24 +59,39 @@ python3 scripts/compile_c.py hello.c -o hello
 python3 scripts/compile_c.py hello.c -S -o hello.s
 python3 scripts/compile_c.py hello.c -c -o hello.o
 python3 scripts/compile_c.py hello.c -Iinclude -DNAME=value -lm -o hello
+python3 scripts/compile_c.py main.c helpers.c existing.o -Llib -lhelpers -o app
+python3 scripts/compile_c.py library.c -fpic -shared -o libexample.so
+python3 scripts/compile_c.py first.c second.c -c
+python3 scripts/compile_c.py first.o second.o -r -o combined.o
 python3 scripts/smoke_test.py
+python3 scripts/small_tests.py --list
+python3 scripts/small_tests.py --suite regression
 ```
 
-Accepted options are `-o`, `-S`, `-c`, `-I`, `-D`, `-U`, `-L`, `-l`, `-O0`,
-`--compcert-root`, and `--keep-temps`. Both attached and separate values work
-for the single-letter options. Unknown options, multiple sources, and other
-optimization levels are rejected. Default outputs are `a.out`, `<stem>.s`,
+Accepted options include `-o`, `-S`, `-c`, `-r`, `-shared`, `-I`, `-D`, `-U`,
+`-L`, `-l`, `-Wl,...`, `-O0`, `-fpic`/`-fno-pic`, `-fcommon`/`-fno-common`,
+`--compcert-root`, and `--keep-temps`. CompCert language flags include `-fall`,
+`-fnone`, and positive/negative forms of `-fstruct-passing`, `-flongdouble`,
+`-fvararg-calls`, `-funprototyped`, `-fpacked-structs`,
+`-funstructured-switch`, and `-finline-asm`. Both attached and separate values
+work for the single-letter options. Other optimization levels are rejected.
+Input and library order is preserved, including archive placement. Each C file
+has its own live bridge and Lean invocation. Default outputs are `a.out`, `<stem>.s`,
 and `<stem>.o`, respectively, in the caller's working directory. Paths are
 passed as argv values and may contain spaces. Include/library paths are
 interpreted relative to the caller. A failed compilation preserves any
 previous output and retains its diagnostic directory; `--keep-temps` also
-retains successful compilations.
+retains successful compilations. Multi-input `-c`/`-S` writes separate outputs;
+an explicit `-o`, colliding output names or overwriting an input is rejected
+before preparation or compilation. Outputs are published only after all
+compilation/link stages succeed. Compilation and assembly/link stage limits
+default to 300 seconds, configurable with `--compile-timeout` and `--link-timeout`.
 
 The fixed profile is System V x86-64, optimization/inlining/debug disabled,
-non-PIC/non-PIE, and `-fno-common`. The same settings are used by the Lean
+non-PIC/non-PIE, and `-fno-common` by default. PIC and common symbols are explicit
+options; PIE remains unsupported. The same settings are used by the Lean
 driver, bridge, reference compiler, and assembler/linker where applicable.
-Multi-source builds, optimization, interpreter mode, PIC/PIE, and general
-allocator improvements are outside this prototype's scope.
+Optimization and general allocator improvements remain outside this task's scope.
 
 ## Adapters and allocator
 
@@ -86,7 +103,15 @@ fresh-identifier context. Composite definitions are serialized; Lean rebuilds
 their environment with `Ctypes.build_composite_env` and carries the resulting
 checked equality in the source program.
 
-`compcert4lean-prototype-v1` JSON uses tagged arrays with exact arities.
+`compcert4lean-prototype-v2` JSON uses tagged arrays with exact arities and a
+required `configuration` object containing boolean `pic`, `pie`, `common` and
+`symbols`. Each symbol entry is `[identifier, {storage, definedHere, size}]`;
+storage is `default`, `extern` or `static`, and size is null or a canonical
+nonnegative signed-64-bit decimal string. These facts come directly from
+CompCert's `C2C.decl_atom`, and populate the existing Lean relocation context.
+The assembly result echoes the configuration; the live printer rejects a
+mismatch with its original snapshot. Legacy v1 non-PIC source JSON remains
+accepted, with its original default configuration and output version.
 Integers and identifiers are canonical decimal strings, including integers
 beyond JavaScript's exact range. Fixed-width integers use unsigned bits;
 float32/float64 use their 32/64-bit representations, preserving NaN payloads
@@ -115,8 +140,9 @@ passes and no broader allocation redesign.
 
 ## Verification and evidence
 
-The three unchanged upstream tests and their licensing/provenance are under
-`tests/smoke/`. The runner independently compiles and executes each through
+The three unchanged smoke fixtures now live in `tests/small-tests/regression/`;
+the complete imported corpus, license, manifest and provenance are under
+`tests/small-tests/`. The smoke runner independently compiles and executes each through
 Lean and pinned CompCert, requires zero exit status and byte-for-byte upstream
 stdout, and retains separate artifacts. Default limits are **120 seconds per
 compilation** and **10 seconds per execution**; change them with
@@ -142,5 +168,11 @@ Additional reproducible checks:
 python3 scripts/guarded.py lake build
 python3 scripts/guarded.py lake env lean tests/prototype/Trust.lean
 python3 scripts/guarded.py python3 scripts/smoke_test.py
+python3 scripts/guarded.py python3 tests/prototype/test_framework.py
+python3 scripts/guarded.py python3 scripts/small_tests.py
 python3 scripts/generate_codecs.py --check
 ```
+
+See `tests/small-tests/SUITE.md` for selection, upstream checks, exclusions,
+reproducibility and the initial correctness baseline. The suite reports compiler
+failures without replacing Lean output with reference output.

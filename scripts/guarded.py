@@ -63,11 +63,12 @@ def supervise(command):
         protected = containment.protected_processes()
         folder = EVIDENCE / "compute" / (time.strftime("%Y%m%dT%H%M%S", time.gmtime()) + "-" + uuid.uuid4().hex[:8])
         folder.mkdir(parents=True)
-        paths = subprocess.check_output(["git", "-C", str(REPO), "ls-files", "-z"]).decode().split("\0")
+        paths = subprocess.check_output(["git", "-C", str(REPO), "ls-files", "--cached", "--others", "--exclude-standard", "-z"]).decode().split("\0")
         request = {
             "command": command, "started_epoch": time.time(), "host_headroom": headroom,
             "supervisor": containment.identity(os.getpid()), "protected": protected,
-            "source_hashes": {name: hashlib.sha256((REPO / name).read_bytes()).hexdigest() for name in paths if name},
+            "source_hashes": {name: hashlib.sha256((REPO / name).read_bytes()).hexdigest()
+                              if (REPO / name).is_file() else None for name in paths if name},
         }
         inputs = folder / "inputs"
         inputs.mkdir()

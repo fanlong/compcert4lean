@@ -13,8 +13,9 @@ import time
 from compile_c import parse_args as compiler_options
 from prototype import ALLOCATOR, BUILD, Bridge, CompileError, LEAN, REFERENCE_FLAGS, REPO
 from prototype import compile_source, execute, prepare, tool_environment
+from small_tests import verify_corpus
 
-TESTS = REPO / "tests" / "smoke"
+TESTS = REPO / "tests" / "small-tests" / "regression"
 
 
 def require(condition, message):
@@ -121,15 +122,12 @@ def main():
     print(f"Artifacts: {folder}", flush=True)
     try:
         summary["versions"] = prepare(root)
-        provenance = json.loads((TESTS / "provenance.json").read_text())
-        for name, expected_hash in provenance["sha256"].items():
-            require(hashlib.sha256((TESTS / name).read_bytes()).hexdigest() == expected_hash,
-                    f"vendored upstream file changed: {name}")
+        verify_corpus()
         for name in ["for2", "funct3", "switch"]:
             case = folder / name
             case.mkdir()
             source = TESTS / (name + ".c")
-            expected = (TESTS / (name + ".expected")).read_bytes()
+            expected = (TESTS / "Results" / name).read_bytes()
             result = {"name": name}
             for pipeline in ["reference", "lean"]:
                 artifacts = case / pipeline

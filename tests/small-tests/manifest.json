@@ -1,0 +1,2487 @@
+{
+  "format": "compcert4lean-small-tests-v1",
+  "revision": "081175df374260304a5cd78dd3dfaded93dceb41",
+  "target": "x86_64-linux-sysv-O0",
+  "abi": {
+    "seed": 20260922,
+    "random_functions": 500,
+    "layout_count": 1000,
+    "layout_size": 4
+  },
+  "cases": [
+    {
+      "id": "regression/int32",
+      "group": "regression",
+      "sources": [
+        "regression/int32.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/int32"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/int64",
+      "group": "regression",
+      "sources": [
+        "regression/int64.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/int64"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/floats",
+      "group": "regression",
+      "sources": [
+        "regression/floats.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/floats"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/floats-basics",
+      "group": "regression",
+      "sources": [
+        "regression/floats-basics.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/floats-basics"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/floats-lit",
+      "group": "regression",
+      "sources": [
+        "regression/floats-lit.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/floats-lit"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/expr1",
+      "group": "regression",
+      "sources": [
+        "regression/expr1.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/expr1"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/expr6",
+      "group": "regression",
+      "sources": [
+        "regression/expr6.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/expr6"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/funptr2",
+      "group": "regression",
+      "sources": [
+        "regression/funptr2.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/funptr2"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": "regression/funptr2.cond"
+    },
+    {
+      "id": "regression/initializers",
+      "group": "regression",
+      "sources": [
+        "regression/initializers.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/initializers-64"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/initializers2",
+      "group": "regression",
+      "sources": [
+        "regression/initializers2.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/initializers2"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/initializers3",
+      "group": "regression",
+      "sources": [
+        "regression/initializers3.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/initializers3"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/volatile1",
+      "group": "regression",
+      "sources": [
+        "regression/volatile1.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/volatile1"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/volatile2",
+      "group": "regression",
+      "sources": [
+        "regression/volatile2.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/volatile2"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/volatile3",
+      "group": "regression",
+      "sources": [
+        "regression/volatile3.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/volatile3"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/volatile4",
+      "group": "regression",
+      "sources": [
+        "regression/volatile4.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/volatile4"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/funct3",
+      "group": "regression",
+      "sources": [
+        "regression/funct3.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/funct3"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/expr5",
+      "group": "regression",
+      "sources": [
+        "regression/expr5.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/expr5"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/struct7",
+      "group": "regression",
+      "sources": [
+        "regression/struct7.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/struct7"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/struct8",
+      "group": "regression",
+      "sources": [
+        "regression/struct8.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/struct8"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/struct11",
+      "group": "regression",
+      "sources": [
+        "regression/struct11.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/struct11"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/struct12",
+      "group": "regression",
+      "sources": [
+        "regression/struct12.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/struct12"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/casts1",
+      "group": "regression",
+      "sources": [
+        "regression/casts1.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/casts1"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/casts2",
+      "group": "regression",
+      "sources": [
+        "regression/casts2.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/casts2"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/char1",
+      "group": "regression",
+      "sources": [
+        "regression/char1.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/char1"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/sizeof1",
+      "group": "regression",
+      "sources": [
+        "regression/sizeof1.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/sizeof1-64"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/sizeof2",
+      "group": "regression",
+      "sources": [
+        "regression/sizeof2.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/sizeof2"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/binops",
+      "group": "regression",
+      "sources": [
+        "regression/binops.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/binops"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/bool",
+      "group": "regression",
+      "sources": [
+        "regression/bool.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/bool"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/for1",
+      "group": "regression",
+      "sources": [
+        "regression/for1.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/for1"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/for2",
+      "group": "regression",
+      "sources": [
+        "regression/for2.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/for2"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/switch",
+      "group": "regression",
+      "sources": [
+        "regression/switch.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/switch"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/switch2",
+      "group": "regression",
+      "sources": [
+        "regression/switch2.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/switch2"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/compound",
+      "group": "regression",
+      "sources": [
+        "regression/compound.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/compound"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/decl1",
+      "group": "regression",
+      "sources": [
+        "regression/decl1.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/decl1"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/bitfields9",
+      "group": "regression",
+      "sources": [
+        "regression/bitfields9.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/bitfields9"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/ptrs3",
+      "group": "regression",
+      "sources": [
+        "regression/ptrs3.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/ptrs3"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/telescopes",
+      "group": "regression",
+      "sources": [
+        "regression/telescopes.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/telescopes"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/parsing",
+      "group": "regression",
+      "sources": [
+        "regression/parsing.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/parsing"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/krfun",
+      "group": "regression",
+      "sources": [
+        "regression/krfun.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/krfun"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/ifconv",
+      "group": "regression",
+      "sources": [
+        "regression/ifconv.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/ifconv"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/generic",
+      "group": "regression",
+      "sources": [
+        "regression/generic.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/generic"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/dollars",
+      "group": "regression",
+      "sources": [
+        "regression/dollars.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/dollars"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/consteval",
+      "group": "regression",
+      "sources": [
+        "regression/consteval.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/consteval"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS",
+      "condition": null
+    },
+    {
+      "id": "regression/attribs1",
+      "group": "regression",
+      "sources": [
+        "regression/attribs1.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/attribs1"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/bitfields1",
+      "group": "regression",
+      "sources": [
+        "regression/bitfields1.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/bitfields1"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/bitfields2",
+      "group": "regression",
+      "sources": [
+        "regression/bitfields2.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/bitfields2"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/bitfields3",
+      "group": "regression",
+      "sources": [
+        "regression/bitfields3.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/bitfields3"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/bitfields4",
+      "group": "regression",
+      "sources": [
+        "regression/bitfields4.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/bitfields4"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/bitfields5",
+      "group": "regression",
+      "sources": [
+        "regression/bitfields5.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/bitfields5"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/bitfields6",
+      "group": "regression",
+      "sources": [
+        "regression/bitfields6.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/bitfields6"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/bitfields7",
+      "group": "regression",
+      "sources": [
+        "regression/bitfields7.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/bitfields7"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/bitfields8",
+      "group": "regression",
+      "sources": [
+        "regression/bitfields8.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/bitfields8"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/bitfields_uint_t",
+      "group": "regression",
+      "sources": [
+        "regression/bitfields_uint_t.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/bitfields_uint_t"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/bitfields10",
+      "group": "regression",
+      "sources": [
+        "regression/bitfields10.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/bitfields10"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/builtins-common",
+      "group": "regression",
+      "sources": [
+        "regression/builtins-common.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/builtins-common"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/builtins-x86",
+      "group": "regression",
+      "sources": [
+        "regression/builtins-x86.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/builtins-x86"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/packedstruct1",
+      "group": "regression",
+      "sources": [
+        "regression/packedstruct1.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/packedstruct1-64"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": "regression/packedstruct1.cond"
+    },
+    {
+      "id": "regression/packedstruct2",
+      "group": "regression",
+      "sources": [
+        "regression/packedstruct2.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/packedstruct2"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/alignas",
+      "group": "regression",
+      "sources": [
+        "regression/alignas.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/alignas"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/varargs1",
+      "group": "regression",
+      "sources": [
+        "regression/varargs1.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/varargs1"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/varargs2",
+      "group": "regression",
+      "sources": [
+        "regression/varargs2.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/varargs2"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/varargs3",
+      "group": "regression",
+      "sources": [
+        "regression/varargs3.c"
+      ],
+      "check": {
+        "kind": "exit"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/sections",
+      "group": "regression",
+      "sources": [
+        "regression/sections.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/sections"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/alias",
+      "group": "regression",
+      "sources": [
+        "regression/alias.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/alias"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/aligned",
+      "group": "regression",
+      "sources": [
+        "regression/aligned.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/aligned"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/switch3",
+      "group": "regression",
+      "sources": [
+        "regression/switch3.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/switch3"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/extern2",
+      "group": "regression",
+      "sources": [
+        "regression/extern2.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/extern2"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_COMP",
+      "condition": null
+    },
+    {
+      "id": "regression/NaNs",
+      "group": "regression",
+      "sources": [
+        "regression/NaNs.c"
+      ],
+      "check": {
+        "kind": "interpreter"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:TESTS_DIFF",
+      "condition": null
+    },
+    {
+      "id": "regression/annot1",
+      "group": "regression",
+      "sources": [
+        "regression/annot1.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/commaprec",
+      "group": "regression",
+      "sources": [
+        "regression/commaprec.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/expr2",
+      "group": "regression",
+      "sources": [
+        "regression/expr2.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/expr3",
+      "group": "regression",
+      "sources": [
+        "regression/expr3.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/expr4",
+      "group": "regression",
+      "sources": [
+        "regression/expr4.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/extern1",
+      "group": "regression",
+      "sources": [
+        "regression/extern1.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/funct2",
+      "group": "regression",
+      "sources": [
+        "regression/funct2.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/funptr1",
+      "group": "regression",
+      "sources": [
+        "regression/funptr1.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/pragmas",
+      "group": "regression",
+      "sources": [
+        "regression/pragmas.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/ptrs1",
+      "group": "regression",
+      "sources": [
+        "regression/ptrs1.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/ptrs2",
+      "group": "regression",
+      "sources": [
+        "regression/ptrs2.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/struct1",
+      "group": "regression",
+      "sources": [
+        "regression/struct1.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/struct2",
+      "group": "regression",
+      "sources": [
+        "regression/struct2.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/struct3",
+      "group": "regression",
+      "sources": [
+        "regression/struct3.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/struct4",
+      "group": "regression",
+      "sources": [
+        "regression/struct4.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/struct5",
+      "group": "regression",
+      "sources": [
+        "regression/struct5.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/struct6",
+      "group": "regression",
+      "sources": [
+        "regression/struct6.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/struct9",
+      "group": "regression",
+      "sources": [
+        "regression/struct9.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/struct10",
+      "group": "regression",
+      "sources": [
+        "regression/struct10.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/types1",
+      "group": "regression",
+      "sources": [
+        "regression/types1.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/seqops",
+      "group": "regression",
+      "sources": [
+        "regression/seqops.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/singlefloats",
+      "group": "regression",
+      "sources": [
+        "regression/singlefloats.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/emptydecl",
+      "group": "regression",
+      "sources": [
+        "regression/emptydecl.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "regression/extasm",
+      "group": "regression",
+      "sources": [
+        "regression/extasm.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile:EXTRAS",
+      "condition": null
+    },
+    {
+      "id": "supplemental/casts3",
+      "group": "supplemental",
+      "sources": [
+        "regression/casts3.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/casts3"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile: omitted source",
+      "annotation": "omitted from active Makefile lists"
+    },
+    {
+      "id": "supplemental/charlit",
+      "group": "supplemental",
+      "sources": [
+        "regression/charlit.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/charlit"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile: omitted source",
+      "annotation": "upstream temporarily removed"
+    },
+    {
+      "id": "supplemental/compar",
+      "group": "supplemental",
+      "sources": [
+        "regression/compar.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/compar"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile: omitted source",
+      "annotation": "omitted from active Makefile lists"
+    },
+    {
+      "id": "supplemental/init1",
+      "group": "supplemental",
+      "sources": [
+        "regression/init1.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile: omitted source",
+      "annotation": "omitted from active Makefile lists"
+    },
+    {
+      "id": "supplemental/init2",
+      "group": "supplemental",
+      "sources": [
+        "regression/init2.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile: omitted source",
+      "annotation": "omitted from active Makefile lists"
+    },
+    {
+      "id": "supplemental/init3",
+      "group": "supplemental",
+      "sources": [
+        "regression/init3.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile: omitted source",
+      "annotation": "omitted from active Makefile lists"
+    },
+    {
+      "id": "supplemental/init4",
+      "group": "supplemental",
+      "sources": [
+        "regression/init4.c"
+      ],
+      "check": {
+        "kind": "compile"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile: omitted source",
+      "annotation": "omitted from active Makefile lists"
+    },
+    {
+      "id": "supplemental/instrsel",
+      "group": "supplemental",
+      "sources": [
+        "regression/instrsel.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/instrsel"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile: omitted source",
+      "annotation": "omitted from active Makefile lists"
+    },
+    {
+      "id": "supplemental/stringlit",
+      "group": "supplemental",
+      "sources": [
+        "regression/stringlit.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "regression/Results/stringlit"
+      },
+      "flags": [
+        "-fall",
+        "-DARCH_x86",
+        "-DMODEL_64"
+      ],
+      "upstream": "regression/Makefile: omitted source",
+      "annotation": "upstream temporarily removed"
+    },
+    {
+      "id": "c/fib",
+      "group": "c",
+      "sources": [
+        "c/fib.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/fib"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/integr",
+      "group": "c",
+      "sources": [
+        "c/integr.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/integr"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/qsort",
+      "group": "c",
+      "sources": [
+        "c/qsort.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/qsort"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/fft",
+      "group": "c",
+      "sources": [
+        "c/fft.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/fft"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/fftsp",
+      "group": "c",
+      "sources": [
+        "c/fftsp.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/fftsp"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/fftw",
+      "group": "c",
+      "sources": [
+        "c/fftw.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/fftw"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/sha1",
+      "group": "c",
+      "sources": [
+        "c/sha1.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/sha1"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/sha3",
+      "group": "c",
+      "sources": [
+        "c/sha3.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/sha3"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/aes",
+      "group": "c",
+      "sources": [
+        "c/aes.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/aes"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/almabench",
+      "group": "c",
+      "sources": [
+        "c/almabench.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/almabench"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/lists",
+      "group": "c",
+      "sources": [
+        "c/lists.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/lists"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/binarytrees",
+      "group": "c",
+      "sources": [
+        "c/binarytrees.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/binarytrees"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/fannkuch",
+      "group": "c",
+      "sources": [
+        "c/fannkuch.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/fannkuch"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/knucleotide",
+      "group": "c",
+      "sources": [
+        "c/knucleotide.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/knucleotide"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/mandelbrot",
+      "group": "c",
+      "sources": [
+        "c/mandelbrot.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/mandelbrot"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/nbody",
+      "group": "c",
+      "sources": [
+        "c/nbody.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/nbody"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/nsieve",
+      "group": "c",
+      "sources": [
+        "c/nsieve.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/nsieve"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/nsievebits",
+      "group": "c",
+      "sources": [
+        "c/nsievebits.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/nsievebits"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/spectral",
+      "group": "c",
+      "sources": [
+        "c/spectral.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/spectral"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/vmach",
+      "group": "c",
+      "sources": [
+        "c/vmach.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/vmach"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/bisect",
+      "group": "c",
+      "sources": [
+        "c/bisect.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/bisect"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/chomp",
+      "group": "c",
+      "sources": [
+        "c/chomp.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/chomp"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/perlin",
+      "group": "c",
+      "sources": [
+        "c/perlin.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/perlin"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "c/siphash24",
+      "group": "c",
+      "sources": [
+        "c/siphash24.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "c/Results/siphash24"
+      },
+      "flags": [],
+      "upstream": "c/Makefile:PROGS"
+    },
+    {
+      "id": "compression/arcode",
+      "group": "compression",
+      "sources": [
+        "compression/optlist.c",
+        "compression/bitfile.c",
+        "compression/arcode.c",
+        "compression/armain.c"
+      ],
+      "check": {
+        "kind": "roundtrip",
+        "input": "LICENSE"
+      },
+      "flags": [
+        "-U__GNUC__"
+      ],
+      "upstream": "compression/Makefile:test (fixed input replaces host-dependent TESTFILE)"
+    },
+    {
+      "id": "compression/lzw",
+      "group": "compression",
+      "sources": [
+        "compression/optlist.c",
+        "compression/bitfile.c",
+        "compression/lzwencode.c",
+        "compression/lzwdecode.c",
+        "compression/lzwmain.c"
+      ],
+      "check": {
+        "kind": "roundtrip",
+        "input": "LICENSE"
+      },
+      "flags": [
+        "-U__GNUC__"
+      ],
+      "upstream": "compression/Makefile:test (fixed input replaces host-dependent TESTFILE)"
+    },
+    {
+      "id": "compression/lzss",
+      "group": "compression",
+      "sources": [
+        "compression/optlist.c",
+        "compression/bitfile.c",
+        "compression/lzvars.c",
+        "compression/lzhash.c",
+        "compression/lzencode.c",
+        "compression/lzdecode.c",
+        "compression/lzssmain.c"
+      ],
+      "check": {
+        "kind": "roundtrip",
+        "input": "LICENSE"
+      },
+      "flags": [
+        "-U__GNUC__"
+      ],
+      "upstream": "compression/Makefile:test (fixed input replaces host-dependent TESTFILE)"
+    },
+    {
+      "id": "raytracer/render",
+      "group": "raytracer",
+      "sources": [
+        "raytracer/memory.c",
+        "raytracer/gmllexer.c",
+        "raytracer/gmlparser.c",
+        "raytracer/eval.c",
+        "raytracer/arrays.c",
+        "raytracer/vector.c",
+        "raytracer/matrix.c",
+        "raytracer/object.c",
+        "raytracer/intersect.c",
+        "raytracer/surface.c",
+        "raytracer/light.c",
+        "raytracer/simplify.c",
+        "raytracer/render.c",
+        "raytracer/main.c"
+      ],
+      "check": {
+        "kind": "file",
+        "stdin": "raytracer/kal.gml",
+        "actual": "kal.ppm",
+        "expected": "raytracer/Results/kal.ppm"
+      },
+      "flags": [
+        "-fstruct-passing"
+      ],
+      "upstream": "raytracer/Makefile:test"
+    },
+    {
+      "id": "spass/small_problem",
+      "group": "spass",
+      "sources": [
+        "spass/analyze.c",
+        "spass/clause.c",
+        "spass/clock.c",
+        "spass/closure.c",
+        "spass/cnf.c",
+        "spass/component.c",
+        "spass/condensing.c",
+        "spass/context.c",
+        "spass/defs.c",
+        "spass/dfgparser.c",
+        "spass/dfgscanner.c",
+        "spass/doc-proof.c",
+        "spass/flags.c",
+        "spass/foldfg.c",
+        "spass/graph.c",
+        "spass/hash.c",
+        "spass/hasharray.c",
+        "spass/iaparser.c",
+        "spass/iascanner.c",
+        "spass/kbo.c",
+        "spass/list.c",
+        "spass/memory.c",
+        "spass/misc.c",
+        "spass/options.c",
+        "spass/order.c",
+        "spass/partition.c",
+        "spass/proofcheck.c",
+        "spass/renaming.c",
+        "spass/resolution.c",
+        "spass/rpos.c",
+        "spass/rules-inf.c",
+        "spass/rules-red.c",
+        "spass/rules-sort.c",
+        "spass/rules-split.c",
+        "spass/rules-ur.c",
+        "spass/search.c",
+        "spass/sharing.c",
+        "spass/sort.c",
+        "spass/st.c",
+        "spass/stack.c",
+        "spass/strings.c",
+        "spass/subst.c",
+        "spass/subsumption.c",
+        "spass/symbol.c",
+        "spass/table.c",
+        "spass/tableau.c",
+        "spass/term.c",
+        "spass/terminator.c",
+        "spass/top.c",
+        "spass/unify.c",
+        "spass/vector.c"
+      ],
+      "check": {
+        "kind": "contains",
+        "text": "Proof found",
+        "args": [
+          "small_problem.dfg"
+        ]
+      },
+      "flags": [
+        "-fstruct-passing"
+      ],
+      "upstream": "spass/Makefile:test"
+    },
+    {
+      "id": "abi/fixed-native",
+      "group": "abi",
+      "sources": [
+        "abi/fixed_def.c",
+        "abi/fixed_use.c"
+      ],
+      "check": {
+        "kind": "exit"
+      },
+      "flags": [],
+      "variant": "native",
+      "fixture": "fixed",
+      "upstream": "abi/Makefile:TESTS and abi/Runtest"
+    },
+    {
+      "id": "abi/fixed-gcc_to_native",
+      "group": "abi",
+      "sources": [
+        "abi/fixed_def.c",
+        "abi/fixed_use.c"
+      ],
+      "check": {
+        "kind": "exit"
+      },
+      "flags": [],
+      "variant": "gcc_to_native",
+      "fixture": "fixed",
+      "upstream": "abi/Makefile:TESTS and abi/Runtest"
+    },
+    {
+      "id": "abi/fixed-native_to_gcc",
+      "group": "abi",
+      "sources": [
+        "abi/fixed_def.c",
+        "abi/fixed_use.c"
+      ],
+      "check": {
+        "kind": "exit"
+      },
+      "flags": [],
+      "variant": "native_to_gcc",
+      "fixture": "fixed",
+      "upstream": "abi/Makefile:TESTS and abi/Runtest"
+    },
+    {
+      "id": "abi/vararg-native",
+      "group": "abi",
+      "sources": [
+        "abi/vararg_def.c",
+        "abi/vararg_use.c"
+      ],
+      "check": {
+        "kind": "exit"
+      },
+      "flags": [],
+      "variant": "native",
+      "fixture": "vararg",
+      "upstream": "abi/Makefile:TESTS and abi/Runtest"
+    },
+    {
+      "id": "abi/vararg-gcc_to_native",
+      "group": "abi",
+      "sources": [
+        "abi/vararg_def.c",
+        "abi/vararg_use.c"
+      ],
+      "check": {
+        "kind": "exit"
+      },
+      "flags": [],
+      "variant": "gcc_to_native",
+      "fixture": "vararg",
+      "upstream": "abi/Makefile:TESTS and abi/Runtest"
+    },
+    {
+      "id": "abi/vararg-native_to_gcc",
+      "group": "abi",
+      "sources": [
+        "abi/vararg_def.c",
+        "abi/vararg_use.c"
+      ],
+      "check": {
+        "kind": "exit"
+      },
+      "flags": [],
+      "variant": "native_to_gcc",
+      "fixture": "vararg",
+      "upstream": "abi/Makefile:TESTS and abi/Runtest"
+    },
+    {
+      "id": "abi/struct-native",
+      "group": "abi",
+      "sources": [
+        "abi/struct_def.c",
+        "abi/struct_use.c"
+      ],
+      "check": {
+        "kind": "exit"
+      },
+      "flags": [
+        "-fstruct-passing"
+      ],
+      "variant": "native",
+      "fixture": "struct",
+      "upstream": "abi/Makefile:TESTS and abi/Runtest"
+    },
+    {
+      "id": "abi/layout",
+      "group": "abi",
+      "sources": [
+        "abi/layout.c"
+      ],
+      "check": {
+        "kind": "gcc_stdout"
+      },
+      "flags": [],
+      "fixture": "layout",
+      "upstream": "abi/Makefile:DIFFTESTS"
+    },
+    {
+      "id": "abi/staticlayout",
+      "group": "abi",
+      "sources": [
+        "abi/staticlayout.c"
+      ],
+      "check": {
+        "kind": "gcc_stdout"
+      },
+      "flags": [],
+      "fixture": "layout",
+      "upstream": "abi/Makefile:DIFFTESTS"
+    },
+    {
+      "id": "pic/shared",
+      "group": "pic",
+      "sources": [
+        "pic/lib1.c",
+        "pic/lib2.c",
+        "pic/dylib.c",
+        "pic/main.c"
+      ],
+      "check": {
+        "kind": "stdout",
+        "expected": "pic/main.reference"
+      },
+      "flags": [
+        "-fpic"
+      ],
+      "upstream": "pic/Makefile:test"
+    }
+  ],
+  "exclusions": [
+    {
+      "id": "regression/builtins-aarch64",
+      "paths": [
+        "regression/builtins-aarch64.c"
+      ],
+      "reason": "Other architecture; Linux System V x86-64 uses builtins-x86.c"
+    },
+    {
+      "id": "regression/builtins-arm",
+      "paths": [
+        "regression/builtins-arm.c"
+      ],
+      "reason": "Other architecture; Linux System V x86-64 uses builtins-x86.c"
+    },
+    {
+      "id": "regression/builtins-powerpc",
+      "paths": [
+        "regression/builtins-powerpc.c"
+      ],
+      "reason": "Other architecture; Linux System V x86-64 uses builtins-x86.c"
+    },
+    {
+      "id": "regression/builtins-riscV",
+      "paths": [
+        "regression/builtins-riscV.c"
+      ],
+      "reason": "Other architecture; Linux System V x86-64 uses builtins-x86.c"
+    },
+    {
+      "id": "regression/funct1",
+      "paths": [
+        "regression/funct1.c"
+      ],
+      "reason": "Frontend-only negative test: wrong argument count; upstream FAILURES, no C-AST"
+    },
+    {
+      "id": "abi/struct-gcc_to_native",
+      "paths": [
+        "abi/Runtest"
+      ],
+      "reason": "Upstream abi/Runtest excludes mixed struct ABI on x86-64"
+    },
+    {
+      "id": "abi/struct-native_to_gcc",
+      "paths": [
+        "abi/Runtest"
+      ],
+      "reason": "Upstream abi/Runtest excludes mixed struct ABI on x86-64"
+    },
+    {
+      "id": "export",
+      "paths": [
+        "export/.gitignore",
+        "export/Makefile",
+        "export/annotations.c",
+        "export/bitfields.c",
+        "export/clight/.gitkeep",
+        "export/csyntax/.gitkeep",
+        "export/empty.c",
+        "export/issue196.c",
+        "export/issue216.c",
+        "export/issue319.c"
+      ],
+      "reason": "Rocq/Clight/Csyntax export validation is outside C-AST to x86-64"
+    }
+  ]
+}

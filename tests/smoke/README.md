@@ -1,8 +1,11 @@
 # Upstream smoke tests
 
+The smoke command uses `for2`, `funct3` and `switch` from
+`../small-tests/regression/` and their unchanged expected stdout in `Results/`.
+The fixtures, license and provenance are consolidated into that imported corpus.
 These C sources and expected stdout files are unchanged bytes from
 [CompCert-small-tests](https://github.com/AbsInt/CompCert-small-tests), commit
-`081175df374260304a5cd78dd3dfaded93dceb41`. `provenance.json` records each
+`081175df374260304a5cd78dd3dfaded93dceb41`. `../small-tests/provenance.json` records each
 upstream path and SHA-256; the runner verifies these hashes before testing.
 
 | Source | Expected stdout | Coverage |
@@ -11,8 +14,8 @@ upstream path and SHA-256; the runner verifies these hashes before testing.
 | `funct3.c` | `funct3.expected` | Internal calls, unsigned conversions, ABI |
 | `switch.c` | `switch.expected` | Switches, branches, loops, repeated calls |
 
-The upstream `LICENSE` and `README.md` are preserved as `LICENSE` and
-`UPSTREAM-README.md`. Upstream distributes these tests under GPL-2.0-or-later; consult
+The upstream `LICENSE` and `README.md` are preserved in `../small-tests/`.
+Upstream distributes these tests under GPL-2.0-or-later; consult
 the preserved license for its terms. Expected stdout comes from upstream's
 `regression/Results/` directory, not from either compiler under test.
 
