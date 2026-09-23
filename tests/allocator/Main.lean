@@ -241,6 +241,73 @@ def testDegreeCache : Except String Unit := do
     else break
   require state.active.isEmpty "degree cache fixture did not drain"
 
+def checkDegrees (function : XFunction) (state : ColoringState) : Except String Unit := do
+  for index in state.graph.present.toList do
+    if state.active.contains index || (precolored function index && registerNode function index) then
+      require (degree function state index == uncachedDegree function state index)
+        ("stale interference degree at " ++ toString index)
+    require (hasPendingMoves state index == !(pendingMoves state index).isEmpty)
+      "pending-move predicate changed"
+
+def checkCoalescingCriteria (function : XFunction) (state : ColoringState) : Except String Unit := do
+  for left in state.graph.present.toList do
+    for right in state.graph.present.toList do
+      let capacity := nodeCapacity {} function state left
+      let leftAdjacent := adjacent function state left
+      let rightAdjacent := adjacent function state right
+      let high := (setUnion leftAdjacent rightAdjacent).foldl (fun count neighbor =>
+        let adjustment := if leftAdjacent.contains neighbor && rightAdjacent.contains neighbor then 1 else 0
+        if precolored function neighbor || degree function state neighbor - adjustment >= capacity
+          then count + 1 else count) 0
+      require (briggs {} function state left right == (high < capacity)) "Briggs criterion changed"
+      let conservative := rightAdjacent.toList.all fun neighbor =>
+        let edge := (state.graph.adjacency[left]?.getD {}).contains neighbor
+        if precolored function neighbor then precolored function left || edge
+        else degree function state neighbor < capacity || edge
+      require (george {} function state left right == conservative) "George criterion changed"
+
+def testCoalescingDegrees : Except String Unit := do
+  for seed in [:12] do
+    let variables := (List.range 28).toArray.map fun index =>
+      ({ type := if index % 3 == 1 then .Tfloat else .Tint
+         fixed := if index == 0 then some (.R .AX)
+           else if index == 1 then some (.R .X0)
+           else if index == 2 then some (.S .Local (number 0) .Tint) else none } : Variable)
+    let function : XFunction := {
+      signature := sign [], stacksize := number 0, variables, blocks := #[], entry := 0 }
+    let mut graph : Interference := {
+      adjacency := Array.replicate variables.size {}
+      preferences := Array.replicate variables.size {}
+      costs := (List.range variables.size).toArray.map fun index =>
+        { amount := index + 1, stackOnly := index > 2 && index % 7 == 0 } }
+    for left in [:variables.size] do
+      graph := graphTouch left graph
+      for right in [:left] do
+        if (left * 17 + right * 13 + seed) % 7 < seed % 5 then
+          graph := graphEdge left right (graphEdge left right graph)
+        else graph := graphPreference left right graph
+    let mut state := initialColoring {} function graph
+    checkDegrees function state
+    checkCoalescingCriteria function state
+    for fixed in [0, 1] do
+      if let some right := state.active.toList.find? fun right =>
+          registerNode function right &&
+          nodeClass function state.graph fixed == nodeClass function state.graph right &&
+          !(state.graph.adjacency[fixed]?.getD {}).contains right then
+        state := combineNodes {} function fixed right state
+        checkDegrees function state
+    for _ in [:variables.size] do
+      if let some left := state.active.min? then
+        let partner := state.active.toList.find? fun right =>
+          left != right && nodeClass function state.graph left == nodeClass function state.graph right &&
+            !(state.graph.adjacency[left]?.getD {}).contains right
+        if let some right := partner then
+          state := combineNodes {} function left right state
+        else state := removeNode {} function left (freezeMoves {} function left state)
+        checkDegrees function state
+      else break
+    require state.active.isEmpty "synthetic degree fixture did not drain"
+
 def tests : Except String (List (String × AllocationStats)) := do
   testBasic
   let results ← testPressure
@@ -248,6 +315,7 @@ def tests : Except String (List (String × AllocationStats)) := do
   testBuiltins
   testReloadReuse
   testDegreeCache
+  testCoalescingDegrees
   return results
 
 end AllocatorTests

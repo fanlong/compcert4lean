@@ -68,6 +68,27 @@ python3 scripts/small_tests.py --list
 python3 scripts/small_tests.py --suite regression
 ```
 
+For a build with per-file flags or output paths, use
+`python3 scripts/compile_batch.py jobs.json --results .lake/batch-results`.
+The results directory must be new. The manifest is a nonempty JSON array:
+
+```json
+[
+  {"arguments": ["-O2", "-c", "first.c", "-o", "first.o"], "cwd": "."},
+  {"arguments": ["-O2", "-DVALUE=7", "-c", "second.c", "-o", "second.o"], "cwd": "."}
+]
+```
+
+Each batch checks versions and incrementally builds the toolchain once, then
+uses that prepared toolchain for its serial jobs. All jobs must select the same
+CompCert root. Keep compiler/toolchain sources stable during the batch. A new
+invocation always prepares again. Per-job flags, compiler-stage deadlines, logs and optional
+`--keep-temps` artifacts are preserved. Failed jobs are reported and subsequent
+jobs still run; any failure makes the batch exit nonzero. `results.json` records
+preparation, per-job and total wall times separately. Independent compilation
+jobs can be batched together; link only after checking that required objects
+compiled successfully. The imported SPEC runners batch each Lean profile.
+
 Accepted options include `-o`, `-S`, `-c`, `-r`, `-shared`, `-I`, `-D`, `-U`,
 `-L`, `-l`, `-Wl,...`, `-O0`, `-O`/`-O1`/`-O2`/`-O3`, `-fpic`/`-fno-pic`, `-fcommon`/`-fno-common`,
 `--compcert-root`, and `--keep-temps`. CompCert language flags include `-fall`,

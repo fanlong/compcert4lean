@@ -64,6 +64,15 @@ def pendingMoves (state : ColoringState) (index : Nat) : IndexSet :=
   (state.nodeMoves[index]?.getD {}).foldl (fun result move =>
     if state.workMoves.contains move || state.activeMoves.contains move then result.insert move else result) {}
 
+def hasPendingMoves (state : ColoringState) (index : Nat) : Bool :=
+  (state.nodeMoves[index]?.getD {}).any fun move =>
+    state.workMoves.contains move || state.activeMoves.contains move
+
+def countsNeighbor (function : XFunction) (state : ColoringState)
+    (classId other : Nat) : Bool :=
+  (state.active.contains other || precolored function other) && registerNode function other &&
+    nodeClass function state.graph other == classId
+
 def classify (context : AllocationContext) (function : XFunction)
     (index : Nat) (state : ColoringState) : ColoringState :=
   let state := { state with
@@ -73,14 +82,16 @@ def classify (context : AllocationContext) (function : XFunction)
   if !state.active.contains index then state
   else if degree function state index >= nodeCapacity context function state index then
     { state with spill := state.spill.insert index }
-  else if !(pendingMoves state index).isEmpty then
+  else if hasPendingMoves state index then
     { state with freeze := state.freeze.insert index }
   else { state with simplify := state.simplify.insert index }
 
 def enableMoves (indices : IndexSet) (state : ColoringState) : ColoringState :=
   indices.foldl (fun state index =>
-    (pendingMoves state index).foldl (fun state move =>
-      { state with activeMoves := state.activeMoves.erase move, workMoves := state.workMoves.insert move }) state) state
+    (state.nodeMoves[index]?.getD {}).foldl (fun state move =>
+      if state.activeMoves.contains move then
+        { state with activeMoves := state.activeMoves.erase move, workMoves := state.workMoves.insert move }
+      else state) state) state
 
 def refreshNodes (context : AllocationContext) (function : XFunction)
     (indices : IndexSet) (state : ColoringState) : ColoringState :=
@@ -109,20 +120,33 @@ def freezeMoves (context : AllocationContext) (function : XFunction)
 def briggs (context : AllocationContext) (function : XFunction)
     (state : ColoringState) (left right : Nat) : Bool :=
   let capacity := nodeCapacity context function state left
-  let leftAdjacent := adjacent function state left
-  let rightAdjacent := adjacent function state right
-  let high := (setUnion leftAdjacent rightAdjacent).foldl (fun count neighbor =>
-    let adjustment := if leftAdjacent.contains neighbor && rightAdjacent.contains neighbor then 1 else 0
-    if precolored function neighbor || degree function state neighbor - adjustment >= capacity
-      then count + 1 else count) 0
+  let leftClass := nodeClass function state.graph left
+  let rightClass := nodeClass function state.graph right
+  let leftNeighbors := state.graph.adjacency[left]?.getD {}
+  let rightNeighbors := state.graph.adjacency[right]?.getD {}
+  let high := leftNeighbors.foldl (fun count neighbor =>
+    if !countsNeighbor function state leftClass neighbor then count else
+      let adjustment := if rightNeighbors.contains neighbor &&
+          countsNeighbor function state rightClass neighbor then 1 else 0
+      if precolored function neighbor || degree function state neighbor - adjustment >= capacity
+        then count + 1 else count) 0
+  let high := rightNeighbors.foldl (fun count neighbor =>
+    if countsNeighbor function state rightClass neighbor &&
+        !(leftNeighbors.contains neighbor && countsNeighbor function state leftClass neighbor) &&
+        (precolored function neighbor || degree function state neighbor >= capacity)
+    then count + 1 else count) high
   high < capacity
 
 def george (context : AllocationContext) (function : XFunction)
     (state : ColoringState) (left right : Nat) : Bool :=
-  (adjacent function state right).toList.all fun neighbor =>
-    let edge := (state.graph.adjacency[left]?.getD {}).contains neighbor
-    if precolored function neighbor then precolored function left || edge
-    else degree function state neighbor < nodeCapacity context function state left || edge
+  let classId := nodeClass function state.graph right
+  let capacity := nodeCapacity context function state left
+  let leftFixed := precolored function left
+  let neighbors := state.graph.adjacency[left]?.getD {}
+  (state.graph.adjacency[right]?.getD {}).all fun neighbor =>
+    !countsNeighbor function state classId neighbor ||
+      (if precolored function neighbor then leftFixed || neighbors.contains neighbor
+       else degree function state neighbor < capacity || neighbors.contains neighbor)
 
 def canCoalesce (context : AllocationContext) (function : XFunction)
     (state : ColoringState) (left right : Nat) : Bool :=
@@ -137,6 +161,7 @@ def canCoalesce (context : AllocationContext) (function : XFunction)
 
 def combineNodes (context : AllocationContext) (function : XFunction)
     (left right : Nat) (state : ColoringState) : ColoringState := Id.run do
+  let previous := state
   let mut state := state
   let neighbors := state.graph.adjacency[right]?.getD {}
   let mut graph := state.graph
@@ -162,7 +187,18 @@ def combineNodes (context : AllocationContext) (function : XFunction)
     coalesced := state.coalesced + 1 }
   state := enableMoves (neighbors.insert left) state
   let affected := (neighbors.insert left).insert right
-  state := refreshDegrees function affected state
+  let degrees := neighbors.foldl (fun degrees neighbor =>
+    if neighbor == left || neighbor == right then degrees else
+      let oldClass := nodeClass function previous.graph neighbor
+      let newClass := nodeClass function state.graph neighbor
+      let removedRight := if countsNeighbor function previous oldClass right then 1 else 0
+      let removedLeft := if (previous.graph.adjacency[neighbor]?.getD {}).contains left &&
+          countsNeighbor function previous oldClass left then 1 else 0
+      let addedLeft := if countsNeighbor function state newClass left then 1 else 0
+      degrees.set! neighbor (degree function previous neighbor - removedRight - removedLeft + addedLeft))
+      state.degrees
+  state := { state with degrees }
+  state := refreshDegrees function (setOfList [left, right]) state
   return refreshNodes context function affected state
 
 def coalesceMove (context : AllocationContext) (function : XFunction)
@@ -192,13 +228,13 @@ def colorWorklists (context : AllocationContext) (function : XFunction) :
     Nat → ColoringState → Except String ColoringState
   | 0, _ => .error "register coalescing exhausted its worklist bound"
   | fuel + 1, state => do
-      if let some index := state.simplify.toList.head? then
+      if let some index := state.simplify.min? then
         colorWorklists context function fuel (removeNode context function index state)
-      else if let some move := state.workMoves.toList.head? then
+      else if let some move := state.workMoves.min? then
         colorWorklists context function fuel (coalesceMove context function move state)
-      else if let some index := state.freeze.toList.head? then
+      else if let some index := state.freeze.min? then
         colorWorklists context function fuel (freezeMoves context function index state)
-      else if let some first := state.spill.toList.head? then
+      else if let some first := state.spill.min? then
         let index := state.spill.foldl (fun best candidate =>
           if cheaperSpill function state candidate best then candidate else best) first
         colorWorklists context function fuel
@@ -223,11 +259,13 @@ def initialColoring (context : AllocationContext) (function : XFunction)
           | _ => true
         if allowed left && allowed right then
           let move := state.moves.size
-          let nodeMoves := state.nodeMoves.set! left ((state.nodeMoves[left]?.getD {}).insert move)
+          let leftMoves := (state.nodeMoves[left]?.getD {}).insert move
+          let rightMoves := (state.nodeMoves[right]?.getD {}).insert move
+          let nodeMoves := state.nodeMoves.set! left leftMoves
           state := { state with
             moves := state.moves.push (left, right)
             workMoves := state.workMoves.insert move
-            nodeMoves := nodeMoves.set! right ((state.nodeMoves[right]?.getD {}).insert move) }
+            nodeMoves := nodeMoves.set! right rightMoves }
   let degrees := (List.range function.variables.size).toArray.map (uncachedDegree function state)
   state := { state with degrees }
   return refreshNodes context function active state

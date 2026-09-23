@@ -22,6 +22,7 @@ def main():
         [sys.executable, "tests/prototype/test_optimization.py"],
         [sys.executable, "tests/prototype/test_benchmarks.py"],
         [sys.executable, "tests/prototype/test_framework.py"],
+        [sys.executable, "tests/prototype/test_batch.py"],
         [sys.executable, "tests/allocator/test_interchange.py"],
         [sys.executable, "scripts/smoke_test.py"],
         [sys.executable, "scripts/generate_codecs.py", "--check"],

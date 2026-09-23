@@ -63,8 +63,14 @@ warm compilation time against pinned CompCert.
 
 O2 inlining exposes larger interference graphs. `ColoringState.degrees` caches
 active same-class neighbor counts; removal decrements affected neighbors and
-coalescing recomputes the changed neighborhood. This avoids rebuilding ordered
-neighbor sets for every Briggs/George test, worklist reclassification and spill
-candidate comparison. `testDegreeCache` compares cached counts against the
-uncached definition across coalescing, freezing and removal. All emitted
-allocations still pass the unchanged Lean allocation validator.
+coalescing adjusts their counts for the removed and inserted edges. Only the
+two merged nodes need a fresh adjacency scan. Briggs/George tests traverse
+existing adjacency sets without constructing filtered sets or their union;
+worklist selection uses the tree minimum directly. Move re-enabling traverses
+the existing move sets, retaining the same scheduling decisions. Graph updates
+read both entries before mutation so Lean can reuse uniquely owned arrays.
+
+`testDegreeCache` and synthetic sparse/dense graph checks compare cached counts
+against the uncached definition across coalescing, freezing and removal,
+including overlapping neighbors, mixed classes, fixed registers and stack
+locations. All emitted allocations still pass the unchanged Lean validator.

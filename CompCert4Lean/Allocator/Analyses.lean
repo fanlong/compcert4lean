@@ -115,14 +115,18 @@ def graphTouch (index : Nat) (graph : Interference) : Interference :=
 def graphEdge (left right : Nat) (graph : Interference) : Interference :=
   let graph := graphTouch right (graphTouch left graph)
   if left == right then graph else
-    let adjacency := graph.adjacency.set! left ((graph.adjacency[left]?.getD {}).insert right)
-    { graph with adjacency := adjacency.set! right ((graph.adjacency[right]?.getD {}).insert left) }
+    let leftSet := (graph.adjacency[left]?.getD {}).insert right
+    let rightSet := (graph.adjacency[right]?.getD {}).insert left
+    let adjacency := graph.adjacency.set! left leftSet
+    { graph with adjacency := adjacency.set! right rightSet }
 
 def graphPreference (left right : Nat) (graph : Interference) : Interference :=
   let graph := graphTouch right (graphTouch left graph)
   if left == right then graph else
-    let preferences := graph.preferences.set! left ((graph.preferences[left]?.getD {}).insert right)
-    { graph with preferences := preferences.set! right ((graph.preferences[right]?.getD {}).insert left) }
+    let leftSet := (graph.preferences[left]?.getD {}).insert right
+    let rightSet := (graph.preferences[right]?.getD {}).insert left
+    let preferences := graph.preferences.set! left leftSet
+    { graph with preferences := preferences.set! right rightSet }
 
 def graphLive (index : Nat) (live : IndexSet) (graph : Interference) : Interference :=
   live.foldl (fun graph other => graphEdge index other graph) (graphTouch index graph)
