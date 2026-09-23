@@ -475,10 +475,10 @@ def is_basic_block_head (entrypoint : positive)
     | [s] => if s = pc then true else false
     | _ :: _ :: _ => true
 
-def basic_block_map {A : Type} (entrypoint : positive)
+@[macro_inline] def basic_block_map {A : Type} (entrypoint : positive)
     (code : PTreeT A) (successors : A → List positive) : bbmap :=
-  fun pc => is_basic_block_head entrypoint
-    (make_predecessors code successors) pc
+  let preds := make_predecessors code successors
+  is_basic_block_head entrypoint preds
 
 def basic_block_list {A : Type} (bb : bbmap) (code : PTreeT A) : List positive :=
   PTree.fold (fun l pc _ => if bb pc then pc :: l else l) code []

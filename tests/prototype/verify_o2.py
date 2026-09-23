@@ -14,6 +14,8 @@ def main():
     folder = Path(tempfile.mkdtemp(prefix="o2-verification-", dir=BUILD))
     print(f"Artifacts: {folder}", flush=True)
     commands = [
+        ["lake", "build", "coreDiagnostics"],
+        ["timeout", "30", REPO / ".lake/build/bin/coreDiagnostics"],
         ["lake", "build", "allocatorTests"],
         [REPO / ".lake/build/bin/allocatorTests"],
         ["lake", "env", "lean", "--run", "tests/prototype/RuntimeHelpers.lean"],

@@ -14,6 +14,14 @@ example (entry : positive) (code : RTL.code) :
     Kildall.BBlock_solver.basic_block_map entry code RTL.successors_instr =
       Kildall.BBlock_solver.is_basic_block_head entry (Kildall.make_predecessors code RTL.successors_instr) := rfl
 
+theorem basic_block_map_preserves_classification {Instruction : Type}
+    (entry : positive) (code : PTree.t Instruction) (successors : Instruction → List positive) :
+    Kildall.BBlock_solver.basic_block_map entry code successors =
+      (fun node => Kildall.BBlock_solver.is_basic_block_head entry
+        (Kildall.make_predecessors code successors) node) := rfl
+
+#print axioms basic_block_map_preserves_classification
+
 def timed (name : String) (count : Nat) (action : Unit → Nat) : IO Nat := do
   let start ← IO.monoNanosNow
   let result ← IO.mkRef (action ())
@@ -24,7 +32,7 @@ def timed (name : String) (count : Nat) (action : Unit → Nat) : IO Nat := do
   return result
 
 def main : IO UInt32 := do
-  for count in [1000, 2000, 4000] do
+  for count in [1000, 2000, 4000, 40000] do
     let function := chain count
     match RTLtyping.type_function Prototype.optimizedCfg function with
     | .Error _ => throw (IO.userError "ill-typed reproducer")
