@@ -32,7 +32,7 @@ python3 scripts/guarded.py python3 scripts/small_tests.py --suite abi --suite pi
 python3 scripts/guarded.py python3 scripts/small_tests.py --test 'regression/volatile*'
 ```
 
-The target is Linux System V x86-64, O0, with the spill allocator and all
+The target is Linux System V x86-64, O0, with the iterated register coalescing allocator and all
 existing Lean compiler validators. Defaults are one case at a time and 300
 seconds per source compilation, assembly/link, and execution. Use `--jobs`
 (1–32), `--compile-timeout`, `--link-timeout`, and `--run-timeout` to override.

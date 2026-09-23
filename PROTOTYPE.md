@@ -91,7 +91,7 @@ The fixed profile is System V x86-64, optimization/inlining/debug disabled,
 non-PIC/non-PIE, and `-fno-common` by default. PIC and common symbols are explicit
 options; PIE remains unsupported. The same settings are used by the Lean
 driver, bridge, reference compiler, and assembler/linker where applicable.
-Optimization and general allocator improvements remain outside this task's scope.
+These O0 pass settings are independent of the optimized register allocator.
 
 ## Adapters and allocator
 
@@ -123,20 +123,25 @@ of the pinned extraction interfaces; it introduces no replacements for core
 definitions. The OCaml bridge and these adapters are executable integration
 code outside the compiler theorem boundary.
 
-The selected allocator is **spill**, adapted from the retained compiler audit's
-`SpillAllocator.lean`. The existing simple switch provider, block enumeration,
-and proven floating-point certificates are reused. Every allocation proposal
-passes Lean's original RTL typing and allocation checks. The smoke suite
-deliberately corrupts a proposal's stack size and requires validator rejection.
-The provider is intended for these simple-C programs; unsupported register
-requirements or assembly constructs produce diagnostics and retained artifacts.
+The selected allocator is **irc**, a deterministic Lean-native implementation
+of the CompCert target pipeline. It builds compact XTL indices, tracks target
+register classes and constraints, performs bounded worklist coloring and emits
+validator-checked LTL. Stack-backed reloads remain explicit for values that
+cannot be kept in a target register; diagnostic statistics are available to
+allocator tests. Reserved callee-save registers flow from the frontend through
+the optional `allocationContext` interchange field. The smoke suite deliberately
+corrupts a proposal's stack size and requires validator rejection.
 
-One localized allocator repair was needed: builtin register operands must be
-reloaded from spill slots before emitting a volatile store. That repair passed
-the three upstream tests and an additional volatile-double/math-library test
-within the allowed repair window. The CompCert RTL/LTL allocator fallback was
-therefore not triggered or built. There is no hidden fallback replacing Lean
-passes and no broader allocation redesign.
+`allocationContext` is optional in both v1 and v2. Its only field is `reserved`,
+an array of distinct canonical callee-save names: `RBX`, `RBP`, `R12`–`R15`.
+Absence means no reservations. The frontend normalizes repeated pragmas; Lean
+validates and echoes the context; the bridge compares it with its frontend
+snapshot before checking builtin placement and expanding assembly.
+
+See `CompCert4Lean/Allocator/README.md` for the upstream implementation checklist,
+algorithm details, focused tests and documented limits. The old spill provider
+and its exclusive helpers are removed; the original failure baseline is retained
+under `tests/small-tests-baseline/`.
 
 ## Verification and evidence
 
@@ -167,6 +172,9 @@ Additional reproducible checks:
 ```bash
 python3 scripts/guarded.py lake build
 python3 scripts/guarded.py lake env lean tests/prototype/Trust.lean
+python3 scripts/guarded.py lake build allocatorTests
+python3 scripts/guarded.py .lake/build/bin/allocatorTests
+python3 scripts/guarded.py python3 tests/allocator/test_interchange.py
 python3 scripts/guarded.py python3 scripts/smoke_test.py
 python3 scripts/guarded.py python3 tests/prototype/test_framework.py
 python3 scripts/guarded.py python3 scripts/small_tests.py
@@ -176,3 +184,5 @@ python3 scripts/generate_codecs.py --check
 See `tests/small-tests/SUITE.md` for selection, upstream checks, exclusions,
 reproducibility and the initial correctness baseline. The suite reports compiler
 failures without replacing Lean output with reference output.
+Current allocator validation and pinned-compiler measurements are recorded in
+`tests/allocator/ACCEPTANCE.md`.

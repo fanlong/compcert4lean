@@ -8,3 +8,7 @@ name = "CompCert4Lean"
 [[lean_exe]]
 name = "leanCompiler"
 root = "CompCert4Lean.Prototype.Main"
+
+[[lean_exe]]
+name = "allocatorTests"
+root = "tests.allocator.Main"

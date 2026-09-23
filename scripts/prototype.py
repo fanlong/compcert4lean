@@ -14,7 +14,7 @@ import time
 REPO = Path(__file__).resolve().parents[1]
 PIN = "7b1f02b09954b9b916eb2a91d283c9b5355bf172"
 SWITCH = "compcert-3.17"
-ALLOCATOR = "spill"
+ALLOCATOR = "irc"
 BUILD = REPO / ".lake" / "prototype"
 LEAN = REPO / ".lake" / "build" / "bin" / "leanCompiler"
 REFERENCE_FLAGS = ["-O0", "-fno-inline", "-fno-inline-functions-called-once",
@@ -115,6 +115,7 @@ def prepare(root):
     versions.update({"compcert_revision": PIN, "lean_revision": revision(REPO), "allocator": ALLOCATOR})
     versions["prototype_sha256"] = {str(path.relative_to(REPO)): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted([REPO / "lakefile.toml", *REPO.glob("CompCert4Lean/Prototype/*.lean"),
+                            *REPO.glob("CompCert4Lean/Allocator/*.lean"),
                             *REPO.glob("bridge/*.ml"), *REPO.glob("scripts/*.py")])}
     (BUILD / "versions.json").write_text(json.dumps(versions, indent=2) + "\n")
     return versions

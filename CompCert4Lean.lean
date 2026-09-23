@@ -8,6 +8,15 @@ root, so omitting a module would let a default `lake build` miss that module.
 -/
 
 import CompCert4Lean.Backend.Allocation
+import CompCert4Lean.Allocator.TargetConstraints
+import CompCert4Lean.Allocator.SplitRanges
+import CompCert4Lean.Allocator.XTL
+import CompCert4Lean.Allocator.Analyses
+import CompCert4Lean.Allocator.Coloring
+import CompCert4Lean.Allocator.Spilling
+import CompCert4Lean.Allocator.LTL
+import CompCert4Lean.Allocator.Allocator
+import CompCert4Lean.Prototype.AllocationReport
 import CompCert4Lean.Backend.Allocproof
 import CompCert4Lean.Backend.Asmgenproof0
 import CompCert4Lean.Backend.Bounds

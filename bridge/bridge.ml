@@ -1,5 +1,6 @@
 open Primitives
 open Codecs
+open Camlcoq
 
 let format_version = "compcert4lean-prototype-v2"
 let member name value = Yojson.Basic.Util.member name value
@@ -74,17 +75,202 @@ let configuration_json () =
           "common", `Bool !Clflags.option_fcommon;
           "symbols", `List (List.map snd (List.sort (fun (left, _) (right, _) -> compare left right) symbols))]
 
+let canonical_register_name = function
+  | Machregs.BX -> "RBX"
+  | Machregs.BP -> "RBP"
+  | Machregs.R12 -> "R12"
+  | Machregs.R13 -> "R13"
+  | Machregs.R14 -> "R14"
+  | Machregs.R15 -> "R15"
+  | _ -> failwith "reserved register is not a System V callee-save register"
+
+let allocation_context_json () =
+  `Assoc ["reserved", `List
+    (List.map (fun name -> `String name)
+      (List.sort_uniq compare (List.map canonical_register_name !CPragmas.reserved_registers)))]
+
 let source_json configuration (source : Csyntax.program) =
   `Assoc ["format", `String format_version;
           "target", `String "x86_64-linux-sysv-O0";
           "configuration", configuration;
+          "allocationContext", allocation_context_json ();
           "fresh", enc_pos (Camlcoq.first_unused_ident ());
           "definitions", enc_list (enc_pair enc_pos enc_CGlobdef) source.prog_defs;
           "public", enc_list enc_pos source.prog_public;
           "main", enc_pos source.prog_main;
           "composites", enc_list enc_Ctypes_composite_definition source.prog_types]
 
-let print_assembly configuration input output =
+let same_ireg left right = Asm.ireg_eq left right
+
+let supported_address_arg = function
+  | AST.BA (Asm.IR _) -> true
+  | AST.BA_addrstack _ | AST.BA_addrglobal _ -> true
+  | AST.BA_addptr (AST.BA (Asm.IR _), AST.BA_int _)
+  | AST.BA_addptr (AST.BA (Asm.IR _), AST.BA_long _) -> true
+  | _ -> false
+
+let address_mentions register = function
+  | AST.BA (Asm.IR candidate) -> same_ireg register candidate
+  | AST.BA_addptr (AST.BA (Asm.IR candidate), _) -> same_ireg register candidate
+  | _ -> false
+
+let address_is_exact register = function
+  | AST.BA (Asm.IR candidate) -> same_ireg register candidate
+  | _ -> false
+
+let rec supported_annotation_arg = function
+  | AST.BA (Asm.IR _) | AST.BA (Asm.FR _)
+  | AST.BA_int _ | AST.BA_long _ | AST.BA_float _ | AST.BA_single _
+  | AST.BA_loadstack _ | AST.BA_addrstack _
+  | AST.BA_loadglobal _ | AST.BA_addrglobal _ -> true
+  | AST.BA _ -> false
+  | AST.BA_splitlong (high, low) | AST.BA_addptr (high, low) ->
+      supported_annotation_arg high && supported_annotation_arg low
+
+let supported_vload_result chunk = function
+  | AST.BR (Asm.IR _) when (chunk = AST.Mbool || chunk = AST.Mint8signed ||
+      chunk = AST.Mint8unsigned || chunk = AST.Mint16signed ||
+      chunk = AST.Mint16unsigned || chunk = AST.Mint32 || chunk = AST.Mint64) -> true
+  | AST.BR (Asm.FR _) when (chunk = AST.Mfloat32 || chunk = AST.Mfloat64) -> true
+  | AST.BR_splitlong (AST.BR (Asm.IR _), AST.BR (Asm.IR _))
+      when chunk = AST.Mint64 -> true
+  | _ -> false
+
+let rec argument_registers = function
+  | AST.BA register -> [register]
+  | AST.BA_splitlong (left, right) | AST.BA_addptr (left, right) ->
+      argument_registers left @ argument_registers right
+  | _ -> []
+
+let rec result_registers = function
+  | AST.BR register -> [register]
+  | AST.BR_splitlong (left, right) -> result_registers left @ result_registers right
+  | AST.BR_none -> []
+
+let rec satisfies_constraints registers constraints =
+  match registers, constraints with
+  | _, [] | [], _ -> true
+  | register :: rest, constraint_ :: constraints ->
+      (match constraint_ with None -> true | Some expected -> register = Asm.preg_of expected) &&
+      satisfies_constraints rest constraints
+
+let supported_inline name args result =
+  let open AST in
+  let open Asm in
+  match name, args, result with
+  | ("__builtin_bswap" | "__builtin_bswap16" | "__builtin_bswap32" | "__builtin_bswap64"
+    | "__builtin_clz" | "__builtin_clzl" | "__builtin_clzll"
+    | "__builtin_ctz" | "__builtin_ctzl" | "__builtin_ctzll"
+    | "__builtin_read16_reversed" | "__builtin_read32_reversed"), [BA (IR _)], BR (IR _) -> true
+  | ("__builtin_clzll" | "__builtin_ctzll"),
+      [BA_splitlong (BA (IR _), BA (IR _))], BR (IR _) -> true
+  | "__builtin_bswap64", [BA_splitlong (BA (IR RAX), BA (IR RDX))],
+      BR_splitlong (BR (IR RDX), BR (IR RAX)) -> true
+  | ("__builtin_fsqrt" | "__builtin_sqrt"), [BA (FR _)], BR (FR _) -> true
+  | ("__builtin_fmadd" | "__builtin_fmsub" | "__builtin_fnmadd" | "__builtin_fnmsub"),
+      [BA (FR _); BA (FR _); BA (FR _)], BR (FR _) -> true
+  | "__builtin_negl", [BA_splitlong (BA (IR RDX), BA (IR RAX))],
+      BR_splitlong (BR (IR RDX), BR (IR RAX)) -> true
+  | ("__builtin_addl" | "__builtin_subl"),
+      [BA_splitlong (BA (IR RDX), BA (IR RAX)); BA_splitlong (BA (IR RCX), BA (IR RBX))],
+      BR_splitlong (BR (IR RDX), BR (IR RAX)) -> true
+  | "__builtin_mull", [BA (IR RAX); BA (IR RDX)], BR_splitlong (BR (IR RDX), BR (IR RAX)) -> true
+  | ("__builtin_write16_reversed" | "__builtin_write32_reversed"), [BA (IR _); BA (IR _)], _ -> true
+  | "__builtin_va_start", [BA (IR RDX)], _ -> true
+  | ("__builtin_membar" | "__builtin_nop" | "__builtin_unreachable"), [], _ -> true
+  | _ -> false
+
+let check_builtin function_name instruction_index variadic ef args result =
+  let fail message =
+    failwith (Printf.sprintf "function %s instruction %d: %s"
+      function_name instruction_index message) in
+  let require condition message = if not condition then fail message in
+  let results = result_registers result in
+  require (List.length (List.sort_uniq compare results) = List.length results)
+    "builtin results overlap";
+  let argument_constraints, result_constraints = Machregs.mregs_for_builtin ef in
+  require (satisfies_constraints (List.concat_map argument_registers args) argument_constraints &&
+           satisfies_constraints (result_registers result) result_constraints)
+    "builtin operands violate pinned x86 fixed-register placement";
+  match ef with
+  | AST.EF_memcpy (size, _) ->
+      let size = Z.to_int size in
+      require (size >= 0) "memcpy has a negative size";
+      begin match args, result with
+      | [destination; source], AST.BR_none ->
+          require (supported_address_arg destination && supported_address_arg source)
+            "memcpy requires two address operands";
+          if size <= 32 then begin
+            require (not (address_mentions Asm.RCX destination ||
+              address_mentions Asm.RCX source))
+              "small memcpy address overlaps RCX scratch"
+          end else begin
+            require (address_is_exact Asm.RSI source || not (address_mentions Asm.RSI destination))
+              "large memcpy source setup overwrites the destination address"
+          end
+      | _ -> fail "memcpy must have two operands and no result"
+      end
+  | AST.EF_vload chunk ->
+      begin match args with
+      | [address] ->
+          require (supported_address_arg address) "vload requires an address operand";
+          require (supported_vload_result chunk result) "vload has an incompatible result"
+      | _ -> fail "vload must have one operand"
+      end
+  | AST.EF_vstore chunk ->
+      begin match args, result with
+      | [address; value], AST.BR_none ->
+          require (supported_address_arg address) "vstore requires an address operand";
+          begin match value with
+          | AST.BA (Asm.IR _) ->
+              require (supported_vload_result chunk (AST.BR (Asm.IR Asm.RAX)))
+                "vstore integer value has an unsupported chunk"
+          | AST.BA (Asm.FR _) ->
+              require (chunk = AST.Mfloat32 || chunk = AST.Mfloat64)
+                "vstore floating-point value has an integer chunk"
+          | AST.BA_splitlong (AST.BA (Asm.IR _), AST.BA (Asm.IR _)) ->
+              require (chunk = AST.Mint64) "split vstore requires Mint64"
+          | _ -> fail "vstore value must be a register"
+          end
+      | _ -> fail "vstore must have an address and register value"
+      end
+  | AST.EF_builtin (name, _) when name = "__builtin_va_start" ->
+      require variadic "va_start appears in a non-variadic function";
+      begin match args, result with
+      | [AST.BA (Asm.IR register)], AST.BR_none ->
+          require (same_ireg register Asm.RDX) "va_start requires RDX and clobbers RAX"
+      | _ -> fail "va_start requires one integer address and no result"
+      end
+  | AST.EF_annot _ | AST.EF_debug _ ->
+      require (List.for_all supported_annotation_arg args)
+        "annotation/debug operand is not printable"
+  | AST.EF_annot_val _ ->
+      require (match args, result with
+        | [AST.BA (Asm.IR _)], AST.BR (Asm.IR _)
+        | [AST.BA (Asm.FR _)], AST.BR (Asm.FR _) -> true
+        | _ -> false) "annotation value requires matching register classes"
+  | AST.EF_builtin (name, _) ->
+      require (supported_inline name args result) ("unsupported operands for " ^ name)
+  | AST.EF_inline_asm _ ->
+      require (List.for_all supported_annotation_arg args &&
+        List.for_all (function Asm.IR _ | Asm.FR _ -> true | _ -> false) (result_registers result))
+        "unsupported inline assembly operand"
+  | _ -> fail "external call is not an expandable builtin"
+
+let check_program_compatibility (program : Asm.program) =
+  List.iter (fun (identifier, definition) ->
+    match definition with
+    | AST.Gfun (AST.Internal function_definition) ->
+        List.iteri (fun instruction_index instruction ->
+          match instruction with
+          | Asm.Pbuiltin (external_function, arguments, result) ->
+              check_builtin (Camlcoq.extern_atom identifier) (instruction_index + 1)
+                (function_definition.Asm.fn_sig.AST.sig_cc.AST.cc_vararg <> None)
+                external_function arguments result
+          | _ -> ()) function_definition.Asm.fn_code
+    | AST.Gfun (AST.External _) | AST.Gvar _ -> ()) program.AST.prog_defs
+
+let print_assembly configuration allocation_context input output =
   let data = Yojson.Basic.from_file input in
   let version = text "format" data in
   if (version <> format_version && version <> "compcert4lean-prototype-v1") ||
@@ -96,7 +282,18 @@ let print_assembly configuration input output =
          not !Clflags.option_fpic && not !Clflags.option_fpie && not !Clflags.option_fcommon in
   if not compatible then
     failwith "inconsistent assembly relocation configuration";
+  let context_compatible =
+    match member "allocationContext" data with
+    | `Null -> allocation_context = `Assoc ["reserved", `List []]
+    | `Assoc [("reserved", `List registers)] ->
+        let canonical = List.sort_uniq compare registers in
+        List.length canonical = List.length registers &&
+        Yojson.Basic.equal (`Assoc ["reserved", `List canonical]) allocation_context
+    | _ -> false in
+  if not context_compatible then
+    failwith "inconsistent reserved-register allocation context";
   let program = dec_AProgram (member "program" data) in
+  check_program_compatibility program;
   match Asmexpand.expand_program program with
   | Errors.Error errors ->
       Format.eprintf "%a@." Driveraux.print_error errors;
@@ -120,15 +317,60 @@ let run () =
   let source = Frontend.parse_c_file input preprocessed in
   Diagnostics.raise_on_errors ();
   let configuration = configuration_json () in
+  let allocation_context = allocation_context_json () in
   Yojson.Basic.to_file (text "csyntax" request) (source_json configuration source);
   respond ["phase", `String "frontend"];
   let request = Yojson.Basic.from_string (read_line ()) in
   if text "operation" request <> "print" then failwith "unknown bridge operation";
-  print_assembly configuration (text "input" request) (text "output" request);
+  print_assembly configuration allocation_context (text "input" request) (text "output" request);
   respond ["phase", `String "assembly"]
 
+let test_builtin_placement () =
+  let open AST in
+  let open Asm in
+  let signature = { sig_args = []; sig_res = Xvoid; sig_cc = cc_default } in
+  let reg register = BA (IR register) in
+  let stack = BA_addrstack (Integers.Ptrofs.repr Z.zero) in
+  let offset register = BA_addptr (reg register, BA_long (Integers.Int64.repr (Z.of_uint 8))) in
+  let memcpy size = EF_memcpy (Z.of_uint size, Z.of_uint 8) in
+  let va_start = EF_builtin ("__builtin_va_start", signature) in
+  let cases = [
+    true, true, memcpy 16, [reg RAX; reg RDX], BR_none;
+    true, true, memcpy 16, [stack; reg RAX], BR_none;
+    true, true, memcpy 16, [reg RAX; stack], BR_none;
+    true, true, memcpy 16, [stack; stack], BR_none;
+    false, true, memcpy 16, [reg RCX; reg RDX], BR_none;
+    true, true, memcpy 128, [reg RDI; reg RSI], BR_none;
+    true, true, memcpy 128, [stack; reg RDI], BR_none;
+    true, true, memcpy 128, [reg RDI; stack], BR_none;
+    true, true, memcpy 128, [offset RDI; offset RSI], BR_none;
+    false, true, memcpy 128, [reg RSI; stack], BR_none;
+    false, true, memcpy 128, [reg RDI; reg RDI], BR_none;
+    true, true, va_start, [reg RDX], BR_none;
+    false, true, va_start, [reg RAX], BR_none;
+    false, false, va_start, [reg RDX], BR_none;
+    false, true, EF_vstore Many64, [reg RAX; reg RDX], BR_none;
+    false, true, EF_vload Mint32, [BA_int Integers.Int.zero], BR (IR RAX);
+    false, true, EF_builtin ("__builtin_sqrt", signature), [reg RAX], BR (IR RAX);
+    true, true, EF_builtin ("__builtin_sqrt", signature), [BA (FR XMM0)], BR (FR XMM1);
+    true, true, EF_annot (P.of_int 1, "test", List.init 8 (fun _ -> Tint)),
+      List.init 8 (fun _ -> BA_loadstack (Mint32, Integers.Ptrofs.zero)), BR_none
+  ] in
+  List.iteri (fun index (expected, variadic, ef, args, result) ->
+    let accepted =
+      try check_builtin "placement_fixture" (index + 1) variadic ef args result; true
+      with Failure message ->
+        if not (String.starts_with ~prefix:"function placement_fixture instruction " message)
+        then failwith "missing placement diagnostic context";
+        false in
+    if accepted <> expected then failwith (Printf.sprintf "builtin placement case %d" index)) cases;
+  print_endline "builtin placement tests: PASS"
+
 let () =
-  try run () with
+  try
+    if Array.to_list Sys.argv = [Sys.argv.(0); "--test-builtin-placement"]
+    then test_builtin_placement () else run ()
+  with
   | Assert_failure (file, line, _) ->
       Printf.eprintf "CompCert bridge: unsupported construct for assembly expansion/printing (%s:%d); retain asm.json\n" file line;
       exit 1

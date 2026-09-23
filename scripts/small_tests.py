@@ -255,7 +255,7 @@ def write_report(folder, summary):
                                             for verdict in ["pass", "fail", "timeout", "unavailable"]} for pipeline in PIPELINES}
     summary["complete"] = "finished" in summary and len(summary["cases"]) == len(summary["selected"])
     summary["success"] = summary["complete"] and all(case["verdict"] == "pass" for case in summary["cases"])
-    lines = ["# Small-test correctness report", "", "Target: Linux System V x86-64, O0, spill allocator.", "",
+    lines = ["# Small-test correctness report", "", "Target: Linux System V x86-64, O0, iterated register coalescing allocator.", "",
              "Run complete: " + str(summary["complete"]) + ".", "",
              "Counts: " + ", ".join(f"{name}={count}" for name, count in summary["counts"].items()), "",
              "Pipeline counts: " + json.dumps(summary["pipeline_counts"], sort_keys=True), "",

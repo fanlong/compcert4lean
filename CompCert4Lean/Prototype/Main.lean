@@ -1,9 +1,12 @@
 import CompCert4Lean.Prototype.Codecs
 import CompCert4Lean.Prototype.Services
+import CompCert4Lean.Prototype.AllocationReport
 
 namespace CompCert4Lean.Prototype
 
 open Lean Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Allocator
+open CompCert4Lean.X86.Machregs
 
 def formatVersion := "compcert4lean-prototype-v2"
 def codecFuel := 4096
@@ -14,6 +17,37 @@ def exactFields (value : Json) (names : List String) : CodecResult Unit := do
   let object ← value.getObj?
   unless object.size == names.length && names.all (fun name => (value.getObjVal? name).isOk) do
     throw "invalid configuration fields"
+
+def rocqString (value : String) : RocqString :=
+  value.toUTF8.toList.foldr .String .EmptyString
+
+def canonicalReservedRegister (name : String) : Option mreg :=
+  match name with
+  | "RBX" => some .BX
+  | "RBP" => some .BP
+  | "R12" => some .R12
+  | "R13" => some .R13
+  | "R14" => some .R14
+  | "R15" => some .R15
+  | _ => none
+
+def decodeReservedRegister (value : Json) : CodecResult mreg := do
+  let name ← value.getStr?
+  let some register := canonicalReservedRegister name |
+    throw "reserved register must use a canonical callee-save x86 name"
+  unless (register_by_name (rocqString name)).isSome do
+    throw "unknown reserved register"
+  return register
+
+def decodeAllocationContext (value : Json) : CodecResult AllocationContext := do
+  match value.getObjVal? "allocationContext" with
+  | .error _ => return .empty
+  | .ok context =>
+      exactFields context ["reserved"]
+      let names ← decList decodeReservedRegister (← getField context "reserved")
+      let result : AllocationContext := { reserved := names }
+      unless reservedWellFormed result do throw "duplicate reserved register"
+      return result
 
 def decodeLinkage (value : Json) : CodecResult Config.SymbolLinkageFacts := do
   exactFields value ["storage", "definedHere", "size"]
@@ -74,27 +108,44 @@ def encodeTarget (input : Json) (target : X86.Asm.program) : CodecResult Json :=
   let configuration := match input.getObjVal? "configuration" with
     | .ok config => [("configuration", config)]
     | .error _ => []
+  let allocationContext := match input.getObjVal? "allocationContext" with
+    | .ok context => [("allocationContext", context)]
+    | .error _ => []
   return Json.mkObj ([("format", ← getField input "format"), ("target", .str "x86_64-linux-sysv-O0"),
-    ("allocator", .str "spill"), ("program", ← enc_AProgram codecFuel target)] ++ configuration)
+    ("allocator", .str "irc"), ("program", ← enc_AProgram codecFuel target)] ++
+    configuration ++ allocationContext)
 
 def compileJson (value : Json) : CodecResult Json := do
   let (source, fresh) ← decodeSource value
   let configuration ← decodeConfiguration value
+  let allocationContext ← decodeAllocationContext value
   match Driver.Compiler.transf_c_program configuration selectionOracle inlineCfg
-      (spillAllocator configuration) enumeration fresh source with
+      (Allocator.regalloc configuration allocationContext) enumeration fresh source with
   | .Error errors => throw ("Lean compiler: " ++ errorText errors)
   | .OK target => encodeTarget value target
 
 def run (args : List String) : IO UInt32 := do
   match args with
+  | ["--allocator-report", input, output] =>
+      let text ← IO.FS.readFile input
+      let result := do
+        let input ← Json.parse text
+        let (source, fresh) ← decodeSource input
+        allocationReport (← decodeConfiguration input) (← decodeAllocationContext input) source fresh
+      match result with
+      | .error message => (← IO.getStderr).putStrLn message; return 1
+      | .ok report => IO.FS.writeFile output (report.compress ++ "\n"); return 0
   | ["--test-invalid-allocation", input] =>
       let text ← IO.FS.readFile input
       let result := do
-        let (source, fresh) ← Json.parse text >>= decodeSource
+        let input ← Json.parse text
+        let (source, fresh) ← decodeSource input
+        let configuration ← decodeConfiguration input
+        let allocationContext ← decodeAllocationContext input
         let corrupt : Backend.Allocation.RegallocOracle := fun function => do
-          let proposed ← spillAllocator cfg function
+          let proposed ← Allocator.regalloc configuration allocationContext function
           .OK { proposed with fn_stacksize := ZArith.BinInt.Z.add function.fn_stacksize (z 1) }
-        match Driver.Compiler.transf_c_program cfg selectionOracle inlineCfg corrupt enumeration fresh source with
+        match Driver.Compiler.transf_c_program configuration selectionOracle inlineCfg corrupt enumeration fresh source with
         | .Error errors => throw (errorText errors)
         | .OK _ => pure ()
       match result with
