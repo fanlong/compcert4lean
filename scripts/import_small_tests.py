@@ -35,6 +35,10 @@ def manifest(root):
                            ("TESTS_DIFF", "interpreter"), ("EXTRAS", "compile")]:
         for name in make_variable(regression, variable):
             active.add(name)
+            if name == "alias":
+                exclusions.append({"id": "regression/alias", "paths": ["regression/alias.c"],
+                                   "reason": "O0 expectation depends on non-portable wild pointer arithmetic; deferred pending explicit optimization-sensitive test policy"})
+                continue
             expected = next(("regression/Results/" + name + suffix for suffix in
                              ["-x86-64", "-x86", "-64", ""]
                              if (regression / "Results" / (name + suffix)).is_file()), None)

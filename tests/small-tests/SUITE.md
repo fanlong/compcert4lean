@@ -8,14 +8,16 @@ scripts, headers, data, generators, and expected outputs are unchanged.
 `scripts/import_small_tests.py CHECKOUT` reproduces the import and manifest
 from a checkout of that revision using committed Git blobs.
 
-`manifest.json` specifies 140 applicable cases and eight exclusion entries.
+`manifest.json` specifies 139 applicable cases and nine exclusion entries.
 Every upstream C file is a case input or explicitly excluded. Exclusions cover
 four other-architecture builtin files, `funct1` (a frontend-only negative
-argument-count test), the Rocq export group, and the two mixed struct ABI modes
-that upstream `abi/Runtest` excludes on x86-64. Upstream condition scripts are
-preserved: the compiled `funptr2` runs here, and `packedstruct1` only excludes
-ARM. Supplemental regressions include omitted runnable sources with supplied
-expected results and standalone initializer fragments compiled to assembly.
+argument-count test), the Rocq export group, the two mixed struct ABI modes
+that upstream `abi/Runtest` excludes on x86-64, and `regression/alias`, whose
+O0 expectation depends on non-portable wild pointer arithmetic. Upstream
+condition scripts are preserved: the compiled `funptr2` runs here, and
+`packedstruct1` only excludes ARM. Supplemental regressions include omitted
+runnable sources with supplied expected results and standalone initializer
+fragments compiled to assembly.
 `stringlit` and `charlit` retain their upstream “temporarily removed” annotation;
 their actual outcomes are reported, with no automatic success allowance.
 

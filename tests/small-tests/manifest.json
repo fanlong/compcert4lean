@@ -1143,24 +1143,6 @@
       "condition": null
     },
     {
-      "id": "regression/alias",
-      "group": "regression",
-      "sources": [
-        "regression/alias.c"
-      ],
-      "check": {
-        "kind": "stdout",
-        "expected": "regression/Results/alias"
-      },
-      "flags": [
-        "-fall",
-        "-DARCH_x86",
-        "-DMODEL_64"
-      ],
-      "upstream": "regression/Makefile:TESTS_COMP",
-      "condition": null
-    },
-    {
       "id": "regression/aligned",
       "group": "regression",
       "sources": [
@@ -2418,6 +2400,13 @@
     }
   ],
   "exclusions": [
+    {
+      "id": "regression/alias",
+      "paths": [
+        "regression/alias.c"
+      ],
+      "reason": "O0 expectation depends on non-portable wild pointer arithmetic; deferred pending explicit optimization-sensitive test policy"
+    },
     {
       "id": "regression/builtins-aarch64",
       "paths": [
