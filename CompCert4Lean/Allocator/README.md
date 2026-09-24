@@ -41,13 +41,13 @@ algorithm and pre-expansion compatibility checker remain executable unverified
 components; acceptance by the existing validator is required. O0 compiler
 passes stay disabled independently of allocation optimization.
 
-Focused checks, all within the shared 26 GiB compute domain:
+Focused checks from the repository root:
 
 ```sh
-python3 scripts/guarded.py lake build allocatorTests
-python3 scripts/guarded.py .lake/build/bin/allocatorTests
-python3 scripts/guarded.py python3 tests/allocator/test_interchange.py
-python3 scripts/guarded.py python3 tests/allocator/compare.py
+lake build allocatorTests
+.lake/build/bin/allocatorTests
+python3 tests/allocator/test_interchange.py
+python3 tests/allocator/compare.py
 ```
 
 The native executable validates every positive RTL fixture with the unchanged

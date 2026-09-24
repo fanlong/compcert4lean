@@ -39,7 +39,7 @@ artifacts do not claim a complete Lean invariant proof for that cache or a new
 end-to-end compiler correctness theorem. Existing allocation validators remain
 in place.
 
-Run the following inside the project's required aggregate compute guard:
+Run the following from the repository root:
 
 ```bash
 lake build

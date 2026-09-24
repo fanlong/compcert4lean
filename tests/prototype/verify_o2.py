@@ -1,4 +1,4 @@
-"""Run the focused runtime, preservation and trust checks inside the shared guard."""
+"""Run the focused runtime, preservation and trust checks."""
 
 import json
 from pathlib import Path

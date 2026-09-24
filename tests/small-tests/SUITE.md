@@ -23,21 +23,20 @@ their actual outcomes are reported, with no automatic success allowance.
 
 ## Run
 
-From `compcert4lean`, use the existing shared 26 GiB compute wrapper:
+Run from the repository root with the prerequisites in `PROTOTYPE.md`:
 
 ```sh
 python3 scripts/small_tests.py --list
-python3 scripts/guarded.py python3 scripts/small_tests.py
-python3 scripts/guarded.py python3 scripts/small_tests.py --suite abi --suite pic
-python3 scripts/guarded.py python3 scripts/small_tests.py --test 'regression/volatile*'
+python3 scripts/small_tests.py
+python3 scripts/small_tests.py --suite abi --suite pic
+python3 scripts/small_tests.py --test 'regression/volatile*'
 ```
 
 The target is Linux System V x86-64, O0, with the iterated register coalescing allocator and all
 existing Lean compiler validators. Defaults are one case at a time and 300
 seconds per source compilation, assembly/link, and execution. Use `--jobs`
 (1–32), `--compile-timeout`, `--link-timeout`, and `--run-timeout` to override.
-Concurrent cases share the one compute domain; there are no per-case memory
-caps. `--artifacts` selects a fresh output directory. `--compcert-root` selects
+`--artifacts` selects a fresh output directory. `--compcert-root` selects
 the prepared CompCert 3.17 checkout at the compiler pin documented in
 `PROTOTYPE.md`. The executable and bridge are prepared once per suite.
 
@@ -77,15 +76,8 @@ listed separately. Frontend/Lean rejection, assembly/link errors, failed
 execution and wrong output remain failures. Missing reference/harness results
 are unavailable, and never provide a fallback implementation. Any selected
 applicable failure, timeout or unavailable result returns nonzero. A failure
-baseline is expected to guide subsequent compiler repair, which is outside
-this framework task.
+baseline can guide subsequent compiler repair.
 
-The initial complete run and reproducible failure evidence are retained under
-`../small-tests-baseline/` after verification; full working artifacts remain
-at the recorded `.lake/prototype/small-tests-*` location.
-`scripts/record_small_tests_baseline.py RUN DESTINATION` records a completed run
-with its readable/JSON reports, a deterministic compressed archive of all
-command logs and ABI fixtures, failure interchange/assembly, and a SHA-256
-inventory. Optional repeated `--verification` directories include guarded build,
-smoke, framework and containment evidence. The archive stores paths relative to
-the run, so the evidence remains readable after moving or cleaning `.lake/`.
+Historical run reports and archived failure investigations live in the separate
+`compcert-lean-meta` repository under `investigations/compiler-validation/`.
+New runs write their artifacts under `.lake/prototype/small-tests-*` by default.

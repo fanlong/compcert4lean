@@ -23,28 +23,18 @@ The bridge links upstream CompCert components; their licensing terms remain
 those in the pinned checkout's `LICENSE`. The vendored tests retain their
 separate upstream GPL-2.0-or-later license.
 
-In this meta-repository, use the existing shared **26 GiB** compute domain:
+Install the pinned JSON dependency and build from the repository root:
 
 ```bash
-cd compcert4lean
-python3 scripts/guarded.py --install-yojson
-python3 scripts/guarded.py lake build
-python3 scripts/guarded.py python3 scripts/smoke_test.py
+opam install --switch=compcert-3.17 yojson.2.2.2
+lake build
+python3 scripts/smoke_test.py
 ```
 
-The dependency setup is incremental. It installs only pinned yojson and its
-dependencies, retaining opam's own package sandbox. Normal guarded commands
-run under bubblewrap with a read-only host, writable Lean repository, masked
-credentials, inaccessible systemd control sockets, and no network. The
-supervisor uses the existing project lifecycle lock and memory service,
-verifies kernel limits before admitting work, records telemetry/journals, and
-waits for descendants to drain. No retired proof-ledger operation is invoked.
-It requires the surrounding meta-repository's generic containment module,
-user systemd manager, cgroup v2, and bubblewrap. Commands inside that admitted
-domain can invoke the ordinary compiler commands below directly; otherwise
-prefix them with `python3 scripts/guarded.py`. The wrapper starts in the Lean
-repository. Direct scripts also work outside the repository with absolute
-script/source/output paths in an appropriately contained Linux environment.
+The dependency setup is incremental. Scripts also work outside the repository
+with absolute script/source/output paths. Project-specific agent execution and
+compute containment are maintained in the separate `compcert-lean-meta`
+repository; its contributors should follow that repository's execution rules.
 
 `compile_c.py` and `smoke_test.py` check versions and incrementally build the
 native `leanCompiler` Lake target and OCaml bridge before compiling C. Initial
@@ -176,8 +166,8 @@ snapshot before checking builtin placement and expanding assembly.
 
 See `CompCert4Lean/Allocator/README.md` for the upstream implementation checklist,
 algorithm details, focused tests and documented limits. The old spill provider
-and its exclusive helpers are removed; the original failure baseline is retained
-under `tests/small-tests-baseline/`.
+and its exclusive helpers are removed. Historical validation reports are retained
+in `compcert-lean-meta` under `investigations/compiler-validation/`.
 
 ## Verification and evidence
 
@@ -201,27 +191,26 @@ The native driver uses the existing pure top-level compiler; successful smoke
 tests validate this prototype's exercised paths. They do not establish complete
 C codec/provider coverage or prove the frontend, serialization, native runtime,
 assembly expansion, or linker. Existing compiler definitions, theorem
-statements, and proofs remain unchanged. The proof ledgers are untouched.
+statements, and proofs remain unchanged.
 
 Additional reproducible checks:
 
 ```bash
-python3 scripts/guarded.py lake build
-python3 scripts/guarded.py lake env lean tests/prototype/Trust.lean
-python3 scripts/guarded.py lake build allocatorTests
-python3 scripts/guarded.py .lake/build/bin/allocatorTests
-python3 scripts/guarded.py python3 tests/allocator/test_interchange.py
-python3 scripts/guarded.py python3 scripts/smoke_test.py
-python3 scripts/guarded.py python3 tests/prototype/test_framework.py
-python3 scripts/guarded.py python3 scripts/small_tests.py
+lake build
+lake env lean tests/prototype/Trust.lean
+lake build allocatorTests
+.lake/build/bin/allocatorTests
+python3 tests/allocator/test_interchange.py
+python3 scripts/smoke_test.py
+python3 tests/prototype/test_framework.py
+python3 scripts/small_tests.py
 python3 scripts/generate_codecs.py --check
 ```
 
 See `tests/small-tests/SUITE.md` for selection, upstream checks, exclusions,
 reproducibility and the initial correctness baseline. The suite reports compiler
 failures without replacing Lean output with reference output.
-Current allocator validation and pinned-compiler measurements are recorded in
-`tests/allocator/ACCEPTANCE.md`.
+See `tests/README.md` for focused regression commands.
 
 ## Optimized correctness and benchmarks
 
@@ -237,9 +226,9 @@ of the vendored LICENSE; SPASS uses `problem.dfg` for timing and retains
 `small_problem.dfg` in correctness. Sources and expected output bytes are unchanged.
 
 ```bash
-python3 scripts/guarded.py python3 tests/prototype/verify_o2.py
-python3 scripts/guarded.py python3 scripts/small_tests.py --optimization O2 --jobs 4
-python3 scripts/guarded.py python3 scripts/benchmarks.py --jobs 4
+python3 tests/prototype/verify_o2.py
+python3 scripts/small_tests.py --optimization O2 --jobs 4
+python3 scripts/benchmarks.py --jobs 4
 ```
 
 Allocation reports and malformed-allocation checks run the selected optimized
