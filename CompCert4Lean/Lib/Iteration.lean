@@ -243,3 +243,71 @@ theorem iterate_prop :
   exact hiter
 
 end CompCert4Lean.Lib.Iteration.PrimIter
+
+namespace CompCert4Lean.Lib.Iteration.PrimIter
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+@[specialize] def iterNat (State Result : Type) (step : State → Sum Result State) :
+    Nat → State → Option Result
+  | 0, _ => none
+  | fuel + 1, state =>
+      match step state with
+      | .inl result => some result
+      | .inr next => iterNat State Result step fuel next
+
+def iterNative (State Result : Type) (step : State → Sum Result State)
+    (fuel : positive) (state : State) : Option Result :=
+  iterNat State Result step (posToNat fuel - 1) state
+
+theorem iterNative_eq (State Result : Type) (step : State → Sum Result State)
+    (fuel : positive) (state : State) :
+    iter State Result step fuel state = iterNative State Result step fuel state := by
+  induction fuel using PArith.BinPos.Pos.peano_ind generalizing state with
+  | a =>
+      unfold iter
+      rw [CompCert4Lean.Lib.Wfsimpl.unroll_Fix]
+      simp [iter_step, CompCert4Lean.Lib.Coqlib.peq,
+        PArith.BinPos.Pos.eq_dec, iterNative, posToNat, iterNat]
+  | f fuel inductionHypothesis =>
+      unfold iter
+      rw [CompCert4Lean.Lib.Wfsimpl.unroll_Fix]
+      unfold iter_step
+      cases equal : CompCert4Lean.Lib.Coqlib.peq (PArith.BinPos.Pos.succ fuel) xH with
+      | left equality =>
+          have numeric := congrArg posToNat equality
+          rw [PArith.BinPos.Pos.posToNat_succ] at numeric
+          have positive := posToNat_positive fuel
+          simp only [posToNat] at numeric
+          omega
+      | right different =>
+          simp only [iterNative, PArith.BinPos.Pos.posToNat_succ, Nat.add_sub_cancel]
+          have positive := posToNat_positive fuel
+          have count : posToNat fuel = (posToNat fuel - 1) + 1 := by omega
+          rw [count, iterNat]
+          cases step state with
+          | inl result => rfl
+          | inr next =>
+              have predecessor : PArith.BinPos.Pos.pred (PArith.BinPos.Pos.succ fuel) = fuel := by
+                cases fuel with
+                | xH => rfl
+                | xO higher => rfl
+                | xI higher => exact PArith.BinPos.Pos.pred_double_succ higher
+              change iter State Result step (PArith.BinPos.Pos.pred
+                (PArith.BinPos.Pos.succ fuel)) next = _
+              rw [predecessor]
+              exact inductionHypothesis next
+
+@[csimp] theorem iter_eq_iterNative : @iter = @iterNative := by
+  funext State Result step fuel state
+  exact iterNative_eq State Result step fuel state
+
+def iterateNative (State Result : Type) (step : State → Sum Result State)
+    (state : State) : Option Result :=
+  iterNative State Result step num_iterations state
+
+@[csimp] theorem iterate_eq_iterateNative : @iterate = @iterateNative := by
+  funext State Result step state
+  exact iterNative_eq State Result step num_iterations state
+
+end CompCert4Lean.Lib.Iteration.PrimIter

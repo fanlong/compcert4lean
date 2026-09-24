@@ -35,13 +35,17 @@ structure XFunction where
   blocks : Array XBlock
   entry : Nat
 
-def variableInfo (function : XFunction) (index : Nat) : Variable :=
+@[inline] def variableInfo (function : XFunction) (index : Nat) : Variable :=
   function.variables[index]?.getD { type := .Tint }
 
 structure BuildState where
   variables : Array Variable
+  fixedLocations : Option (Array (loc × Nat)) := none
 
 abbrev BuildM := StateT BuildState (Except String)
+
+def fixedMachineLocations : Array (loc × Nat) :=
+  (X86.Machregs.all_mregs.zipIdx.map fun (register, index) => (loc.R register, index)).toArray
 
 def fresh (type : typ) : BuildM Nat := do
   let state ← get
@@ -51,12 +55,23 @@ def fresh (type : typ) : BuildM Nat := do
 
 def fixed (location : loc) : BuildM Nat := do
   let state ← get
-  for index in [:state.variables.size] do
-    if let some previous := (state.variables[index]?.getD { type := .Tint }).fixed then
-      if locEqual previous location then return index
+  let locations := match state.fixedLocations with
+    | some locations => locations
+    | none => Id.run do
+        let mut locations := #[]
+        for index in [:state.variables.size] do
+          if let some previous := (state.variables[index]?.getD { type := .Tint }).fixed then
+            locations := locations.push (previous, index)
+        return locations
+  for (previous, index) in locations do
+    if locEqual previous location then
+      if state.fixedLocations.isNone then
+        set { state with fixedLocations := some locations }
+      return index
   let index := state.variables.size
-  set { state with variables := state.variables.push {
-    type := Loc.type location, fixed := some location } }
+  set { state with
+    variables := state.variables.push { type := Loc.type location, fixed := some location }
+    fixedLocations := some (locations.push (location, index)) }
   return index
 
 def moveList (sources destinations : List Nat) : Except String (List XInstruction) := do
@@ -206,7 +221,8 @@ def buildXTL (configuration : Config.CompilerConfig) (source : RTL.function)
     return blocks.push { source := entryNode
                          instructions := code ++ [.branch source.fn_entrypoint]
                          successors := [entry] }
-  let (blocks, state) ← action.run { variables := ranges.variables }
+  let (blocks, state) ← action.run {
+    variables := ranges.variables, fixedLocations := some fixedMachineLocations }
   return { signature := source.fn_sig, stacksize := source.fn_stacksize
            variables := state.variables, blocks, entry := blocks.size - 1 }
 

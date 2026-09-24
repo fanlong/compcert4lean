@@ -121,7 +121,7 @@ def setOfList (values : List Nat) : IndexSet :=
   values.foldl (fun result value => result.insert value) {}
 
 def setUnion (left right : IndexSet) : IndexSet :=
-  right.foldl (fun result value => result.insert value) left
+  left.union right
 
 def setRemove (values : List Nat) (set : IndexSet) : IndexSet :=
   values.foldl (fun result value => result.erase value) set

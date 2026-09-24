@@ -1,5 +1,6 @@
 """Runtime wiring shared by the compiler command and smoke runner."""
 
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
@@ -86,15 +87,18 @@ def prepare(root):
     if revision(root) != PIN:
         raise CompileError(f"CompCert must be pinned at {PIN}")
     BUILD.mkdir(parents=True, exist_ok=True)
-    versions = {}
-    for name, command in {
+    version_commands = {
         "lean": ["lake", "env", "lean", "--version"],
         "ocaml": ["opam", "exec", "--switch=" + SWITCH, "--", "ocamlopt", "-version"],
         "yojson": ["opam", "exec", "--switch=" + SWITCH, "--", "ocamlfind", "query", "-format", "%v", "yojson"],
         "gcc": ["gcc", "--version"],
         "compcert": [root / "ccomp", "-version"],
-    }.items():
-        versions[name] = execute(command, cwd=REPO, env=tool_environment(root)).decode().strip()
+    }
+    with ThreadPoolExecutor(max_workers=len(version_commands)) as executor:
+        outputs = executor.map(
+            lambda command: execute(command, cwd=REPO, env=tool_environment(root)).decode().strip(),
+            version_commands.values())
+        versions = dict(zip(version_commands, outputs))
     if "4.33.0" not in versions["lean"] or versions["ocaml"] != "4.14.2" or versions["yojson"] != "2.2.2":
         raise CompileError("expected Lean 4.33.0, OCaml 4.14.2 and yojson 2.2.2: " + repr(versions))
     execute(["lake", "build", "leanCompiler"], cwd=REPO, log=BUILD / "lean-build")

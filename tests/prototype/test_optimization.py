@@ -71,7 +71,10 @@ class OptimizationTests(unittest.TestCase):
                      lambda value: value["configuration"]["functions"].pop(),
                      lambda value: value["configuration"]["functions"].append(value["configuration"]["functions"][0]),
                      lambda value: value["configuration"]["functions"][0][1].update(inline="always"),
-                     lambda value: value["configuration"]["functions"][0][1].update(static="true")]
+                     lambda value: value["configuration"]["functions"][0][1].update(static="true"),
+                     lambda value: value["configuration"]["symbols"].append(value["configuration"]["symbols"][0]),
+                     lambda value: value["configuration"]["symbols"][0].__setitem__(0, value["fresh"]),
+                     lambda value: value["configuration"]["functions"][0].__setitem__(0, value["fresh"])]
         for mutate in mutations:
             modified = copy.deepcopy(data)
             mutate(modified)
@@ -79,6 +82,15 @@ class OptimizationTests(unittest.TestCase):
             path.write_text(json.dumps(modified))
             with self.assertRaises(CompileError):
                 execute([LEAN, path, self.folder / "target.json"], timeout=30)
+        expected = json.loads((self.folder / "O2" / "asm.json").read_text())["program"]
+        reordered = copy.deepcopy(data)
+        for field in ["functions", "symbols"]:
+            reordered["configuration"][field].reverse()
+        path = self.folder / "reordered.json"
+        path.write_text(json.dumps(reordered))
+        target = self.folder / "reordered-target.json"
+        execute([LEAN, path, target], timeout=30)
+        self.assertEqual(json.loads(target.read_text())["program"], expected)
 
     def test_optimized_printer_snapshot(self):
         folder = self.folder / "printer-profile"

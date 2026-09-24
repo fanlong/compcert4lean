@@ -57,6 +57,130 @@ def plt (x y : positive) :
   else
     .right (show ¬ Plt x y from h)
 
+def compareDirect : positive → positive → comparison
+  | .xH, .xH => .Eq
+  | .xH, _ => .Lt
+  | _, .xH => .Gt
+  | .xI left, .xI right => compareDirect left right
+  | .xO left, .xO right => compareDirect left right
+  | .xI left, .xO right =>
+      match compareDirect left right with
+      | .Eq => .Gt
+      | order => order
+  | .xO left, .xI right =>
+      match compareDirect left right with
+      | .Eq => .Lt
+      | order => order
+
+theorem compareDirect_spec (left right : positive) :
+    match compareDirect left right with
+    | .Lt => posToNat left < posToNat right
+    | .Eq => posToNat left = posToNat right
+    | .Gt => posToNat right < posToNat left := by
+  induction left generalizing right with
+  | xH =>
+      cases right with
+      | xH => rfl
+      | xI right =>
+          have positive := posToNat_positive right
+          simp only [compareDirect, posToNat]
+          omega
+      | xO right =>
+          have positive := posToNat_positive right
+          simp only [compareDirect, posToNat]
+          omega
+  | xI left inductionHypothesis =>
+      cases right with
+      | xH =>
+          have positive := posToNat_positive left
+          simp only [compareDirect, posToNat]
+          omega
+      | xI right =>
+          have result := inductionHypothesis right
+          simp only [compareDirect, posToNat]
+          cases order : compareDirect left right <;> simp_all <;> omega
+      | xO right =>
+          have result := inductionHypothesis right
+          simp only [compareDirect, posToNat]
+          cases order : compareDirect left right <;> simp_all <;> omega
+  | xO left inductionHypothesis =>
+      cases right with
+      | xH =>
+          have positive := posToNat_positive left
+          simp only [compareDirect, posToNat]
+          omega
+      | xI right =>
+          have result := inductionHypothesis right
+          simp only [compareDirect, posToNat]
+          cases order : compareDirect left right <;> simp_all <;> omega
+      | xO right =>
+          have result := inductionHypothesis right
+          simp only [compareDirect, posToNat]
+          cases order : compareDirect left right <;> simp_all <;> omega
+
+def compareWith (fallback : comparison) : positive → positive → comparison
+  | .xH, .xH => fallback
+  | .xH, _ => .Lt
+  | _, .xH => .Gt
+  | .xI left, .xI right => compareWith fallback left right
+  | .xO left, .xO right => compareWith fallback left right
+  | .xI left, .xO right => compareWith .Gt left right
+  | .xO left, .xI right => compareWith .Lt left right
+
+theorem compareWith_eq (fallback : comparison) (left right : positive) :
+    compareWith fallback left right =
+      match compareDirect left right with
+      | .Eq => fallback
+      | order => order := by
+  induction left generalizing right fallback with
+  | xH => cases right <;> rfl
+  | xI left inductionHypothesis =>
+      cases right with
+      | xH => rfl
+      | xI right => simp only [compareWith, compareDirect, inductionHypothesis]
+      | xO right =>
+          simp only [compareWith, compareDirect, inductionHypothesis]
+          cases compareDirect left right <;> rfl
+  | xO left inductionHypothesis =>
+      cases right with
+      | xH => rfl
+      | xO right => simp only [compareWith, compareDirect, inductionHypothesis]
+      | xI right =>
+          simp only [compareWith, compareDirect, inductionHypothesis]
+          cases compareDirect left right <;> rfl
+
+def compareTR (left right : positive) : comparison := compareWith .Eq left right
+
+@[csimp] theorem compareDirect_eq_compareTR : compareDirect = compareTR := by
+  funext left right
+  unfold compareTR
+  rw [compareWith_eq]
+  cases compareDirect left right <;> rfl
+
+def pltDirect (left right : positive) :
+    Support.Sumbool (CompCert4Lean.Lib.Coqlib.Plt left right)
+      (¬ CompCert4Lean.Lib.Coqlib.Plt left right) := by
+  have specification := compareDirect_spec left right
+  cases order : compareDirect left right with
+  | Lt =>
+      rw [order] at specification
+      exact .left specification
+  | Eq =>
+      rw [order] at specification
+      refine .right ?_
+      change ¬ posToNat left < posToNat right
+      omega
+  | Gt =>
+      rw [order] at specification
+      refine .right ?_
+      change ¬ posToNat left < posToNat right
+      omega
+
+@[csimp] theorem plt_eq_pltDirect : CompCert4Lean.Lib.Coqlib.plt = pltDirect := by
+  funext left right
+  cases CompCert4Lean.Lib.Coqlib.plt left right <;>
+    cases pltDirect left right <;> first | rfl | contradiction
+
 def Ple (x y : positive) : Prop :=
   PArith.BinPos.Pos.le x y
 

@@ -5,6 +5,82 @@ namespace AllocatorTests
 open CompCert4Lean CompCert4Lean.Allocator Common.AST Backend Backend.Registers Backend.Locations
 open Foundation.Numbers.Rocq.Coq Lib.Maps Lib.Integers X86.Machregs X86.Op
 
+theorem mem_insertFold (values : List Nat) (initial : IndexSet) (element : Nat) :
+    element ∈ values.foldl (fun result value => result.insert value) initial ↔
+      element ∈ initial ∨ element ∈ values := by
+  induction values generalizing initial with
+  | nil => simp
+  | cons value values induction =>
+      simp only [List.foldl_cons, induction, Std.TreeSet.mem_insert, List.mem_cons,
+        Std.LawfulEqOrd.compare_eq_iff_eq]
+      constructor
+      · rintro ((same | present) | member)
+        · exact Or.inr (Or.inl same.symm)
+        · exact Or.inl present
+        · exact Or.inr (Or.inr member)
+      · rintro (present | same | member)
+        · exact Or.inl (Or.inr present)
+        · exact Or.inl (Or.inl same.symm)
+        · exact Or.inr member
+
+theorem setUnion_preserves_order (left right : IndexSet) :
+    (setUnion left right).toList =
+      (right.foldl (fun result value => result.insert value) left).toList := by
+  apply Std.TreeSet.equiv_iff_toList_eq.mp
+  apply Std.TreeSet.Equiv.of_forall_mem_iff
+  intro element
+  simp [setUnion, Std.TreeSet.mem_union_iff, Std.TreeSet.foldl_eq_foldl_toList,
+    mem_insertFold]
+
+theorem setChange_preserves_liveness (left right : IndexSet) :
+    (left.size != right.size || left.toList != right.toList) =
+      (left.toList != right.toList) := by
+  by_cases same : left.toList = right.toList
+  · have sizes := congrArg List.length same
+    simp only [Std.TreeSet.length_toList] at sizes
+    simp [same, sizes]
+  · simp [same]
+
+def testFixedLocationLookup : Except String Unit := do
+  let mut locations := X86.Machregs.all_mregs.map loc.R
+  for slot in [slot.Local, slot.Incoming, slot.Outgoing] do
+    for offset in [-16, 0, 8, 64] do
+      for type in [typ.Tint, typ.Tlong, typ.Tsingle, typ.Tfloat, typ.Tany32, typ.Tany64] do
+        locations := locations ++ [.S slot (zOfInt offset) type]
+  for count in [0, 1, 32, 1024] do
+    let repeated := loc.S .Incoming (zOfInt 8) .Tlong
+    let duplicate : Variable := { type := .Tlong, fixed := some repeated }
+    let variables := (Array.replicate count { type := .Tint }).push duplicate |>.push duplicate
+    let action : BuildM Unit := do
+      for _ in [:3] do
+        for location in repeated :: locations do
+          let before ← get
+          let expected := (List.range before.variables.size).find? fun index =>
+            match (before.variables[index]?.getD { type := .Tint }).fixed with
+            | some previous => locEqual previous location
+            | none => false
+          let actual ← fixed location
+          unless actual == expected.getD before.variables.size do
+            throw "fixed-location lookup changed the earliest matching index"
+          let after ← get
+          let expectedSize := before.variables.size + if expected.isSome then 0 else 1
+          unless after.variables.size == expectedSize do
+            throw "fixed-location lookup changed variable creation"
+          match (after.variables[actual]?.getD { type := .Tint }).fixed with
+          | some previous =>
+              unless locEqual previous location do
+                throw "fixed-location lookup returned the wrong location"
+          | none => throw "fixed-location lookup returned a pseudo-register"
+        let _ ← fresh .Tfloat
+        let _ ← fresh .Tint
+    let _ ← action.run { variables }
+    let machineVariables : Array Variable := X86.Machregs.all_mregs.toArray.map fun register =>
+      { type := X86.Machregs.mreg_type register, fixed := some (.R register) }
+    let _ ← action.run {
+      variables := machineVariables ++ Array.replicate count { type := .Tint }
+      fixedLocations := some fixedMachineLocations }
+  return ()
+
 def positiveOf (value : Nat) : positive := PArith.BinPos.Pos.of_nat value
 def number (value : Nat) := ZArith.BinInt.Z.of_nat value
 def text (value : String) : Foundation.RocqString.Rocq.Coq.Strings.String.string :=
@@ -249,22 +325,107 @@ def checkDegrees (function : XFunction) (state : ColoringState) : Except String 
     require (hasPendingMoves state index == !(pendingMoves state index).isEmpty)
       "pending-move predicate changed"
 
-def checkCoalescingCriteria (function : XFunction) (state : ColoringState) : Except String Unit := do
+def checkCoalescingCriteria (function : XFunction) (state : ColoringState)
+    (context : AllocationContext := {}) : Except String Unit := do
   for left in state.graph.present.toList do
     for right in state.graph.present.toList do
-      let capacity := nodeCapacity {} function state left
+      let capacity := nodeCapacity context function state left
       let leftAdjacent := adjacent function state left
       let rightAdjacent := adjacent function state right
       let high := (setUnion leftAdjacent rightAdjacent).foldl (fun count neighbor =>
         let adjustment := if leftAdjacent.contains neighbor && rightAdjacent.contains neighbor then 1 else 0
         if precolored function neighbor || degree function state neighbor - adjustment >= capacity
           then count + 1 else count) 0
-      require (briggs {} function state left right == (high < capacity)) "Briggs criterion changed"
+      require (briggs context function state left right == (high < capacity)) "Briggs criterion changed"
       let conservative := rightAdjacent.toList.all fun neighbor =>
         let edge := (state.graph.adjacency[left]?.getD {}).contains neighbor
         if precolored function neighbor then precolored function left || edge
         else degree function state neighbor < capacity || edge
-      require (george {} function state left right == conservative) "George criterion changed"
+      require (george context function state left right == conservative) "George criterion changed"
+
+def enableMovesReference (indices : IndexSet) (state : ColoringState) : ColoringState :=
+  indices.foldl (fun state index =>
+    (state.nodeMoves[index]?.getD {}).foldl (fun state move =>
+      if state.activeMoves.contains move then
+        { state with activeMoves := state.activeMoves.erase move, workMoves := state.workMoves.insert move }
+      else state) state) state
+
+def combineNodesReference (context : AllocationContext) (function : XFunction)
+    (left right : Nat) (state : ColoringState) : ColoringState := Id.run do
+  let previous := state
+  let mut state := state
+  let neighbors := state.graph.adjacency[right]?.getD {}
+  let mut graph := state.graph
+  for neighbor in neighbors.toList do
+    graph := { graph with adjacency := graph.adjacency.set! neighbor ((graph.adjacency[neighbor]?.getD {}).erase right) }
+    if neighbor != left then graph := graphEdge left neighbor graph
+  for neighbor in (graph.preferences[right]?.getD {}).toList do
+    graph := { graph with preferences := graph.preferences.set! neighbor ((graph.preferences[neighbor]?.getD {}).erase right) }
+    if neighbor != left then graph := graphPreference left neighbor graph
+  let leftCost := graph.costs[left]?.getD {}
+  let rightCost := graph.costs[right]?.getD {}
+  graph := { graph with costs := graph.costs.set! left {
+    amount := leftCost.amount + rightCost.amount
+    accesses := leftCost.accesses + rightCost.accesses
+    unspillable := leftCost.unspillable || rightCost.unspillable
+    stackOnly := leftCost.stackOnly || rightCost.stackOnly } }
+  let combinedMoves := setUnion (state.nodeMoves[left]?.getD {}) (state.nodeMoves[right]?.getD {})
+  state := { state with
+    graph
+    parents := state.parents.set! right left
+    active := state.active.erase right
+    nodeMoves := state.nodeMoves.set! left combinedMoves
+    coalesced := state.coalesced + 1 }
+  state := enableMovesReference (neighbors.insert left) state
+  let affected := (neighbors.insert left).insert right
+  let degrees := neighbors.foldl (fun degrees neighbor =>
+    if neighbor == left || neighbor == right then degrees else
+      let oldClass := nodeClass function previous.graph neighbor
+      let newClass := nodeClass function state.graph neighbor
+      let removedRight := if countsNeighbor function previous oldClass right then 1 else 0
+      let removedLeft := if (previous.graph.adjacency[neighbor]?.getD {}).contains left &&
+          countsNeighbor function previous oldClass left then 1 else 0
+      let addedLeft := if countsNeighbor function state newClass left then 1 else 0
+      degrees.set! neighbor (degree function previous neighbor - removedRight - removedLeft + addedLeft))
+      state.degrees
+  state := { state with degrees }
+  let degrees := (setOfList [left, right]).foldl (fun degrees index =>
+    degrees.set! index (uncachedDegree function state index)) state.degrees
+  state := { state with degrees }
+  return refreshNodes context function affected state
+
+def coloringStateKey (state : ColoringState) :=
+  (state.graph.adjacency.map (fun indices => indices.toList), state.graph.preferences.map (fun indices => indices.toList),
+   state.graph.costs.map (fun cost => (cost.amount, cost.accesses, cost.unspillable, cost.stackOnly)),
+   state.graph.present.toList, state.parents, state.active.toList, state.simplify.toList,
+   state.freeze.toList, state.spill.toList, state.moves, state.nodeMoves.map (fun indices => indices.toList),
+   state.workMoves.toList, state.activeMoves.toList, state.stack, state.coalesced, state.degrees)
+
+def checkCombine (context : AllocationContext) (function : XFunction)
+    (left right : Nat) (state : ColoringState) : Except String Unit := do
+  require (coloringStateKey (combineNodes context function left right state) ==
+      coloringStateKey (combineNodesReference context function left right state))
+    "coalescing ownership rewrite changed state"
+
+def testMoveActivation : Except String Unit := do
+  let setWhere := fun (count : Nat) (predicate : Nat → Bool) =>
+    (List.range count).foldl (fun result index =>
+      if predicate index then result.insert index else result) ({} : IndexSet)
+  for nodeCount in [0, 1, 4, 17, 65] do
+    for moveCount in [0, 1, 4, 19, 64, 127] do
+      for seed in [:12] do
+        let nodeMoves := (List.range nodeCount).toArray.map fun index =>
+          setWhere moveCount (fun move => (move * 13 + index * 7 + seed) % 17 < seed + 1)
+        let state : ColoringState := {
+          graph := { adjacency := #[], preferences := #[], costs := #[] }
+          parents := #[], active := {}, nodeMoves
+          activeMoves := setWhere (moveCount + 3) (fun move => move % (seed + 1) == 0)
+          workMoves := setWhere (moveCount + 3) (fun move => (move + seed) % 3 == 0) }
+        for indices in [{}, setWhere (nodeCount + 2) (fun _ => true),
+            setWhere (nodeCount + 2) (fun index => index % 3 == seed % 3)] do
+          require (coloringStateKey (enableMoves indices state) ==
+              coloringStateKey (enableMovesReference indices state))
+            "move reactivation changed state"
 
 def testCoalescingDegrees : Except String Unit := do
   for seed in [:12] do
@@ -289,11 +450,15 @@ def testCoalescingDegrees : Except String Unit := do
     let mut state := initialColoring {} function graph
     checkDegrees function state
     checkCoalescingCriteria function state
+    for left in [0, 1, 2, 5, 17, 27] do
+      for right in [0, 1, 2, 5, 17, 27] do
+        checkCombine {} function left right state
     for fixed in [0, 1] do
       if let some right := state.active.toList.find? fun right =>
           registerNode function right &&
           nodeClass function state.graph fixed == nodeClass function state.graph right &&
           !(state.graph.adjacency[fixed]?.getD {}).contains right then
+        checkCombine {} function fixed right state
         state := combineNodes {} function fixed right state
         checkDegrees function state
     for _ in [:variables.size] do
@@ -302,20 +467,51 @@ def testCoalescingDegrees : Except String Unit := do
           left != right && nodeClass function state.graph left == nodeClass function state.graph right &&
             !(state.graph.adjacency[left]?.getD {}).contains right
         if let some right := partner then
+          checkCombine {} function left right state
           state := combineNodes {} function left right state
         else state := removeNode {} function left (freezeMoves {} function left state)
         checkDegrees function state
       else break
     require state.active.isEmpty "synthetic degree fixture did not drain"
 
+def testCoalescingThresholds : Except String Unit := do
+  for density in [0, 1, 4, 8, 12, 16, 17] do
+    let variables := (List.range 64).toArray.map fun index =>
+      ({ type := if index % 3 == 1 then .Tfloat else .Tint
+         fixed := if index == 0 then some (.R .AX)
+           else if index == 1 then some (.R .X0)
+           else if index == 2 then some (.S .Local (number 0) .Tint) else none } : Variable)
+    let function : XFunction := {
+      signature := sign [], stacksize := number 0, variables, blocks := #[], entry := 0 }
+    let mut graph : Interference := {
+      adjacency := Array.replicate variables.size {}
+      preferences := Array.replicate variables.size {}
+      costs := (List.range variables.size).toArray.map fun index =>
+        { amount := index + 1, stackOnly := index > 2 && index % 11 == 0 } }
+    for left in [:variables.size] do
+      graph := graphTouch left graph
+      for right in [:left] do
+        if (left * 19 + right * 13) % 17 < density then
+          graph := graphEdge left right graph
+    let state := initialColoring {} function graph
+    checkCoalescingCriteria function state
+    checkCoalescingCriteria function state { reserved := integerRemaining }
+    let active := state.active.filter (fun index => index % 5 != density % 5)
+    let state := { state with active, degrees := #[] }
+    let degrees := (List.range variables.size).toArray.map (uncachedDegree function state)
+    checkCoalescingCriteria function { state with degrees }
+
 def tests : Except String (List (String × AllocationStats)) := do
+  testFixedLocationLookup
   testBasic
   let results ← testPressure
   testCallsAndConstraints
   testBuiltins
   testReloadReuse
+  testMoveActivation
   testDegreeCache
   testCoalescingDegrees
+  testCoalescingThresholds
   return results
 
 end AllocatorTests

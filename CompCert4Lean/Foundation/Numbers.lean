@@ -174,6 +174,36 @@ theorem posOfNat_posToNat (p : positive) : posOfNat (posToNat p) = p := by
   apply posToNat_injective
   simpa using posToNat_posOfNat (posToNat_positive p)
 
+def posOfNatDirect (number : Nat) : positive :=
+  if small : number < 2 then .xH
+  else
+    let higher := posOfNatDirect (number / 2)
+    if number % 2 = 1 then .xI higher else .xO higher
+termination_by number
+decreasing_by exact Nat.div_lt_self (by omega) (by omega)
+
+theorem posToNat_posOfNatDirect (number : Nat) (positive : 0 < number) :
+    posToNat (posOfNatDirect number) = number := by
+  induction number using Nat.strongRecOn with
+  | ind number inductionHypothesis =>
+      rw [posOfNatDirect]
+      split
+      next small => simp only [posToNat]; omega
+      next large =>
+        have quotientPositive : 0 < number / 2 := Nat.div_pos (by omega) (by omega)
+        have quotientSmaller : number / 2 < number := Nat.div_lt_self (by omega) (by omega)
+        have quotient := inductionHypothesis (number / 2) quotientSmaller quotientPositive
+        have remainder := Nat.mod_lt number (by omega : 0 < 2)
+        split <;> simp only [posToNat, quotient] <;> omega
+
+@[csimp] theorem posOfNat_eq_posOfNatDirect : posOfNat = posOfNatDirect := by
+  funext number
+  cases number with
+  | zero => rw [posOfNatDirect]; rfl
+  | succ number =>
+      apply posToNat_injective
+      rw [posToNat_posOfNat (by omega), posToNat_posOfNatDirect _ (by omega)]
+
 private def comparisonOfNat (a b : Nat) : comparison :=
   if a < b then .Lt else if a = b then .Eq else .Gt
 

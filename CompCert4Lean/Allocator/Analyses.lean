@@ -39,6 +39,11 @@ structure Liveness where
   before : Array IndexSet
   after : Array IndexSet
 
+@[inline] def sameIndexSet (left right : IndexSet) : Bool :=
+  withPtrEq left right
+    (fun _ => left.size == right.size && left.toList == right.toList)
+    (by intro same; subst right; simp)
+
 def livenessWorklist (function : XFunction) : Nat → List Nat → IndexSet → Liveness →
     Except String Liveness
   | 0, _, _, _ => .error "liveness exhausted its worklist bound"
@@ -48,7 +53,8 @@ def livenessWorklist (function : XFunction) : Nat → List Nat → IndexSet → 
       let after := block.successors.foldl
         (fun result successor => setUnion result (state.before[successor]?.getD {})) {}
       let before := block.instructions.foldr (liveBefore function) after
-      let changed := before.toList != (state.before[index]?.getD {}).toList
+      let previous := state.before[index]?.getD {}
+      let changed := !sameIndexSet before previous
       let state := { before := state.before.set! index before, after := state.after.set! index after }
       let queued := queued.erase index
       let (pending, queued) := if changed then
@@ -115,10 +121,14 @@ def graphTouch (index : Nat) (graph : Interference) : Interference :=
 def graphEdge (left right : Nat) (graph : Interference) : Interference :=
   let graph := graphTouch right (graphTouch left graph)
   if left == right then graph else
-    let leftSet := (graph.adjacency[left]?.getD {}).insert right
-    let rightSet := (graph.adjacency[right]?.getD {}).insert left
-    let adjacency := graph.adjacency.set! left leftSet
-    { graph with adjacency := adjacency.set! right rightSet }
+    let ⟨adjacency, preferences, costs, present⟩ := graph
+    let adjacency := if left < adjacency.size && right < adjacency.size then
+        (adjacency.modify left (·.insert right)).modify right (·.insert left)
+      else
+        let leftSet := (adjacency[left]?.getD {}).insert right
+        let rightSet := (adjacency[right]?.getD {}).insert left
+        (adjacency.set! left leftSet).set! right rightSet
+    { adjacency, preferences, costs, present }
 
 def graphPreference (left right : Nat) (graph : Interference) : Interference :=
   let graph := graphTouch right (graphTouch left graph)
@@ -135,7 +145,8 @@ def graphDestroyed (registers : List mreg) (live : IndexSet) (graph : Interferen
   registers.foldl (fun graph register => graphLive (machineIndex register) live graph) graph
 
 def graphPairwise (indices : List Nat) (graph : Interference) : Interference :=
-  indices.foldl (fun graph index => graphLive index (setOfList indices) graph) graph
+  let live := setOfList indices
+  indices.foldl (fun graph index => graphLive index live graph) graph
 
 def charge (indices : List Nat) (amount accesses : Nat) (unspillable stackOnly : Bool)
     (graph : Interference) : Interference :=

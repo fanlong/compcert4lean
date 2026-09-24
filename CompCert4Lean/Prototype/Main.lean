@@ -74,6 +74,12 @@ def decodeOptimization (value : Json) : CodecResult Bool := do
     | _ => throw "unsupported optimization profile"
   else return false
 
+def indexIdentifiers {α : Type} (entries : List (positive × α)) :
+    Option (Lib.Maps.PTree.tree α) :=
+  entries.foldlM (fun index (identifier, entry) =>
+    if (Lib.Maps.PTree.get identifier index).isSome then none
+    else some (Lib.Maps.PTree.set identifier entry index)) (Lib.Maps.PTree.empty α)
+
 def decodeInlining (value : Json) : CodecResult Backend.Inlining.InliningConfig := do
   if (← (← getField value "format").getStr?) != formatVersion then return inlineCfg
   let enabled ← decodeOptimization value
@@ -87,15 +93,15 @@ def decodeInlining (value : Json) : CodecResult Backend.Inlining.InliningConfig 
       | _ => throw "invalid inline status"
     let isStatic ← (← getField entry "static").getBool?
     return (status, isStatic))) (← getField (← getField value "configuration") "functions")
-  let identifiers := functions.map Prod.fst
-  unless identifiers.eraseDups.length == identifiers.length do throw "duplicate function metadata"
-  unless identifiers.all (fun identifier => posToNat identifier < posToNat fresh) do
+  let some index := indexIdentifiers functions | throw "duplicate function metadata"
+  let fresh := posToNat fresh
+  unless functions.all (fun entry => posToNat entry.1 < fresh) do
     throw "function metadata exceeds fresh identifier boundary"
   return { enabled, functionsCalledOnce := enabled
            inlineStatus := fun identifier =>
-             ((functions.find? (fun pair => pair.1 == identifier)).map (fun pair => pair.2.1)).getD .noSpecifier
+             ((Lib.Maps.PTree.get identifier index).map Prod.fst).getD .noSpecifier
            isStatic := fun identifier =>
-             ((functions.find? (fun pair => pair.1 == identifier)).map (fun pair => pair.2.2)).getD false }
+             ((Lib.Maps.PTree.get identifier index).map Prod.snd).getD false }
 
 def decodeConfiguration (value : Json) : CodecResult Config.CompilerConfig := do
   let version ← (← getField value "format").getStr?
@@ -115,16 +121,15 @@ def decodeConfiguration (value : Json) : CodecResult Config.CompilerConfig := do
   if pie then throw "PIE is not supported by this profile"
   let common ← (← getField config "common").getBool?
   let symbols ← decList (decPair (dec_pos codecFuel) decodeLinkage) (← getField config "symbols")
-  let identifiers := symbols.map Prod.fst
-  unless identifiers.eraseDups.length == identifiers.length do throw "duplicate symbol linkage"
-  let fresh ← dec_pos codecFuel (← getField value "fresh")
-  unless identifiers.all (fun identifier => PArith.BinPos.Pos.to_nat identifier < PArith.BinPos.Pos.to_nat fresh) do
+  let some index := indexIdentifiers symbols | throw "duplicate symbol linkage"
+  let fresh := posToNat (← dec_pos codecFuel (← getField value "fresh"))
+  unless symbols.all (fun entry => posToNat entry.1 < fresh) do
     throw "symbol linkage exceeds fresh identifier boundary"
   let relocation : Config.RelocationContext :=
     { pic := pic
       pie := pie
       common := common
-      facts := fun identifier => (symbols.find? (fun pair => pair.1 == identifier)).map Prod.snd }
+      facts := fun identifier => Lib.Maps.PTree.get identifier index }
   return { base with relocation := relocation }
 
 def decodeSource (value : Json) : CodecResult (Cfrontend.Csyntax.program × Cfrontend.SimplExpr.FreshIdentContext) := do
@@ -139,7 +144,10 @@ def decodeSource (value : Json) : CodecResult (Cfrontend.Csyntax.program × Cfro
       (← getField (← getField value "configuration") "functions")
     let functions := definitions.filterMap (fun (identifier, definition) => match definition with
       | .Gfun _ => some identifier | _ => none)
-    unless metadata.length == functions.length && metadata.all (fun pair => functions.contains pair.1) do
+    let functionIndex := functions.foldl (fun index identifier =>
+      Lib.Maps.PTree.set identifier () index) (Lib.Maps.PTree.empty Unit)
+    unless metadata.length == functions.length &&
+        metadata.all (fun pair => (Lib.Maps.PTree.get pair.1 functionIndex).isSome) do
       throw "function metadata does not match source definitions"
   let publicSymbols ← decList (dec_pos codecFuel) (← getField value "public")
   let mainIdent ← dec_pos codecFuel (← getField value "main")
