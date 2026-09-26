@@ -133,13 +133,24 @@ def graphEdge (left right : Nat) (graph : Interference) : Interference :=
 def graphPreference (left right : Nat) (graph : Interference) : Interference :=
   let graph := graphTouch right (graphTouch left graph)
   if left == right then graph else
-    let leftSet := (graph.preferences[left]?.getD {}).insert right
-    let rightSet := (graph.preferences[right]?.getD {}).insert left
-    let preferences := graph.preferences.set! left leftSet
-    { graph with preferences := preferences.set! right rightSet }
+    let ⟨adjacency, preferences, costs, present⟩ := graph
+    let preferences := (preferences.modify left (·.insert right)).modify right (·.insert left)
+    { adjacency, preferences, costs, present }
+
+def graphEdgeFromTouched (left right : Nat) (graph : Interference) : Interference :=
+  let graph := graphTouch right graph
+  if left == right then graph else
+    let ⟨adjacency, preferences, costs, present⟩ := graph
+    let adjacency := if left < adjacency.size && right < adjacency.size then
+        (adjacency.modify left (·.insert right)).modify right (·.insert left)
+      else
+        let leftSet := (adjacency[left]?.getD {}).insert right
+        let rightSet := (adjacency[right]?.getD {}).insert left
+        (adjacency.set! left leftSet).set! right rightSet
+    { adjacency, preferences, costs, present }
 
 def graphLive (index : Nat) (live : IndexSet) (graph : Interference) : Interference :=
-  live.foldl (fun graph other => graphEdge index other graph) (graphTouch index graph)
+  live.foldl (fun graph other => graphEdgeFromTouched index other graph) (graphTouch index graph)
 
 def graphDestroyed (registers : List mreg) (live : IndexSet) (graph : Interference) : Interference :=
   registers.foldl (fun graph register => graphLive (machineIndex register) live graph) graph

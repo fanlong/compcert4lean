@@ -45,7 +45,9 @@ class FrameworkTests(unittest.TestCase):
         first = self.source("first.c", "static int value=2; static int local(void){return value;} int global=5; int read(void){return local();}")
         second = self.source("second.c", "static int value=3; static int local(void){return value;} extern int global; int read(void); int main(void){return read()+local()+global-10;}")
         output = self.folder / "multi"
-        self.compile(first, second, "-o", output)
+        artifacts = self.compile(first, second, "-o", output)
+        self.assertTrue((artifacts / "bridge-server-protocol.jsonl").is_file())
+        self.assertGreaterEqual((artifacts / "bridge-server-protocol.jsonl").read_text().count('"phase": "frontend"'), 2)
         execute([output], timeout=10)
         obj = self.folder / "first.o"
         self.compile(first, "-c", "-o", obj)

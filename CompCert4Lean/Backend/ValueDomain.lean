@@ -7661,3 +7661,273 @@ theorem mmatch_inj : mmatch_injStatement := by
     exact Or.inl (by simpa only [add_zero] using allowed)
 
 end CompCert4Lean.Backend.ValueDomain
+
+/-! Proven intersection-only runtime join. -/
+
+namespace CompCert4Lean.Lib.Maps.PTree
+
+theorem map_filter1_none_go {A B : Type} (m : tree' A) :
+    map_filter1.go (fun _ => (none : Option B)) m = .Empty := by
+  induction m <;> simp_all [map_filter1.go]
+
+theorem map_filter1_none {A B : Type} (m : tree A) :
+    map_filter1 (fun _ => (none : Option B)) m = .Empty := by
+  cases m <;> simp [map_filter1, map_filter1_none_go]
+
+def intersectWith {A B C : Type} (f : A → B → Option C)
+    (left : tree A) (right : tree B) : tree C :=
+  match left, right with
+  | .Nodes a, .Nodes b =>
+      combine.go (fun x y => match x, y with
+        | some a, some b => f a b
+        | _, _ => none) (fun _ => .Empty) (fun _ => .Empty) a b
+  | _, _ => .Empty
+
+theorem intersectWith_eq_combine {A B C : Type} (f : A → B → Option C)
+    (left : tree A) (right : tree B) :
+    intersectWith f left right = combine (fun x y => match x, y with
+      | some a, some b => f a b
+      | _, _ => none) left right := by
+  have hl : (fun a : A => match some a, (none : Option B) with
+    | some a, some b => f a b
+    | _, _ => none) = (fun _ => none) := rfl
+  have hr : (fun b : B => match (none : Option A), some b with
+    | some a, some b => f a b
+    | _, _ => none) = (fun _ => none) := rfl
+  have el : (map_filter1 (fun _ : A => (none : Option C))) = (fun _ => .Empty) :=
+    funext map_filter1_none
+  have er : (map_filter1 (fun _ : B => (none : Option C))) = (fun _ => .Empty) :=
+    funext map_filter1_none
+  cases left <;> cases right <;> simp [intersectWith, combine, hl, hr, el, er]
+
+end CompCert4Lean.Lib.Maps.PTree
+
+namespace CompCert4Lean.Backend.ValueDomain.AE
+
+def lubIntersect (cfg : CompCert4Lean.Config.CompilerConfig) (x y : t) : t :=
+  match x, y with
+  | .Bot, _ => y
+  | _, .Bot => x
+  | .Top_except t1, .Top_except t2 =>
+      .Top_except (CompCert4Lean.Lib.Maps.PTree.intersectWith (opt_lub cfg) t1 t2)
+
+@[csimp] theorem lub_eq_lubIntersect : lub = lubIntersect := by
+  funext cfg x y
+  cases x with
+  | Bot => cases y <;> rfl
+  | Top_except t1 =>
+      cases y with
+      | Bot => rfl
+      | Top_except t2 =>
+          dsimp only [lub, lubIntersect, LM.combine]
+          have h := congrArg t'.Top_except
+            (CompCert4Lean.Lib.Maps.PTree.intersectWith_eq_combine (opt_lub cfg) t1 t2).symm
+          apply Eq.trans ?_ h
+          apply congrArg t'.Top_except
+          apply congrArg (fun f : Option aval → Option aval → Option aval =>
+            CompCert4Lean.Lib.Maps.PTree.combine f t1 t2)
+          funext a b
+          cases a <;> cases b <;> rfl
+
+
+end CompCert4Lean.Backend.ValueDomain.AE
+
+namespace CompCert4Lean.Backend.ValueDomain.VA
+
+def lubIntersect (cfg : CompCert4Lean.Config.CompilerConfig) (x y : t) : t :=
+  match x, y with
+  | .Bot, _ => y
+  | _, .Bot => x
+  | .State ae1 am1, .State ae2 am2 =>
+      .State (AE.lubIntersect cfg ae1 ae2) (mlub cfg am1 am2)
+
+@[csimp] theorem lub_eq_lubIntersect : lub = lubIntersect := by
+  funext cfg x y
+  cases x <;> cases y <;>
+    simp [lub, lubIntersect, AE.lub_eq_lubIntersect]
+
+
+end CompCert4Lean.Backend.ValueDomain.VA
+
+/-! Proven direct intersection runtime implementation. -/
+
+namespace CompCert4Lean.Lib.Maps.PTree
+
+def intersectNodesDirect {A B C : Type} (f : A → B → Option C) :
+    tree' A → tree' B → tree C
+  | .Node001 l1, .Node001 l2 =>
+      Node .Empty none (intersectNodesDirect f l1 l2)
+  | .Node001 l1, .Node010 x2 =>
+      Node .Empty none (.Empty)
+  | .Node001 l1, .Node011 x2 r2 =>
+      Node .Empty none (intersectNodesDirect f l1 r2)
+  | .Node001 l1, .Node100 l2 =>
+      Node (.Empty) none (.Empty)
+  | .Node001 l1, .Node101 l2 r2 =>
+      Node (.Empty) none (intersectNodesDirect f l1 r2)
+  | .Node001 l1, .Node110 l2 x2 =>
+      Node (.Empty) none (.Empty)
+  | .Node001 l1, .Node111 l2 x2 r2 =>
+      Node (.Empty) none (intersectNodesDirect f l1 r2)
+  | .Node010 x1, .Node001 l2 =>
+      Node .Empty none (.Empty)
+  | .Node010 x1, .Node010 x2 =>
+      Node .Empty (f x1 x2) .Empty
+  | .Node010 x1, .Node011 x2 r2 =>
+      Node .Empty (f x1 x2) (.Empty)
+  | .Node010 x1, .Node100 l2 =>
+      Node (.Empty) none .Empty
+  | .Node010 x1, .Node101 l2 r2 =>
+      Node (.Empty) none (.Empty)
+  | .Node010 x1, .Node110 l2 x2 =>
+      Node (.Empty) (f x1 x2) .Empty
+  | .Node010 x1, .Node111 l2 x2 r2 =>
+      Node (.Empty) (f x1 x2) (.Empty)
+  | .Node011 x1 r1, .Node001 l2 =>
+      Node .Empty none (intersectNodesDirect f r1 l2)
+  | .Node011 x1 r1, .Node010 x2 =>
+      Node .Empty (f x1 x2) (.Empty)
+  | .Node011 x1 r1, .Node011 x2 r2 =>
+      Node .Empty (f x1 x2) (intersectNodesDirect f r1 r2)
+  | .Node011 x1 r1, .Node100 l2 =>
+      Node (.Empty) none (.Empty)
+  | .Node011 x1 r1, .Node101 l2 r2 =>
+      Node (.Empty) none (intersectNodesDirect f r1 r2)
+  | .Node011 x1 r1, .Node110 l2 x2 =>
+      Node (.Empty) (f x1 x2) (.Empty)
+  | .Node011 x1 r1, .Node111 l2 x2 r2 =>
+      Node (.Empty) (f x1 x2) (intersectNodesDirect f r1 r2)
+  | .Node100 l1, .Node001 l2 =>
+      Node (.Empty) none (.Empty)
+  | .Node100 l1, .Node010 x2 =>
+      Node (.Empty) none .Empty
+  | .Node100 l1, .Node011 x2 r2 =>
+      Node (.Empty) none (.Empty)
+  | .Node100 l1, .Node100 l2 =>
+      Node (intersectNodesDirect f l1 l2) none .Empty
+  | .Node100 l1, .Node101 l2 r2 =>
+      Node (intersectNodesDirect f l1 l2) none (.Empty)
+  | .Node100 l1, .Node110 l2 x2 =>
+      Node (intersectNodesDirect f l1 l2) none .Empty
+  | .Node100 l1, .Node111 l2 x2 r2 =>
+      Node (intersectNodesDirect f l1 l2) none (.Empty)
+  | .Node101 l1 r1, .Node001 l2 =>
+      Node (.Empty) none (intersectNodesDirect f r1 l2)
+  | .Node101 l1 r1, .Node010 x2 =>
+      Node (.Empty) none (.Empty)
+  | .Node101 l1 r1, .Node011 x2 r2 =>
+      Node (.Empty) none (intersectNodesDirect f r1 r2)
+  | .Node101 l1 r1, .Node100 l2 =>
+      Node (intersectNodesDirect f l1 l2) none (.Empty)
+  | .Node101 l1 r1, .Node101 l2 r2 =>
+      Node (intersectNodesDirect f l1 l2) none (intersectNodesDirect f r1 r2)
+  | .Node101 l1 r1, .Node110 l2 x2 =>
+      Node (intersectNodesDirect f l1 l2) none (.Empty)
+  | .Node101 l1 r1, .Node111 l2 x2 r2 =>
+      Node (intersectNodesDirect f l1 l2) none (intersectNodesDirect f r1 r2)
+  | .Node110 l1 x1, .Node001 l2 =>
+      Node (.Empty) none (.Empty)
+  | .Node110 l1 x1, .Node010 x2 =>
+      Node (.Empty) (f x1 x2) .Empty
+  | .Node110 l1 x1, .Node011 x2 r2 =>
+      Node (.Empty) (f x1 x2) (.Empty)
+  | .Node110 l1 x1, .Node100 l2 =>
+      Node (intersectNodesDirect f l1 l2) none .Empty
+  | .Node110 l1 x1, .Node101 l2 r2 =>
+      Node (intersectNodesDirect f l1 l2) none (.Empty)
+  | .Node110 l1 x1, .Node110 l2 x2 =>
+      Node (intersectNodesDirect f l1 l2) (f x1 x2) .Empty
+  | .Node110 l1 x1, .Node111 l2 x2 r2 =>
+      Node (intersectNodesDirect f l1 l2) (f x1 x2) (.Empty)
+  | .Node111 l1 x1 r1, .Node001 l2 =>
+      Node (.Empty) none (intersectNodesDirect f r1 l2)
+  | .Node111 l1 x1 r1, .Node010 x2 =>
+      Node (.Empty) (f x1 x2) (.Empty)
+  | .Node111 l1 x1 r1, .Node011 x2 r2 =>
+      Node (.Empty) (f x1 x2) (intersectNodesDirect f r1 r2)
+  | .Node111 l1 x1 r1, .Node100 l2 =>
+      Node (intersectNodesDirect f l1 l2) none (.Empty)
+  | .Node111 l1 x1 r1, .Node101 l2 r2 =>
+      Node (intersectNodesDirect f l1 l2) none (intersectNodesDirect f r1 r2)
+  | .Node111 l1 x1 r1, .Node110 l2 x2 =>
+      Node (intersectNodesDirect f l1 l2) (f x1 x2) (.Empty)
+  | .Node111 l1 x1 r1, .Node111 l2 x2 r2 =>
+      Node (intersectNodesDirect f l1 l2) (f x1 x2) (intersectNodesDirect f r1 r2)
+
+theorem intersectNodesDirect_eq {A B C : Type} (f : A → B → Option C)
+    (a : tree' A) (b : tree' B) :
+    intersectNodesDirect f a b =
+      combine.go (fun x y => match x, y with
+        | some a, some b => f a b
+        | _, _ => none) (fun _ => .Empty) (fun _ => .Empty) a b := by
+  induction a generalizing b <;> cases b <;>
+    simp_all [intersectNodesDirect, combine.go]
+
+
+end CompCert4Lean.Lib.Maps.PTree
+
+namespace CompCert4Lean.Lib.Maps.PTree
+
+def intersectWithDirect {A B C : Type} (f : A → B → Option C)
+    (left : tree A) (right : tree B) : tree C :=
+  match left, right with
+  | .Nodes a, .Nodes b => intersectNodesDirect f a b
+  | _, _ => .Empty
+
+@[csimp] theorem intersectWith_eq_direct : @intersectWith = @intersectWithDirect := by
+  funext A B C f a b
+  cases a with
+  | Empty => cases b <;> rfl
+  | Nodes a =>
+      cases b with
+      | Empty => rfl
+      | Nodes b =>
+          dsimp only [intersectWith, intersectWithDirect]
+          apply Eq.trans ?_ (intersectNodesDirect_eq f a b).symm
+          apply congrArg (fun g : Option A → Option B → Option C =>
+            combine.go g (fun _ => .Empty) (fun _ => .Empty) a b)
+          funext x y
+          cases x <;> cases y <;> rfl
+
+
+end CompCert4Lean.Lib.Maps.PTree
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+def AE.lubDirect (cfg : CompCert4Lean.Config.CompilerConfig) (x y : AE.t) : AE.t :=
+  match x, y with
+  | .Bot, _ => y
+  | _, .Bot => x
+  | .Top_except t1, .Top_except t2 =>
+      .Top_except (CompCert4Lean.Lib.Maps.PTree.intersectWithDirect (AE.opt_lub cfg) t1 t2)
+
+@[csimp] theorem AE.lubIntersect_eq_direct : AE.lubIntersect = AE.lubDirect := by
+  funext cfg x y
+  cases x <;> cases y <;>
+    simp [AE.lubIntersect, AE.lubDirect, CompCert4Lean.Lib.Maps.PTree.intersectWith_eq_direct]
+
+def VA.lubDirect (cfg : CompCert4Lean.Config.CompilerConfig) (x y : VA.t) : VA.t :=
+  match x, y with
+  | .Bot, _ => y
+  | _, .Bot => x
+  | .State ae1 am1, .State ae2 am2 => .State (AE.lubDirect cfg ae1 ae2) (mlub cfg am1 am2)
+
+@[csimp] theorem VA.lubIntersect_eq_direct : VA.lubIntersect = VA.lubDirect := by
+  funext cfg x y
+  cases x <;> cases y <;>
+    simp [VA.lubIntersect, VA.lubDirect, AE.lubIntersect_eq_direct]
+
+
+end CompCert4Lean.Backend.ValueDomain
+
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+@[csimp] theorem AE.lub_eq_directRuntime : AE.lub = AE.lubDirect :=
+  AE.lub_eq_lubIntersect.trans AE.lubIntersect_eq_direct
+
+@[csimp] theorem VA.lub_eq_directRuntime : VA.lub = VA.lubDirect :=
+  VA.lub_eq_lubIntersect.trans VA.lubIntersect_eq_direct
+
+
+end CompCert4Lean.Backend.ValueDomain

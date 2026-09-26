@@ -1,0 +1,13 @@
+import CompCert4Lean.Allocator.Coloring
+
+#print axioms CompilerOptimization.BoundedTreeCount.countRaw_loop
+#print axioms CompilerOptimization.BoundedTreeCount.countRaw_forIn
+#print axioms CompilerOptimization.BoundedTreeCount.briggsCount_eq
+#print axioms CompilerOptimization.BoundedTreeCount.canCoalesceCount_eq
+#print axioms CompilerOptimization.BoundedTreeCount.coalesceMoveCount_eq
+#print axioms CompilerOptimization.BoundedTreeCount.colorWorklistsCount_eq
+#print axioms CompilerOptimization.BoundedTreeCount.findColoringCount_csimp
+#print axioms CompilerOptimization.BoundedTreeCount.briggsCount_csimp
+#print axioms CompilerOptimization.BoundedTreeCount.canCoalesceCount_csimp
+#print axioms CompilerOptimization.BoundedTreeCount.coalesceMoveCount_csimp
+#print axioms CompilerOptimization.BoundedTreeCount.colorWorklistsCount_csimp

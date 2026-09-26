@@ -11,7 +11,7 @@ import sys
 import time
 
 from compile_c import parse_args
-from prototype import CompileError, compile_source, prepare
+from prototype import BridgeServer, CompileError, LeanSession, compile_source, prepare
 
 
 @contextlib.contextmanager
@@ -46,8 +46,10 @@ def compile_batch(jobs, output):
     output.mkdir(parents=True, exist_ok=False)
     result = {"success": False, "jobs": []}
     started = time.monotonic()
+    lean_session = LeanSession(output)
+    bridge_session = BridgeServer(next(iter(roots)), output)
     try:
-        prepare(next(iter(roots)))
+        prepare(next(iter(roots)), lean_session=lean_session)
         result["preparation_seconds"] = time.monotonic() - started
         for index, (job, cwd, options) in enumerate(parsed):
             folder = output / str(index)
@@ -60,7 +62,8 @@ def compile_batch(jobs, output):
             with (folder / "stdout.txt").open("w") as stdout, (folder / "stderr.txt").open("w") as stderr:
                 with working_directory(cwd), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                     try:
-                        artifacts = compile_source(options, prepared=True)
+                        artifacts = compile_source(options, prepared=True, lean_session=lean_session,
+                                                   bridge_session=bridge_session)
                         if options.keep_temps:
                             print(f"Artifacts: {artifacts}")
                         record.update(passed=True, exit_status=0)
@@ -75,6 +78,8 @@ def compile_batch(jobs, output):
                   f"({record['wall_seconds']:.3f}s)", flush=True)
         result["success"] = all(record["passed"] for record in result["jobs"])
     finally:
+        lean_session.close()
+        bridge_session.close()
         result["seconds"] = time.monotonic() - started
         (output / "results.json").write_text(json.dumps(result, indent=2) + "\n")
     return result

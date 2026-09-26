@@ -41,6 +41,12 @@ native `leanCompiler` Lake target and OCaml bridge before compiling C. Initial
 helper builds are excluded from compilation deadlines. Bridge build outputs,
 helper logs, and version records live under `.lake/prototype/`; native Lean
 outputs stay under `.lake/build/`. No Coq extraction or upstream build is run.
+The fresh incremental native build overlaps independent tool probes. The Lean
+version, target and source commit come from the freshly built executable after
+the build succeeds. Batches and multi-source commands start its server for this
+query and reuse that process for compilation; single-source commands use
+`leanCompiler --version`. Both OCaml tool versions are queried in one selected-switch
+invocation. Every preparation checks these versions again.
 
 ## Commands
 
@@ -70,7 +76,10 @@ The results directory must be new. The manifest is a nonempty JSON array:
 ```
 
 Each batch checks versions and incrementally builds the toolchain once, then
-uses that prepared toolchain for its serial jobs. All jobs must select the same
+uses that prepared toolchain and one persistent native Lean process for its serial
+jobs. Each source runs the same compiler pipeline with its own decoded settings;
+failed or timed-out native requests discard the process before the next job.
+All jobs must select the same
 CompCert root. Keep compiler/toolchain sources stable during the batch. A new
 invocation always prepares again. Per-job flags, compiler-stage deadlines, logs and optional
 `--keep-temps` artifacts are preserved. Failed jobs are reported and subsequent
@@ -78,6 +87,12 @@ jobs still run; any failure makes the batch exit nonzero. `results.json` records
 preparation, per-job and total wall times separately. Independent compilation
 jobs can be batched together; link only after checking that required objects
 compiled successfully. The imported SPEC runners batch each Lean profile.
+
+After decoding, the native compiler keeps only the output metadata header while
+running its passes. A non-inlined boundary lets it release the full input JSON
+first. `tests/prototype/TargetHeader.lean` proves that header extraction and the
+resulting `compileJson` return exactly the original values and errors for every
+input; `verify_o2.py` checks these proofs and their axiom dependencies.
 
 Accepted options include `-o`, `-S`, `-c`, `-r`, `-shared`, `-I`, `-D`, `-U`,
 `-L`, `-l`, `-Wl,...`, `-O0`, `-O`/`-O1`/`-O2`/`-O3`, `-fpic`/`-fno-pic`, `-fcommon`/`-fno-common`,
@@ -92,8 +107,12 @@ optimization levels and individual optimization tuning flags are rejected.
 remains C99. The choice uses CompCert's `CommonOptions.set_std` API for both
 preprocessing and frontend diagnostics, and is recorded in compilation
 metadata. It does not alter the Csyntax interchange format.
-Input and library order is preserved, including archive placement. Each C file
-has its own live bridge and Lean invocation. Default outputs are `a.out`, `<stem>.s`,
+Input and library order is preserved, including archive placement. Multi-source
+commands and batches reuse a preloaded bridge parent and the native Lean process
+to amortize startup. Each C source runs its frontend/printer pair in a fresh
+forked child; incomplete pairs discard the bridge process group. A changed job
+working directory starts a new parent so relative include paths retain their
+meaning. Single-source commands launch both processes directly. Default outputs are `a.out`, `<stem>.s`,
 and `<stem>.o`, respectively, in the caller's working directory. Paths are
 passed as argv values and may contain spaces. Include/library paths are
 interpreted relative to the caller. A failed compilation preserves any
@@ -116,10 +135,12 @@ Both levels use the optimized allocator and upstream switch/layout policies.
 ## Adapters and allocator
 
 The OCaml bridge preprocesses and elaborates C to Csyntax with sequential
-identifiers. It remains alive while Lean runs, keeping the original symbol
-names, attributes, storage facts, and section/pragmas tables needed by the
-assembly printer. Its actual `first_unused_ident` supplies Lean's sequential
-fresh-identifier context. Composite definitions are serialized; Lean rebuilds
+identifiers. Its server forks each transaction from an unmodified parent, so
+CompCert's global state has the same initial values as a standalone invocation.
+The frontend/printer pair shares a single per-source deadline. The bridge keeps the original
+symbol names, attributes, storage facts, and section/pragmas tables needed by
+the assembly printer. Its actual `first_unused_ident` supplies Lean's
+sequential fresh-identifier context. Composite definitions are serialized; Lean rebuilds
 their environment with `Ctypes.build_composite_env` and carries the resulting
 checked equality in the source program.
 

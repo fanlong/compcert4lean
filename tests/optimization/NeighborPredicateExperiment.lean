@@ -88,15 +88,18 @@ theorem productionNeighbor_eq (function : XFunction) (state : ColoringState)
     (classId other : Nat) :
     countsNeighbor function state classId other =
       countsNeighborOriginal function state classId other := by
-  exact countsNeighborFused_eq function state classId other
+  unfold countsNeighbor countsNeighborOriginal precolored registerNode nodeClass
+  cases fixed : (variableInfo function other).fixed with
+  | none => simp [fixed, IndexSetCache.contains_eq]
+  | some location => cases location <;> simp [fixed]
 
 theorem productionAdjacent_eq (function : XFunction) (state : ColoringState) (index : Nat) :
     adjacent function state index = adjacentOriginal function state index := by
-  exact adjacentFused_eq function state index
+  simp only [adjacent, productionNeighbor_eq, adjacentOriginal]
 
 theorem productionDegree_eq (function : XFunction) (state : ColoringState) (index : Nat) :
     uncachedDegree function state index = degreeOriginal function state index := by
-  exact degreeFused_eq function state index
+  simp only [uncachedDegree, productionNeighbor_eq, degreeOriginal]
 
 theorem productionCapacity_eq (context : AllocationContext) (function : XFunction)
     (state : ColoringState) (index : Nat) :

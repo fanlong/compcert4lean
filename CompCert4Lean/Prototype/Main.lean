@@ -170,15 +170,44 @@ def encodeTarget (input : Json) (target : X86.Asm.program) : CodecResult Json :=
     ("allocator", .str "irc"), ("program", ← enc_AProgram codecFuel target)] ++
     configuration ++ allocationContext)
 
+structure TargetHeader where
+  configuration : List (String × Json)
+  allocationContext : List (String × Json)
+  format : CodecResult Json
+  target : CodecResult Json
+
+def targetHeader (input : Json) : TargetHeader :=
+  { configuration := match input.getObjVal? "configuration" with
+      | .ok value => [("configuration", value)]
+      | .error _ => []
+    allocationContext := match input.getObjVal? "allocationContext" with
+      | .ok value => [("allocationContext", value)]
+      | .error _ => []
+    format := getField input "format"
+    target := getField input "target" }
+
+def encodeHeader (header : TargetHeader) (target : X86.Asm.program) : CodecResult Json := do
+  return Json.mkObj ([("format", ← header.format), ("target", ← header.target),
+    ("allocator", .str "irc"), ("program", ← enc_AProgram codecFuel target)] ++
+    header.configuration ++ header.allocationContext)
+
+-- Keep this boundary so input JSON is consumed before the compiler passes run.
+@[noinline] def compileDecoded (header : TargetHeader)
+    (configuration : Config.CompilerConfig) (allocationContext : AllocationContext)
+    (inlining : Backend.Inlining.InliningConfig)
+    (fresh : Cfrontend.SimplExpr.FreshIdentContext) (source : Cfrontend.Csyntax.program) :
+    CodecResult Json := do
+  match Driver.Compiler.transf_c_program configuration (selectionFor configuration) inlining
+      (Allocator.regalloc configuration allocationContext) enumeration fresh source with
+  | .Error errors => throw ("Lean compiler: " ++ errorText errors)
+  | .OK target => encodeHeader header target
+
 def compileJson (value : Json) : CodecResult Json := do
   let (source, fresh) ← decodeSource value
   let configuration ← decodeConfiguration value
   let allocationContext ← decodeAllocationContext value
   let inlining ← decodeInlining value
-  match Driver.Compiler.transf_c_program configuration (selectionFor configuration) inlining
-      (Allocator.regalloc configuration allocationContext) enumeration fresh source with
-  | .Error errors => throw ("Lean compiler: " ++ errorText errors)
-  | .OK target => encodeTarget value target
+  compileDecoded (targetHeader value) configuration allocationContext inlining fresh source
 
 def diagnoseJson (value : Json) (folder : System.FilePath) (allocation : Bool := false) : IO (CodecResult Json) := do
   let decoded := do
@@ -217,8 +246,50 @@ def diagnoseJson (value : Json) (folder : System.FilePath) (allocation : Bool :=
       | .Error errors => return .error ("Lean compiler: " ++ errorText errors)
       | .OK target => emit "assembly"; return encodeTarget value target
 
+def compileFiles (input output : System.FilePath) : IO (CodecResult Unit) := do
+  let text ← IO.FS.readFile input
+  match Json.parse text >>= compileJson with
+  | .error message => return .error message
+  | .ok value =>
+      IO.FS.writeFile output (value.compress ++ "\n")
+      return .ok ()
+
+def runtimeVersion : String :=
+  s!"Lean (version {Lean.versionString}, {System.Platform.target}, commit {Lean.githash})"
+
+def serve : IO UInt32 := do
+  let input ← IO.getStdin
+  let output ← IO.getStdout
+  repeat
+    let line ← input.getLine
+    if line.isEmpty then return 0
+    let result : CodecResult (Option String) ← try
+      let request := do
+        let value ← Json.parse line
+        if value == Json.mkObj [("operation", .str "version")] then return none
+        exactFields value ["input", "output"]
+        return some (← (← getField value "input").getStr?, ← (← getField value "output").getStr?)
+      match request with
+      | .error message => pure (.error message)
+      | .ok none => pure (.ok (some runtimeVersion))
+      | .ok (some (source, target)) => do
+          let compiled ← compileFiles source target
+          pure (compiled.map (fun _ => none))
+    catch error => pure (.error ("leanCompiler: " ++ error.toString))
+    let response := match result with
+      | .ok none => Json.mkObj [("ok", .bool true)]
+      | .ok (some version) => Json.mkObj [("ok", .bool true), ("version", .str version)]
+      | .error message => Json.mkObj [("ok", .bool false), ("error", .str message)]
+    output.putStrLn response.compress
+    output.flush
+  return 0
+
 def run (args : List String) : IO UInt32 := do
   match args with
+  | ["--version"] =>
+      IO.println runtimeVersion
+      return 0
+  | ["--server"] => serve
   | [mode, input, output, folder] =>
       unless mode == "--diagnose" || mode == "--diagnose-allocation" do return 2
       let text ← IO.FS.readFile input

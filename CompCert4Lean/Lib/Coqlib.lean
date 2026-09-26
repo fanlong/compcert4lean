@@ -1654,3 +1654,114 @@ theorem wf_lex_ord : wf_lex_ordStatement := by
   · exact (Prod.lex { rel := ordA, wf := hA } { rel := ordB, wf := hB }).wf
 
 end CompCert4Lean.Lib.Coqlib
+
+/-! Proven direct numeric runtime alternatives. -/
+
+namespace CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+def compareZDirect : Z → Z → comparison
+  | .Z0, .Z0 => .Eq
+  | .Z0, .Zpos _ | .Zneg _, .Z0 | .Zneg _, .Zpos _ => .Lt
+  | .Z0, .Zneg _ | .Zpos _, .Z0 | .Zpos _, .Zneg _ => .Gt
+  | .Zpos p, .Zpos q => compareDirect p q
+  | .Zneg p, .Zneg q => compareDirect q p
+
+theorem compareZDirect_spec (x y : Z) :
+    match compareZDirect x y with
+    | .Lt => intOfZ x < intOfZ y
+    | .Eq => intOfZ x = intOfZ y
+    | .Gt => intOfZ y < intOfZ x := by
+  cases x with
+  | Z0 =>
+      cases y with
+      | Z0 => rfl
+      | Zpos q => have := posToNat_positive q; simp [compareZDirect, intOfZ]; omega
+      | Zneg q => have := posToNat_positive q; simp [compareZDirect, intOfZ]; omega
+  | Zpos p =>
+      cases y with
+      | Z0 => have := posToNat_positive p; simp [compareZDirect, intOfZ]; omega
+      | Zpos q =>
+          have h := compareDirect_spec p q
+          cases hc : compareDirect p q <;> simp_all [compareZDirect, intOfZ]
+      | Zneg q =>
+          have := posToNat_positive p; have := posToNat_positive q
+          simp [compareZDirect, intOfZ]; omega
+  | Zneg p =>
+      cases y with
+      | Z0 => have := posToNat_positive p; simp [compareZDirect, intOfZ]; omega
+      | Zpos q =>
+          have := posToNat_positive p; have := posToNat_positive q
+          simp [compareZDirect, intOfZ]; omega
+      | Zneg q =>
+          have h := compareDirect_spec q p
+          cases hc : compareDirect q p <;> simp_all [compareZDirect, intOfZ]
+
+def zleDirect (x y : Z) : Support.Sumbool
+    (ZArith.BinInt.Z.le x y) (ZArith.BinInt.Z.gt x y) := by
+  have h := compareZDirect_spec x y
+  cases hc : compareZDirect x y with
+  | Lt => rw [hc] at h; exact .left (Int.le_of_lt h)
+  | Eq => rw [hc] at h; exact .left (Int.le_of_eq h)
+  | Gt => rw [hc] at h; exact .right h
+
+def zltDirect (x y : Z) : Support.Sumbool
+    (ZArith.BinInt.Z.lt x y) (ZArith.BinInt.Z.ge x y) := by
+  have h := compareZDirect_spec x y
+  cases hc : compareZDirect x y with
+  | Lt => rw [hc] at h; exact .left h
+  | Eq => rw [hc] at h; exact .right (Int.le_of_eq h.symm)
+  | Gt => rw [hc] at h; exact .right (Int.le_of_lt h)
+
+@[csimp] theorem zle_eq_direct : zle = zleDirect := by
+  funext x y
+  cases zle x y with
+  | left h1 =>
+      cases zleDirect x y with
+      | left h2 => rfl
+      | right h2 => exact ((Int.not_lt.mpr h1) h2).elim
+  | right h1 =>
+      cases zleDirect x y with
+      | left h2 => exact ((Int.not_lt.mpr h2) h1).elim
+      | right h2 => rfl
+
+@[csimp] theorem zlt_eq_direct : zlt = zltDirect := by
+  funext x y
+  cases zlt x y with
+  | left h1 =>
+      cases zltDirect x y with
+      | left h2 => rfl
+      | right h2 => exact ((Int.not_lt.mpr h2) h1).elim
+  | right h1 =>
+      cases zltDirect x y with
+      | left h2 => exact ((Int.not_lt.mpr h1) h2).elim
+      | right h2 => rfl
+
+
+def zMaxDirect (x y : Z) : Z :=
+  match zleDirect x y with
+  | .left _ => y
+  | .right _ => x
+
+def zMinDirect (x y : Z) : Z :=
+  match zleDirect x y with
+  | .left _ => x
+  | .right _ => y
+
+@[csimp] theorem zMax_eq_direct : ZArith.BinInt.Z.max = zMaxDirect := by
+  funext x y
+  unfold zMaxDirect ZArith.BinInt.Z.max
+  cases h : zleDirect x y with
+  | left le => exact if_pos le
+  | right gt => exact if_neg (Int.not_le.mpr gt)
+
+@[csimp] theorem zMin_eq_direct : ZArith.BinInt.Z.min = zMinDirect := by
+  funext x y
+  unfold zMinDirect ZArith.BinInt.Z.min
+  cases h : zleDirect x y with
+  | left le => exact if_pos le
+  | right gt => exact if_neg (Int.not_le.mpr gt)
+
+
+end CompCert4Lean.Lib.Coqlib

@@ -127,3 +127,83 @@ def setRemove (values : List Nat) (set : IndexSet) : IndexSet :=
   values.foldl (fun result value => result.erase value) set
 
 end CompCert4Lean.Allocator
+
+namespace CompilerOptimization.TreeBoolScan
+
+open Std.DTreeMap.Internal
+open Std.DTreeMap.Internal.Impl
+
+universe keyLevel valueLevel
+
+@[specialize] def allRaw {Key : Type keyLevel} {Value : Key → Type valueLevel}
+    (predicate : (key : Key) → Value key → Bool) (values : @& Impl Key Value) : Bool :=
+  match values with
+  | .leaf => true
+  | .inner _ key value left right =>
+      allRaw predicate left && predicate key value && allRaw predicate right
+
+@[specialize] def anyRaw {Key : Type keyLevel} {Value : Key → Type valueLevel}
+    (predicate : (key : Key) → Value key → Bool) (values : @& Impl Key Value) : Bool :=
+  match values with
+  | .leaf => false
+  | .inner _ key value left right =>
+      anyRaw predicate left || predicate key value || anyRaw predicate right
+
+theorem allRaw_loop {Key : Type keyLevel} {Value : Key → Type valueLevel}
+    (predicate : (key : Key) → Value key → Bool) (values : Impl Key Value) :
+    values.forInStep (m := Id)
+      (fun key value (_ : Option Bool × Unit) =>
+        if predicate key value = false then .done (some false, ()) else .yield (none, ()))
+      (none, ()) =
+      if allRaw predicate values then .yield (none, ()) else .done (some false, ()) := by
+  induction values with
+  | leaf => rfl
+  | inner size key value left right leftHypothesis rightHypothesis =>
+      cases leftResult : allRaw predicate left <;> cases rootResult : predicate key value <;>
+        simp [Impl.forInStep, allRaw, leftHypothesis, rightHypothesis, leftResult, rootResult,
+          bind, pure]
+
+theorem anyRaw_loop {Key : Type keyLevel} {Value : Key → Type valueLevel}
+    (predicate : (key : Key) → Value key → Bool) (values : Impl Key Value) :
+    values.forInStep (m := Id)
+      (fun key value (_ : Option Bool × Unit) =>
+        if predicate key value = true then .done (some true, ()) else .yield (none, ()))
+      (none, ()) =
+      if anyRaw predicate values then .done (some true, ()) else .yield (none, ()) := by
+  induction values with
+  | leaf => rfl
+  | inner size key value left right leftHypothesis rightHypothesis =>
+      cases leftResult : anyRaw predicate left <;> cases rootResult : predicate key value <;>
+        simp [Impl.forInStep, anyRaw, leftHypothesis, rightHypothesis, leftResult, rootResult,
+          bind, pure]
+
+theorem allRaw_eq {Key : Type keyLevel} {Value : Key → Type valueLevel}
+    (predicate : (key : Key) → Value key → Bool) (values : Impl Key Value) :
+    allRaw predicate values = values.all predicate := by
+  simp only [Impl.all, ForIn.forIn, Impl.forIn, pure, allRaw_loop, bind, Id.run]
+  cases result : allRaw predicate values <;> rfl
+
+theorem anyRaw_eq {Key : Type keyLevel} {Value : Key → Type valueLevel}
+    (predicate : (key : Key) → Value key → Bool) (values : Impl Key Value) :
+    anyRaw predicate values = values.any predicate := by
+  simp only [Impl.any, ForIn.forIn, Impl.forIn, pure, anyRaw_loop, bind, Id.run]
+  cases result : anyRaw predicate values <;> rfl
+
+@[inline] def allSet {Key : Type keyLevel} {comparison : Key → Key → Ordering}
+    (values : Std.TreeSet Key comparison) (predicate : Key → Bool) : Bool :=
+  allRaw (fun key _ => predicate key) values.inner.inner.inner
+
+@[inline] def anySet {Key : Type keyLevel} {comparison : Key → Key → Ordering}
+    (values : Std.TreeSet Key comparison) (predicate : Key → Bool) : Bool :=
+  anyRaw (fun key _ => predicate key) values.inner.inner.inner
+
+@[csimp] theorem allSet_csimp : @Std.TreeSet.all = @allSet := by
+  funext Key comparison values predicate
+  exact (allRaw_eq (fun key _ => predicate key) values.inner.inner.inner).symm
+
+@[csimp] theorem anySet_csimp : @Std.TreeSet.any = @anySet := by
+  funext Key comparison values predicate
+  exact (anyRaw_eq (fun key _ => predicate key) values.inner.inner.inner).symm
+
+
+end CompilerOptimization.TreeBoolScan

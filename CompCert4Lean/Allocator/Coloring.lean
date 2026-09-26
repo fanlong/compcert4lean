@@ -1,4 +1,5 @@
 import CompCert4Lean.Allocator.Analyses
+import CompCert4Lean.Allocator.IndexSetCache
 
 namespace CompCert4Lean.Allocator
 
@@ -8,6 +9,7 @@ structure ColoringState where
   graph : Interference
   parents : Array Nat
   active : IndexSet
+  activeCache : IndexSetCache active := IndexSetCache.empty active
   simplify : IndexSet := {}
   freeze : IndexSet := {}
   spill : IndexSet := {}
@@ -50,7 +52,7 @@ def nodeCapacity (context : AllocationContext) (function : XFunction)
   match info.fixed with
   | some (.R register) => machineClass register == classId
   | some (.S ..) => false
-  | none => state.active.contains other &&
+  | none => IndexSetCache.contains state.active state.activeCache other &&
       (if (state.graph.costs[other]?.getD {}).stackOnly then 2
        else registerClass info.type) == classId
 
@@ -86,16 +88,22 @@ def hasPendingMoves (state : ColoringState) (index : Nat) : Bool :=
 
 def classify (context : AllocationContext) (function : XFunction)
     (index : Nat) (state : ColoringState) : ColoringState :=
-  let state := { state with
-    simplify := state.simplify.erase index
-    freeze := state.freeze.erase index
-    spill := state.spill.erase index }
-  if !state.active.contains index then state
+  if !IndexSetCache.contains state.active state.activeCache index then
+    { state with
+      simplify := state.simplify.erase index
+      freeze := state.freeze.erase index, spill := state.spill.erase index }
   else if degree function state index >= nodeCapacity context function state index then
-    { state with spill := state.spill.insert index }
+    { state with
+      simplify := state.simplify.erase index
+      freeze := state.freeze.erase index, spill := state.spill.insert index }
   else if hasPendingMoves state index then
-    { state with freeze := state.freeze.insert index }
-  else { state with simplify := state.simplify.insert index }
+    { state with
+      simplify := state.simplify.erase index
+      freeze := state.freeze.insert index, spill := state.spill.erase index }
+  else
+    { state with
+      simplify := state.simplify.insert index
+      freeze := state.freeze.erase index, spill := state.spill.erase index }
 
 def enableMoves (indices : IndexSet) (state : ColoringState) : ColoringState :=
   if state.activeMoves.isEmpty then state else
@@ -119,7 +127,10 @@ def refreshNodes (context : AllocationContext) (function : XFunction)
 def removeNode (context : AllocationContext) (function : XFunction)
     (index : Nat) (state : ColoringState) : ColoringState :=
   let neighbors := adjacent function state index
-  let state := { state with active := state.active.erase index, stack := index :: state.stack }
+  let state := { state with
+    active := state.active.erase index
+    activeCache := IndexSetCache.erase state.active state.activeCache index
+    stack := index :: state.stack }
   let degrees := neighbors.foldl (fun degrees neighbor =>
     degrees.set! neighbor ((degrees[neighbor]?.getD 0) - 1)) state.degrees
   let state := { state with degrees }
@@ -196,10 +207,10 @@ def combineNodes (context : AllocationContext) (function : XFunction)
   let mut graph := state.graph
   let mut state := { state with graph := { adjacency := #[], preferences := #[], costs := #[] } }
   for neighbor in neighbors.toList do
-    graph := { graph with adjacency := graph.adjacency.set! neighbor ((graph.adjacency[neighbor]?.getD {}).erase right) }
+    graph := { graph with adjacency := graph.adjacency.modify neighbor (·.erase right) }
     if neighbor != left then graph := graphEdge left neighbor graph
   for neighbor in (graph.preferences[right]?.getD {}).toList do
-    graph := { graph with preferences := graph.preferences.set! neighbor ((graph.preferences[neighbor]?.getD {}).erase right) }
+    graph := { graph with preferences := graph.preferences.modify neighbor (·.erase right) }
     if neighbor != left then graph := graphPreference left neighbor graph
   let leftCost := graph.costs[left]?.getD {}
   let rightCost := graph.costs[right]?.getD {}
@@ -213,6 +224,7 @@ def combineNodes (context : AllocationContext) (function : XFunction)
     graph
     parents := state.parents.set! right left
     active := state.active.erase right
+    activeCache := IndexSetCache.erase state.active state.activeCache right
     nodeMoves := state.nodeMoves.set! left combinedMoves
     coalesced := state.coalesced + 1 }
   state := enableMoves (neighbors.insert left) state
@@ -272,6 +284,7 @@ def initialColoring (context : AllocationContext) (function : XFunction)
     if precolored function index then result else result.insert index) {}
   let mut state : ColoringState := {
     graph, active
+    activeCache := IndexSetCache.ofSet active function.variables.size
     parents := (List.range function.variables.size).toArray
     nodeMoves := Array.replicate function.variables.size {} }
   for left in graph.present.toList do
@@ -367,3 +380,264 @@ def findColoring (configuration : Config.CompilerConfig) (context : AllocationCo
   assignColors context function state
 
 end CompCert4Lean.Allocator
+
+namespace CompilerOptimization.GeorgeSingleLookup
+
+open CompCert4Lean.Allocator
+open CompCert4Lean.Backend.Locations
+
+@[inline] def neighborAllowed (function : XFunction) (state : ColoringState)
+    (classId capacity : Nat) (leftFixed : Bool) (neighbors : IndexSet) (neighbor : Nat) : Bool :=
+  let info := variableInfo function neighbor
+  match info.fixed with
+  | some (.R register) =>
+      !(machineClass register == classId) || (leftFixed || neighbors.contains neighbor)
+  | some (.S ..) => true
+  | none =>
+      !(IndexSetCache.contains state.active state.activeCache neighbor &&
+        (if (state.graph.costs[neighbor]?.getD {}).stackOnly then 2
+         else registerClass info.type) == classId) ||
+        (degree function state neighbor < capacity || neighbors.contains neighbor)
+
+theorem neighborAllowed_eq (function : XFunction) (state : ColoringState)
+    (classId capacity : Nat) (leftFixed : Bool) (neighbors : IndexSet) (neighbor : Nat) :
+    neighborAllowed function state classId capacity leftFixed neighbors neighbor =
+      (!countsNeighbor function state classId neighbor ||
+        (if precolored function neighbor then leftFixed || neighbors.contains neighbor
+         else degree function state neighbor < capacity || neighbors.contains neighbor)) := by
+  cases fixed : (variableInfo function neighbor).fixed with
+  | none => simp [neighborAllowed, countsNeighbor, precolored, fixed]
+  | some location =>
+      cases location <;> simp [neighborAllowed, countsNeighbor, precolored, fixed]
+
+def georgeOnce (context : AllocationContext) (function : XFunction)
+    (state : ColoringState) (left right : Nat) : Bool :=
+  let classId := nodeClass function state.graph right
+  let capacity := nodeCapacity context function state left
+  let leftFixed := precolored function left
+  let neighbors := state.graph.adjacency[left]?.getD {}
+  (state.graph.adjacency[right]?.getD {}).all
+    (neighborAllowed function state classId capacity leftFixed neighbors)
+
+theorem georgeOnce_eq (context : AllocationContext) (function : XFunction)
+    (state : ColoringState) (left right : Nat) :
+    georgeOnce context function state left right = george context function state left right := by
+  simp only [georgeOnce, george]
+  congr 1
+  funext neighbor
+  exact neighborAllowed_eq function state _ _ _ _ neighbor
+
+
+end CompilerOptimization.GeorgeSingleLookup
+
+namespace CompilerOptimization.BoundedTreeCount
+
+open Std.DTreeMap.Internal
+open Std.DTreeMap.Internal.Impl
+
+universe keyLevel valueLevel
+
+@[specialize] def countRaw {Key : Type keyLevel} {Value : Key → Type valueLevel}
+    (predicate : (key : Key) → Value key → Bool) (limit initial : Nat)
+    (values : @& Impl Key Value) : Nat :=
+  match values with
+  | .leaf => initial
+  | .inner _ key value left right =>
+      let leftCount := countRaw predicate limit initial left
+      if leftCount >= limit then leftCount else
+      let updated := if predicate key value then leftCount + 1 else leftCount
+      if updated >= limit then updated else countRaw predicate limit updated right
+
+def countStep {Key : Type keyLevel} {Value : Key → Type valueLevel}
+    (predicate : (key : Key) → Value key → Bool) (limit : Nat)
+    (key : Key) (value : Value key) (state : Option Bool × Nat) :
+    Id (ForInStep (Option Bool × Nat)) :=
+  if predicate key value then
+    let updated := state.2 + 1
+    if updated >= limit then .done (some false, updated) else .yield (none, updated)
+  else .yield (none, state.2)
+
+def outcome (limit count : Nat) : ForInStep (Option Bool × Nat) :=
+  if count >= limit then .done (some false, count) else .yield (none, count)
+
+theorem countRaw_loop {Key : Type keyLevel} {Value : Key → Type valueLevel}
+    (predicate : (key : Key) → Value key → Bool) (limit initial : Nat)
+    (values : Impl Key Value) (valid : initial < limit) :
+    values.forInStep (countStep predicate limit) (none, initial) =
+      outcome limit (countRaw predicate limit initial values) := by
+  induction values generalizing initial with
+  | leaf => simp [Impl.forInStep, countRaw, outcome, Nat.not_le.mpr valid, pure]
+  | inner size key value left right leftHypothesis rightHypothesis =>
+      simp only [Impl.forInStep, leftHypothesis initial valid, bind, pure]
+      by_cases leftFull : countRaw predicate limit initial left >= limit
+      · simp [outcome, leftFull, countRaw]
+      · have leftValid : countRaw predicate limit initial left < limit := Nat.lt_of_not_ge leftFull
+        cases rootResult : predicate key value with
+        | false =>
+            simpa [outcome, countStep, rootResult, leftFull, countRaw, bind, pure] using
+              rightHypothesis (countRaw predicate limit initial left) leftValid
+        | true =>
+            by_cases rootFull : countRaw predicate limit initial left + 1 >= limit
+            · simp [outcome, countStep, rootResult, leftFull, rootFull, countRaw, bind, pure]
+            · have rootValid : countRaw predicate limit initial left + 1 < limit :=
+                Nat.lt_of_not_ge rootFull
+              simpa [outcome, countStep, rootResult, leftFull, rootFull, countRaw, bind, pure] using
+                rightHypothesis (countRaw predicate limit initial left + 1) rootValid
+
+theorem countRaw_forIn {Key : Type keyLevel} {Value : Key → Type valueLevel}
+    (predicate : (key : Key) → Value key → Bool) (limit initial : Nat)
+    (values : Impl Key Value) (valid : initial < limit) :
+    values.forIn (m := Id)
+      (fun key value (state : Option Bool × Nat) =>
+        if predicate key value then
+          if state.2 + 1 >= limit then .done (some false, state.2 + 1)
+          else .yield (none, state.2 + 1)
+        else .yield (none, state.2)) (none, initial) =
+      if countRaw predicate limit initial values >= limit
+      then (some false, countRaw predicate limit initial values)
+      else (none, countRaw predicate limit initial values) := by
+  change values.forIn (countStep predicate limit) (none, initial) = _
+  simp only [Impl.forIn, countRaw_loop predicate limit initial values valid, outcome, bind, pure]
+  by_cases full : countRaw predicate limit initial values >= limit <;> simp [full]
+
+open CompCert4Lean.Allocator
+
+@[inline] def countSet (predicate : Nat → Bool) (limit initial : Nat) (values : IndexSet) : Nat :=
+  countRaw (fun key _ => predicate key) limit initial values.inner.inner.inner
+
+def briggsCount (context : AllocationContext) (function : XFunction)
+    (state : ColoringState) (left right : Nat) : Bool :=
+  let capacity := nodeCapacity context function state left
+  if capacity == 0 then false else
+  let leftClass := nodeClass function state.graph left
+  let rightClass := nodeClass function state.graph right
+  let leftNeighbors := state.graph.adjacency[left]?.getD {}
+  let rightNeighbors := state.graph.adjacency[right]?.getD {}
+  let leftPredicate := fun neighbor =>
+    let neighborDegree := degree function state neighbor
+    (neighborDegree > capacity || precolored function neighbor ||
+      (neighborDegree == capacity &&
+        !(rightNeighbors.contains neighbor && countsNeighbor function state rightClass neighbor))) &&
+      countsNeighbor function state leftClass neighbor
+  let high := countSet leftPredicate capacity 0 leftNeighbors
+  if high >= capacity then false else
+  let rightPredicate := fun neighbor =>
+    (degree function state neighbor >= capacity || precolored function neighbor) &&
+      countsNeighbor function state rightClass neighbor &&
+      !(leftNeighbors.contains neighbor && countsNeighbor function state leftClass neighbor)
+  countSet rightPredicate capacity high rightNeighbors < capacity
+
+theorem briggsCount_eq (context : AllocationContext) (function : XFunction)
+    (state : ColoringState) (left right : Nat) :
+    briggsCount context function state left right = briggs context function state left right := by
+  simp only [briggsCount, briggs]
+  generalize capacityEq : nodeCapacity context function state left = capacity
+  cases capacity with
+  | zero => rfl
+  | succ capacity =>
+      simp only [Nat.succ_ne_zero, beq_iff_eq, Bool.false_eq_true, if_false,
+        ForIn.forIn, Std.TreeSet.forIn, Std.TreeMap.forIn, Std.DTreeMap.forIn, pure]
+      rw [countRaw_forIn _ _ _ _ (Nat.succ_pos capacity)]
+      simp only [countSet, bind, Id.run]
+      split
+      · rename_i full
+        simp_all
+      · rename_i notFull
+        rw [countRaw_forIn _ _ _ _ (Nat.lt_of_not_ge notFull)]
+        simp_all [apply_ite] <;> split <;> simp_all <;> omega
+
+def canCoalesceCount (context : AllocationContext) (function : XFunction)
+    (state : ColoringState) (left right : Nat) : Bool :=
+  if precolored function left then CompilerOptimization.GeorgeSingleLookup.georgeOnce context function state left right
+  else
+    let leftCost := state.graph.costs[left]?.getD {}
+    let rightCost := state.graph.costs[right]?.getD {}
+    briggsCount context function state left right ||
+      (!leftCost.unspillable && !rightCost.unspillable &&
+        ((rightCost.accesses <= 3 && CompilerOptimization.GeorgeSingleLookup.georgeOnce context function state left right) ||
+         (leftCost.accesses <= 3 && CompilerOptimization.GeorgeSingleLookup.georgeOnce context function state right left)))
+
+theorem canCoalesceCount_eq (context : AllocationContext) (function : XFunction)
+    (state : ColoringState) (left right : Nat) :
+    canCoalesceCount context function state left right =
+      canCoalesce context function state left right := by
+  simp only [canCoalesceCount, canCoalesce, briggsCount_eq,
+    CompilerOptimization.GeorgeSingleLookup.georgeOnce_eq]
+
+def coalesceMoveCount (context : AllocationContext) (function : XFunction)
+    (move : Nat) (state : ColoringState) : ColoringState :=
+  let state := { state with workMoves := state.workMoves.erase move }
+  let (source, destination) := state.moves[move]?.getD (0, 0)
+  let source := rangeRoot state.parents source
+  let destination := rangeRoot state.parents destination
+  let (left, right) := if precolored function destination then (destination, source) else (source, destination)
+  if left == right || precolored function right ||
+      (state.graph.adjacency[left]?.getD {}).contains right then
+    refreshNodes context function (setOfList [left, right]) state
+  else if canCoalesceCount context function state left right then
+    combineNodes context function left right state
+  else { state with activeMoves := state.activeMoves.insert move }
+
+theorem coalesceMoveCount_eq (context : AllocationContext) (function : XFunction)
+    (move : Nat) (state : ColoringState) :
+    coalesceMoveCount context function move state = coalesceMove context function move state := by
+  simp only [coalesceMoveCount, coalesceMove, canCoalesceCount_eq]
+
+def colorWorklistsCount (context : AllocationContext) (function : XFunction) :
+    Nat → ColoringState → Except String ColoringState
+  | 0, _ => .error "register coalescing exhausted its worklist bound"
+  | fuel + 1, state => do
+      if let some index := state.simplify.min? then
+        colorWorklistsCount context function fuel (removeNode context function index state)
+      else if let some move := state.workMoves.min? then
+        colorWorklistsCount context function fuel (coalesceMoveCount context function move state)
+      else if let some index := state.freeze.min? then
+        colorWorklistsCount context function fuel (freezeMoves context function index state)
+      else if let some first := state.spill.min? then
+        let index := state.spill.foldl (fun best candidate =>
+          if cheaperSpill function state candidate best then candidate else best) first
+        colorWorklistsCount context function fuel
+          (removeNode context function index (freezeMoves context function index state))
+      else return state
+
+theorem colorWorklistsCount_eq (context : AllocationContext) (function : XFunction)
+    (fuel : Nat) (state : ColoringState) :
+    colorWorklistsCount context function fuel state = colorWorklists context function fuel state := by
+  induction fuel generalizing state with
+  | zero => rfl
+  | succ fuel inductionHypothesis =>
+      simp only [colorWorklistsCount, colorWorklists, inductionHypothesis,
+        coalesceMoveCount_eq] <;> rfl
+
+def findColoringCount (configuration : CompCert4Lean.Config.CompilerConfig)
+    (context : AllocationContext) (function : XFunction) (liveness : Liveness) :
+    Except String Coloring := do
+  let graph := buildInterference configuration function liveness
+  let initial := initialColoring context function graph
+  let bound := function.variables.size + initial.moves.size + 1
+  let state ← colorWorklistsCount context function (bound * bound * bound) initial
+  assignColors context function state
+
+@[csimp] theorem findColoringCount_csimp : findColoring = findColoringCount := by
+  funext configuration context function liveness
+  simp only [findColoringCount, findColoring, colorWorklistsCount_eq]
+
+@[csimp] theorem briggsCount_csimp : briggs = briggsCount := by
+  funext context function state left right
+  exact (briggsCount_eq context function state left right).symm
+
+@[csimp] theorem canCoalesceCount_csimp : canCoalesce = canCoalesceCount := by
+  funext context function state left right
+  exact (canCoalesceCount_eq context function state left right).symm
+
+@[csimp] theorem coalesceMoveCount_csimp : coalesceMove = coalesceMoveCount := by
+  funext context function move state
+  exact (coalesceMoveCount_eq context function move state).symm
+
+@[csimp] theorem colorWorklistsCount_csimp : colorWorklists = colorWorklistsCount := by
+  funext context function fuel state
+  exact (colorWorklistsCount_eq context function fuel state).symm
+
+
+
+end CompilerOptimization.BoundedTreeCount

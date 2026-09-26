@@ -1,0 +1,4 @@
+import CompCert4Lean.Allocator.Coloring
+
+#print axioms CompilerOptimization.GeorgeSingleLookup.neighborAllowed_eq
+#print axioms CompilerOptimization.GeorgeSingleLookup.georgeOnce_eq

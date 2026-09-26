@@ -618,442 +618,574 @@ mutual
 def dec_AST_typ : Nat → Json → CodecResult (Common.AST.typ)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Tint"] =>
-      return .Tint
-    | [.str "Tfloat"] =>
-      return .Tfloat
-    | [.str "Tlong"] =>
-      return .Tlong
-    | [.str "Tsingle"] =>
-      return .Tsingle
-    | [.str "Tany32"] =>
-      return .Tany32
-    | [.str "Tany64"] =>
-      return .Tany64
-    | _ => throw "invalid AST_typ constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 1 then
+      match values[0] with
+      | .str "Tint" =>
+        return .Tint
+      | .str "Tfloat" =>
+        return .Tfloat
+      | .str "Tlong" =>
+        return .Tlong
+      | .str "Tsingle" =>
+        return .Tsingle
+      | .str "Tany32" =>
+        return .Tany32
+      | .str "Tany64" =>
+        return .Tany64
+      | _ => throw "invalid AST_typ constructor or arity"
+    else throw "invalid AST_typ constructor or arity"
 
 def dec_AST_xtype : Nat → Json → CodecResult (Common.AST.xtype)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Xbool"] =>
-      return .Xbool
-    | [.str "Xint8signed"] =>
-      return .Xint8signed
-    | [.str "Xint8unsigned"] =>
-      return .Xint8unsigned
-    | [.str "Xint16signed"] =>
-      return .Xint16signed
-    | [.str "Xint16unsigned"] =>
-      return .Xint16unsigned
-    | [.str "Xint"] =>
-      return .Xint
-    | [.str "Xfloat"] =>
-      return .Xfloat
-    | [.str "Xlong"] =>
-      return .Xlong
-    | [.str "Xsingle"] =>
-      return .Xsingle
-    | [.str "Xptr"] =>
-      return .Xptr
-    | [.str "Xany32"] =>
-      return .Xany32
-    | [.str "Xany64"] =>
-      return .Xany64
-    | [.str "Xvoid"] =>
-      return .Xvoid
-    | _ => throw "invalid AST_xtype constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 1 then
+      match values[0] with
+      | .str "Xbool" =>
+        return .Xbool
+      | .str "Xint8signed" =>
+        return .Xint8signed
+      | .str "Xint8unsigned" =>
+        return .Xint8unsigned
+      | .str "Xint16signed" =>
+        return .Xint16signed
+      | .str "Xint16unsigned" =>
+        return .Xint16unsigned
+      | .str "Xint" =>
+        return .Xint
+      | .str "Xfloat" =>
+        return .Xfloat
+      | .str "Xlong" =>
+        return .Xlong
+      | .str "Xsingle" =>
+        return .Xsingle
+      | .str "Xptr" =>
+        return .Xptr
+      | .str "Xany32" =>
+        return .Xany32
+      | .str "Xany64" =>
+        return .Xany64
+      | .str "Xvoid" =>
+        return .Xvoid
+      | _ => throw "invalid AST_xtype constructor or arity"
+    else throw "invalid AST_xtype constructor or arity"
 
 def dec_AST_calling_convention : Nat → Json → CodecResult (Common.AST.calling_convention)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "AST_calling_convention", arg0, arg1, arg2] =>
-      return { cc_vararg := (← (decOption (dec_z fuel)) arg0), cc_unproto := (← (dec_bool fuel) arg1), cc_structret := (← (dec_bool fuel) arg2) }
-    | _ => throw "invalid AST_calling_convention constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 4 then
+      match values[0] with
+      | .str "AST_calling_convention" =>
+        return { cc_vararg := (← (decOption (dec_z fuel)) values[1]), cc_unproto := (← (dec_bool fuel) values[2]), cc_structret := (← (dec_bool fuel) values[3]) }
+      | _ => throw "invalid AST_calling_convention constructor or arity"
+    else throw "invalid AST_calling_convention constructor or arity"
 
 def dec_AST_signature : Nat → Json → CodecResult (Common.AST.signature)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "AST_signature", arg0, arg1, arg2] =>
-      return { sig_args := (← (decList (dec_AST_xtype fuel)) arg0), sig_res := (← (dec_AST_xtype fuel) arg1), sig_cc := (← (dec_AST_calling_convention fuel) arg2) }
-    | _ => throw "invalid AST_signature constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 4 then
+      match values[0] with
+      | .str "AST_signature" =>
+        return { sig_args := (← (decList (dec_AST_xtype fuel)) values[1]), sig_res := (← (dec_AST_xtype fuel) values[2]), sig_cc := (← (dec_AST_calling_convention fuel) values[3]) }
+      | _ => throw "invalid AST_signature constructor or arity"
+    else throw "invalid AST_signature constructor or arity"
 
 def dec_AST_memory_chunk : Nat → Json → CodecResult (Common.AST.memory_chunk)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Mbool"] =>
-      return .Mbool
-    | [.str "Mint8signed"] =>
-      return .Mint8signed
-    | [.str "Mint8unsigned"] =>
-      return .Mint8unsigned
-    | [.str "Mint16signed"] =>
-      return .Mint16signed
-    | [.str "Mint16unsigned"] =>
-      return .Mint16unsigned
-    | [.str "Mint32"] =>
-      return .Mint32
-    | [.str "Mint64"] =>
-      return .Mint64
-    | [.str "Mfloat32"] =>
-      return .Mfloat32
-    | [.str "Mfloat64"] =>
-      return .Mfloat64
-    | [.str "Many32"] =>
-      return .Many32
-    | [.str "Many64"] =>
-      return .Many64
-    | _ => throw "invalid AST_memory_chunk constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 1 then
+      match values[0] with
+      | .str "Mbool" =>
+        return .Mbool
+      | .str "Mint8signed" =>
+        return .Mint8signed
+      | .str "Mint8unsigned" =>
+        return .Mint8unsigned
+      | .str "Mint16signed" =>
+        return .Mint16signed
+      | .str "Mint16unsigned" =>
+        return .Mint16unsigned
+      | .str "Mint32" =>
+        return .Mint32
+      | .str "Mint64" =>
+        return .Mint64
+      | .str "Mfloat32" =>
+        return .Mfloat32
+      | .str "Mfloat64" =>
+        return .Mfloat64
+      | .str "Many32" =>
+        return .Many32
+      | .str "Many64" =>
+        return .Many64
+      | _ => throw "invalid AST_memory_chunk constructor or arity"
+    else throw "invalid AST_memory_chunk constructor or arity"
 
 def dec_AST_init_data : Nat → Json → CodecResult (Common.AST.init_data)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Init_int8", arg0] =>
-      return .Init_int8 (← (dec_int fuel) arg0)
-    | [.str "Init_int16", arg0] =>
-      return .Init_int16 (← (dec_int fuel) arg0)
-    | [.str "Init_int32", arg0] =>
-      return .Init_int32 (← (dec_int fuel) arg0)
-    | [.str "Init_int64", arg0] =>
-      return .Init_int64 (← (dec_long fuel) arg0)
-    | [.str "Init_float32", arg0] =>
-      return .Init_float32 (← (dec_single fuel) arg0)
-    | [.str "Init_float64", arg0] =>
-      return .Init_float64 (← (dec_float fuel) arg0)
-    | [.str "Init_space", arg0] =>
-      return .Init_space (← (dec_z fuel) arg0)
-    | [.str "Init_addrof", arg0, arg1] =>
-      return .Init_addrof (← (dec_pos fuel) arg0) (← (dec_ptr fuel) arg1)
-    | _ => throw "invalid AST_init_data constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 2 then
+      match values[0] with
+      | .str "Init_int8" =>
+        return .Init_int8 (← (dec_int fuel) values[1])
+      | .str "Init_int16" =>
+        return .Init_int16 (← (dec_int fuel) values[1])
+      | .str "Init_int32" =>
+        return .Init_int32 (← (dec_int fuel) values[1])
+      | .str "Init_int64" =>
+        return .Init_int64 (← (dec_long fuel) values[1])
+      | .str "Init_float32" =>
+        return .Init_float32 (← (dec_single fuel) values[1])
+      | .str "Init_float64" =>
+        return .Init_float64 (← (dec_float fuel) values[1])
+      | .str "Init_space" =>
+        return .Init_space (← (dec_z fuel) values[1])
+      | _ => throw "invalid AST_init_data constructor or arity"
+    else if size : values.size = 3 then
+      match values[0] with
+      | .str "Init_addrof" =>
+        return .Init_addrof (← (dec_pos fuel) values[1]) (← (dec_ptr fuel) values[2])
+      | _ => throw "invalid AST_init_data constructor or arity"
+    else throw "invalid AST_init_data constructor or arity"
 
 def dec_AST_external_function : Nat → Json → CodecResult (Common.AST.external_function)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "EF_external", arg0, arg1] =>
-      return .EF_external (← (dec_string fuel) arg0) (← (dec_AST_signature fuel) arg1)
-    | [.str "EF_builtin", arg0, arg1] =>
-      return .EF_builtin (← (dec_string fuel) arg0) (← (dec_AST_signature fuel) arg1)
-    | [.str "EF_runtime", arg0, arg1] =>
-      return .EF_runtime (← (dec_string fuel) arg0) (← (dec_AST_signature fuel) arg1)
-    | [.str "EF_vload", arg0] =>
-      return .EF_vload (← (dec_AST_memory_chunk fuel) arg0)
-    | [.str "EF_vstore", arg0] =>
-      return .EF_vstore (← (dec_AST_memory_chunk fuel) arg0)
-    | [.str "EF_malloc"] =>
-      return .EF_malloc
-    | [.str "EF_free"] =>
-      return .EF_free
-    | [.str "EF_memcpy", arg0, arg1] =>
-      return .EF_memcpy (← (dec_z fuel) arg0) (← (dec_z fuel) arg1)
-    | [.str "EF_annot", arg0, arg1, arg2] =>
-      return .EF_annot (← (dec_pos fuel) arg0) (← (dec_string fuel) arg1) (← (decList (dec_AST_typ fuel)) arg2)
-    | [.str "EF_annot_val", arg0, arg1, arg2] =>
-      return .EF_annot_val (← (dec_pos fuel) arg0) (← (dec_string fuel) arg1) (← (dec_AST_typ fuel) arg2)
-    | [.str "EF_inline_asm", arg0, arg1, arg2] =>
-      return .EF_inline_asm (← (dec_string fuel) arg0) (← (dec_AST_signature fuel) arg1) (← (decList (dec_string fuel)) arg2)
-    | [.str "EF_debug", arg0, arg1, arg2] =>
-      return .EF_debug (← (dec_pos fuel) arg0) (← (dec_pos fuel) arg1) (← (decList (dec_AST_typ fuel)) arg2)
-    | _ => throw "invalid AST_external_function constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 1 then
+      match values[0] with
+      | .str "EF_malloc" =>
+        return .EF_malloc
+      | .str "EF_free" =>
+        return .EF_free
+      | _ => throw "invalid AST_external_function constructor or arity"
+    else if size : values.size = 2 then
+      match values[0] with
+      | .str "EF_vload" =>
+        return .EF_vload (← (dec_AST_memory_chunk fuel) values[1])
+      | .str "EF_vstore" =>
+        return .EF_vstore (← (dec_AST_memory_chunk fuel) values[1])
+      | _ => throw "invalid AST_external_function constructor or arity"
+    else if size : values.size = 3 then
+      match values[0] with
+      | .str "EF_external" =>
+        return .EF_external (← (dec_string fuel) values[1]) (← (dec_AST_signature fuel) values[2])
+      | .str "EF_builtin" =>
+        return .EF_builtin (← (dec_string fuel) values[1]) (← (dec_AST_signature fuel) values[2])
+      | .str "EF_runtime" =>
+        return .EF_runtime (← (dec_string fuel) values[1]) (← (dec_AST_signature fuel) values[2])
+      | .str "EF_memcpy" =>
+        return .EF_memcpy (← (dec_z fuel) values[1]) (← (dec_z fuel) values[2])
+      | _ => throw "invalid AST_external_function constructor or arity"
+    else if size : values.size = 4 then
+      match values[0] with
+      | .str "EF_annot" =>
+        return .EF_annot (← (dec_pos fuel) values[1]) (← (dec_string fuel) values[2]) (← (decList (dec_AST_typ fuel)) values[3])
+      | .str "EF_annot_val" =>
+        return .EF_annot_val (← (dec_pos fuel) values[1]) (← (dec_string fuel) values[2]) (← (dec_AST_typ fuel) values[3])
+      | .str "EF_inline_asm" =>
+        return .EF_inline_asm (← (dec_string fuel) values[1]) (← (dec_AST_signature fuel) values[2]) (← (decList (dec_string fuel)) values[3])
+      | .str "EF_debug" =>
+        return .EF_debug (← (dec_pos fuel) values[1]) (← (dec_pos fuel) values[2]) (← (decList (dec_AST_typ fuel)) values[3])
+      | _ => throw "invalid AST_external_function constructor or arity"
+    else throw "invalid AST_external_function constructor or arity"
 
 def dec_Ctypes_signedness : Nat → Json → CodecResult (Cfrontend.Ctypes.signedness)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Signed"] =>
-      return .Signed
-    | [.str "Unsigned"] =>
-      return .Unsigned
-    | _ => throw "invalid Ctypes_signedness constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 1 then
+      match values[0] with
+      | .str "Signed" =>
+        return .Signed
+      | .str "Unsigned" =>
+        return .Unsigned
+      | _ => throw "invalid Ctypes_signedness constructor or arity"
+    else throw "invalid Ctypes_signedness constructor or arity"
 
 def dec_Ctypes_intsize : Nat → Json → CodecResult (Cfrontend.Ctypes.intsize)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "I8"] =>
-      return .I8
-    | [.str "I16"] =>
-      return .I16
-    | [.str "I32"] =>
-      return .I32
-    | [.str "IBool"] =>
-      return .IBool
-    | _ => throw "invalid Ctypes_intsize constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 1 then
+      match values[0] with
+      | .str "I8" =>
+        return .I8
+      | .str "I16" =>
+        return .I16
+      | .str "I32" =>
+        return .I32
+      | .str "IBool" =>
+        return .IBool
+      | _ => throw "invalid Ctypes_intsize constructor or arity"
+    else throw "invalid Ctypes_intsize constructor or arity"
 
 def dec_Ctypes_floatsize : Nat → Json → CodecResult (Cfrontend.Ctypes.floatsize)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "F32"] =>
-      return .F32
-    | [.str "F64"] =>
-      return .F64
-    | _ => throw "invalid Ctypes_floatsize constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 1 then
+      match values[0] with
+      | .str "F32" =>
+        return .F32
+      | .str "F64" =>
+        return .F64
+      | _ => throw "invalid Ctypes_floatsize constructor or arity"
+    else throw "invalid Ctypes_floatsize constructor or arity"
 
 def dec_Ctypes_attr : Nat → Json → CodecResult (Cfrontend.Ctypes.attr)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Ctypes_attr", arg0, arg1] =>
-      return { attr_volatile := (← (dec_bool fuel) arg0), attr_alignas := (← (decOption (dec_n fuel)) arg1) }
-    | _ => throw "invalid Ctypes_attr constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 3 then
+      match values[0] with
+      | .str "Ctypes_attr" =>
+        return { attr_volatile := (← (dec_bool fuel) values[1]), attr_alignas := (← (decOption (dec_n fuel)) values[2]) }
+      | _ => throw "invalid Ctypes_attr constructor or arity"
+    else throw "invalid Ctypes_attr constructor or arity"
 
 def dec_Ctypes_coq_type : Nat → Json → CodecResult (Cfrontend.Ctypes.type)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Tvoid"] =>
-      return .Tvoid
-    | [.str "Tint", arg0, arg1, arg2] =>
-      return .Tint (← (dec_Ctypes_intsize fuel) arg0) (← (dec_Ctypes_signedness fuel) arg1) (← (dec_Ctypes_attr fuel) arg2)
-    | [.str "Tlong", arg0, arg1] =>
-      return .Tlong (← (dec_Ctypes_signedness fuel) arg0) (← (dec_Ctypes_attr fuel) arg1)
-    | [.str "Tfloat", arg0, arg1] =>
-      return .Tfloat (← (dec_Ctypes_floatsize fuel) arg0) (← (dec_Ctypes_attr fuel) arg1)
-    | [.str "Tpointer", arg0, arg1] =>
-      return .Tpointer (← (dec_Ctypes_coq_type fuel) arg0) (← (dec_Ctypes_attr fuel) arg1)
-    | [.str "Tarray", arg0, arg1, arg2] =>
-      return .Tarray (← (dec_Ctypes_coq_type fuel) arg0) (← (dec_z fuel) arg1) (← (dec_Ctypes_attr fuel) arg2)
-    | [.str "Tfunction", arg0, arg1, arg2] =>
-      return .Tfunction (← (decList (dec_Ctypes_coq_type fuel)) arg0) (← (dec_Ctypes_coq_type fuel) arg1) (← (dec_AST_calling_convention fuel) arg2)
-    | [.str "Tstruct", arg0, arg1] =>
-      return .Tstruct (← (dec_pos fuel) arg0) (← (dec_Ctypes_attr fuel) arg1)
-    | [.str "Tunion", arg0, arg1] =>
-      return .Tunion (← (dec_pos fuel) arg0) (← (dec_Ctypes_attr fuel) arg1)
-    | _ => throw "invalid Ctypes_coq_type constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 1 then
+      match values[0] with
+      | .str "Tvoid" =>
+        return .Tvoid
+      | _ => throw "invalid Ctypes_coq_type constructor or arity"
+    else if size : values.size = 3 then
+      match values[0] with
+      | .str "Tlong" =>
+        return .Tlong (← (dec_Ctypes_signedness fuel) values[1]) (← (dec_Ctypes_attr fuel) values[2])
+      | .str "Tfloat" =>
+        return .Tfloat (← (dec_Ctypes_floatsize fuel) values[1]) (← (dec_Ctypes_attr fuel) values[2])
+      | .str "Tpointer" =>
+        return .Tpointer (← (dec_Ctypes_coq_type fuel) values[1]) (← (dec_Ctypes_attr fuel) values[2])
+      | .str "Tstruct" =>
+        return .Tstruct (← (dec_pos fuel) values[1]) (← (dec_Ctypes_attr fuel) values[2])
+      | .str "Tunion" =>
+        return .Tunion (← (dec_pos fuel) values[1]) (← (dec_Ctypes_attr fuel) values[2])
+      | _ => throw "invalid Ctypes_coq_type constructor or arity"
+    else if size : values.size = 4 then
+      match values[0] with
+      | .str "Tint" =>
+        return .Tint (← (dec_Ctypes_intsize fuel) values[1]) (← (dec_Ctypes_signedness fuel) values[2]) (← (dec_Ctypes_attr fuel) values[3])
+      | .str "Tarray" =>
+        return .Tarray (← (dec_Ctypes_coq_type fuel) values[1]) (← (dec_z fuel) values[2]) (← (dec_Ctypes_attr fuel) values[3])
+      | .str "Tfunction" =>
+        return .Tfunction (← (decList (dec_Ctypes_coq_type fuel)) values[1]) (← (dec_Ctypes_coq_type fuel) values[2]) (← (dec_AST_calling_convention fuel) values[3])
+      | _ => throw "invalid Ctypes_coq_type constructor or arity"
+    else throw "invalid Ctypes_coq_type constructor or arity"
 
 def dec_Ctypes_struct_or_union : Nat → Json → CodecResult (Cfrontend.Ctypes.struct_or_union)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Struct"] =>
-      return .Struct
-    | [.str "Union"] =>
-      return .Union
-    | _ => throw "invalid Ctypes_struct_or_union constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 1 then
+      match values[0] with
+      | .str "Struct" =>
+        return .Struct
+      | .str "Union" =>
+        return .Union
+      | _ => throw "invalid Ctypes_struct_or_union constructor or arity"
+    else throw "invalid Ctypes_struct_or_union constructor or arity"
 
 def dec_Ctypes_member : Nat → Json → CodecResult (Cfrontend.Ctypes.member)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Member_plain", arg0, arg1] =>
-      return .Member_plain (← (dec_pos fuel) arg0) (← (dec_Ctypes_coq_type fuel) arg1)
-    | [.str "Member_bitfield", arg0, arg1, arg2, arg3, arg4, arg5] =>
-      return .Member_bitfield (← (dec_pos fuel) arg0) (← (dec_Ctypes_intsize fuel) arg1) (← (dec_Ctypes_signedness fuel) arg2) (← (dec_Ctypes_attr fuel) arg3) (← (dec_z fuel) arg4) (← (dec_bool fuel) arg5)
-    | _ => throw "invalid Ctypes_member constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 3 then
+      match values[0] with
+      | .str "Member_plain" =>
+        return .Member_plain (← (dec_pos fuel) values[1]) (← (dec_Ctypes_coq_type fuel) values[2])
+      | _ => throw "invalid Ctypes_member constructor or arity"
+    else if size : values.size = 7 then
+      match values[0] with
+      | .str "Member_bitfield" =>
+        return .Member_bitfield (← (dec_pos fuel) values[1]) (← (dec_Ctypes_intsize fuel) values[2]) (← (dec_Ctypes_signedness fuel) values[3]) (← (dec_Ctypes_attr fuel) values[4]) (← (dec_z fuel) values[5]) (← (dec_bool fuel) values[6])
+      | _ => throw "invalid Ctypes_member constructor or arity"
+    else throw "invalid Ctypes_member constructor or arity"
 
 def dec_Ctypes_composite_definition : Nat → Json → CodecResult (Cfrontend.Ctypes.composite_definition)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Composite", arg0, arg1, arg2, arg3] =>
-      return .Composite (← (dec_pos fuel) arg0) (← (dec_Ctypes_struct_or_union fuel) arg1) (← (decList (dec_Ctypes_member fuel)) arg2) (← (dec_Ctypes_attr fuel) arg3)
-    | _ => throw "invalid Ctypes_composite_definition constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 5 then
+      match values[0] with
+      | .str "Composite" =>
+        return .Composite (← (dec_pos fuel) values[1]) (← (dec_Ctypes_struct_or_union fuel) values[2]) (← (decList (dec_Ctypes_member fuel)) values[3]) (← (dec_Ctypes_attr fuel) values[4])
+      | _ => throw "invalid Ctypes_composite_definition constructor or arity"
+    else throw "invalid Ctypes_composite_definition constructor or arity"
 
 def dec_Ctypes_bitfield : Nat → Json → CodecResult (Cfrontend.Ctypes.bitfield)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Full"] =>
-      return .Full
-    | [.str "Bits", arg0, arg1, arg2, arg3] =>
-      return .Bits (← (dec_Ctypes_intsize fuel) arg0) (← (dec_Ctypes_signedness fuel) arg1) (← (dec_z fuel) arg2) (← (dec_z fuel) arg3)
-    | _ => throw "invalid Ctypes_bitfield constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 1 then
+      match values[0] with
+      | .str "Full" =>
+        return .Full
+      | _ => throw "invalid Ctypes_bitfield constructor or arity"
+    else if size : values.size = 5 then
+      match values[0] with
+      | .str "Bits" =>
+        return .Bits (← (dec_Ctypes_intsize fuel) values[1]) (← (dec_Ctypes_signedness fuel) values[2]) (← (dec_z fuel) values[3]) (← (dec_z fuel) values[4])
+      | _ => throw "invalid Ctypes_bitfield constructor or arity"
+    else throw "invalid Ctypes_bitfield constructor or arity"
 
 def dec_Cop_unary_operation : Nat → Json → CodecResult (Cfrontend.Cop.unary_operation)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Onotbool"] =>
-      return .Onotbool
-    | [.str "Onotint"] =>
-      return .Onotint
-    | [.str "Oneg"] =>
-      return .Oneg
-    | [.str "Oabsfloat"] =>
-      return .Oabsfloat
-    | _ => throw "invalid Cop_unary_operation constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 1 then
+      match values[0] with
+      | .str "Onotbool" =>
+        return .Onotbool
+      | .str "Onotint" =>
+        return .Onotint
+      | .str "Oneg" =>
+        return .Oneg
+      | .str "Oabsfloat" =>
+        return .Oabsfloat
+      | _ => throw "invalid Cop_unary_operation constructor or arity"
+    else throw "invalid Cop_unary_operation constructor or arity"
 
 def dec_Cop_binary_operation : Nat → Json → CodecResult (Cfrontend.Cop.binary_operation)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Oadd"] =>
-      return .Oadd
-    | [.str "Osub"] =>
-      return .Osub
-    | [.str "Omul"] =>
-      return .Omul
-    | [.str "Odiv"] =>
-      return .Odiv
-    | [.str "Omod"] =>
-      return .Omod
-    | [.str "Oand"] =>
-      return .Oand
-    | [.str "Oor"] =>
-      return .Oor
-    | [.str "Oxor"] =>
-      return .Oxor
-    | [.str "Oshl"] =>
-      return .Oshl
-    | [.str "Oshr"] =>
-      return .Oshr
-    | [.str "Oeq"] =>
-      return .Oeq
-    | [.str "One"] =>
-      return .One
-    | [.str "Olt"] =>
-      return .Olt
-    | [.str "Ogt"] =>
-      return .Ogt
-    | [.str "Ole"] =>
-      return .Ole
-    | [.str "Oge"] =>
-      return .Oge
-    | _ => throw "invalid Cop_binary_operation constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 1 then
+      match values[0] with
+      | .str "Oadd" =>
+        return .Oadd
+      | .str "Osub" =>
+        return .Osub
+      | .str "Omul" =>
+        return .Omul
+      | .str "Odiv" =>
+        return .Odiv
+      | .str "Omod" =>
+        return .Omod
+      | .str "Oand" =>
+        return .Oand
+      | .str "Oor" =>
+        return .Oor
+      | .str "Oxor" =>
+        return .Oxor
+      | .str "Oshl" =>
+        return .Oshl
+      | .str "Oshr" =>
+        return .Oshr
+      | .str "Oeq" =>
+        return .Oeq
+      | .str "One" =>
+        return .One
+      | .str "Olt" =>
+        return .Olt
+      | .str "Ogt" =>
+        return .Ogt
+      | .str "Ole" =>
+        return .Ole
+      | .str "Oge" =>
+        return .Oge
+      | _ => throw "invalid Cop_binary_operation constructor or arity"
+    else throw "invalid Cop_binary_operation constructor or arity"
 
 def dec_Cop_incr_or_decr : Nat → Json → CodecResult (Cfrontend.Cop.incr_or_decr)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Incr"] =>
-      return .Incr
-    | [.str "Decr"] =>
-      return .Decr
-    | _ => throw "invalid Cop_incr_or_decr constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 1 then
+      match values[0] with
+      | .str "Incr" =>
+        return .Incr
+      | .str "Decr" =>
+        return .Decr
+      | _ => throw "invalid Cop_incr_or_decr constructor or arity"
+    else throw "invalid Cop_incr_or_decr constructor or arity"
 
 def dec_Values_coq_val : Nat → Json → CodecResult (Common.Values.val)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Vundef"] =>
-      return .Vundef
-    | [.str "Vint", arg0] =>
-      return .Vint (← (dec_int fuel) arg0)
-    | [.str "Vlong", arg0] =>
-      return .Vlong (← (dec_long fuel) arg0)
-    | [.str "Vfloat", arg0] =>
-      return .Vfloat (← (dec_float fuel) arg0)
-    | [.str "Vsingle", arg0] =>
-      return .Vsingle (← (dec_single fuel) arg0)
-    | [.str "Vptr", arg0, arg1] =>
-      return .Vptr (← (dec_pos fuel) arg0) (← (dec_ptr fuel) arg1)
-    | _ => throw "invalid Values_coq_val constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 1 then
+      match values[0] with
+      | .str "Vundef" =>
+        return .Vundef
+      | _ => throw "invalid Values_coq_val constructor or arity"
+    else if size : values.size = 2 then
+      match values[0] with
+      | .str "Vint" =>
+        return .Vint (← (dec_int fuel) values[1])
+      | .str "Vlong" =>
+        return .Vlong (← (dec_long fuel) values[1])
+      | .str "Vfloat" =>
+        return .Vfloat (← (dec_float fuel) values[1])
+      | .str "Vsingle" =>
+        return .Vsingle (← (dec_single fuel) values[1])
+      | _ => throw "invalid Values_coq_val constructor or arity"
+    else if size : values.size = 3 then
+      match values[0] with
+      | .str "Vptr" =>
+        return .Vptr (← (dec_pos fuel) values[1]) (← (dec_ptr fuel) values[2])
+      | _ => throw "invalid Values_coq_val constructor or arity"
+    else throw "invalid Values_coq_val constructor or arity"
 
 def dec_Csyntax_expr : Nat → Json → CodecResult (Cfrontend.Csyntax.expr)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Eval", arg0, arg1] =>
-      return .Eval (← (dec_Values_coq_val fuel) arg0) (← (dec_Ctypes_coq_type fuel) arg1)
-    | [.str "Evar", arg0, arg1] =>
-      return .Evar (← (dec_pos fuel) arg0) (← (dec_Ctypes_coq_type fuel) arg1)
-    | [.str "Efield", arg0, arg1, arg2] =>
-      return .Efield (← (dec_Csyntax_expr fuel) arg0) (← (dec_pos fuel) arg1) (← (dec_Ctypes_coq_type fuel) arg2)
-    | [.str "Evalof", arg0, arg1] =>
-      return .Evalof (← (dec_Csyntax_expr fuel) arg0) (← (dec_Ctypes_coq_type fuel) arg1)
-    | [.str "Ederef", arg0, arg1] =>
-      return .Ederef (← (dec_Csyntax_expr fuel) arg0) (← (dec_Ctypes_coq_type fuel) arg1)
-    | [.str "Eaddrof", arg0, arg1] =>
-      return .Eaddrof (← (dec_Csyntax_expr fuel) arg0) (← (dec_Ctypes_coq_type fuel) arg1)
-    | [.str "Eunop", arg0, arg1, arg2] =>
-      return .Eunop (← (dec_Cop_unary_operation fuel) arg0) (← (dec_Csyntax_expr fuel) arg1) (← (dec_Ctypes_coq_type fuel) arg2)
-    | [.str "Ebinop", arg0, arg1, arg2, arg3] =>
-      return .Ebinop (← (dec_Cop_binary_operation fuel) arg0) (← (dec_Csyntax_expr fuel) arg1) (← (dec_Csyntax_expr fuel) arg2) (← (dec_Ctypes_coq_type fuel) arg3)
-    | [.str "Ecast", arg0, arg1] =>
-      return .Ecast (← (dec_Csyntax_expr fuel) arg0) (← (dec_Ctypes_coq_type fuel) arg1)
-    | [.str "Eseqand", arg0, arg1, arg2] =>
-      return .Eseqand (← (dec_Csyntax_expr fuel) arg0) (← (dec_Csyntax_expr fuel) arg1) (← (dec_Ctypes_coq_type fuel) arg2)
-    | [.str "Eseqor", arg0, arg1, arg2] =>
-      return .Eseqor (← (dec_Csyntax_expr fuel) arg0) (← (dec_Csyntax_expr fuel) arg1) (← (dec_Ctypes_coq_type fuel) arg2)
-    | [.str "Econdition", arg0, arg1, arg2, arg3] =>
-      return .Econdition (← (dec_Csyntax_expr fuel) arg0) (← (dec_Csyntax_expr fuel) arg1) (← (dec_Csyntax_expr fuel) arg2) (← (dec_Ctypes_coq_type fuel) arg3)
-    | [.str "Esizeof", arg0, arg1] =>
-      return .Esizeof (← (dec_Ctypes_coq_type fuel) arg0) (← (dec_Ctypes_coq_type fuel) arg1)
-    | [.str "Ealignof", arg0, arg1] =>
-      return .Ealignof (← (dec_Ctypes_coq_type fuel) arg0) (← (dec_Ctypes_coq_type fuel) arg1)
-    | [.str "Eassign", arg0, arg1, arg2] =>
-      return .Eassign (← (dec_Csyntax_expr fuel) arg0) (← (dec_Csyntax_expr fuel) arg1) (← (dec_Ctypes_coq_type fuel) arg2)
-    | [.str "Eassignop", arg0, arg1, arg2, arg3, arg4] =>
-      return .Eassignop (← (dec_Cop_binary_operation fuel) arg0) (← (dec_Csyntax_expr fuel) arg1) (← (dec_Csyntax_expr fuel) arg2) (← (dec_Ctypes_coq_type fuel) arg3) (← (dec_Ctypes_coq_type fuel) arg4)
-    | [.str "Epostincr", arg0, arg1, arg2] =>
-      return .Epostincr (← (dec_Cop_incr_or_decr fuel) arg0) (← (dec_Csyntax_expr fuel) arg1) (← (dec_Ctypes_coq_type fuel) arg2)
-    | [.str "Ecomma", arg0, arg1, arg2] =>
-      return .Ecomma (← (dec_Csyntax_expr fuel) arg0) (← (dec_Csyntax_expr fuel) arg1) (← (dec_Ctypes_coq_type fuel) arg2)
-    | [.str "Ecall", arg0, arg1, arg2] =>
-      return .Ecall (← (dec_Csyntax_expr fuel) arg0) (← (dec_Csyntax_exprlist fuel) arg1) (← (dec_Ctypes_coq_type fuel) arg2)
-    | [.str "Ebuiltin", arg0, arg1, arg2, arg3] =>
-      return .Ebuiltin (← (dec_AST_external_function fuel) arg0) (← (decList (dec_Ctypes_coq_type fuel)) arg1) (← (dec_Csyntax_exprlist fuel) arg2) (← (dec_Ctypes_coq_type fuel) arg3)
-    | [.str "Eloc", arg0, arg1, arg2, arg3] =>
-      return .Eloc (← (dec_pos fuel) arg0) (← (dec_ptr fuel) arg1) (← (dec_Ctypes_bitfield fuel) arg2) (← (dec_Ctypes_coq_type fuel) arg3)
-    | [.str "Eparen", arg0, arg1, arg2] =>
-      return .Eparen (← (dec_Csyntax_expr fuel) arg0) (← (dec_Ctypes_coq_type fuel) arg1) (← (dec_Ctypes_coq_type fuel) arg2)
-    | _ => throw "invalid Csyntax_expr constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 3 then
+      match values[0] with
+      | .str "Eval" =>
+        return .Eval (← (dec_Values_coq_val fuel) values[1]) (← (dec_Ctypes_coq_type fuel) values[2])
+      | .str "Evar" =>
+        return .Evar (← (dec_pos fuel) values[1]) (← (dec_Ctypes_coq_type fuel) values[2])
+      | .str "Evalof" =>
+        return .Evalof (← (dec_Csyntax_expr fuel) values[1]) (← (dec_Ctypes_coq_type fuel) values[2])
+      | .str "Ederef" =>
+        return .Ederef (← (dec_Csyntax_expr fuel) values[1]) (← (dec_Ctypes_coq_type fuel) values[2])
+      | .str "Eaddrof" =>
+        return .Eaddrof (← (dec_Csyntax_expr fuel) values[1]) (← (dec_Ctypes_coq_type fuel) values[2])
+      | .str "Ecast" =>
+        return .Ecast (← (dec_Csyntax_expr fuel) values[1]) (← (dec_Ctypes_coq_type fuel) values[2])
+      | .str "Esizeof" =>
+        return .Esizeof (← (dec_Ctypes_coq_type fuel) values[1]) (← (dec_Ctypes_coq_type fuel) values[2])
+      | .str "Ealignof" =>
+        return .Ealignof (← (dec_Ctypes_coq_type fuel) values[1]) (← (dec_Ctypes_coq_type fuel) values[2])
+      | _ => throw "invalid Csyntax_expr constructor or arity"
+    else if size : values.size = 4 then
+      match values[0] with
+      | .str "Efield" =>
+        return .Efield (← (dec_Csyntax_expr fuel) values[1]) (← (dec_pos fuel) values[2]) (← (dec_Ctypes_coq_type fuel) values[3])
+      | .str "Eunop" =>
+        return .Eunop (← (dec_Cop_unary_operation fuel) values[1]) (← (dec_Csyntax_expr fuel) values[2]) (← (dec_Ctypes_coq_type fuel) values[3])
+      | .str "Eseqand" =>
+        return .Eseqand (← (dec_Csyntax_expr fuel) values[1]) (← (dec_Csyntax_expr fuel) values[2]) (← (dec_Ctypes_coq_type fuel) values[3])
+      | .str "Eseqor" =>
+        return .Eseqor (← (dec_Csyntax_expr fuel) values[1]) (← (dec_Csyntax_expr fuel) values[2]) (← (dec_Ctypes_coq_type fuel) values[3])
+      | .str "Eassign" =>
+        return .Eassign (← (dec_Csyntax_expr fuel) values[1]) (← (dec_Csyntax_expr fuel) values[2]) (← (dec_Ctypes_coq_type fuel) values[3])
+      | .str "Epostincr" =>
+        return .Epostincr (← (dec_Cop_incr_or_decr fuel) values[1]) (← (dec_Csyntax_expr fuel) values[2]) (← (dec_Ctypes_coq_type fuel) values[3])
+      | .str "Ecomma" =>
+        return .Ecomma (← (dec_Csyntax_expr fuel) values[1]) (← (dec_Csyntax_expr fuel) values[2]) (← (dec_Ctypes_coq_type fuel) values[3])
+      | .str "Ecall" =>
+        return .Ecall (← (dec_Csyntax_expr fuel) values[1]) (← (dec_Csyntax_exprlist fuel) values[2]) (← (dec_Ctypes_coq_type fuel) values[3])
+      | .str "Eparen" =>
+        return .Eparen (← (dec_Csyntax_expr fuel) values[1]) (← (dec_Ctypes_coq_type fuel) values[2]) (← (dec_Ctypes_coq_type fuel) values[3])
+      | _ => throw "invalid Csyntax_expr constructor or arity"
+    else if size : values.size = 5 then
+      match values[0] with
+      | .str "Ebinop" =>
+        return .Ebinop (← (dec_Cop_binary_operation fuel) values[1]) (← (dec_Csyntax_expr fuel) values[2]) (← (dec_Csyntax_expr fuel) values[3]) (← (dec_Ctypes_coq_type fuel) values[4])
+      | .str "Econdition" =>
+        return .Econdition (← (dec_Csyntax_expr fuel) values[1]) (← (dec_Csyntax_expr fuel) values[2]) (← (dec_Csyntax_expr fuel) values[3]) (← (dec_Ctypes_coq_type fuel) values[4])
+      | .str "Ebuiltin" =>
+        return .Ebuiltin (← (dec_AST_external_function fuel) values[1]) (← (decList (dec_Ctypes_coq_type fuel)) values[2]) (← (dec_Csyntax_exprlist fuel) values[3]) (← (dec_Ctypes_coq_type fuel) values[4])
+      | .str "Eloc" =>
+        return .Eloc (← (dec_pos fuel) values[1]) (← (dec_ptr fuel) values[2]) (← (dec_Ctypes_bitfield fuel) values[3]) (← (dec_Ctypes_coq_type fuel) values[4])
+      | _ => throw "invalid Csyntax_expr constructor or arity"
+    else if size : values.size = 6 then
+      match values[0] with
+      | .str "Eassignop" =>
+        return .Eassignop (← (dec_Cop_binary_operation fuel) values[1]) (← (dec_Csyntax_expr fuel) values[2]) (← (dec_Csyntax_expr fuel) values[3]) (← (dec_Ctypes_coq_type fuel) values[4]) (← (dec_Ctypes_coq_type fuel) values[5])
+      | _ => throw "invalid Csyntax_expr constructor or arity"
+    else throw "invalid Csyntax_expr constructor or arity"
 
 def dec_Csyntax_exprlist : Nat → Json → CodecResult (Cfrontend.Csyntax.exprlist)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Enil"] =>
-      return .Enil
-    | [.str "Econs", arg0, arg1] =>
-      return .Econs (← (dec_Csyntax_expr fuel) arg0) (← (dec_Csyntax_exprlist fuel) arg1)
-    | _ => throw "invalid Csyntax_exprlist constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 1 then
+      match values[0] with
+      | .str "Enil" =>
+        return .Enil
+      | _ => throw "invalid Csyntax_exprlist constructor or arity"
+    else if size : values.size = 3 then
+      match values[0] with
+      | .str "Econs" =>
+        return .Econs (← (dec_Csyntax_expr fuel) values[1]) (← (dec_Csyntax_exprlist fuel) values[2])
+      | _ => throw "invalid Csyntax_exprlist constructor or arity"
+    else throw "invalid Csyntax_exprlist constructor or arity"
 
 def dec_Csyntax_statement : Nat → Json → CodecResult (Cfrontend.Csyntax.statement)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Sskip"] =>
-      return .Sskip
-    | [.str "Sdo", arg0] =>
-      return .Sdo (← (dec_Csyntax_expr fuel) arg0)
-    | [.str "Ssequence", arg0, arg1] =>
-      return .Ssequence (← (dec_Csyntax_statement fuel) arg0) (← (dec_Csyntax_statement fuel) arg1)
-    | [.str "Sifthenelse", arg0, arg1, arg2] =>
-      return .Sifthenelse (← (dec_Csyntax_expr fuel) arg0) (← (dec_Csyntax_statement fuel) arg1) (← (dec_Csyntax_statement fuel) arg2)
-    | [.str "Swhile", arg0, arg1] =>
-      return .Swhile (← (dec_Csyntax_expr fuel) arg0) (← (dec_Csyntax_statement fuel) arg1)
-    | [.str "Sdowhile", arg0, arg1] =>
-      return .Sdowhile (← (dec_Csyntax_expr fuel) arg0) (← (dec_Csyntax_statement fuel) arg1)
-    | [.str "Sfor", arg0, arg1, arg2, arg3] =>
-      return .Sfor (← (dec_Csyntax_statement fuel) arg0) (← (dec_Csyntax_expr fuel) arg1) (← (dec_Csyntax_statement fuel) arg2) (← (dec_Csyntax_statement fuel) arg3)
-    | [.str "Sbreak"] =>
-      return .Sbreak
-    | [.str "Scontinue"] =>
-      return .Scontinue
-    | [.str "Sreturn", arg0] =>
-      return .Sreturn (← (decOption (dec_Csyntax_expr fuel)) arg0)
-    | [.str "Sswitch", arg0, arg1] =>
-      return .Sswitch (← (dec_Csyntax_expr fuel) arg0) (← (dec_Csyntax_labeled_statements fuel) arg1)
-    | [.str "Slabel", arg0, arg1] =>
-      return .Slabel (← (dec_pos fuel) arg0) (← (dec_Csyntax_statement fuel) arg1)
-    | [.str "Sgoto", arg0] =>
-      return .Sgoto (← (dec_pos fuel) arg0)
-    | _ => throw "invalid Csyntax_statement constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 1 then
+      match values[0] with
+      | .str "Sskip" =>
+        return .Sskip
+      | .str "Sbreak" =>
+        return .Sbreak
+      | .str "Scontinue" =>
+        return .Scontinue
+      | _ => throw "invalid Csyntax_statement constructor or arity"
+    else if size : values.size = 2 then
+      match values[0] with
+      | .str "Sdo" =>
+        return .Sdo (← (dec_Csyntax_expr fuel) values[1])
+      | .str "Sreturn" =>
+        return .Sreturn (← (decOption (dec_Csyntax_expr fuel)) values[1])
+      | .str "Sgoto" =>
+        return .Sgoto (← (dec_pos fuel) values[1])
+      | _ => throw "invalid Csyntax_statement constructor or arity"
+    else if size : values.size = 3 then
+      match values[0] with
+      | .str "Ssequence" =>
+        return .Ssequence (← (dec_Csyntax_statement fuel) values[1]) (← (dec_Csyntax_statement fuel) values[2])
+      | .str "Swhile" =>
+        return .Swhile (← (dec_Csyntax_expr fuel) values[1]) (← (dec_Csyntax_statement fuel) values[2])
+      | .str "Sdowhile" =>
+        return .Sdowhile (← (dec_Csyntax_expr fuel) values[1]) (← (dec_Csyntax_statement fuel) values[2])
+      | .str "Sswitch" =>
+        return .Sswitch (← (dec_Csyntax_expr fuel) values[1]) (← (dec_Csyntax_labeled_statements fuel) values[2])
+      | .str "Slabel" =>
+        return .Slabel (← (dec_pos fuel) values[1]) (← (dec_Csyntax_statement fuel) values[2])
+      | _ => throw "invalid Csyntax_statement constructor or arity"
+    else if size : values.size = 4 then
+      match values[0] with
+      | .str "Sifthenelse" =>
+        return .Sifthenelse (← (dec_Csyntax_expr fuel) values[1]) (← (dec_Csyntax_statement fuel) values[2]) (← (dec_Csyntax_statement fuel) values[3])
+      | _ => throw "invalid Csyntax_statement constructor or arity"
+    else if size : values.size = 5 then
+      match values[0] with
+      | .str "Sfor" =>
+        return .Sfor (← (dec_Csyntax_statement fuel) values[1]) (← (dec_Csyntax_expr fuel) values[2]) (← (dec_Csyntax_statement fuel) values[3]) (← (dec_Csyntax_statement fuel) values[4])
+      | _ => throw "invalid Csyntax_statement constructor or arity"
+    else throw "invalid Csyntax_statement constructor or arity"
 
 def dec_Csyntax_labeled_statements : Nat → Json → CodecResult (Cfrontend.Csyntax.labeled_statements)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "LSnil"] =>
-      return .LSnil
-    | [.str "LScons", arg0, arg1, arg2] =>
-      return .LScons (← (decOption (dec_z fuel)) arg0) (← (dec_Csyntax_statement fuel) arg1) (← (dec_Csyntax_labeled_statements fuel) arg2)
-    | _ => throw "invalid Csyntax_labeled_statements constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 1 then
+      match values[0] with
+      | .str "LSnil" =>
+        return .LSnil
+      | _ => throw "invalid Csyntax_labeled_statements constructor or arity"
+    else if size : values.size = 4 then
+      match values[0] with
+      | .str "LScons" =>
+        return .LScons (← (decOption (dec_z fuel)) values[1]) (← (dec_Csyntax_statement fuel) values[2]) (← (dec_Csyntax_labeled_statements fuel) values[3])
+      | _ => throw "invalid Csyntax_labeled_statements constructor or arity"
+    else throw "invalid Csyntax_labeled_statements constructor or arity"
 
 def dec_Csyntax_coq_function : Nat → Json → CodecResult (Cfrontend.Csyntax.function)
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Csyntax_coq_function", arg0, arg1, arg2, arg3, arg4] =>
-      return { fn_return := (← (dec_Ctypes_coq_type fuel) arg0), fn_callconv := (← (dec_AST_calling_convention fuel) arg1), fn_params := (← (decList (decPair (dec_pos fuel) (dec_Ctypes_coq_type fuel))) arg2), fn_vars := (← (decList (decPair (dec_pos fuel) (dec_Ctypes_coq_type fuel))) arg3), fn_body := (← (dec_Csyntax_statement fuel) arg4) }
-    | _ => throw "invalid Csyntax_coq_function constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 6 then
+      match values[0] with
+      | .str "Csyntax_coq_function" =>
+        return { fn_return := (← (dec_Ctypes_coq_type fuel) values[1]), fn_callconv := (← (dec_AST_calling_convention fuel) values[2]), fn_params := (← (decList (decPair (dec_pos fuel) (dec_Ctypes_coq_type fuel))) values[3]), fn_vars := (← (decList (decPair (dec_pos fuel) (dec_Ctypes_coq_type fuel))) values[4]), fn_body := (← (dec_Csyntax_statement fuel) values[5]) }
+      | _ => throw "invalid Csyntax_coq_function constructor or arity"
+    else throw "invalid Csyntax_coq_function constructor or arity"
 
 def dec_Asm_ireg : Nat → Json → CodecResult (X86.Asm.ireg)
   | 0, _ => throw "interchange depth exceeded"
@@ -1574,30 +1706,42 @@ def dec_Asm_coq_function : Nat → Json → CodecResult (X86.Asm.function)
 def dec_CFundef : Nat → Json → CodecResult (Cfrontend.Ctypes.fundef (Cfrontend.Csyntax.function))
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Internal", arg0] =>
-      return .Internal (← (dec_Csyntax_coq_function fuel) arg0)
-    | [.str "External", arg0, arg1, arg2, arg3] =>
-      return .External (← (dec_AST_external_function fuel) arg0) (← (decList (dec_Ctypes_coq_type fuel)) arg1) (← (dec_Ctypes_coq_type fuel) arg2) (← (dec_AST_calling_convention fuel) arg3)
-    | _ => throw "invalid CFundef constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 2 then
+      match values[0] with
+      | .str "Internal" =>
+        return .Internal (← (dec_Csyntax_coq_function fuel) values[1])
+      | _ => throw "invalid CFundef constructor or arity"
+    else if size : values.size = 5 then
+      match values[0] with
+      | .str "External" =>
+        return .External (← (dec_AST_external_function fuel) values[1]) (← (decList (dec_Ctypes_coq_type fuel)) values[2]) (← (dec_Ctypes_coq_type fuel) values[3]) (← (dec_AST_calling_convention fuel) values[4])
+      | _ => throw "invalid CFundef constructor or arity"
+    else throw "invalid CFundef constructor or arity"
 
 def dec_CGlobvar : Nat → Json → CodecResult (Common.AST.globvar (Cfrontend.Ctypes.type))
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "CGlobvar", arg0, arg1, arg2, arg3] =>
-      return { gvar_info := (← (dec_Ctypes_coq_type fuel) arg0), gvar_init := (← (decList (dec_AST_init_data fuel)) arg1), gvar_readonly := (← (dec_bool fuel) arg2), gvar_volatile := (← (dec_bool fuel) arg3) }
-    | _ => throw "invalid CGlobvar constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 5 then
+      match values[0] with
+      | .str "CGlobvar" =>
+        return { gvar_info := (← (dec_Ctypes_coq_type fuel) values[1]), gvar_init := (← (decList (dec_AST_init_data fuel)) values[2]), gvar_readonly := (← (dec_bool fuel) values[3]), gvar_volatile := (← (dec_bool fuel) values[4]) }
+      | _ => throw "invalid CGlobvar constructor or arity"
+    else throw "invalid CGlobvar constructor or arity"
 
 def dec_CGlobdef : Nat → Json → CodecResult (Common.AST.globdef (Cfrontend.Ctypes.fundef (Cfrontend.Csyntax.function)) (Cfrontend.Ctypes.type))
   | 0, _ => throw "interchange depth exceeded"
   | fuel + 1, value => do
-    match ← fields value with
-    | [.str "Gfun", arg0] =>
-      return .Gfun (← (dec_CFundef fuel) arg0)
-    | [.str "Gvar", arg0] =>
-      return .Gvar (← (dec_CGlobvar fuel) arg0)
-    | _ => throw "invalid CGlobdef constructor or arity"
+    let values ← value.getArr?
+    if size : values.size = 2 then
+      match values[0] with
+      | .str "Gfun" =>
+        return .Gfun (← (dec_CFundef fuel) values[1])
+      | .str "Gvar" =>
+        return .Gvar (← (dec_CGlobvar fuel) values[1])
+      | _ => throw "invalid CGlobdef constructor or arity"
+    else throw "invalid CGlobdef constructor or arity"
 
 def dec_AFundef : Nat → Json → CodecResult (Common.AST.fundef (X86.Asm.function))
   | 0, _ => throw "interchange depth exceeded"

@@ -51,6 +51,38 @@ def split_outer(text, separator):
     return result
 
 
+def parse_decoder(block):
+    name = re.match(r"def (dec_\w+) :", block)[1]
+    cases = re.findall(r'    \| \[\.str "([^"]+)"([^\n]*)\] =>\n(      return [^\n]+)', block)
+    if not cases:
+        raise RuntimeError("no constructor cases: " + name)
+    result = []
+    for tag, args, body in cases:
+        names = [part.strip() for part in args.split(",") if part.strip()]
+        result.append((tag, names, body.strip()))
+    error = re.search(r'    \| _ => throw "([^"]+)"', block)[1]
+    return name, result, error
+
+
+def transform(block):
+    name, cases, error = parse_decoder(block)
+    prefix = block[:block.index("    match ← fields value with")]
+    lines = [prefix.rstrip(), "    let values ← value.getArr?"]
+    arities = sorted({len(args) + 1 for _, args, _ in cases})
+    for index, arity in enumerate(arities):
+        lines.append(f"    {'if' if index == 0 else 'else if'} size : values.size = {arity} then")
+        lines.append("      match values[0] with")
+        for tag, args, body in cases:
+            if len(args) + 1 != arity:
+                continue
+            for offset, arg in enumerate(args, 1):
+                body = re.sub(r"\b" + re.escape(arg) + r"\b", f"values[{offset}]", body)
+            lines += [f'      | .str "{tag}" =>', "        " + body]
+        lines.append(f'      | _ => throw "{error}"')
+    lines.append(f'    else throw "{error}"')
+    return "\n".join(lines)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compcert-root", type=Path, default=REPO.parent / "CompCert")
@@ -195,7 +227,14 @@ def main():
             ocaml.append("")
         lean.append("end\n")
     lean.append("end CompCert4Lean.Prototype\n")
-    outputs = {"CompCert4Lean/Prototype/Codecs.lean": "\n".join(lean), "bridge/codecs.ml": "\n".join(ocaml)}
+    lean_text = "\n".join(lean)
+    decoder_block = lean_text.split("mutual\n")[2].split("\nend\n", 1)[0]
+    blocks = re.split(r"\n(?=def dec_)", decoder_block.strip())
+    indexed_names = set(['dec_AST_calling_convention', 'dec_AST_external_function', 'dec_AST_init_data', 'dec_AST_memory_chunk', 'dec_AST_signature', 'dec_AST_typ', 'dec_AST_xtype', 'dec_CFundef', 'dec_CGlobdef', 'dec_CGlobvar', 'dec_Cop_binary_operation', 'dec_Cop_incr_or_decr', 'dec_Cop_unary_operation', 'dec_Csyntax_coq_function', 'dec_Csyntax_expr', 'dec_Csyntax_exprlist', 'dec_Csyntax_labeled_statements', 'dec_Csyntax_statement', 'dec_Ctypes_attr', 'dec_Ctypes_bitfield', 'dec_Ctypes_composite_definition', 'dec_Ctypes_coq_type', 'dec_Ctypes_floatsize', 'dec_Ctypes_intsize', 'dec_Ctypes_member', 'dec_Ctypes_signedness', 'dec_Ctypes_struct_or_union', 'dec_Values_coq_val'])
+    indexed_block = "\n\n".join(transform(block) if parse_decoder(block)[0] in indexed_names
+                                  else block.rstrip() for block in blocks) + "\n"
+    lean_text = lean_text.replace(decoder_block, indexed_block, 1)
+    outputs = {"CompCert4Lean/Prototype/Codecs.lean": lean_text, "bridge/codecs.ml": "\n".join(ocaml)}
     if args.check:
         for name, content in outputs.items():
             if (REPO / name).read_text() != content.rstrip("\n") + "\n":

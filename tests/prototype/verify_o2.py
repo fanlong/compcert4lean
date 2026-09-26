@@ -19,10 +19,14 @@ def main():
         ["lake", "build", "allocatorTests"],
         [REPO / ".lake/build/bin/allocatorTests"],
         ["lake", "env", "lean", "--run", "tests/prototype/RuntimeHelpers.lean"],
+        ["lake", "env", "lean", "tests/prototype/TargetHeader.lean"],
+        ["lake", "env", "lean", "tests/prototype/CodecDecoding.lean"],
         [sys.executable, "tests/prototype/test_optimization.py"],
         [sys.executable, "tests/prototype/test_benchmarks.py"],
         [sys.executable, "tests/prototype/test_framework.py"],
         [sys.executable, "tests/prototype/test_batch.py"],
+        [sys.executable, "tests/prototype/test_bridge_server.py"],
+        [sys.executable, "tests/prototype/test_c_standard.py"],
         [sys.executable, "tests/allocator/test_interchange.py"],
         [sys.executable, "scripts/smoke_test.py"],
         [sys.executable, "scripts/generate_codecs.py", "--check"],
@@ -33,7 +37,7 @@ def main():
     for index, command in enumerate(commands):
         try:
             output = execute(command, cwd=REPO, log=folder / f"check-{index:02d}")
-            if command[-1] == "tests/prototype/Trust.lean":
+            if command[-1] in {"tests/prototype/Trust.lean", "tests/prototype/TargetHeader.lean", "tests/prototype/CodecDecoding.lean"}:
                 for axioms in re.findall(r"depends on axioms:\s*\[([^]]*)\]", output.decode()):
                     if set(filter(None, map(str.strip, axioms.split(",")))) - {"propext", "Classical.choice", "Quot.sound"}:
                         raise CompileError("unapproved transitive axiom dependency: " + axioms)

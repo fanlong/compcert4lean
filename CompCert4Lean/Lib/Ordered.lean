@@ -85,3 +85,37 @@ def compare (x y : t) :
 end OrderedZ
 
 end CompCert4Lean.Lib.Ordered
+
+/-! Proven runtime alternatives; original declarations above remain unchanged. -/
+
+namespace CompCert4Lean.Lib.Ordered.OrderedPositive
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+
+def compareOnce (left right : t) :
+    CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare
+      lt eq left right := by
+  have h := compareDirect_spec left right
+  cases hc : compareDirect left right with
+  | Lt =>
+      rw [hc] at h
+      exact .LT h
+  | Eq =>
+      rw [hc] at h
+      exact .EQ (posToNat_injective h)
+  | Gt =>
+      rw [hc] at h
+      exact .GT h
+
+@[csimp] theorem compare_eq_compareOnce : compare = compareOnce := by
+  funext left right
+  have hleft := posToNat_positive left
+  have hright := posToNat_positive right
+  cases compare left right <;> cases compareOnce left right <;>
+    first | rfl | (rename_i h1 h2; change posToNat _ < posToNat _ at h1 h2; omega) |
+      (rename_i h1 h2; change _ = _ at h1; subst h1; change posToNat _ < posToNat _ at h2; omega) |
+      (rename_i h1 h2; change _ = _ at h2; subst h2; change posToNat _ < posToNat _ at h1; omega)
+
+
+end CompCert4Lean.Lib.Ordered.OrderedPositive

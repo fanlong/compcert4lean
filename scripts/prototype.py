@@ -82,26 +82,44 @@ def tool_environment(root):
     return {**os.environ, "COMPCERT_CONFIG": str(root / "compcert.ini")}
 
 
-def prepare(root):
+def prepare(root, *, lean_session=None):
+    if lean_session is not None:
+        lean_session.close()
+    try:
+        return prepare_toolchain(root, lean_session)
+    except BaseException:
+        if lean_session is not None:
+            lean_session.close()
+        raise
+
+
+def prepare_toolchain(root, lean_session):
     root = Path(root).resolve()
     if revision(root) != PIN:
         raise CompileError(f"CompCert must be pinned at {PIN}")
     BUILD.mkdir(parents=True, exist_ok=True)
     version_commands = {
-        "lean": ["lake", "env", "lean", "--version"],
-        "ocaml": ["opam", "exec", "--switch=" + SWITCH, "--", "ocamlopt", "-version"],
-        "yojson": ["opam", "exec", "--switch=" + SWITCH, "--", "ocamlfind", "query", "-format", "%v", "yojson"],
+        "ocaml_tools": ["opam", "exec", "--switch=" + SWITCH, "--", "sh", "-c",
+                        "ocamlopt -version && ocamlfind query -format '%v' yojson"],
         "gcc": ["gcc", "--version"],
         "compcert": [root / "ccomp", "-version"],
     }
-    with ThreadPoolExecutor(max_workers=len(version_commands)) as executor:
+    with ThreadPoolExecutor(max_workers=len(version_commands) + 1) as executor:
+        lean_build = executor.submit(execute, ["lake", "build", "leanCompiler"],
+                                     cwd=REPO, log=BUILD / "lean-build")
         outputs = executor.map(
             lambda command: execute(command, cwd=REPO, env=tool_environment(root)).decode().strip(),
             version_commands.values())
         versions = dict(zip(version_commands, outputs))
-    if "4.33.0" not in versions["lean"] or versions["ocaml"] != "4.14.2" or versions["yojson"] != "2.2.2":
-        raise CompileError("expected Lean 4.33.0, OCaml 4.14.2 and yojson 2.2.2: " + repr(versions))
-    execute(["lake", "build", "leanCompiler"], cwd=REPO, log=BUILD / "lean-build")
+        lean_build.result()
+        versions["lean"] = (execute([LEAN, "--version"], cwd=REPO).decode().strip() if lean_session is None
+                            else lean_session.version(deadline=time.monotonic() + 300))
+        ocaml_tools = versions.pop("ocaml_tools").splitlines()
+        if len(ocaml_tools) != 2:
+            raise CompileError("invalid OCaml tool version output: " + repr(ocaml_tools))
+        versions["ocaml"], versions["yojson"] = ocaml_tools
+        if "4.33.0" not in versions["lean"] or versions["ocaml"] != "4.14.2" or versions["yojson"] != "2.2.2":
+            raise CompileError("expected Lean 4.33.0, OCaml 4.14.2 and yojson 2.2.2: " + repr(versions))
     bridge_dir = BUILD / "bridge"
     bridge_dir.mkdir(exist_ok=True)
     sources = [REPO / "bridge" / filename for filename in ("primitives.ml", "codecs.ml", "bridge.ml")]
@@ -145,14 +163,15 @@ class Bridge:
                                         stderr=self.stderr, env=tool_environment(root), start_new_session=True)
         self.transcript = (folder / "bridge-protocol.jsonl").open("w")
 
-    def request(self, data):
+    def request(self, data, *, deadline=None):
+        deadline = self.deadline if deadline is None else deadline
         self.transcript.write(json.dumps({"request": data}) + "\n")
         self.transcript.flush()
         try:
             self.process.stdin.write((json.dumps(data) + "\n").encode())
             self.process.stdin.flush()
             while b"\n" not in self.buffer:
-                remaining = self.deadline - time.monotonic()
+                remaining = deadline - time.monotonic()
                 if remaining <= 0 or not select.select([self.process.stdout], [], [], remaining)[0]:
                     raise CompileError("CompCert bridge timed out", timed_out=True)
                 chunk = os.read(self.process.stdout.fileno(), 65536)
@@ -164,6 +183,8 @@ class Bridge:
             response = json.loads(line)
             self.transcript.write(json.dumps({"response": response}) + "\n")
             self.transcript.flush()
+            if not isinstance(response, dict):
+                raise CompileError("CompCert bridge protocol error: invalid response")
             if response.get("ok") is not True:
                 raise CompileError("CompCert bridge rejected request: " + repr(response))
         except (BrokenPipeError, json.JSONDecodeError) as error:
@@ -175,6 +196,171 @@ class Bridge:
         self.process.stdout.close()
         self.stderr.close()
         self.transcript.close()
+
+
+class BridgeServer:
+    def __init__(self, root, folder):
+        self.root = Path(root).resolve()
+        self.folder = Path(folder).resolve()
+        self.folder.mkdir(parents=True, exist_ok=True)
+        self.buffer = b""
+        self.process = None
+        self.cwd = None
+        self.stderr_path = self.folder / "bridge-server.stderr"
+        self.stderr = self.stderr_path.open("ab")
+        self.transcript = (self.folder / "bridge-server-protocol.jsonl").open("a")
+        self.command = [str(BUILD / "bridge" / "bridge")]
+        (self.folder / "bridge-server-command.json").write_text(json.dumps(self.command) + "\n")
+
+    def start(self):
+        cwd = Path.cwd()
+        if self.process is not None and self.cwd != cwd:
+            self.reset()
+        if self.process is not None:
+            return
+        environment = {**tool_environment(self.root), "COMPCERT4LEAN_BRIDGE_SERVER": "1"}
+        self.process = subprocess.Popen(self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                        stderr=self.stderr, env=environment, cwd=cwd, start_new_session=True)
+        self.cwd = cwd
+
+    def request(self, data, *, deadline):
+        try:
+            if deadline <= time.monotonic():
+                raise CompileError("CompCert bridge timed out", timed_out=True)
+            self.start()
+            self.transcript.write(json.dumps({"request": data, "pid": self.process.pid,
+                                             "cwd": str(self.cwd)}) + "\n")
+            self.transcript.flush()
+            self.process.stdin.write((json.dumps(data) + "\n").encode())
+            self.process.stdin.flush()
+            while b"\n" not in self.buffer:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not select.select([self.process.stdout], [], [], remaining)[0]:
+                    raise CompileError("CompCert bridge timed out", timed_out=True)
+                chunk = os.read(self.process.stdout.fileno(), 65536)
+                if not chunk:
+                    detail = self.stderr_path.read_text(errors="replace")[-6000:]
+                    raise CompileError("CompCert bridge failed: " + detail)
+                self.buffer += chunk
+            line, self.buffer = self.buffer.split(b"\n", 1)
+            response = json.loads(line)
+            self.transcript.write(json.dumps({"response": response}) + "\n")
+            self.transcript.flush()
+            if not isinstance(response, dict):
+                raise CompileError("CompCert bridge protocol error: invalid response")
+            if response.get("ok") is not True:
+                detail = self.stderr_path.read_text(errors="replace")[-6000:]
+                raise CompileError("CompCert bridge rejected request: " + repr(response) + "\n" + detail)
+            expected = "assembly" if data.get("operation") == "print" else "frontend"
+            if response.get("phase") != expected:
+                raise CompileError("CompCert bridge protocol error: unexpected phase")
+        except (OSError, json.JSONDecodeError) as error:
+            self.reset()
+            raise CompileError("CompCert bridge protocol error: " + str(error)) from error
+        except BaseException:
+            self.reset()
+            raise
+
+    def reset(self):
+        if self.process is None:
+            return
+        terminate(self.process)
+        self.process.stdin.close()
+        self.process.stdout.close()
+        self.process = None
+        self.cwd = None
+        self.buffer = b""
+
+    def close(self):
+        self.reset()
+        self.stderr.close()
+        self.transcript.close()
+
+
+class LeanSession:
+    def __init__(self, folder):
+        self.folder = Path(folder).resolve()
+        self.process = None
+        self.stderr = None
+        self.buffer = b""
+
+    def start(self):
+        if self.process is not None:
+            return
+        self.folder.mkdir(parents=True, exist_ok=True)
+        self.stderr = (self.folder / "lean-server.stderr").open("ab")
+        try:
+            self.process = subprocess.Popen([str(LEAN), "--server"], cwd=REPO,
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.stderr, start_new_session=True)
+        except BaseException:
+            self.stderr.close()
+            self.stderr = None
+            raise
+
+    def request(self, request, *, deadline, log):
+        started = time.monotonic()
+        record = {"command": [str(LEAN), "--server"], "cwd": str(REPO), "request": request,
+                  "returncode": 1, "timeout": False}
+        stderr = b""
+        try:
+            if deadline <= time.monotonic():
+                raise CompileError("Lean compiler timed out", timed_out=True)
+            self.start()
+            record["pid"] = self.process.pid
+            self.process.stdin.write((json.dumps(request) + "\n").encode())
+            self.process.stdin.flush()
+            while b"\n" not in self.buffer:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not select.select([self.process.stdout], [], [], remaining)[0]:
+                    raise CompileError("Lean compiler timed out", timed_out=True)
+                chunk = os.read(self.process.stdout.fileno(), 65536)
+                if not chunk:
+                    detail = (self.folder / "lean-server.stderr").read_text(errors="replace")[-6000:]
+                    raise CompileError("Lean compiler server failed: " + detail)
+                self.buffer += chunk
+            line, self.buffer = self.buffer.split(b"\n", 1)
+            response = json.loads(line)
+            if not isinstance(response, dict) or response.get("ok") is not True:
+                message = response.get("error", "invalid response") if isinstance(response, dict) else "invalid response"
+                raise CompileError("Lean compiler rejected input: " + str(message))
+            if request.get("operation") == "version" and not isinstance(response.get("version"), str):
+                raise CompileError("Lean compiler protocol error: missing runtime version")
+            record["returncode"] = 0
+            return response
+        except (BrokenPipeError, json.JSONDecodeError) as error:
+            stderr = str(error).encode()
+            self.close()
+            raise CompileError("Lean compiler protocol error: " + str(error)) from error
+        except BaseException as error:
+            stderr = str(error).encode()
+            record["timeout"] = getattr(error, "timed_out", False)
+            self.close()
+            raise
+        finally:
+            record["seconds"] = time.monotonic() - started
+            log = Path(log)
+            log.with_suffix(".stdout").write_bytes(b"")
+            log.with_suffix(".stderr").write_bytes(stderr)
+            log.with_suffix(".json").write_text(json.dumps(record, indent=2) + "\n")
+
+    def compile(self, source, target, *, deadline, log):
+        request = {"input": str(Path(source).resolve()), "output": str(Path(target).resolve())}
+        self.request(request, deadline=deadline, log=log)
+
+    def version(self, *, deadline):
+        self.folder.mkdir(parents=True, exist_ok=True)
+        return self.request({"operation": "version"}, deadline=deadline,
+                            log=self.folder / "lean-version")["version"]
+
+    def close(self):
+        if self.process is not None:
+            terminate(self.process)
+            self.process.stdin.close()
+            self.process.stdout.close()
+            self.stderr.close()
+            self.process = None
+            self.stderr = None
+            self.buffer = b""
 
 
 def validate_inputs(options):
@@ -210,24 +396,35 @@ def publish_output(source, output):
         Path(temporary).unlink(missing_ok=True)
 
 
-def compile_source(options, *, prepared=False, artifact_dir=None, timeout=None):
+def compile_source(options, *, prepared=False, artifact_dir=None, timeout=None, lean_session=None,
+                   bridge_session=None):
     root = options.compcert_root.resolve()
     inputs, outputs = validate_inputs(options)
-    if not prepared:
-        prepare(root)
-    timeout = options.compile_timeout if timeout is None else timeout
-    if timeout <= 0:
-        raise CompileError("compilation timeout must be positive")
+    BUILD.mkdir(parents=True, exist_ok=True)
     folder = Path(artifact_dir) if artifact_dir else Path(tempfile.mkdtemp(prefix="compile-", dir=BUILD))
     folder = folder.resolve()
     folder.mkdir(parents=True, exist_ok=True)
-    metadata = {"inputs": options.inputs, "input_sha256": {str(source): hashlib.sha256(source.read_bytes()).hexdigest() for source in inputs},
-                "outputs": list(map(str, outputs)), "allocator": ALLOCATOR, "timeout_seconds": timeout,
-                "configuration": {"pic": options.pic, "pie": False, "common": options.common,
-                                  "optimization": options.optimization},
-                "standard": options.std,
-                "language": options.language, "preprocessor": options.preprocessor, "stages": [],
-                "versions": json.loads((BUILD / "versions.json").read_text()), "success": False}
+    owns_session = lean_session is None and sum(source.suffix == ".c" for source in inputs) > 1
+    if owns_session:
+        lean_session = LeanSession(folder)
+    try:
+        if not prepared:
+            prepare(root, lean_session=lean_session)
+        timeout = options.compile_timeout if timeout is None else timeout
+        if timeout <= 0:
+            raise CompileError("compilation timeout must be positive")
+        versions = json.loads((BUILD / "versions.json").read_text())
+        metadata = {"inputs": options.inputs, "input_sha256": {str(source): hashlib.sha256(source.read_bytes()).hexdigest() for source in inputs},
+                    "outputs": list(map(str, outputs)), "allocator": ALLOCATOR, "timeout_seconds": timeout,
+                    "configuration": {"pic": options.pic, "pie": False, "common": options.common,
+                                      "optimization": options.optimization},
+                    "standard": options.std,
+                    "language": options.language, "preprocessor": options.preprocessor, "stages": [],
+                    "versions": versions, "success": False}
+    except BaseException:
+        if owns_session:
+            lean_session.close()
+        raise
     stage = "frontend"
     def record(name, action):
         nonlocal stage
@@ -243,7 +440,10 @@ def compile_source(options, *, prepared=False, artifact_dir=None, timeout=None):
         metadata["stages"].append({"stage": name, "input": str(source) if name != "link" else None,
                                    "status": "passed", "seconds": time.monotonic() - started})
         return result
+    owns_bridge_session = bridge_session is None and sum(source.suffix == ".c" for source in inputs) > 1
     try:
+        if owns_bridge_session:
+            bridge_session = BridgeServer(root, folder)
         built = []
         for index, source in enumerate(inputs):
             unit = folder if len(inputs) == 1 else folder / f"unit-{index:03d}-{source.stem}"
@@ -251,20 +451,30 @@ def compile_source(options, *, prepared=False, artifact_dir=None, timeout=None):
             generated = source
             if source.suffix == ".c":
                 deadline = time.monotonic() + timeout
-                bridge = Bridge(root, unit, deadline)
+                bridge = bridge_session or Bridge(root, unit, deadline)
                 try:
                     record("frontend", lambda: bridge.request({"root": str(root), "source": str(source),
                            "preprocessor": options.preprocessor, "language": options.language,
                            "standard": options.std,
                            "configuration": metadata["configuration"],
-                           "preprocessed": str(unit / "input.i"), "csyntax": str(unit / "csyntax.json")}))
-                    record("lean", lambda: execute([LEAN, unit / "csyntax.json", unit / "asm.json"], cwd=REPO,
-                           timeout=max(0.001, deadline - time.monotonic()), log=unit / "lean"))
+                           "preprocessed": str(unit / "input.i"), "csyntax": str(unit / "csyntax.json")},
+                           deadline=deadline))
+                    if lean_session is None:
+                        record("lean", lambda: execute([LEAN, unit / "csyntax.json", unit / "asm.json"], cwd=REPO,
+                               timeout=max(0.001, deadline - time.monotonic()), log=unit / "lean"))
+                    else:
+                        record("lean", lambda: lean_session.compile(unit / "csyntax.json", unit / "asm.json",
+                               deadline=deadline, log=unit / "lean"))
                     record("assembly_print", lambda: bridge.request({"operation": "print", "input": str(unit / "asm.json"),
-                           "output": str(unit / "output.s")}))
+                           "output": str(unit / "output.s")}, deadline=deadline))
                     generated = unit / "output.s"
+                except BaseException:
+                    if bridge_session is not None:
+                        bridge_session.reset()
+                    raise
                 finally:
-                    bridge.close()
+                    if bridge_session is None:
+                        bridge.close()
             if not options.assembly and source.suffix in {".c", ".s", ".S"}:
                 assembly = generated
                 generated = unit / "output.o"
@@ -293,6 +503,10 @@ def compile_source(options, *, prepared=False, artifact_dir=None, timeout=None):
         metadata.update(stage=stage, category=category)
         raise CompileError(f"{error}\nArtifacts: {folder}", stage=stage, category=category, timed_out=timed_out) from error
     finally:
+        if owns_session:
+            lean_session.close()
+        if owns_bridge_session and bridge_session is not None:
+            bridge_session.close()
         (folder / "result.json").write_text(json.dumps(metadata, indent=2) + "\n")
     if not options.keep_temps and artifact_dir is None:
         shutil.rmtree(folder)

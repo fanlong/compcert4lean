@@ -318,6 +318,9 @@ def testDegreeCache : Except String Unit := do
   require state.active.isEmpty "degree cache fixture did not drain"
 
 def checkDegrees (function : XFunction) (state : ColoringState) : Except String Unit := do
+  for index in [:function.variables.size + 3] do
+    require (IndexSetCache.contains state.active state.activeCache index == state.active.contains index)
+      "active membership cache differs from ordered set"
   for index in state.graph.present.toList do
     if state.active.contains index || (precolored function index && registerNode function index) then
       require (degree function state index == uncachedDegree function state index)
@@ -374,6 +377,7 @@ def combineNodesReference (context : AllocationContext) (function : XFunction)
     graph
     parents := state.parents.set! right left
     active := state.active.erase right
+    activeCache := IndexSetCache.empty (state.active.erase right)
     nodeMoves := state.nodeMoves.set! left combinedMoves
     coalesced := state.coalesced + 1 }
   state := enableMovesReference (neighbors.insert left) state
@@ -406,6 +410,52 @@ def checkCombine (context : AllocationContext) (function : XFunction)
   require (coloringStateKey (combineNodes context function left right state) ==
       coloringStateKey (combineNodesReference context function left right state))
     "coalescing ownership rewrite changed state"
+
+def classifyReference (context : AllocationContext) (function : XFunction)
+    (index : Nat) (state : ColoringState) : ColoringState :=
+  let state := { state with
+    simplify := state.simplify.erase index
+    freeze := state.freeze.erase index
+    spill := state.spill.erase index }
+  if !state.active.contains index then state
+  else if degree function state index >= nodeCapacity context function state index then
+    { state with spill := state.spill.insert index }
+  else if hasPendingMoves state index then
+    { state with freeze := state.freeze.insert index }
+  else { state with simplify := state.simplify.insert index }
+
+def testClassification : Except String Unit := do
+  for count in [0, 1, 17, 65] do
+    for seed in [:12] do
+      let variables := (List.range count).toArray.map fun index =>
+        ({ type := if index % 3 == 1 then .Tfloat else .Tint
+           fixed := if index == 0 then some (.R .AX)
+             else if index == 1 then some (.R .X0)
+             else if index == 2 then some (.S .Local (number 0) .Tint) else none } : Variable)
+      let function : XFunction := {
+        signature := sign [], stacksize := number 0, variables, blocks := #[], entry := 0 }
+      let indices := List.range (count + 3)
+      let setWhere := fun predicate => setOfList (indices.filter predicate)
+      let active := setWhere fun index => index % 5 != seed % 5
+      for width in [0, count / 2, count + 3] do
+        let state : ColoringState := {
+          graph := {
+            adjacency := Array.replicate count (setWhere fun index => index % 2 == seed % 2)
+            preferences := #[]
+            costs := indices.toArray.map fun index => { stackOnly := index % 7 == seed % 7 } }
+          parents := #[], active, activeCache := IndexSetCache.ofSet active width
+          nodeMoves := indices.toArray.map fun index => setOfList [index, index + 1]
+          workMoves := setWhere fun index => index % 3 == seed % 3
+          activeMoves := setWhere fun index => index % 7 == seed % 7
+          simplify := setWhere fun index => index % 2 == seed % 2
+          freeze := setWhere fun index => index % 3 == seed % 3
+          spill := setWhere fun index => index % 4 == seed % 4
+          degrees := (List.range (count / 2)).toArray.map fun index => index % 20 }
+        for context in [({} : AllocationContext), { reserved := integerRemaining }] do
+          for index in [:count + 5] do
+            require (coloringStateKey (classify context function index state) ==
+                coloringStateKey (classifyReference context function index state))
+              "worklist classification changed state"
 
 def testMoveActivation : Except String Unit := do
   let setWhere := fun (count : Nat) (predicate : Nat → Bool) =>
@@ -497,11 +547,30 @@ def testCoalescingThresholds : Except String Unit := do
     checkCoalescingCriteria function state
     checkCoalescingCriteria function state { reserved := integerRemaining }
     let active := state.active.filter (fun index => index % 5 != density % 5)
-    let state := { state with active, degrees := #[] }
+    let state := { state with active, activeCache := IndexSetCache.empty active, degrees := #[] }
     let degrees := (List.range variables.size).toArray.map (uncachedDegree function state)
     checkCoalescingCriteria function { state with degrees }
 
+def testIndexSetCache : Except String Unit := do
+  for size in [0, 1, 2, 15, 64, 257] do
+    for density in [:5] do
+      let indices := setOfList ((List.range (size + 5)).filter fun index => index % 5 < density)
+      for width in [0, size / 2, size, size + 10] do
+        let mut state : ColoringState := {
+          graph := { adjacency := #[], preferences := #[], costs := #[] }
+          parents := #[], active := indices, nodeMoves := #[]
+          activeCache := IndexSetCache.ofSet indices width }
+        for removed in (List.range (size + 5)).reverse ++ [size + 10, 0] do
+          for query in [:size + 11] do
+            require (IndexSetCache.contains state.active state.activeCache query == state.active.contains query)
+              "bounded membership cache changed a query"
+          state := { state with
+            active := state.active.erase removed
+            activeCache := IndexSetCache.erase state.active state.activeCache removed }
+
 def tests : Except String (List (String × AllocationStats)) := do
+  testIndexSetCache
+  testClassification
   testFixedLocationLookup
   testBasic
   let results ← testPressure

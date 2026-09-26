@@ -5798,3 +5798,163 @@ theorem ZArith.Zquot.Zquot_Zdiv_pos :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+/-! Proven runtime alternatives; original declarations above remain unchanged. -/
+
+namespace CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+def positiveEqDirect : positive → positive → Bool
+  | .xH, .xH => true
+  | .xI p, .xI q | .xO p, .xO q =>
+      positiveEqDirect p q
+  | _, _ => false
+
+theorem positiveEqDirect_spec (p q : positive) :
+    positiveEqDirect p q = true ↔ p = q := by
+  induction p generalizing q <;> cases q <;>
+    simp_all [positiveEqDirect]
+
+def positiveEqShared (p q : positive) : Bool :=
+  withPtrEq p q (fun _ => positiveEqDirect p q)
+    (fun h => (positiveEqDirect_spec p q).mpr h)
+
+theorem positiveEqShared_spec (p q : positive) :
+    positiveEqShared p q = true ↔ p = q := positiveEqDirect_spec p q
+
+def positiveDecEqShared (p q : positive) : Decidable (p = q) :=
+  if h : positiveEqShared p q then
+    .isTrue ((positiveEqShared_spec p q).mp h)
+  else .isFalse (fun eq => h ((positiveEqShared_spec p q).mpr eq))
+
+@[csimp] theorem positiveDecEq_eq_shared :
+    Numbers.BinNums.instDecidableEqPositive = positiveDecEqShared := by
+  funext p q
+  exact Subsingleton.elim _ _
+
+def positiveSumEqShared (p q : positive) : Support.Sumbool (p = q) (¬ p = q) :=
+  match positiveDecEqShared p q with
+  | .isTrue h => .left h
+  | .isFalse h => .right h
+
+@[csimp] theorem positiveSumEq_eq_shared :
+    PArith.BinPos.Pos.eq_dec = positiveSumEqShared := by
+  funext p q
+  cases PArith.BinPos.Pos.eq_dec p q <;> cases positiveSumEqShared p q <;>
+    first | rfl | contradiction
+
+
+end CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+namespace CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+def positiveToNatAccum (p : @& positive) (place acc : Nat) : Nat :=
+  match p with
+  | .xH => acc + place
+  | .xI q => positiveToNatAccum q (2 * place) (acc + place)
+  | .xO q => positiveToNatAccum q (2 * place) acc
+
+theorem positiveToNatAccum_spec (p : positive) (place acc : Nat) :
+    positiveToNatAccum p place acc = acc + place * posToNat p := by
+  induction p generalizing place acc <;>
+    simp_all [positiveToNatAccum, posToNat, Nat.mul_add, Nat.add_assoc,
+              Nat.mul_assoc, Nat.mul_comm, Nat.mul_left_comm, Nat.add_comm,
+              Nat.add_left_comm]
+
+def positiveToNatTR (p : @& positive) : Nat := positiveToNatAccum p 1 0
+
+@[csimp] theorem posToNat_eq_tail : posToNat = positiveToNatTR := by
+  funext p
+  simp [positiveToNatTR, positiveToNatAccum_spec]
+
+#print axioms posToNat_eq_tail
+
+end CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+/-! Proven direct numeric runtime alternatives. -/
+
+namespace CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+def positiveAddDirect : positive → positive → positive
+  | .xH, q => PArith.BinPos.Pos.succ q
+  | p, .xH => PArith.BinPos.Pos.succ p
+  | .xI p, .xI q => .xO (PArith.BinPos.Pos.succ (positiveAddDirect p q))
+  | .xI p, .xO q | .xO p, .xI q => .xI (positiveAddDirect p q)
+  | .xO p, .xO q => .xO (positiveAddDirect p q)
+
+theorem positiveAddDirect_spec (p q : positive) :
+    posToNat (positiveAddDirect p q) = posToNat p + posToNat q := by
+  induction p generalizing q <;> cases q <;>
+    simp_all [positiveAddDirect, posToNat, PArith.BinPos.Pos.posToNat_succ] <;> omega
+
+@[csimp] theorem positiveAdd_eq_direct : PArith.BinPos.Pos.add = positiveAddDirect := by
+  funext p q
+  apply posToNat_injective
+  rw [positiveAddDirect_spec]
+  unfold PArith.BinPos.Pos.add
+  exact posToNat_posOfNat (by have := posToNat_positive p; omega)
+
+def integerAddDirect : Z → Z → Z
+  | .Z0, y => y
+  | x, .Z0 => x
+  | .Zpos p, .Zpos q => .Zpos (positiveAddDirect p q)
+  | .Zneg p, .Zneg q => .Zneg (positiveAddDirect p q)
+  | x, y => zOfInt (intOfZ x + intOfZ y)
+
+@[csimp] theorem integerAdd_eq_direct : ZArith.BinInt.Z.add = integerAddDirect := by
+  funext x y
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  cases x <;> cases y <;>
+    simp only [integerAddDirect, intOfZ_zOfInt] <;>
+    simp [intOfZ, positiveAddDirect_spec] <;> omega
+
+
+end CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+/-! Proven direct numeric runtime alternatives. -/
+
+namespace CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+def integerOppDirect : Z → Z
+  | .Z0 => .Z0
+  | .Zpos p => .Zneg p
+  | .Zneg p => .Zpos p
+
+@[csimp] theorem integerOpp_eq_direct : ZArith.BinInt.Z.opp = integerOppDirect := by
+  funext x
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.opp, intOfZ_zOfInt]
+  cases x <;> simp [integerOppDirect, intOfZ]
+
+def integerAbsDirect : Z → Z
+  | .Z0 => .Z0
+  | .Zpos p | .Zneg p => .Zpos p
+
+@[csimp] theorem integerAbs_eq_direct : ZArith.BinInt.Z.abs = integerAbsDirect := by
+  funext x
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.abs, intOfZ_zOfInt]
+  cases x <;> simp [integerAbsDirect, intOfZ]
+
+def integerAbsNatDirect : Z → Nat
+  | .Z0 => 0
+  | .Zpos p | .Zneg p => posToNat p
+
+@[csimp] theorem integerAbsNat_eq_direct : ZArith.BinInt.Z.abs_nat = integerAbsNatDirect := by
+  funext x
+  simp only [ZArith.BinInt.Z.abs_nat, ZArith.BinInt.Z.abs, intOfZ_zOfInt]
+  cases x <;> simp [integerAbsNatDirect, intOfZ]
+
+def integerDoubleDirect : Z → Z
+  | .Z0 => .Z0
+  | .Zpos p => .Zpos (.xO p)
+  | .Zneg p => .Zneg (.xO p)
+
+@[csimp] theorem integerDouble_eq_direct : ZArith.BinInt.Z.double = integerDoubleDirect := by
+  funext x
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.double, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  cases x <;> simp [integerDoubleDirect, intOfZ, posToNat] <;> omega
+
+
+end CompCert4Lean.Foundation.Numbers.Rocq.Coq

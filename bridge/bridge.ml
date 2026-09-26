@@ -339,8 +339,12 @@ let respond fields =
   Yojson.Basic.to_channel stdout (`Assoc (("ok", `Bool true) :: fields));
   output_char stdout '\n'; flush stdout
 
-let run () =
-  let request = Yojson.Basic.from_string (read_line ()) in
+let respond_error error =
+  let message = Printexc.to_string error in
+  Yojson.Basic.to_channel stdout (`Assoc ["ok", `Bool false; "error", `String message]);
+  output_char stdout '\n'; flush stdout
+
+let run_request request read_request =
   configure request;
   Clflags.prepro_options := List.rev (dec_list Yojson.Basic.Util.to_string (member "preprocessor" request));
   let input = text "source" request in
@@ -352,10 +356,59 @@ let run () =
   let allocation_context = allocation_context_json () in
   Yojson.Basic.to_file (text "csyntax" request) (source_json configuration source);
   respond ["phase", `String "frontend"];
-  let request = Yojson.Basic.from_string (read_line ()) in
+  let request = read_request () in
   if text "operation" request <> "print" then failwith "unknown bridge operation";
   print_assembly configuration allocation_context (text "input" request) (text "output" request);
   respond ["phase", `String "assembly"]
+
+let run_once () =
+  let read_request () = Yojson.Basic.from_string (read_line ()) in
+  run_request (read_request ()) read_request
+
+let read_server_line () =
+  let buffer = Buffer.create 1024 in
+  let character = Bytes.create 1 in
+  let rec loop () =
+    let count =
+      try Unix.read Unix.stdin character 0 1
+      with Unix.Unix_error (Unix.EINTR, _, _) -> -1 in
+    match count with
+    | -1 -> loop ()
+    | 0 -> if Buffer.length buffer = 0 then raise End_of_file else Buffer.contents buffer
+    | _ ->
+        if Bytes.get character 0 = '\n' then Buffer.contents buffer
+        else (Buffer.add_char buffer (Bytes.get character 0); loop ())
+  in
+  loop ()
+
+let rec wait_child process =
+  try snd (Unix.waitpid [] process)
+  with Unix.Unix_error (Unix.EINTR, _, _) -> wait_child process
+
+let run_server () =
+  let rec loop () =
+    match (try Some (read_server_line ()) with End_of_file -> None) with
+    | None -> ()
+    | Some line ->
+        flush_all ();
+        let process = Unix.fork () in
+        if process = 0 then begin
+          (try
+            run_request (Yojson.Basic.from_string line)
+              (fun () -> Yojson.Basic.from_string (read_server_line ()))
+          with error ->
+            prerr_endline ("CompCert bridge: " ^ Printexc.to_string error);
+            respond_error error);
+          exit 0
+        end;
+        (match wait_child process with
+         | Unix.WEXITED 0 -> ()
+         | Unix.WEXITED code -> respond_error (Failure (Printf.sprintf "bridge transaction exited %d" code))
+         | Unix.WSIGNALED signal | Unix.WSTOPPED signal ->
+             respond_error (Failure (Printf.sprintf "bridge transaction terminated by signal %d" signal)));
+        loop ()
+  in
+  loop ()
 
 let test_builtin_placement () =
   let open AST in
@@ -400,8 +453,13 @@ let test_builtin_placement () =
 
 let () =
   try
+    let server_mode =
+      try Sys.getenv "COMPCERT4LEAN_BRIDGE_SERVER" = "1" with Not_found -> false in
     if Array.to_list Sys.argv = [Sys.argv.(0); "--test-builtin-placement"]
-    then test_builtin_placement () else run ()
+    then test_builtin_placement ()
+    else if server_mode || Array.to_list Sys.argv = [Sys.argv.(0); "--server"]
+    then run_server ()
+    else run_once ()
   with
   | Assert_failure (file, line, _) ->
       Printf.eprintf "CompCert bridge: unsupported construct for assembly expansion/printing (%s:%d); retain asm.json\n" file line;
