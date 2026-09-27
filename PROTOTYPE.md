@@ -129,7 +129,11 @@ constant propagation, CSE, redundancy elimination, inlining, functions-called-on
 inlining, bounded loop unrolling, normal if-conversion, and full floating-point
 constant propagation. Small leaf functions may be inlined at multiple call
 sites while respecting explicit `noinline` attributes. Four copies of selected
-short call-free loops expose repeated computations to CSE. The compiler
+short call-free loops expose repeated computations to CSE. Before constant
+propagation, acyclic functions with at most 128 nodes and two conditional
+branches gain path copies that keep branch-assigned values separate for
+simplification. Both transformations use the proved arbitrary-routing pass.
+The compiler
 correctness proof includes a single-step simulation of this duplication.
 Size optimization, aggressive branchless conversion and debugging stay disabled.
 PIC and common symbols are explicit options; PIE remains unsupported. Python,

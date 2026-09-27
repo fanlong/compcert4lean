@@ -14,6 +14,7 @@ python3 tests/prototype/test_c_standard.py
 python3 tests/prototype/test_optimization.py
 python3 tests/prototype/test_small_inlining.py
 python3 tests/prototype/test_loop_unroll.py
+python3 tests/prototype/test_path_splitting.py
 python3 tests/prototype/test_benchmarks.py
 python3 scripts/smoke_test.py
 python3 scripts/small_tests.py --optimization O0

@@ -21,6 +21,8 @@ def allocationReport (configuration : Config.CompilerConfig) (inlining : Inlinin
   let rtl := if options.optimTailcalls then Tailcall.transf_program configuration rtl else rtl
   let rtl ← reportResult (Inlining.transf_program inlining rtl)
   let rtl := Renumber.transf_program rtl
+  let rtl := if options.optimCSE && options.optimConstprop then
+    LoopUnroll.transf_program LoopUnroll.acyclic_paths rtl else rtl
   let rtl := if options.optimConstprop then
     Constprop.transf_program configuration rtl else rtl
   let rtl := if options.optimCSE && options.optimConstprop then

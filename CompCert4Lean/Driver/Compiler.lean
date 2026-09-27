@@ -152,7 +152,10 @@ def transf_rtl_program
   let p5 := apply_total _ _ p4 (print (print_RTL (ZArith.BinInt.Z.of_nat 2)))
   let p6 := apply_total _ _ p5 (time (ofString "Renumbering") Renumber.transf_program)
   let p7 := apply_total _ _ p6 (print (print_RTL (ZArith.BinInt.Z.of_nat 3)))
-  let p8 := apply_total _ _ p7
+  let p7paths := apply_total _ _ p7
+    (total_if (fun _ => Compopts.optim_CSE cfg && Compopts.optim_constprop cfg)
+      (time (ofString "Path splitting") (LoopUnroll.transf_program LoopUnroll.acyclic_paths)))
+  let p8 := apply_total _ _ p7paths
     (total_if (fun _ => Compopts.optim_constprop cfg)
       (time (ofString "Constant propagation")
         (Constprop.transf_program
@@ -866,6 +869,13 @@ def CompCert's_passes
       pass_match_link := @TransfIfLink RTL.program rtlLinker
         (fun _ => Compopts.optim_constprop cfg)
         Renumberproof.match_prog passCertificates.renumberConstprop }
+  let passPaths : Pass rtlLanguage rtlLanguage :=
+    { pass_match := match_if (fun _ => Compopts.optim_CSE cfg && Compopts.optim_constprop cfg)
+        (LoopUnrollproof.match_prog LoopUnroll.acyclic_paths)
+      pass_match_link := @TransfIfLink RTL.program rtlLinker
+        (fun _ => Compopts.optim_CSE cfg && Compopts.optim_constprop cfg)
+        (LoopUnrollproof.match_prog LoopUnroll.acyclic_paths)
+        (compiler_total_link (fun _ => LoopUnroll.transf_function LoopUnroll.acyclic_paths)) }
   let passUnroll : Pass rtlLanguage rtlLanguage :=
     { pass_match := match_if (fun _ => Compopts.optim_CSE cfg && Compopts.optim_constprop cfg)
         (LoopUnrollproof.match_prog LoopUnroll.small_loops)
@@ -924,10 +934,10 @@ def CompCert's_passes
       pass_match_link := passCertificates.asmgen }
   pass_cons pass1 (pass_cons pass2 (pass_cons pass3 (pass_cons pass4
     (pass_cons pass5 (pass_cons pass6 (pass_cons pass7 (pass_cons pass8
-      (pass_cons pass9 (pass_cons pass10 (pass_cons passUnroll (pass_cons pass11 (pass_cons pass12
+      (pass_cons pass9 (pass_cons passPaths (pass_cons pass10 (pass_cons passUnroll (pass_cons pass11 (pass_cons pass12
         (pass_cons pass13 (pass_cons pass14 (pass_cons pass15 (pass_cons pass16
           (pass_cons pass17 (pass_cons pass18 (pass_cons pass19 (pass_cons pass20
-            (pass_cons pass21 (pass_nil asmLanguage))))))))))))))))))))))
+            (pass_cons pass21 (pass_nil asmLanguage)))))))))))))))))))))))
 
 def match_prog
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
@@ -1246,6 +1256,8 @@ theorem transf_c_program_match
     refine ⟨_, total_if_match _ _ _ _ _ (Tailcallproof.transf_program_match cfg), ?_⟩
     refine ⟨_, Inliningproof.transf_program_match inlineCfg _ _ (by assumption), ?_⟩
     refine ⟨_, Renumberproof.transf_program_match _, ?_⟩
+    refine ⟨_, total_if_match _ _ _ _ _
+      (LoopUnrollproof.transf_program_match LoopUnroll.acyclic_paths), ?_⟩
     refine ⟨_, total_if_match _ _ _ _ _ (Constpropproof.transf_program_match cfg), ?_⟩
     refine ⟨_, total_if_match _ _ _ _ _
       (LoopUnrollproof.transf_program_match LoopUnroll.small_loops), ?_⟩
@@ -1524,7 +1536,7 @@ theorem cstrategy_semantic_preservation
   simp only [match_prog, CompCert's_passes, compose_passes, pass_compose, pass_identity] at matched
   rcases matched with ⟨program1, match1, program2, match2, program3, match3,
     program4, match4, program5, match5, program6, match6, program7, match7,
-    program8, match8, program9, match9, program10, match10,
+    program8, match8, program9, match9, programPaths, matchPaths, program10, match10,
     programUnroll, matchUnroll, program11, match11,
     program12, match12, program13, match13, program14, match14, program15, match15,
     program16, match16, program17, match17, program18, match18, program19, match19,
@@ -1551,6 +1563,9 @@ theorem cstrategy_semantic_preservation
       (Inliningproof.transf_program_correct providers inlineCfg _ _ match8) ?_
     refine compose_forward_simulations _ _ _
       (Renumberproof.transf_program_correct providers _ _ match9) ?_
+    refine compose_forward_simulations _ _ _
+      (match_if_simulation _ (RTL.semantics providers) _ _ _ _ matchPaths
+        (LoopUnrollproof.transf_program_correct LoopUnroll.acyclic_paths providers)) ?_
     refine compose_forward_simulations _ _ _
       (match_if_simulation _ (RTL.semantics providers) _ _ _ _ match10
         (Constpropproof.transf_program_correct cfg providers)) ?_

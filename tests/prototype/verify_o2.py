@@ -24,6 +24,7 @@ def main():
         [sys.executable, "tests/prototype/test_optimization.py"],
         [sys.executable, "tests/prototype/test_small_inlining.py"],
         [sys.executable, "tests/prototype/test_loop_unroll.py"],
+        [sys.executable, "tests/prototype/test_path_splitting.py"],
         [sys.executable, "tests/prototype/test_benchmarks.py"],
         [sys.executable, "tests/prototype/test_framework.py"],
         [sys.executable, "tests/prototype/test_batch.py"],

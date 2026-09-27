@@ -102,6 +102,28 @@ def loop_candidates (nodes : List (node × instruction)) : List Loop :=
       candidate :: selected
     else selected) []
 
+def acyclic_paths (source : function) : Option Route :=
+  let nodes := PTree.elements source.fn_code
+  if nodes.length > 128 then none else
+  let acyclic := nodes.all fun (pc, instr) =>
+    (successors_instr instr).all (fun successor => posToNat successor < posToNat pc)
+  if !acyclic then none else
+  let branches := nodes.filterMap fun (pc, instr) =>
+    match instr with
+    | .Icond _ _ ifso ifnot =>
+        if posToNat ifso == posToNat ifnot then none else some (pc, ifso)
+    | _ => none
+  if branches.isEmpty || branches.length > 2 then none else
+  let first := branches.head?
+  let second := (branches.drop 1).head?
+  some (fun copy pc successor =>
+    let update := fun branch bit =>
+      match branch with
+      | some (branch_pc, ifso) =>
+          if posToNat pc == posToNat branch_pc then posToNat successor == posToNat ifso else bit
+      | none => bit
+    (update first copy.1, update second copy.2))
+
 def small_loops (source : function) : Option Route :=
   let nodes := PTree.elements source.fn_code
   if nodes.length > 256 then none else
