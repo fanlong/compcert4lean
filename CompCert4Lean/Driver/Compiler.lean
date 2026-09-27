@@ -44,6 +44,7 @@ import CompCert4Lean.Backend.RTLgenproof
 import CompCert4Lean.Backend.Tailcallproof
 import CompCert4Lean.Backend.Inliningproof
 import CompCert4Lean.Backend.Renumberproof
+import CompCert4Lean.Backend.LoopUnrollproof
 import CompCert4Lean.Backend.Constpropproof
 import CompCert4Lean.Backend.CSEproof
 import CompCert4Lean.Backend.Deadcodeproof
@@ -158,7 +159,10 @@ def transf_rtl_program
           (binary64_certificate := binary64_certificate)
           (binary32_certificate := binary32_certificate) cfg)))
   let p9 := apply_total _ _ p8 (print (print_RTL (ZArith.BinInt.Z.of_nat 4)))
-  let p10 := apply_total _ _ p9
+  let p9unroll := apply_total _ _ p9
+    (total_if (fun _ => Compopts.optim_CSE cfg && Compopts.optim_constprop cfg)
+      (time (ofString "Loop unrolling") (LoopUnroll.transf_program LoopUnroll.small_loops)))
+  let p10 := apply_total _ _ p9unroll
     (total_if (fun _ => Compopts.optim_constprop cfg)
       (time (ofString "Renumbering") Renumber.transf_program))
   let p11 := apply_total _ _ p10 (print (print_RTL (ZArith.BinInt.Z.of_nat 5)))
@@ -493,6 +497,299 @@ structure CompilerPassCertificates
       asmLinker
       Asmgenproof.match_prog
 
+section
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem compiler_globvar_eq {VarInfo : Type} {sourceVar tv : globvar VarInfo}
+    (hypothesis : match_globvar Eq sourceVar tv) : sourceVar = tv := by
+  cases hypothesis with
+  | match_globvar_intro sourceInfo targetInfo init ro vo hij => cases hij; rfl
+
+private theorem compiler_glob_mono {Context SourceFunction TargetFunction SourceVarInfo TargetVarInfo : Type} [LC : Linker Context]
+    (relation : Context → SourceFunction → TargetFunction → Prop)
+    (varRelation : SourceVarInfo → TargetVarInfo → Prop) {context nextContext : Context} {global : globdef SourceFunction SourceVarInfo} {tg : globdef TargetFunction TargetVarInfo}
+    (hypothesis : match_globdef relation varRelation context global tg) (hcd : LC.linkorder context nextContext) :
+    match_globdef relation varRelation nextContext global tg := by
+  cases hypothesis with
+  | match_globdef_fun context' sourceFunction tf hc hr =>
+      exact match_globdef_fun relation varRelation nextContext context' sourceFunction tf
+        (LC.linkorder_trans _ _ _ hc hcd) hr
+  | match_globdef_var sourceVar tv hv => exact match_globdef_var relation varRelation nextContext sourceVar tv hv
+
+private theorem compiler_link_glob {Context SourceFunction TargetFunction SourceVarInfo TargetVarInfo : Type}
+    [LC : Linker Context] [LF : Linker SourceFunction] [LG : Linker TargetFunction] [LV : Linker SourceVarInfo] [LTV : Linker TargetVarInfo]
+    (relation : Context → SourceFunction → TargetFunction → Prop)
+    (varRelation : SourceVarInfo → TargetVarInfo → Prop)
+    (hf : ∀ c1 c2 f1 tf1 f2 tf2 sourceFunction,
+      LF.link f1 f2 = some sourceFunction → relation c1 f1 tf1 → relation c2 f2 tf2 →
+      ∃ tf, LG.link tf1 tf2 = some tf ∧ (relation c1 sourceFunction tf ∨ relation c2 sourceFunction tf))
+    (hv : ∀ source1 source2 source target1 target2,
+      link_vardef source1 source2 = some source →
+      match_globvar varRelation source1 target1 →
+      match_globvar varRelation source2 target2 →
+      ∃ target, link_vardef target1 target2 = some target ∧
+        match_globvar varRelation source target)
+    {c1 c2 context : Context} {g1 g2 global : globdef SourceFunction SourceVarInfo} {tg1 tg2 : globdef TargetFunction TargetVarInfo}
+    (hc1 : LC.linkorder c1 context) (hc2 : LC.linkorder c2 context)
+    (hl : link_def g1 g2 = some global)
+    (h1 : match_globdef relation varRelation c1 g1 tg1)
+    (h2 : match_globdef relation varRelation c2 g2 tg2) :
+    ∃ tg, link_def tg1 tg2 = some tg ∧ match_globdef relation varRelation context global tg := by
+  cases h1 with
+  | match_globdef_fun u1 f1 tf1 hu1 hr1 =>
+    cases h2 with
+    | match_globdef_var sourceVar tv hv => simp [link_def] at hl
+    | match_globdef_fun u2 f2 tf2 hu2 hr2 =>
+      cases heq : LF.link f1 f2 with
+      | none => simp [link_def, heq] at hl
+      | some sourceFunction =>
+        simp only [link_def, heq, Option.some.injEq] at hl
+        subst global
+        obtain ⟨tf, ht, hr⟩ := hf u1 u2 f1 tf1 f2 tf2 sourceFunction heq hr1 hr2
+        refine ⟨.Gfun tf, by simp [link_def, ht], ?_⟩
+        cases hr with
+        | inl hr =>
+            exact match_globdef_fun relation varRelation context u1 sourceFunction tf
+              (LC.linkorder_trans _ _ _ hu1 hc1) hr
+        | inr hr =>
+            exact match_globdef_fun relation varRelation context u2 sourceFunction tf
+              (LC.linkorder_trans _ _ _ hu2 hc2) hr
+  | match_globdef_var v1 tv1 hv1 =>
+    cases h2 with
+    | match_globdef_fun u2 f2 tf2 hu2 hr2 => simp [link_def] at hl
+    | match_globdef_var v2 tv2 hv2 =>
+      cases heq : link_vardef v1 v2 with
+      | none => simp [link_def, heq] at hl
+      | some sourceVar =>
+        simp only [link_def, heq, Option.some.injEq] at hl
+        subst global
+        obtain ⟨targetVar, linkedVars, matchedVars⟩ := hv _ _ _ _ _ heq hv1 hv2
+        exact ⟨.Gvar targetVar, by simp [link_def, linkedVars],
+          match_globdef_var relation varRelation context _ _ matchedVars⟩
+
+private theorem compiler_link_succeeds {SourceFunction VarInfo : Type} [LF : Linker SourceFunction] [LV : Linker VarInfo]
+    (p1 p2 : CompCert4Lean.Common.AST.program SourceFunction VarInfo)
+    (hm : p1.prog_main = p2.prog_main)
+    (hc : ∀ id g1 g2, PTree.get id (prog_defmap p1) = some g1 →
+      PTree.get id (prog_defmap p2) = some g2 →
+      id ∈ p1.prog_public ∧ id ∈ p2.prog_public ∧ ∃ global, link_def g1 g2 = some global) :
+    link_prog p1 p2 = some {
+      prog_defs := PTree.elements (PTree.combine link_prog_merge (prog_defmap p1) (prog_defmap p2))
+      prog_public := p1.prog_public ++ p2.prog_public
+      prog_main := p1.prog_main } := by
+  have hall : PTree_Properties.for_all (prog_defmap p1) (link_prog_check p1 p2) = true := by
+    apply (PTree_Properties.for_all_correct_proof _ _ _).mpr
+    intro id g1 hget1
+    unfold link_prog_check
+    cases hget2 : PTree.get id (prog_defmap p2) with
+    | none => rfl
+    | some g2 =>
+      obtain ⟨hp1, hp2, global, hg⟩ := hc id g1 g2 hget1 hget2
+      cases hd1 : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec peq id p1.prog_public with
+      | right hn => exact (hn hp1).elim
+      | left _ =>
+        cases hd2 : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec peq id p2.prog_public with
+        | right hn => exact (hn hp2).elim
+        | left _ => simp [hg]
+  unfold link_prog
+  cases hd : ident_eq p1.prog_main p2.prog_main with
+  | right hn => exact (hn hm).elim
+  | left _ => simp only [hall, ite_true]
+
+
+
+
+private theorem compiler_option_right {Source Target : Type} {relation : Source → Target → Prop}
+    {optional : Option Source} {targetValue : Target} (hypothesis : option_rel relation optional (some targetValue)) :
+    ∃ sourceValue, optional = some sourceValue ∧ relation sourceValue targetValue := by
+  cases hypothesis with
+  | some sourceValue targetValue hr => exact ⟨sourceValue, rfl, hr⟩
+
+private theorem compiler_merge_related {Source Target : Type}
+    (r1 r2 relation : Source → Target → Prop)
+    (sourceFunction : Option Source → Option Source → Option Source)
+    (tf : Option Target → Option Target → Option Target)
+    (hnn : sourceFunction none none = none) (htnn : tf none none = none)
+    (hnl : ∀ sourceValue, sourceFunction (some sourceValue) none = some sourceValue)
+    (htnl : ∀ targetValue, tf (some targetValue) none = some targetValue)
+    (hnr : ∀ sourceValue, sourceFunction none (some sourceValue) = some sourceValue)
+    (htnr : ∀ targetValue, tf none (some targetValue) = some targetValue)
+    (hm1 : ∀ sourceValue targetValue, r1 sourceValue targetValue → relation sourceValue targetValue) (hm2 : ∀ sourceValue targetValue, r2 sourceValue targetValue → relation sourceValue targetValue)
+    {o1 o2 : Option Source} {t1 t2 : Option Target}
+    (h1 : option_rel r1 o1 t1) (h2 : option_rel r2 o2 t2)
+    (hl : ∀ sourceValue targetValue leftTarget rightTarget, o1 = some sourceValue → o2 = some targetValue → r1 sourceValue leftTarget → r2 targetValue rightTarget →
+      option_rel relation (sourceFunction (some sourceValue) (some targetValue)) (tf (some leftTarget) (some rightTarget))) :
+    option_rel relation (sourceFunction o1 o2) (tf t1 t2) := by
+  cases h1 with
+  | none =>
+    cases h2 with
+    | none => rw [hnn, htnn]; exact option_rel.none relation
+    | some targetValue rightTarget hr => rw [hnr, htnr]; exact option_rel.some targetValue rightTarget (hm2 targetValue rightTarget hr)
+  | some sourceValue leftTarget hr =>
+    cases h2 with
+    | none => rw [hnl, htnl]; exact option_rel.some sourceValue leftTarget (hm1 sourceValue leftTarget hr)
+    | some targetValue rightTarget hr' => exact hl sourceValue targetValue leftTarget rightTarget rfl rfl hr hr'
+
+private theorem compiler_link_ast {Context SourceFunction TargetFunction SourceVarInfo TargetVarInfo : Type}
+    [LC : Linker Context] [LF : Linker SourceFunction] [LG : Linker TargetFunction] [LV : Linker SourceVarInfo] [LTV : Linker TargetVarInfo]
+    (relation : Context → SourceFunction → TargetFunction → Prop)
+    (varRelation : SourceVarInfo → TargetVarInfo → Prop)
+    (hf : ∀ c1 c2 f1 tf1 f2 tf2 sourceFunction,
+      LF.link f1 f2 = some sourceFunction → relation c1 f1 tf1 → relation c2 f2 tf2 →
+      ∃ tf, LG.link tf1 tf2 = some tf ∧ (relation c1 sourceFunction tf ∨ relation c2 sourceFunction tf))
+    (hv : ∀ source1 source2 source target1 target2,
+      link_vardef source1 source2 = some source →
+      match_globvar varRelation source1 target1 →
+      match_globvar varRelation source2 target2 →
+      ∃ target, link_vardef target1 target2 = some target ∧
+        match_globvar varRelation source target)
+    (c1 c2 context : Context)
+    (p1 p2 : CompCert4Lean.Common.AST.program SourceFunction SourceVarInfo)
+    (tp1 tp2 : CompCert4Lean.Common.AST.program TargetFunction TargetVarInfo)
+    (sourceProgram : CompCert4Lean.Common.AST.program SourceFunction SourceVarInfo)
+    (hl : link_prog p1 p2 = some sourceProgram)
+    (h1 : match_program_gen relation varRelation c1 p1 tp1)
+    (h2 : match_program_gen relation varRelation c2 p2 tp2)
+    (hc1 : LC.linkorder c1 context) (hc2 : LC.linkorder c2 context) :
+    ∃ tp, link_prog tp1 tp2 = some tp ∧
+      match_program_gen relation varRelation context sourceProgram tp := by
+  obtain ⟨hmain, hcompat, hp⟩ := link_prog_inv_proof p1 p2 sourceProgram hl
+  have hd1 := match_program_defmap relation varRelation c1 p1 tp1 h1
+  have hd2 := match_program_defmap relation varRelation c2 p2 tp2 h2
+  let tp : CompCert4Lean.Common.AST.program TargetFunction TargetVarInfo := {
+    prog_defs := PTree.elements
+      (PTree.combine link_prog_merge (prog_defmap tp1) (prog_defmap tp2))
+    prog_public := tp1.prog_public ++ tp2.prog_public
+    prog_main := tp1.prog_main }
+  refine ⟨tp, ?_, ?_⟩
+  · apply compiler_link_succeeds
+    · exact h1.2.1.trans (hmain.trans h2.2.1.symm)
+    · intro id tg1 tg2 ht1 ht2
+      have hm1 := hd1 id
+      have hm2 := hd2 id
+      rw [ht1] at hm1
+      rw [ht2] at hm2
+      obtain ⟨g1, hg1, hr1⟩ := compiler_option_right hm1
+      obtain ⟨g2, hg2, hr2⟩ := compiler_option_right hm2
+      obtain ⟨hpub1, hpub2, global, hg⟩ := hcompat id g1 g2 hg1 hg2
+      obtain ⟨tg, htg, _⟩ := compiler_link_glob relation varRelation hf hv hc1 hc2 hg hr1 hr2
+      exact ⟨h1.2.2.symm ▸ hpub1, h2.2.2.symm ▸ hpub2, tg, htg⟩
+  · constructor
+    · rw [hp]
+      apply PTree.elements_canonical_order'
+      intro id
+      rw [PTree.gcombine_proof (f := link_prog_merge) (by rfl),
+        PTree.gcombine_proof (f := link_prog_merge) (by rfl)]
+      apply compiler_merge_related
+        (match_globdef relation varRelation c1) (match_globdef relation varRelation c2) (match_globdef relation varRelation context)
+        link_prog_merge link_prog_merge rfl rfl
+        (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
+        (fun _ _ hr => compiler_glob_mono relation varRelation hr hc1)
+        (fun _ _ hr => compiler_glob_mono relation varRelation hr hc2) (hd1 id) (hd2 id)
+      intro g1 g2 tg1 tg2 hg1 hg2 hr1 hr2
+      obtain ⟨_, _, global, hg⟩ := hcompat id g1 g2 hg1 hg2
+      obtain ⟨tg, htg, hr⟩ := compiler_link_glob relation varRelation hf hv hc1 hc2 hg hr1 hr2
+      simp only [link_prog_merge, hg, htg]
+      exact option_rel.some global tg hr
+    · rw [hp]
+      exact ⟨h1.2.1, by simp only [tp, h1.2.2, h2.2.2]⟩
+
+private theorem compiler_link_fundef {Context Source Target : Type}
+    (relation : Context → fundef Source → fundef Target → Prop)
+    (internalShape : ∀ context source target,
+      relation context (.Internal source) target → ∃ body, target = .Internal body)
+    (externalShape : ∀ context external target,
+      relation context (.External external) target → target = .External external)
+    (context1 context2 : Context) (source1 : fundef Source) (target1 : fundef Target)
+    (source2 : fundef Source) (target2 : fundef Target) (linked : fundef Source)
+    (linkedSource : link_fundef source1 source2 = some linked)
+    (matched1 : relation context1 source1 target1)
+    (matched2 : relation context2 source2 target2) :
+    ∃ target, link_fundef target1 target2 = some target ∧
+      (relation context1 linked target ∨ relation context2 linked target) := by
+  cases source1 with
+  | Internal body1 =>
+    obtain ⟨targetBody, rfl⟩ := internalShape _ _ _ matched1
+    cases source2 with
+    | Internal body2 => cases linkedSource
+    | External external =>
+      cases externalShape _ _ _ matched2
+      cases external <;> simp only [link_fundef] at linkedSource
+      all_goals first
+        | contradiction
+        | cases linkedSource; exact ⟨_, rfl, Or.inl matched1⟩
+  | External external1 =>
+    cases externalShape _ _ _ matched1
+    cases source2 with
+    | Internal body2 =>
+      obtain ⟨targetBody, rfl⟩ := internalShape _ _ _ matched2
+      cases external1 <;> simp only [link_fundef] at linkedSource
+      all_goals first
+        | contradiction
+        | cases linkedSource; exact ⟨_, rfl, Or.inr matched2⟩
+    | External external2 =>
+      cases externalShape _ _ _ matched2
+      cases compared : external_function_eq external1 external2 with
+      | left same =>
+        simp only [link_fundef, compared, Option.some.injEq] at linkedSource
+        cases linkedSource
+        exact ⟨_, by simp only [link_fundef, compared], Or.inl matched1⟩
+      | right different => simp only [link_fundef, compared] at linkedSource; contradiction
+
+private theorem compiler_match_link {Source Target : Type}
+    (relation : program (fundef Source) Unit → fundef Source → fundef Target → Prop)
+    (internalShape : ∀ context source target,
+      relation context (.Internal source) target → ∃ body, target = .Internal body)
+    (externalShape : ∀ context external target,
+      relation context (.External external) target → target = .External external) :
+    TransfLink (match_program relation Eq) := by
+  constructor
+  intro source1 source2 target1 target2 linked linkedSource matched1 matched2
+  have orders := Linker.link_linkorder source1 source2 linked linkedSource
+  refine compiler_link_ast relation Eq
+    (compiler_link_fundef relation internalShape externalShape)
+    ?_
+    source1 source2 linked source1 source2 target1 target2 linked
+    linkedSource matched1 matched2 orders.1 orders.2
+  intro source1 source2 source target1 target2 linkedSource matched1 matched2
+  cases compiler_globvar_eq matched1
+  cases compiler_globvar_eq matched2
+  refine ⟨source, linkedSource, ?_⟩
+  cases source
+  exact match_globvar_intro Eq _ _ _ _ _ rfl
+
+private theorem compiler_partial_link {Source Target : Type}
+    (transform : program (fundef Source) Unit → Source → Res Target) :
+    TransfLink (match_program
+      (fun context source target => transf_partial_fundef (transform context) source = .OK target)
+      Eq) := by
+  apply compiler_match_link
+  · intro context source target matched
+    simp only [transf_partial_fundef] at matched
+    split at matched
+    · contradiction
+    · cases matched
+      exact ⟨_, rfl⟩
+  · intro context external target matched
+    exact (CompCert4Lean.Common.Errors.res.OK.inj matched).symm
+
+private theorem compiler_total_link {Source Target : Type}
+    (transform : program (fundef Source) Unit → Source → Target) :
+    TransfLink (match_program
+      (fun context source target => target = transf_fundef (transform context) source)
+      Eq) := by
+  apply compiler_match_link
+  · intro context source target matched
+    exact ⟨_, matched⟩
+  · intro context external target matched
+    exact matched
+
+end
+
 def CompCert's_passes
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
@@ -569,6 +866,13 @@ def CompCert's_passes
       pass_match_link := @TransfIfLink RTL.program rtlLinker
         (fun _ => Compopts.optim_constprop cfg)
         Renumberproof.match_prog passCertificates.renumberConstprop }
+  let passUnroll : Pass rtlLanguage rtlLanguage :=
+    { pass_match := match_if (fun _ => Compopts.optim_CSE cfg && Compopts.optim_constprop cfg)
+        (LoopUnrollproof.match_prog LoopUnroll.small_loops)
+      pass_match_link := @TransfIfLink RTL.program rtlLinker
+        (fun _ => Compopts.optim_CSE cfg && Compopts.optim_constprop cfg)
+        (LoopUnrollproof.match_prog LoopUnroll.small_loops)
+        (compiler_total_link (fun _ => LoopUnroll.transf_function LoopUnroll.small_loops)) }
   let pass12 : Pass rtlLanguage rtlLanguage :=
     { pass_match := match_if (fun _ => Compopts.optim_CSE cfg)
         (CSEproof.match_prog
@@ -620,10 +924,10 @@ def CompCert's_passes
       pass_match_link := passCertificates.asmgen }
   pass_cons pass1 (pass_cons pass2 (pass_cons pass3 (pass_cons pass4
     (pass_cons pass5 (pass_cons pass6 (pass_cons pass7 (pass_cons pass8
-      (pass_cons pass9 (pass_cons pass10 (pass_cons pass11 (pass_cons pass12
+      (pass_cons pass9 (pass_cons pass10 (pass_cons passUnroll (pass_cons pass11 (pass_cons pass12
         (pass_cons pass13 (pass_cons pass14 (pass_cons pass15 (pass_cons pass16
           (pass_cons pass17 (pass_cons pass18 (pass_cons pass19 (pass_cons pass20
-            (pass_cons pass21 (pass_nil asmLanguage)))))))))))))))))))))
+            (pass_cons pass21 (pass_nil asmLanguage))))))))))))))))))))))
 
 def match_prog
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
@@ -943,6 +1247,8 @@ theorem transf_c_program_match
     refine ⟨_, Inliningproof.transf_program_match inlineCfg _ _ (by assumption), ?_⟩
     refine ⟨_, Renumberproof.transf_program_match _, ?_⟩
     refine ⟨_, total_if_match _ _ _ _ _ (Constpropproof.transf_program_match cfg), ?_⟩
+    refine ⟨_, total_if_match _ _ _ _ _
+      (LoopUnrollproof.transf_program_match LoopUnroll.small_loops), ?_⟩
     refine ⟨_, total_if_match _ _ _ _ _ Renumberproof.transf_program_match, ?_⟩
     refine ⟨_, partial_if_match _ _ _ _ _ _ (CSEproof.transf_program_match cfg) (by assumption), ?_⟩
     refine ⟨_, partial_if_match _ _ _ _ _ _ (Deadcodeproof.transf_program_match cfg) (by assumption), ?_⟩
@@ -963,290 +1269,6 @@ open CompCert4Lean.Common.AST
 open CompCert4Lean.Common.Linking
 open CompCert4Lean.Lib.Coqlib
 open CompCert4Lean.Lib.Maps
-
-private theorem compiler_globvar_eq {VarInfo : Type} {sourceVar tv : globvar VarInfo}
-    (hypothesis : match_globvar Eq sourceVar tv) : sourceVar = tv := by
-  cases hypothesis with
-  | match_globvar_intro sourceInfo targetInfo init ro vo hij => cases hij; rfl
-
-private theorem compiler_glob_mono {Context SourceFunction TargetFunction SourceVarInfo TargetVarInfo : Type} [LC : Linker Context]
-    (relation : Context → SourceFunction → TargetFunction → Prop)
-    (varRelation : SourceVarInfo → TargetVarInfo → Prop) {context nextContext : Context} {global : globdef SourceFunction SourceVarInfo} {tg : globdef TargetFunction TargetVarInfo}
-    (hypothesis : match_globdef relation varRelation context global tg) (hcd : LC.linkorder context nextContext) :
-    match_globdef relation varRelation nextContext global tg := by
-  cases hypothesis with
-  | match_globdef_fun context' sourceFunction tf hc hr =>
-      exact match_globdef_fun relation varRelation nextContext context' sourceFunction tf
-        (LC.linkorder_trans _ _ _ hc hcd) hr
-  | match_globdef_var sourceVar tv hv => exact match_globdef_var relation varRelation nextContext sourceVar tv hv
-
-private theorem compiler_link_glob {Context SourceFunction TargetFunction SourceVarInfo TargetVarInfo : Type}
-    [LC : Linker Context] [LF : Linker SourceFunction] [LG : Linker TargetFunction] [LV : Linker SourceVarInfo] [LTV : Linker TargetVarInfo]
-    (relation : Context → SourceFunction → TargetFunction → Prop)
-    (varRelation : SourceVarInfo → TargetVarInfo → Prop)
-    (hf : ∀ c1 c2 f1 tf1 f2 tf2 sourceFunction,
-      LF.link f1 f2 = some sourceFunction → relation c1 f1 tf1 → relation c2 f2 tf2 →
-      ∃ tf, LG.link tf1 tf2 = some tf ∧ (relation c1 sourceFunction tf ∨ relation c2 sourceFunction tf))
-    (hv : ∀ source1 source2 source target1 target2,
-      link_vardef source1 source2 = some source →
-      match_globvar varRelation source1 target1 →
-      match_globvar varRelation source2 target2 →
-      ∃ target, link_vardef target1 target2 = some target ∧
-        match_globvar varRelation source target)
-    {c1 c2 context : Context} {g1 g2 global : globdef SourceFunction SourceVarInfo} {tg1 tg2 : globdef TargetFunction TargetVarInfo}
-    (hc1 : LC.linkorder c1 context) (hc2 : LC.linkorder c2 context)
-    (hl : link_def g1 g2 = some global)
-    (h1 : match_globdef relation varRelation c1 g1 tg1)
-    (h2 : match_globdef relation varRelation c2 g2 tg2) :
-    ∃ tg, link_def tg1 tg2 = some tg ∧ match_globdef relation varRelation context global tg := by
-  cases h1 with
-  | match_globdef_fun u1 f1 tf1 hu1 hr1 =>
-    cases h2 with
-    | match_globdef_var sourceVar tv hv => simp [link_def] at hl
-    | match_globdef_fun u2 f2 tf2 hu2 hr2 =>
-      cases heq : LF.link f1 f2 with
-      | none => simp [link_def, heq] at hl
-      | some sourceFunction =>
-        simp only [link_def, heq, Option.some.injEq] at hl
-        subst global
-        obtain ⟨tf, ht, hr⟩ := hf u1 u2 f1 tf1 f2 tf2 sourceFunction heq hr1 hr2
-        refine ⟨.Gfun tf, by simp [link_def, ht], ?_⟩
-        cases hr with
-        | inl hr =>
-            exact match_globdef_fun relation varRelation context u1 sourceFunction tf
-              (LC.linkorder_trans _ _ _ hu1 hc1) hr
-        | inr hr =>
-            exact match_globdef_fun relation varRelation context u2 sourceFunction tf
-              (LC.linkorder_trans _ _ _ hu2 hc2) hr
-  | match_globdef_var v1 tv1 hv1 =>
-    cases h2 with
-    | match_globdef_fun u2 f2 tf2 hu2 hr2 => simp [link_def] at hl
-    | match_globdef_var v2 tv2 hv2 =>
-      cases heq : link_vardef v1 v2 with
-      | none => simp [link_def, heq] at hl
-      | some sourceVar =>
-        simp only [link_def, heq, Option.some.injEq] at hl
-        subst global
-        obtain ⟨targetVar, linkedVars, matchedVars⟩ := hv _ _ _ _ _ heq hv1 hv2
-        exact ⟨.Gvar targetVar, by simp [link_def, linkedVars],
-          match_globdef_var relation varRelation context _ _ matchedVars⟩
-
-private theorem compiler_link_succeeds {SourceFunction VarInfo : Type} [LF : Linker SourceFunction] [LV : Linker VarInfo]
-    (p1 p2 : CompCert4Lean.Common.AST.program SourceFunction VarInfo)
-    (hm : p1.prog_main = p2.prog_main)
-    (hc : ∀ id g1 g2, PTree.get id (prog_defmap p1) = some g1 →
-      PTree.get id (prog_defmap p2) = some g2 →
-      id ∈ p1.prog_public ∧ id ∈ p2.prog_public ∧ ∃ global, link_def g1 g2 = some global) :
-    link_prog p1 p2 = some {
-      prog_defs := PTree.elements (PTree.combine link_prog_merge (prog_defmap p1) (prog_defmap p2))
-      prog_public := p1.prog_public ++ p2.prog_public
-      prog_main := p1.prog_main } := by
-  have hall : PTree_Properties.for_all (prog_defmap p1) (link_prog_check p1 p2) = true := by
-    apply (PTree_Properties.for_all_correct_proof _ _ _).mpr
-    intro id g1 hget1
-    unfold link_prog_check
-    cases hget2 : PTree.get id (prog_defmap p2) with
-    | none => rfl
-    | some g2 =>
-      obtain ⟨hp1, hp2, global, hg⟩ := hc id g1 g2 hget1 hget2
-      cases hd1 : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec peq id p1.prog_public with
-      | right hn => exact (hn hp1).elim
-      | left _ =>
-        cases hd2 : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec peq id p2.prog_public with
-        | right hn => exact (hn hp2).elim
-        | left _ => simp [hg]
-  unfold link_prog
-  cases hd : ident_eq p1.prog_main p2.prog_main with
-  | right hn => exact (hn hm).elim
-  | left _ => simp only [hall, ite_true]
-
-
-
-
-private theorem compiler_option_right {Source Target : Type} {relation : Source → Target → Prop}
-    {optional : Option Source} {targetValue : Target} (hypothesis : option_rel relation optional (some targetValue)) :
-    ∃ sourceValue, optional = some sourceValue ∧ relation sourceValue targetValue := by
-  cases hypothesis with
-  | some sourceValue targetValue hr => exact ⟨sourceValue, rfl, hr⟩
-
-private theorem compiler_merge_related {Source Target : Type}
-    (r1 r2 relation : Source → Target → Prop)
-    (sourceFunction : Option Source → Option Source → Option Source)
-    (tf : Option Target → Option Target → Option Target)
-    (hnn : sourceFunction none none = none) (htnn : tf none none = none)
-    (hnl : ∀ sourceValue, sourceFunction (some sourceValue) none = some sourceValue)
-    (htnl : ∀ targetValue, tf (some targetValue) none = some targetValue)
-    (hnr : ∀ sourceValue, sourceFunction none (some sourceValue) = some sourceValue)
-    (htnr : ∀ targetValue, tf none (some targetValue) = some targetValue)
-    (hm1 : ∀ sourceValue targetValue, r1 sourceValue targetValue → relation sourceValue targetValue) (hm2 : ∀ sourceValue targetValue, r2 sourceValue targetValue → relation sourceValue targetValue)
-    {o1 o2 : Option Source} {t1 t2 : Option Target}
-    (h1 : option_rel r1 o1 t1) (h2 : option_rel r2 o2 t2)
-    (hl : ∀ sourceValue targetValue leftTarget rightTarget, o1 = some sourceValue → o2 = some targetValue → r1 sourceValue leftTarget → r2 targetValue rightTarget →
-      option_rel relation (sourceFunction (some sourceValue) (some targetValue)) (tf (some leftTarget) (some rightTarget))) :
-    option_rel relation (sourceFunction o1 o2) (tf t1 t2) := by
-  cases h1 with
-  | none =>
-    cases h2 with
-    | none => rw [hnn, htnn]; exact option_rel.none relation
-    | some targetValue rightTarget hr => rw [hnr, htnr]; exact option_rel.some targetValue rightTarget (hm2 targetValue rightTarget hr)
-  | some sourceValue leftTarget hr =>
-    cases h2 with
-    | none => rw [hnl, htnl]; exact option_rel.some sourceValue leftTarget (hm1 sourceValue leftTarget hr)
-    | some targetValue rightTarget hr' => exact hl sourceValue targetValue leftTarget rightTarget rfl rfl hr hr'
-
-private theorem compiler_link_ast {Context SourceFunction TargetFunction SourceVarInfo TargetVarInfo : Type}
-    [LC : Linker Context] [LF : Linker SourceFunction] [LG : Linker TargetFunction] [LV : Linker SourceVarInfo] [LTV : Linker TargetVarInfo]
-    (relation : Context → SourceFunction → TargetFunction → Prop)
-    (varRelation : SourceVarInfo → TargetVarInfo → Prop)
-    (hf : ∀ c1 c2 f1 tf1 f2 tf2 sourceFunction,
-      LF.link f1 f2 = some sourceFunction → relation c1 f1 tf1 → relation c2 f2 tf2 →
-      ∃ tf, LG.link tf1 tf2 = some tf ∧ (relation c1 sourceFunction tf ∨ relation c2 sourceFunction tf))
-    (hv : ∀ source1 source2 source target1 target2,
-      link_vardef source1 source2 = some source →
-      match_globvar varRelation source1 target1 →
-      match_globvar varRelation source2 target2 →
-      ∃ target, link_vardef target1 target2 = some target ∧
-        match_globvar varRelation source target)
-    (c1 c2 context : Context)
-    (p1 p2 : CompCert4Lean.Common.AST.program SourceFunction SourceVarInfo)
-    (tp1 tp2 : CompCert4Lean.Common.AST.program TargetFunction TargetVarInfo)
-    (sourceProgram : CompCert4Lean.Common.AST.program SourceFunction SourceVarInfo)
-    (hl : link_prog p1 p2 = some sourceProgram)
-    (h1 : match_program_gen relation varRelation c1 p1 tp1)
-    (h2 : match_program_gen relation varRelation c2 p2 tp2)
-    (hc1 : LC.linkorder c1 context) (hc2 : LC.linkorder c2 context) :
-    ∃ tp, link_prog tp1 tp2 = some tp ∧
-      match_program_gen relation varRelation context sourceProgram tp := by
-  obtain ⟨hmain, hcompat, hp⟩ := link_prog_inv_proof p1 p2 sourceProgram hl
-  have hd1 := match_program_defmap relation varRelation c1 p1 tp1 h1
-  have hd2 := match_program_defmap relation varRelation c2 p2 tp2 h2
-  let tp : CompCert4Lean.Common.AST.program TargetFunction TargetVarInfo := {
-    prog_defs := PTree.elements
-      (PTree.combine link_prog_merge (prog_defmap tp1) (prog_defmap tp2))
-    prog_public := tp1.prog_public ++ tp2.prog_public
-    prog_main := tp1.prog_main }
-  refine ⟨tp, ?_, ?_⟩
-  · apply compiler_link_succeeds
-    · exact h1.2.1.trans (hmain.trans h2.2.1.symm)
-    · intro id tg1 tg2 ht1 ht2
-      have hm1 := hd1 id
-      have hm2 := hd2 id
-      rw [ht1] at hm1
-      rw [ht2] at hm2
-      obtain ⟨g1, hg1, hr1⟩ := compiler_option_right hm1
-      obtain ⟨g2, hg2, hr2⟩ := compiler_option_right hm2
-      obtain ⟨hpub1, hpub2, global, hg⟩ := hcompat id g1 g2 hg1 hg2
-      obtain ⟨tg, htg, _⟩ := compiler_link_glob relation varRelation hf hv hc1 hc2 hg hr1 hr2
-      exact ⟨h1.2.2.symm ▸ hpub1, h2.2.2.symm ▸ hpub2, tg, htg⟩
-  · constructor
-    · rw [hp]
-      apply PTree.elements_canonical_order'
-      intro id
-      rw [PTree.gcombine_proof (f := link_prog_merge) (by rfl),
-        PTree.gcombine_proof (f := link_prog_merge) (by rfl)]
-      apply compiler_merge_related
-        (match_globdef relation varRelation c1) (match_globdef relation varRelation c2) (match_globdef relation varRelation context)
-        link_prog_merge link_prog_merge rfl rfl
-        (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
-        (fun _ _ hr => compiler_glob_mono relation varRelation hr hc1)
-        (fun _ _ hr => compiler_glob_mono relation varRelation hr hc2) (hd1 id) (hd2 id)
-      intro g1 g2 tg1 tg2 hg1 hg2 hr1 hr2
-      obtain ⟨_, _, global, hg⟩ := hcompat id g1 g2 hg1 hg2
-      obtain ⟨tg, htg, hr⟩ := compiler_link_glob relation varRelation hf hv hc1 hc2 hg hr1 hr2
-      simp only [link_prog_merge, hg, htg]
-      exact option_rel.some global tg hr
-    · rw [hp]
-      exact ⟨h1.2.1, by simp only [tp, h1.2.2, h2.2.2]⟩
-
-private theorem compiler_link_fundef {Context Source Target : Type}
-    (relation : Context → fundef Source → fundef Target → Prop)
-    (internalShape : ∀ context source target,
-      relation context (.Internal source) target → ∃ body, target = .Internal body)
-    (externalShape : ∀ context external target,
-      relation context (.External external) target → target = .External external)
-    (context1 context2 : Context) (source1 : fundef Source) (target1 : fundef Target)
-    (source2 : fundef Source) (target2 : fundef Target) (linked : fundef Source)
-    (linkedSource : link_fundef source1 source2 = some linked)
-    (matched1 : relation context1 source1 target1)
-    (matched2 : relation context2 source2 target2) :
-    ∃ target, link_fundef target1 target2 = some target ∧
-      (relation context1 linked target ∨ relation context2 linked target) := by
-  cases source1 with
-  | Internal body1 =>
-    obtain ⟨targetBody, rfl⟩ := internalShape _ _ _ matched1
-    cases source2 with
-    | Internal body2 => cases linkedSource
-    | External external =>
-      cases externalShape _ _ _ matched2
-      cases external <;> simp only [link_fundef] at linkedSource
-      all_goals first
-        | contradiction
-        | cases linkedSource; exact ⟨_, rfl, Or.inl matched1⟩
-  | External external1 =>
-    cases externalShape _ _ _ matched1
-    cases source2 with
-    | Internal body2 =>
-      obtain ⟨targetBody, rfl⟩ := internalShape _ _ _ matched2
-      cases external1 <;> simp only [link_fundef] at linkedSource
-      all_goals first
-        | contradiction
-        | cases linkedSource; exact ⟨_, rfl, Or.inr matched2⟩
-    | External external2 =>
-      cases externalShape _ _ _ matched2
-      cases compared : external_function_eq external1 external2 with
-      | left same =>
-        simp only [link_fundef, compared, Option.some.injEq] at linkedSource
-        cases linkedSource
-        exact ⟨_, by simp only [link_fundef, compared], Or.inl matched1⟩
-      | right different => simp only [link_fundef, compared] at linkedSource; contradiction
-
-private theorem compiler_match_link {Source Target : Type}
-    (relation : program (fundef Source) Unit → fundef Source → fundef Target → Prop)
-    (internalShape : ∀ context source target,
-      relation context (.Internal source) target → ∃ body, target = .Internal body)
-    (externalShape : ∀ context external target,
-      relation context (.External external) target → target = .External external) :
-    TransfLink (match_program relation Eq) := by
-  constructor
-  intro source1 source2 target1 target2 linked linkedSource matched1 matched2
-  have orders := Linker.link_linkorder source1 source2 linked linkedSource
-  refine compiler_link_ast relation Eq
-    (compiler_link_fundef relation internalShape externalShape)
-    ?_
-    source1 source2 linked source1 source2 target1 target2 linked
-    linkedSource matched1 matched2 orders.1 orders.2
-  intro source1 source2 source target1 target2 linkedSource matched1 matched2
-  cases compiler_globvar_eq matched1
-  cases compiler_globvar_eq matched2
-  refine ⟨source, linkedSource, ?_⟩
-  cases source
-  exact match_globvar_intro Eq _ _ _ _ _ rfl
-
-private theorem compiler_partial_link {Source Target : Type}
-    (transform : program (fundef Source) Unit → Source → Res Target) :
-    TransfLink (match_program
-      (fun context source target => transf_partial_fundef (transform context) source = .OK target)
-      Eq) := by
-  apply compiler_match_link
-  · intro context source target matched
-    simp only [transf_partial_fundef] at matched
-    split at matched
-    · contradiction
-    · cases matched
-      exact ⟨_, rfl⟩
-  · intro context external target matched
-    exact (CompCert4Lean.Common.Errors.res.OK.inj matched).symm
-
-private theorem compiler_total_link {Source Target : Type}
-    (transform : program (fundef Source) Unit → Source → Target) :
-    TransfLink (match_program
-      (fun context source target => target = transf_fundef (transform context) source)
-      Eq) := by
-  apply compiler_match_link
-  · intro context source target matched
-    exact ⟨_, matched⟩
-  · intro context external target matched
-    exact matched
 
 open CompCert4Lean.Cfrontend
 open CompCert4Lean.Backend
@@ -1502,7 +1524,8 @@ theorem cstrategy_semantic_preservation
   simp only [match_prog, CompCert's_passes, compose_passes, pass_compose, pass_identity] at matched
   rcases matched with ⟨program1, match1, program2, match2, program3, match3,
     program4, match4, program5, match5, program6, match6, program7, match7,
-    program8, match8, program9, match9, program10, match10, program11, match11,
+    program8, match8, program9, match9, program10, match10,
+    programUnroll, matchUnroll, program11, match11,
     program12, match12, program13, match13, program14, match14, program15, match15,
     program16, match16, program17, match17, program18, match18, program19, match19,
     program20, match20, program21, match21, sameTarget⟩
@@ -1531,6 +1554,9 @@ theorem cstrategy_semantic_preservation
     refine compose_forward_simulations _ _ _
       (match_if_simulation _ (RTL.semantics providers) _ _ _ _ match10
         (Constpropproof.transf_program_correct cfg providers)) ?_
+    refine compose_forward_simulations _ _ _
+      (match_if_simulation _ (RTL.semantics providers) _ _ _ _ matchUnroll
+        (LoopUnrollproof.transf_program_correct LoopUnroll.small_loops providers)) ?_
     refine compose_forward_simulations _ _ _
       (match_if_simulation _ (RTL.semantics providers) _ _ _ _ match11
         (Renumberproof.transf_program_correct providers)) ?_

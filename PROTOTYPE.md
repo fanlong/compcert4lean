@@ -126,10 +126,15 @@ default to 300 seconds, configurable with `--compile-timeout` and `--link-timeou
 The target is System V x86-64, non-PIC/non-PIE and `-fno-common` by default.
 Compilation without an optimization option remains O0. O2 enables tail calls,
 constant propagation, CSE, redundancy elimination, inlining, functions-called-once
-inlining, normal if-conversion, and full floating-point constant propagation.
+inlining, bounded loop unrolling, normal if-conversion, and full floating-point
+constant propagation. Small leaf functions may be inlined at multiple call
+sites while respecting explicit `noinline` attributes. Four copies of selected
+short call-free loops expose repeated computations to CSE. The compiler
+correctness proof includes a single-step simulation of this duplication.
 Size optimization, aggressive branchless conversion and debugging stay disabled.
 PIC and common symbols are explicit options; PIE remains unsupported. Python,
-the frontend/printer bridge, Lean and reference compilation use the same profile.
+the frontend/printer bridge and Lean use the same normalized profile; reference
+compilation uses the corresponding upstream optimization flags.
 Both levels use the optimized allocator and upstream switch/layout policies.
 
 ## Adapters and allocator

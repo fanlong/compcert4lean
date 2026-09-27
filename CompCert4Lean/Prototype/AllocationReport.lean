@@ -22,7 +22,10 @@ def allocationReport (configuration : Config.CompilerConfig) (inlining : Inlinin
   let rtl ← reportResult (Inlining.transf_program inlining rtl)
   let rtl := Renumber.transf_program rtl
   let rtl := if options.optimConstprop then
-    Renumber.transf_program (Constprop.transf_program configuration rtl) else rtl
+    Constprop.transf_program configuration rtl else rtl
+  let rtl := if options.optimCSE && options.optimConstprop then
+    LoopUnroll.transf_program LoopUnroll.small_loops rtl else rtl
+  let rtl := if options.optimConstprop then Renumber.transf_program rtl else rtl
   let rtl ← reportResult (if options.optimCSE then CSE.transf_program configuration rtl else .OK rtl)
   let rtl ← reportResult (if options.optimRedundancy then Deadcode.transf_program configuration rtl else .OK rtl)
   let rtl ← reportResult (Unusedglob.transform_program rtl)

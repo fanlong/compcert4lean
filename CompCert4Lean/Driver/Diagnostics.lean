@@ -95,6 +95,9 @@ def transf_rtl_program
         p
     emitResult (sink.rtl (rtlTag 4)) tp
   let p5 := bindIORes p4 fun p =>
+    let p := if CompCert4Lean.Driver.Compopts.optim_CSE cfg &&
+        CompCert4Lean.Driver.Compopts.optim_constprop cfg then
+      LoopUnroll.transf_program LoopUnroll.small_loops p else p
     let tp :=
       if CompCert4Lean.Driver.Compopts.optim_constprop cfg then
         Renumber.transf_program p
