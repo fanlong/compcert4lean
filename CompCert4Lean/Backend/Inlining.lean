@@ -180,8 +180,15 @@ def inlining_analysis (cfg : InliningConfig) (p : program) : inlining_info :=
   else
     emptyInliningInfo
 
+def small_leaf_function (source : function) : Bool :=
+  treeCount source.fn_code ≤ 48 && intOfZ source.fn_stacksize == 0 &&
+    (PTree.elements source.fn_code).all (fun entry =>
+      match entry.2 with
+      | .Icall .. | .Itailcall .. | .Ibuiltin .. => false
+      | _ => true)
+
 def should_inline (cfg : InliningConfig) (info : inlining_info)
-    (id : ident) (_f : function) : Bool :=
+    (id : ident) (source : function) : Bool :=
   if !cfg.enabled then
     false
   else
@@ -189,10 +196,10 @@ def should_inline (cfg : InliningConfig) (info : inlining_info)
     | .inline => true
     | .noinline => false
     | .noSpecifier =>
-        cfg.functionsCalledOnce &&
+        (cfg.functionsCalledOnce &&
           cfg.isStatic id &&
           callMultiplicity id info != .many &&
-          !addressTaken id info
+          !addressTaken id info) || small_leaf_function source
 
 def add_globdef (cfg : InliningConfig) (info : inlining_info)
     (fenv : funenv) (idg : ident × globdef fundef Unit) : funenv :=
