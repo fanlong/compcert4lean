@@ -33,6 +33,10 @@ def tests : Except String Unit := do
   require (!(ifConversion true identifier expression expression constant .Tint continuation)) "continuation heuristic"
   let costly := Cminor.expr.Ebinop .Odivf constant constant
   require (!(ifConversion true identifier expression costly expression .Tint .Sskip)) "unbalanced cost"
+  let product := Cminor.expr.Ebinop .Omul expression expression
+  let repeated := Cminor.expr.Ebinop .Oadd product product
+  require (!(ifConversion true identifier expression repeated repeated .Tint .Sskip))
+    "duplicated arithmetic exceeds selection budget"
   let signature : signature := { sig_args := [], sig_res := .Xvoid, sig_cc := cc_default }
   let function : LTL.function :=
     { fn_sig := signature

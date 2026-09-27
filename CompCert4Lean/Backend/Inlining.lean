@@ -181,7 +181,8 @@ def inlining_analysis (cfg : InliningConfig) (p : program) : inlining_info :=
     emptyInliningInfo
 
 def small_leaf_function (source : function) : Bool :=
-  treeCount source.fn_code ≤ 48 && intOfZ source.fn_stacksize == 0 &&
+  let stacksize := intOfZ source.fn_stacksize
+  treeCount source.fn_code ≤ 96 && 0 ≤ stacksize && stacksize ≤ 128 &&
     (PTree.elements source.fn_code).all (fun entry =>
       match entry.2 with
       | .Icall .. | .Itailcall .. | .Ibuiltin .. => false

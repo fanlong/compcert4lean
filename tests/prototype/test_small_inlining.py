@@ -44,6 +44,38 @@ class SmallInliningTests(unittest.TestCase):
             else:
                 self.assertRegex(assembly, r"\bcall\s+leaf\b")
 
+    def test_leaf_with_bounded_local_stack(self):
+        source = self.folder / "local-stack.c"
+        source.write_text(
+            "#include <stdio.h>\n"
+            "static unsigned local(unsigned value) {\n"
+            "  unsigned slots[4];\n"
+            "  slots[0] = value; slots[1] = value * 3u + 5u;\n"
+            "  slots[2] = slots[0] ^ slots[1];\n"
+            "  slots[3] = value >> 3;\n"
+            "  return slots[1] + slots[2] + slots[value & 3u];\n"
+            "}\n"
+            "int main(int argc, char **argv) {\n"
+            "  printf(\"%u %u\\n\", local(argc), local(argc + 1));\n"
+            "  return 0;\n"
+            "}\n")
+        oracle = self.folder / "local-stack-gcc.exe"
+        execute(["gcc", "-O2", source, "-o", oracle], timeout=30)
+        arguments = [["argument"] * count for count in range(6)]
+        expected = [execute([oracle, *args], timeout=10) for args in arguments]
+        for level in ("O0", "O2"):
+            artifact = self.folder / ("local-stack-" + level)
+            executable = self.folder / ("local-stack-" + level + ".exe")
+            compile_source(parse_args([str(source), "-" + level, "-o", str(executable)]),
+                           prepared=True, artifact_dir=artifact)
+            self.assertEqual([execute([executable, *args], timeout=10) for args in arguments], expected)
+            assembly = (artifact / "output.s").read_text()
+            if level == "O2":
+                self.assertNotRegex(assembly, r"\bcall\s+local\b")
+                self.assertNotRegex(assembly, r"(?m)^local:")
+            else:
+                self.assertRegex(assembly, r"\bcall\s+local\b")
+
     def test_calls_and_large_functions_remain_bounded(self):
         source = self.folder / "bounded.c"
         operations = "\n".join(f"  value = value * 33u + {index}u;" for index in range(40))
