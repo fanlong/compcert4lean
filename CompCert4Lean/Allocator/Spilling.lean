@@ -89,6 +89,11 @@ def reloadValue (spilled : IndexSet) (value : Nat) : SpillM Nat := do
   rememberValue value temporary
   return temporary
 
+def twoAddressSource (spilled : IndexSet) (value : Nat) (enabled : Bool)
+    : SpillM (Option Nat) := do
+  if !enabled then return none
+  return some (← reloadValue spilled value)
+
 def saveValue (spilled : IndexSet) (value : Nat) : SpillM (Nat × List XInstruction) := do
   killValue value
   if !spilled.contains value then return (value, [])
@@ -120,8 +125,9 @@ def trimEquations : Nat → Nat → List Equation → List Equation
         { equation with age := equation.age + 1 } :: trimEquations count maxAge rest
       else []
 
-def spillInstruction (spilled : IndexSet) (maxAge : Nat) (instruction : XInstruction) : SpillM Unit := do
-  modify fun state => { state with equations := trimEquations 3 maxAge state.equations }
+def spillInstruction (spilled : IndexSet) (maxAge : Nat) (instruction : XInstruction)
+    (maxEntries : Nat := 3) (reuseTwoAddress : Bool := false) : SpillM Unit := do
+  modify fun state => { state with equations := trimEquations maxEntries maxAge state.equations }
   match instruction with
   | .move source destination =>
       if spilled.contains source && spilled.contains destination then
@@ -153,16 +159,20 @@ def spillInstruction (spilled : IndexSet) (maxAge : Nat) (instruction : XInstruc
               killValue result
               rememberValue result temporary
           | false, true =>
+              let cached ← twoAddressSource spilled first reuseTwoAddress
               killValue result
               rememberValue first result
-              emitSpill (.move first result)
+              emitSpill (.move (cached.getD first) result)
               let rest ← rest.mapM (reloadValue spilled)
               emitSpill (.op operation (result :: rest) result)
               killValue result
           | true, true =>
+              let cached ← twoAddressSource spilled first reuseTwoAddress
               let temporary ← spillTemporary result
               rememberValue first temporary
-              emitSpill (.reload first temporary)
+              match cached with
+              | none => emitSpill (.reload first temporary)
+              | some source => emitSpill (.move source temporary)
               let rest ← rest.mapM (reloadValue spilled)
               emitSpill (.op operation (temporary :: rest) temporary)
               emitSpill (.spill temporary result)
@@ -212,32 +222,38 @@ def spillInstruction (spilled : IndexSet) (maxAge : Nat) (instruction : XInstruc
       modify fun state => { state with equations := [] }
   | .branch _ => emitSpill instruction
 
-def spillTraversal (original : XFunction) (spilled : IndexSet) (maxAge : Nat) :
+def spillTraversal (original : XFunction) (spilled : IndexSet) (maxAge maxEntries : Nat)
+    (reuseTwoAddress : Bool) :
     Nat → List (Nat × List Equation) → IndexSet → Array XBlock → SpillState →
       Except String (Array XBlock × SpillState × IndexSet)
   | 0, _, _, _, _ => .error "extended-basic-block spill traversal exhausted its bound"
   | _ + 1, [], visited, blocks, state => .ok (blocks, state, visited)
   | fuel + 1, (index, equations) :: pending, visited, blocks, state => do
-      if visited.contains index then spillTraversal original spilled maxAge fuel pending visited blocks state
+      if visited.contains index then
+        spillTraversal original spilled maxAge maxEntries reuseTwoAddress fuel pending visited blocks state
       else
         let some block := original.blocks[index]? | throw "invalid block in spill traversal"
         let state := { state with equations, code := #[] }
-        let (_, state) ← (block.instructions.forM (spillInstruction spilled maxAge)).run state
+        let (_, state) ← (block.instructions.forM (fun instruction =>
+          spillInstruction spilled maxAge instruction maxEntries reuseTwoAddress)).run state
         let blocks := blocks.set! index { block with instructions := state.code.toList }
         let next := block.successors.filterMap fun successor =>
           match original.blocks[successor]? with
           | some next => if next.predecessors.length == 1 then some (successor, state.equations) else none
           | none => none
-        spillTraversal original spilled maxAge fuel (next ++ pending) (visited.insert index) blocks state
+        spillTraversal original spilled maxAge maxEntries reuseTwoAddress fuel
+          (next ++ pending) (visited.insert index) blocks state
 
-def insertSpills (original : XFunction) (spilled : IndexSet) (round : Nat)
+def insertSpills (original : XFunction) (spilled : IndexSet) (round : Nat) (extended : Bool := false)
     : Except String (XFunction × Nat) := do
-  let maxAge := if round <= 10 then 3 else if round <= 20 then 1 else 0
+  let maxAge := if round <= 10 then (if extended then 12 else 3) else if round <= 20 then 1 else 0
+  let maxEntries := if extended && round <= 10 then 6 else 3
   let roots := original.entry :: (List.range original.blocks.size).filter fun index =>
     (original.blocks[index]?.map (fun block => block.predecessors.length != 1)).getD false
   let pending := (roots ++ List.range original.blocks.size).map fun index => (index, [])
   let fuel := pending.length + original.blocks.foldl (fun count block => count + block.successors.length) 0 + 1
-  let (blocks, state, _) ← spillTraversal original spilled maxAge fuel pending {} original.blocks
+  let (blocks, state, _) ← spillTraversal original spilled maxAge maxEntries (extended && round <= 10)
+    fuel pending {} original.blocks
     { variables := original.variables }
   return ({ original with blocks, variables := state.variables }, state.reloadsReused)
 

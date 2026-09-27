@@ -317,6 +317,58 @@ def testDegreeCache : Except String Unit := do
     else break
   require state.active.isEmpty "degree cache fixture did not drain"
 
+def testExtendedReloadReuse : Except String Unit := do
+  let variables := #[{ type := typ.Tint }, { type := typ.Tint }, { type := typ.Tint }]
+  let gaps : List XInstruction := List.replicate 8 (.op (.Ointconst Lib.Integers.Int.zero) [] 2)
+  let functionWith (between : List XInstruction) : XFunction := {
+    signature := sign [], stacksize := number 0, variables, entry := 0
+    blocks := #[{
+      source := positiveOf 1
+      instructions := [.op .Osub [0, 1] 2] ++ gaps ++ between ++ [.op .Osub [0, 1] 2, .ret [2]] }] }
+  let (_, ordinary) ← insertSpills (functionWith []) (setOfList [1]) 1
+  let (_, extended) ← insertSpills (functionWith []) (setOfList [1]) 1 true
+  require (extended > ordinary) "distant spill use did not reuse its reload"
+  for invalidation in [XInstruction.move 0 1, .call (sign []) (.inr (positiveOf 99)) [] []] do
+    let (_, reused) ← insertSpills (functionWith [invalidation]) (setOfList [1]) 1 true
+    require (reused == 0) "reload cache survived an overwrite or call"
+
+def testTwoAddressReloadReuse : Except String Unit := do
+  let variables := (List.replicate 5 ({ type := typ.Tint } : Variable)).toArray
+  let functionWith (between : List XInstruction) : XFunction := {
+    signature := sign [], stacksize := number 0, variables, entry := 0
+    blocks := #[{
+      source := positiveOf 1
+      instructions := [.op .Osub [0, 1] 2] ++ between ++ [.op .Osub [1, 0] 3, .ret [3]] }] }
+  let stackReads (function : XFunction) : Nat := function.blocks.foldl (fun count block =>
+    block.instructions.foldl (fun count instruction => match instruction with
+      | .reload 1 _ | .move 1 _ => count + 1
+      | _ => count) count) 0
+  for spilled in [setOfList [1], setOfList [1, 3]] do
+    let (ordinary, _) ← insertSpills (functionWith []) spilled 1
+    let (extended, reused) ← insertSpills (functionWith []) spilled 1 true
+    require (stackReads ordinary == 2 && stackReads extended == 1 && reused == 1)
+      "two-address first operand did not reuse its cached value"
+    for invalidation in [XInstruction.move 0 1, .call (sign []) (.inr (positiveOf 99)) [] []] do
+      let (_, reused) ← insertSpills (functionWith [invalidation]) spilled 1 true
+      require (reused == 0) "two-address reload reused an overwritten value"
+  let onlyFirst : XFunction := {
+    signature := sign [], stacksize := number 0, variables, entry := 0
+    blocks := #[{
+      source := positiveOf 1
+      instructions := [.op .Osub [0, 1] 2, .op .Osub [0, 1] 3, .ret [3]] }] }
+  let (_, ordinary) ← insertSpills onlyFirst (setOfList [0]) 1
+  let (_, extended) ← insertSpills onlyFirst (setOfList [0]) 1 true
+  require (ordinary == 0 && extended == 1)
+    "two-address reload destroyed its reusable source value"
+  let seeded : SpillState := { variables, equations := [{ value := 1, temporary := 4 }] }
+  let action : SpillM Unit := do
+    spillInstruction (setOfList [1]) 12 (.op .Osub [1, 0] 1) 6 true
+    spillInstruction (setOfList [1]) 12 (.op .Osub [1, 0] 3) 6 true
+  let (_, finalState) ← action.run seeded
+  require (finalState.code.toList.any (fun instruction => match instruction with
+    | .move 5 3 => true
+    | _ => false)) "two-address self-overwrite reused the old value"
+
 def checkDegrees (function : XFunction) (state : ColoringState) : Except String Unit := do
   for index in [:function.variables.size + 3] do
     require (IndexSetCache.contains state.active state.activeCache index == state.active.contains index)
@@ -577,6 +629,8 @@ def tests : Except String (List (String × AllocationStats)) := do
   testCallsAndConstraints
   testBuiltins
   testReloadReuse
+  testExtendedReloadReuse
+  testTwoAddressReloadReuse
   testMoveActivation
   testDegreeCache
   testCoalescingDegrees

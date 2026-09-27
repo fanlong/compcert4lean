@@ -19,7 +19,7 @@ The implementation follows pinned CompCert 3.17
 | `Regalloc.ml`, interference and spill costs | `Analyses.lean`: fixed and stack conflicts, classes, instruction clobbers, calls, inline assembly, parallel temporaries, costs 1/10 and unspillable temporaries |
 | `IRC.ml`, iterated coalescing | `Coloring.lean`: simplify/coalesce/freeze/spill worklists, full Briggs, George including finite-cost small-use heuristic, cost/degree² priority |
 | `IRC.ml`, location assignment | `Coloring.lean`: deterministic preferred-register rotation, ordered remaining registers, preferred stack-slot coalescing, lowest aligned nonoverlapping slot |
-| `Regalloc.ml`, repeated spilling | `Spilling.lean`, `Allocator.lean`: original XTL rebuilt with accumulated spill decisions; at most 40 rounds; EBB reload equations, three-equation limit and age 3/1/0 schedule |
+| `Regalloc.ml`, repeated spilling | `Spilling.lean`, `Allocator.lean`: original XTL rebuilt with accumulated spill decisions; at most 40 rounds; six EBB reload equations retained for twelve instructions in early rounds, including two-address first operands; ordinary three-equation age 3/1/0 policy remains a fallback |
 | `Regalloc.ml`, LTL emission | `LTL.lean`: redundant move removal, parallel cycles, stack-to-stack temporaries and enforced two-address placement |
 | `CPragmas.ml`, reservation plumbing | `Prototype/Main.lean`, `bridge/bridge.ml`: validated optional context, normalized frontend reservations, echo and snapshot comparison |
 | `Asmexpand.ml`, builtin compatibility | `bridge/bridge.ml`: recursive pinned fixed-register constraints and supported forms checked immediately before expansion, with function/instruction diagnostics |

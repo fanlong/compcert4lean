@@ -27,12 +27,12 @@ def allocationStatistics (function : XFunction) (target : LTL.function) (colorin
       | _ => pure ()
   return { stats with machineRegisters := machine.size, stackSlots := slots.size }
 
-def allocationRounds (configuration : Config.CompilerConfig) (context : AllocationContext)
+def allocationRoundsWithCache (extended : Bool) (configuration : Config.CompilerConfig) (context : AllocationContext)
     (original : XFunction) (dead : Nat) : Nat → Nat → IndexSet →
       Except String (LTL.function × AllocationStats)
   | 0, _, _ => .error "register allocation did not converge within 40 rounds"
   | fuel + 1, round, spilled => do
-      let (function, reused) ← if round == 0 then pure (original, 0) else insertSpills original spilled round
+      let (function, reused) ← if round == 0 then pure (original, 0) else insertSpills original spilled round extended
       let liveness ← analyzeLiveness function
       let coloring ← findColoring configuration context function liveness
       let needed ← neededSpills function coloring
@@ -42,7 +42,12 @@ def allocationRounds (configuration : Config.CompilerConfig) (context : Allocati
       else
         if needed.toList.any (fun index => index >= original.variables.size) then
           throw "spill temporary could not be allocated"
-        allocationRounds configuration context original dead fuel (round + 1) (setUnion spilled needed)
+        allocationRoundsWithCache extended configuration context original dead fuel (round + 1) (setUnion spilled needed)
+
+def allocationRounds (configuration : Config.CompilerConfig) (context : AllocationContext)
+    (original : XFunction) (dead : Nat) : Nat → Nat → IndexSet →
+      Except String (LTL.function × AllocationStats) :=
+  allocationRoundsWithCache false configuration context original dead
 
 def allocate (configuration : Config.CompilerConfig) (context : AllocationContext)
     (source : RTL.function) : Except String (LTL.function × AllocationStats) := do
@@ -54,7 +59,9 @@ def allocate (configuration : Config.CompilerConfig) (context : AllocationContex
   let initial ← buildXTL configuration source types
   let liveness ← analyzeLiveness initial
   let (original, dead) := eliminateDeadCode initial liveness
-  allocationRounds configuration context original dead 40 0 {}
+  match allocationRoundsWithCache true configuration context original dead 40 0 {} with
+  | .ok result => return result
+  | .error _ => allocationRounds configuration context original dead 40 0 {}
 
 def regalloc (configuration : Config.CompilerConfig) (context : AllocationContext)
     : Allocation.RegallocOracle := fun source =>

@@ -128,7 +128,11 @@ Compilation without an optimization option remains O0. O2 enables tail calls,
 constant propagation, CSE, redundancy elimination, inlining, functions-called-once
 inlining, bounded loop unrolling, normal if-conversion, and full floating-point
 constant propagation. Small leaf functions may be inlined at multiple call
-sites while respecting explicit `noinline` attributes. Four copies of selected
+sites while respecting explicit `noinline` attributes. Register allocation can
+reuse six recent spill reloads for twelve intervening instructions, including
+the first operand of destructive two-address operations. If allocation with
+the extended cache fails, it retries the original bounded cache policy; the
+unchanged allocation validator checks every emitted function. Four copies of selected
 short call-free loops expose repeated computations to CSE. Before constant
 propagation, acyclic functions with at most 128 nodes and two conditional
 branches gain path copies that keep branch-assigned values separate for
