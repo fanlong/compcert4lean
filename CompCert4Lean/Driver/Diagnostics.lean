@@ -132,7 +132,14 @@ def transf_rtl_program
   let p8 := bindIORes p7 fun p =>
     match Unusedglob.transform_program p with
     | .Error message => pure (.Error message)
-    | .OK tp => emitResult (sink.rtl (rtlTag 8)) tp
+    | .OK tp =>
+        let scheduled :=
+          if CompCert4Lean.Driver.Compopts.optim_CSE cfg &&
+              CompCert4Lean.Driver.Compopts.optim_constprop cfg then
+            Renumber.transf_program
+              (PairScheduling.transf_program PairScheduling.pressure_policy tp)
+          else tp
+        emitResult (sink.rtl (rtlTag 8)) scheduled
   let p9 := bindIORes p8 fun p =>
     match Allocation.transf_program cfg regallocOracle p with
     | .Error message => pure (.Error message)

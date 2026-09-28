@@ -31,6 +31,9 @@ def allocationReport (configuration : Config.CompilerConfig) (inlining : Inlinin
   let rtl ← reportResult (if options.optimCSE then CSE.transf_program configuration rtl else .OK rtl)
   let rtl ← reportResult (if options.optimRedundancy then Deadcode.transf_program configuration rtl else .OK rtl)
   let rtl ← reportResult (Unusedglob.transform_program rtl)
+  let rtl := if options.optimCSE && options.optimConstprop then
+    Renumber.transf_program
+      (PairScheduling.transf_program PairScheduling.pressure_policy rtl) else rtl
   let mut reports := #[]
   for (identifier, definition) in rtl.prog_defs do
     if let .Gfun (.Internal function) := definition then

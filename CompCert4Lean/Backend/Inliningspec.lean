@@ -158,7 +158,7 @@ mutual
 end
 
 def fenv_agree (fenv : funenv) (fe : funenv) : Prop :=
-  ∀ id f, PTree.get id fe = some f → PTree.get id fenv = some f
+  ∀ id f, PTree.get id fe.functions = some f → PTree.get id fenv.functions = some f
 
 inductive tr_function : program → function → function → Prop where
   | tr_function_intro : ∀ (p : program) (fenv : funenv) (f f' : function) (ctx : context),
@@ -526,10 +526,10 @@ theorem funenv_program_compat : funenv_program_compatStatement := by
   intro cfg p
   let info := inlining_analysis cfg p
   have REMOVE : ∀ (dm : PTree.tree (globdef (CompCert4Lean.Common.AST.fundef function) Unit)) (fenv : funenv) id g,
-      P dm fenv → P (PTree.set id g dm) (PTree.remove id fenv) := by
+      P dm fenv → P (PTree.set id g dm) (remove_function id fenv) := by
     intro dm fenv id g h
     intro id0 f hget
-    change PTree.get id0 (PTree.remove id (fenv : PTree.t function)) = some f at hget
+    change PTree.get id0 (PTree.remove id fenv.functions) = some f at hget
     have hr := @PTree.getRemove_equation function id0 id (fenv : PTree.tree function)
     rw [hr] at hget
     split at hget
@@ -554,7 +554,7 @@ theorem funenv_program_compat : funenv_program_compatStatement := by
     | Gvar v =>
         intro id0 f hget
         change PTree.get id0 (PTree.remove (show positive from id)
-          (fenv : PTree.t function)) = some f at hget
+          fenv.functions) = some f at hget
         have hr := @PTree.getRemove_equation function id0 (show positive from id)
           (fenv : PTree.tree function)
         rw [hr] at hget
@@ -574,7 +574,7 @@ theorem funenv_program_compat : funenv_program_compatStatement := by
         | External ef =>
             intro id0 f hget
             change PTree.get id0 (PTree.remove (show positive from id)
-              (fenv : PTree.t function)) = some f at hget
+              fenv.functions) = some f at hget
             have hr := @PTree.getRemove_equation function id0 (show positive from id)
               (fenv : PTree.tree function)
             rw [hr] at hget
@@ -594,7 +594,7 @@ theorem funenv_program_compat : funenv_program_compatStatement := by
             by_cases hi : should_inline cfg info id f0
             · intro id0 f hget
               have hget' : PTree.get id0 (PTree.set (show positive from id) f0
-                (fenv : PTree.t function)) = some f := by
+                fenv.functions) = some f := by
                 simpa [add_globdef, hi] using hget
               have hsenv := @PTree.getSet_equation function id0
                 (show positive from id) f0 (fenv : PTree.tree function)
@@ -622,8 +622,8 @@ theorem funenv_program_compat : funenv_program_compatStatement := by
                 simp [hne, hdm]
             · intro id0 f hget
               have hget' : PTree.get id0 (PTree.remove (show positive from id)
-                (fenv : PTree.t function)) = some f := by
-                simpa [add_globdef, hi] using hget
+                fenv.functions) = some f := by
+                simpa [add_globdef, remove_function, hi] using hget
               have hr := @PTree.getRemove_equation function id0 (show positive from id)
                 (fenv : PTree.tree function)
               rw [hr] at hget'
@@ -654,13 +654,13 @@ theorem funenv_program_compat : funenv_program_compatStatement := by
         apply ih
         exact ADD cfg info dm fenv idg h
   have h0 : P (PTree.empty (globdef (CompCert4Lean.Common.AST.fundef function) Unit))
-      (PTree.empty function) := by
+      { functions := PTree.empty function } := by
     intro id f hget
     change PTree.get id (PTree.Empty : PTree.tree function) = some f at hget
     simp [PTree.get] at hget
   have h := REC p.prog_defs
       (PTree.empty (globdef (CompCert4Lean.Common.AST.fundef function) Unit))
-      (PTree.empty function) h0
+      { functions := PTree.empty function } h0
   change P (prog_defmap p) (funenv_program cfg p)
   exact h
 
@@ -1082,7 +1082,7 @@ private theorem inline_function_unchanged_below :
       st_nextnode := PArith.BinPos.Pos.add s.st_nextnode (max_pc_function f)
       st_code := s.st_code
       st_stksize := s.st_stksize }
-  generalize hrec' : rec (PTree.remove id fe) _
+  generalize hrec' : rec (recursive_environment id fe) _
       (callcontext ctx s.st_nextnode s.st_nextreg (max_reg_function f)
         f.fn_stacksize retpc retreg) f rs = rr at h
   cases rr with
@@ -1105,7 +1105,7 @@ private theorem inline_function_unchanged_below :
               Nat.add_pos_left (posToNat_positive s.st_nextnode) _
             rw [posToNat_posOfNat hpos]
             omega
-          have hrecpc := hrec (PTree.remove id fe) _
+          have hrecpc := hrec (recursive_environment id fe) _
             (callcontext ctx s.st_nextnode s.st_nextreg (max_reg_function f)
               f.fn_stacksize retpc retreg)
             f rs u s3 i3 pc hrec'
@@ -1146,7 +1146,7 @@ private theorem inline_tail_function_unchanged_below :
       st_nextnode := PArith.BinPos.Pos.add s.st_nextnode (max_pc_function f)
       st_code := s.st_code
       st_stksize := s.st_stksize }
-  generalize hrec' : rec (PTree.remove id fe) _
+  generalize hrec' : rec (recursive_environment id fe) _
       (tailcontext ctx s.st_nextnode s.st_nextreg (max_reg_function f)
         f.fn_stacksize) f rs = rr at h
   cases rr with
@@ -1169,7 +1169,7 @@ private theorem inline_tail_function_unchanged_below :
               Nat.add_pos_left (posToNat_positive s.st_nextnode) _
             rw [posToNat_posOfNat hpos]
             omega
-          have hrecpc := hrec (PTree.remove id fe) _
+          have hrecpc := hrec (recursive_environment id fe) _
             (tailcontext ctx s.st_nextnode s.st_nextreg (max_reg_function f)
               f.fn_stacksize)
             f rs u s3 i3 pc hrec'
@@ -1766,7 +1766,7 @@ private theorem inliningspec_expand_instr_spec_aux : expand_instr_specStatement 
               st_nextnode := PArith.BinPos.Pos.add s.st_nextnode (max_pc_function f)
               st_code := s.st_code
               st_stksize := s.st_stksize }
-          generalize hrec' : rec (PTree.remove id fe) _
+          generalize hrec' : rec (recursive_environment id fe) _
             (callcontext ctx s.st_nextnode s.st_nextreg (max_reg_function f)
               f.fn_stacksize succ result) f rs = rr at hexp
           cases rr with
@@ -1823,9 +1823,9 @@ private theorem inliningspec_expand_instr_spec_aux : expand_instr_specStatement 
                           exact hrec _ _ ctx' f rs urec s3 i3 c (by simpa [ctx'] using hrec')
                             (by
                               intro id0 f0 hget
-                              change PTree.get id0 (PTree.remove id (fe : PTree.t function)) = some f0 at hget
+                              change PTree.get id0 (PTree.remove id fe.functions) = some f0 at hget
                               have hr := @PTree.getRemove_equation function id0 id
-                                (fe : PTree.t function)
+                                fe.functions
                               rw [hr] at hget
                               split at hget
                               · contradiction
@@ -1906,9 +1906,9 @@ private theorem inliningspec_expand_instr_spec_aux : expand_instr_specStatement 
                             (min_alignment f.fn_stacksize) (min_alignment_pos _)
                         /-
                         · intro id0 f0 hget
-                          change PTree.get id0 (PTree.remove id (fe : PTree.t function)) = some f0 at hget
+                          change PTree.get id0 (PTree.remove id fe.functions) = some f0 at hget
                           have hr := @PTree.getRemove_equation function id0 id
-                            (fe : PTree.t function)
+                            fe.functions
                           rw [hr] at hget
                           split at hget
                           · contradiction
@@ -2003,7 +2003,7 @@ private theorem inliningspec_expand_instr_spec_aux : expand_instr_specStatement 
               st_nextnode := PArith.BinPos.Pos.add s.st_nextnode (max_pc_function f)
               st_code := s.st_code
               st_stksize := s.st_stksize }
-          generalize hrec' : rec (PTree.remove id fe) _
+          generalize hrec' : rec (recursive_environment id fe) _
             (tailcontext ctx s.st_nextnode s.st_nextreg (max_reg_function f)
               f.fn_stacksize) f rs = rr at hexp
           cases rr with
@@ -2049,8 +2049,8 @@ private theorem inliningspec_expand_instr_spec_aux : expand_instr_specStatement 
                           exact hrec _ _ ctx' f rs urec s3 i3 c (by simpa [ctx'] using hrec')
                             (by
                               intro id0 f0 hget
-                              change PTree.get id0 (PTree.remove id (fe : PTree.t function)) = some f0 at hget
-                              have hr := @PTree.getRemove_equation function id0 id (fe : PTree.t function)
+                              change PTree.get id0 (PTree.remove id fe.functions) = some f0 at hget
+                              have hr := @PTree.getRemove_equation function id0 id fe.functions
                               rw [hr] at hget
                               split at hget
                               · contradiction

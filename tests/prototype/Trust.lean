@@ -3,6 +3,7 @@ import CompCert4Lean.Prototype.Main
 #print axioms CompCert4Lean.Driver.Compiler.transf_c_program_correct
 #print axioms CompCert4Lean.Driver.Compiler.compilerPassCertificates_proof
 #print axioms CompCert4Lean.Backend.LoopUnrollproof.transf_program_correct
+#print axioms CompCert4Lean.Backend.PairSchedulingproof.transf_program_correct
 #print axioms CompCert4Lean.Prototype.compileJson
 #print axioms CompCert4Lean.Prototype.decodeSource
 #print axioms CompCert4Lean.Prototype.decodeConfiguration

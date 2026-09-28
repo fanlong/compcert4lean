@@ -131,7 +131,10 @@ constant propagation. Small leaf functions may be inlined at multiple call
 sites while respecting explicit `noinline` attributes. Functions through 32 RTL
 nodes and 32 stack bytes with one or two direct calls and acyclic control flow
 are also eligible, including call chains and recursion. Non-leaf expansions
-share a 256-node reservation budget per caller. The recursive inliner removes
+share a 256-node reservation budget per caller. Explicit-inline, called-once
+and previously eligible small-leaf functions retain their original eligibility
+beyond that budget. Calls reached through a newly admitted non-leaf remain
+budgeted, including their nested callees. The recursive inliner removes
 each expanded callee from its environment, while indirect calls and builtins
 remain excluded from this additional eligibility rule. Register allocation can
 reuse eight recent spill reloads for twenty-four intervening instructions, including
@@ -148,6 +151,13 @@ branches gain path copies that keep branch-assigned values separate for
 simplification. Both transformations use the proved arbitrary-routing pass.
 The compiler
 correctness proof includes a single-step simulation of this duplication.
+Before register allocation, adjacent independent register operations may be
+reordered to consume more dying operands first. The heuristic checks candidate
+independence before running liveness, skipping it when no pair can be reordered.
+It considers functions with at most 256 RTL nodes; checked destination and argument
+dependencies govern every selected pair. Its simulation delays the first
+operation until both source evaluations are available. Reachability renumbering
+then removes unused copies before allocation.
 Size optimization, aggressive branchless conversion and debugging stay disabled.
 PIC and common symbols are explicit options; PIE remains unsupported. Python,
 the frontend/printer bridge and Lean use the same normalized profile; reference

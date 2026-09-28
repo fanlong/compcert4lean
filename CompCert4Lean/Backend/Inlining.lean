@@ -33,7 +33,20 @@ private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
 /-! ## Environment of inlinable functions -/
 
-def funenv : Type := PTree.t function
+structure funenv : Type where
+  functions : PTree.t function
+  preferred : PTree.t Unit := PTree.empty Unit
+
+instance : CoeOut funenv (PTree.tree function) := ⟨funenv.functions⟩
+
+def remove_function (id : ident) (environment : funenv) : funenv :=
+  { functions := PTree.remove id environment.functions
+    preferred := PTree.remove id environment.preferred }
+
+def recursive_environment (id : ident) (environment : funenv) : funenv :=
+  { functions := PTree.remove id environment.functions
+    preferred := if (PTree.get id environment.preferred).isSome then
+      PTree.remove id environment.preferred else PTree.empty Unit }
 
 private def treeCount' {A : Type} : PTree.tree' A → Nat
   | .Node001 r => treeCount' r
@@ -62,7 +75,7 @@ private theorem cardinalEqTreeCount {A : Type} (tree : PTree.tree A) :
       simpa [PTree_Properties.cardinal, PTree.elements, PTree.xelements, treeCount]
         using xelementsLength tree xH []
 
-def size_fenv (fenv : funenv) : Nat := PTree_Properties.cardinal fenv
+def size_fenv (fenv : funenv) : Nat := PTree_Properties.cardinal fenv.functions
 
 private theorem treeCountRemLt {A : Type} (p : positive) (tree : PTree.tree' A)
     (value : A) (h : PTree.get' p tree = some value) :
@@ -86,11 +99,15 @@ private theorem treeCountRemLt {A : Type} (p : positive) (tree : PTree.tree' A)
 
 private theorem sizeFenvRemoveLt (fenv : funenv) (id : ident) (f : function)
     (h : PTree.get id fenv = some f) :
-    size_fenv (PTree.remove id fenv) < size_fenv fenv := by
-  rw [show size_fenv (PTree.remove id fenv) = treeCount (PTree.remove id fenv) by
-        exact cardinalEqTreeCount _]
-  rw [show size_fenv fenv = treeCount fenv by exact cardinalEqTreeCount _]
-  cases fenv with
+    size_fenv (recursive_environment id fenv) < size_fenv fenv := by
+  change positive at id
+  rcases fenv with ⟨functions, preferred⟩
+  change PTree.tree function at functions
+  change PTree_Properties.cardinal (PTree.remove id functions) <
+    PTree_Properties.cardinal functions
+  rw [cardinalEqTreeCount, cardinalEqTreeCount]
+  change PTree.get id functions = some f at h
+  cases functions with
   | Empty => simp [PTree.get] at h
   | Nodes tree =>
       exact treeCountRemLt id tree f (by simpa [PTree.get] using h)
@@ -203,7 +220,7 @@ def small_nonleaf_function (source : function) : Bool :=
       | .Icall _ (.inl _) .. | .Itailcall _ (.inl _) .. | .Ibuiltin .. => false
       | _ => true)
 
-def should_inline (cfg : InliningConfig) (info : inlining_info)
+def preferred_inline (cfg : InliningConfig) (info : inlining_info)
     (id : ident) (source : function) : Bool :=
   if !cfg.enabled then
     false
@@ -215,18 +232,27 @@ def should_inline (cfg : InliningConfig) (info : inlining_info)
         (cfg.functionsCalledOnce &&
           cfg.isStatic id &&
           callMultiplicity id info != .many &&
-          !addressTaken id info) || small_leaf_function source || small_nonleaf_function source
+          !addressTaken id info) || small_leaf_function source
+
+def should_inline (cfg : InliningConfig) (info : inlining_info)
+    (id : ident) (source : function) : Bool :=
+  preferred_inline cfg info id source ||
+    (cfg.enabled && cfg.inlineStatus id == .noSpecifier && small_nonleaf_function source)
 
 def add_globdef (cfg : InliningConfig) (info : inlining_info)
     (fenv : funenv) (idg : ident × globdef fundef Unit) : funenv :=
   match idg with
   | (id, .Gfun (.Internal f)) =>
-      if should_inline cfg info id f then PTree.set id f fenv else PTree.remove id fenv
-  | (id, _) => PTree.remove id fenv
+      if should_inline cfg info id f then
+        { functions := PTree.set id f fenv.functions
+          preferred := if preferred_inline cfg info id f then
+            PTree.set id () fenv.preferred else PTree.remove id fenv.preferred }
+      else remove_function id fenv
+  | (id, _) => remove_function id fenv
 
 def funenv_program (cfg : InliningConfig) (p : program) : funenv :=
   let info := inlining_analysis cfg p
-  p.prog_defs.foldl (add_globdef cfg info) (PTree.empty function)
+  p.prog_defs.foldl (add_globdef cfg info) { functions := PTree.empty function }
 
 /-! ## State monad -/
 
@@ -545,7 +571,7 @@ def inline_function (fenv : funenv)
   bind (reserve_nodes npc) (fun dpc =>
     bind (reserve_regs nreg) (fun dreg =>
       let ctx' := callcontext ctx dpc dreg nreg f.fn_stacksize retpc retreg
-      bind (rec (PTree.remove id fenv) (sizeFenvRemoveLt fenv id f lookup) ctx' f) (fun _ =>
+      bind (rec (recursive_environment id fenv) (sizeFenvRemoveLt fenv id f lookup) ctx' f) (fun _ =>
         add_moves (sregs ctx args) (sregs ctx' f.fn_params) (spc ctx' f.fn_entrypoint))))
 
 def budgeted_can_inline (fenv : funenv) (ros : Sum reg ident)
@@ -553,7 +579,7 @@ def budgeted_can_inline (fenv : funenv) (ros : Sum reg ident)
   match can_inline fenv ros with
   | .Cannot_inline => .Cannot_inline
   | .Can_inline id source target lookup =>
-      if small_leaf_function source ||
+      if (PTree.get id fenv.preferred).isSome ||
           posToNat current.st_nextnode + posToNat (max_pc_function source) +
             source.fn_params.length <= 256 then
         .Can_inline id source target lookup
@@ -568,7 +594,7 @@ def inline_tail_function (fenv : funenv)
   bind (reserve_nodes npc) (fun dpc =>
     bind (reserve_regs nreg) (fun dreg =>
       let ctx' := tailcontext ctx dpc dreg nreg f.fn_stacksize
-      bind (rec (PTree.remove id fenv) (sizeFenvRemoveLt fenv id f lookup) ctx' f) (fun _ =>
+      bind (rec (recursive_environment id fenv) (sizeFenvRemoveLt fenv id f lookup) ctx' f) (fun _ =>
         add_moves (sregs ctx args) (sregs ctx' f.fn_params) (spc ctx' f.fn_entrypoint))))
 
 def inline_return (ctx : context) (result : Option reg) (returnInfo : node × reg) :

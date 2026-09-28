@@ -45,6 +45,7 @@ import CompCert4Lean.Backend.Tailcallproof
 import CompCert4Lean.Backend.Inliningproof
 import CompCert4Lean.Backend.Renumberproof
 import CompCert4Lean.Backend.LoopUnrollproof
+import CompCert4Lean.Backend.PairSchedulingproof
 import CompCert4Lean.Backend.Constpropproof
 import CompCert4Lean.Backend.CSEproof
 import CompCert4Lean.Backend.Deadcodeproof
@@ -184,7 +185,14 @@ def transf_rtl_program
           (binary32_certificate := binary32_certificate) cfg)))
   let p15 := apply_total _ _ p14 (print (print_RTL (ZArith.BinInt.Z.of_nat 7)))
   let p16 := apply_partial _ _ p15 (time (ofString "Unused globals") Unusedglob.transform_program)
-  let p17 := apply_total _ _ p16 (print (print_RTL (ZArith.BinInt.Z.of_nat 8)))
+  let p16scheduled := apply_total _ _ p16
+    (total_if (fun _ => Compopts.optim_CSE cfg && Compopts.optim_constprop cfg)
+      (time (ofString "Pair scheduling")
+        (PairScheduling.transf_program PairScheduling.pressure_policy)))
+  let p16renumbered := apply_total _ _ p16scheduled
+    (total_if (fun _ => Compopts.optim_CSE cfg && Compopts.optim_constprop cfg)
+      (time (ofString "Renumbering") Renumber.transf_program))
+  let p17 := apply_total _ _ p16renumbered (print (print_RTL (ZArith.BinInt.Z.of_nat 8)))
   let p18 := apply_partial _ _ p17 (time (ofString "Register allocation") (Allocation.transf_program cfg oracle))
   let p19 := apply_total _ _ p18 (print print_LTL)
   let p20 := apply_total _ _ p19 (time (ofString "Branch tunneling") Tunneling.tunnel_program)
@@ -908,6 +916,19 @@ def CompCert's_passes
   let pass14 : Pass rtlLanguage rtlLanguage :=
     { pass_match := Unusedglobproof.match_prog
       pass_match_link := passCertificates.unusedglob }
+  let passScheduling : Pass rtlLanguage rtlLanguage :=
+    { pass_match := match_if (fun _ => Compopts.optim_CSE cfg && Compopts.optim_constprop cfg)
+        (PairSchedulingproof.match_prog PairScheduling.pressure_policy)
+      pass_match_link := @TransfIfLink RTL.program rtlLinker
+        (fun _ => Compopts.optim_CSE cfg && Compopts.optim_constprop cfg)
+        (PairSchedulingproof.match_prog PairScheduling.pressure_policy)
+        (compiler_total_link (fun _ => PairScheduling.transf_function PairScheduling.pressure_policy)) }
+  let passSchedulingRenumber : Pass rtlLanguage rtlLanguage :=
+    { pass_match := match_if (fun _ => Compopts.optim_CSE cfg && Compopts.optim_constprop cfg)
+        Renumberproof.match_prog
+      pass_match_link := @TransfIfLink RTL.program rtlLinker
+        (fun _ => Compopts.optim_CSE cfg && Compopts.optim_constprop cfg)
+        Renumberproof.match_prog passCertificates.renumber }
   let pass15 : Pass rtlLanguage ltlLanguage :=
     { pass_match := Allocproof.match_prog cfg regallocOracle
       pass_match_link := passCertificates.allocation }
@@ -935,9 +956,10 @@ def CompCert's_passes
   pass_cons pass1 (pass_cons pass2 (pass_cons pass3 (pass_cons pass4
     (pass_cons pass5 (pass_cons pass6 (pass_cons pass7 (pass_cons pass8
       (pass_cons pass9 (pass_cons passPaths (pass_cons pass10 (pass_cons passUnroll (pass_cons pass11 (pass_cons pass12
-        (pass_cons pass13 (pass_cons pass14 (pass_cons pass15 (pass_cons pass16
+        (pass_cons pass13 (pass_cons pass14 (pass_cons passScheduling (pass_cons passSchedulingRenumber
+          (pass_cons pass15 (pass_cons pass16
           (pass_cons pass17 (pass_cons pass18 (pass_cons pass19 (pass_cons pass20
-            (pass_cons pass21 (pass_nil asmLanguage)))))))))))))))))))))))
+            (pass_cons pass21 (pass_nil asmLanguage)))))))))))))))))))))))))
 
 def match_prog
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
@@ -1265,6 +1287,9 @@ theorem transf_c_program_match
     refine ⟨_, partial_if_match _ _ _ _ _ _ (CSEproof.transf_program_match cfg) (by assumption), ?_⟩
     refine ⟨_, partial_if_match _ _ _ _ _ _ (Deadcodeproof.transf_program_match cfg) (by assumption), ?_⟩
     refine ⟨_, Unusedglobproof.transf_program_match _ _ (by assumption), ?_⟩
+    refine ⟨_, total_if_match _ _ _ _ _
+      (PairSchedulingproof.transf_program_match PairScheduling.pressure_policy), ?_⟩
+    refine ⟨_, total_if_match _ _ _ _ _ Renumberproof.transf_program_match, ?_⟩
     refine ⟨_, Allocproof.transf_program_match cfg regallocOracle _ _ (by assumption), ?_⟩
     refine ⟨_, Tunnelingproof.transf_program_match _, ?_⟩
     refine ⟨_, Linearizeproof.transf_program_match enumerationService _ _ (by assumption), ?_⟩
@@ -1538,7 +1563,9 @@ theorem cstrategy_semantic_preservation
     program4, match4, program5, match5, program6, match6, program7, match7,
     program8, match8, program9, match9, programPaths, matchPaths, program10, match10,
     programUnroll, matchUnroll, program11, match11,
-    program12, match12, program13, match13, program14, match14, program15, match15,
+    program12, match12, program13, match13, program14, match14,
+    programScheduling, matchScheduling, programSchedulingRenumber, matchSchedulingRenumber,
+    program15, match15,
     program16, match16, program17, match17, program18, match18, program19, match19,
     program20, match20, program21, match21, sameTarget⟩
   subst target
@@ -1583,6 +1610,12 @@ theorem cstrategy_semantic_preservation
         (fun source target => Deadcodeproof.transf_program_correct cfg source target providers)) ?_
     refine compose_forward_simulations _ _ _
       (Unusedglobproof.transf_program_correct providers _ _ match14) ?_
+    refine compose_forward_simulations _ _ _
+      (match_if_simulation _ (RTL.semantics providers) _ _ _ _ matchScheduling
+        (PairSchedulingproof.transf_program_correct PairScheduling.pressure_policy providers)) ?_
+    refine compose_forward_simulations _ _ _
+      (match_if_simulation _ (RTL.semantics providers) _ _ _ _ matchSchedulingRenumber
+        (Renumberproof.transf_program_correct providers)) ?_
     refine compose_forward_simulations _ _ _
       (Allocproof.transf_program_correct cfg regallocOracle providers _ _ match15) ?_
     refine compose_forward_simulations _ _ _

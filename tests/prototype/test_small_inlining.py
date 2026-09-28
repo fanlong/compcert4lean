@@ -162,6 +162,72 @@ class SmallInliningTests(unittest.TestCase):
             else:
                 self.assertRegex(assembly, r"\bcall\s+outer\b")
 
+    def test_prior_eligibility_survives_large_callers(self):
+        source = self.folder / "inline-priority.c"
+        operations = "\n".join(
+            f"  value = (value ^ (value >> {index % 7 + 1})) * 33u + {index + 3}u;"
+            for index in range(70))
+        source.write_text(
+            "extern int printf(const char *, ...);\n"
+            "static __attribute__((noinline)) unsigned kept(unsigned value) { return value * 7u; }\n"
+            "static __inline__ unsigned requested(unsigned value) { return kept(value) + 3u; }\n"
+            "static __inline__ unsigned bridge(unsigned value) { return requested(value) + 5u; }\n"
+            "static unsigned once(unsigned value) { return kept(value) ^ 17u; }\n"
+            "static __attribute__((noinline)) unsigned many(unsigned value) {\n"
+            "  unsigned result = bridge(value);\n" + operations + "\n"
+            "  return result ^ requested(value) ^ once(value + 1u);\n}\n"
+            "int main(int argc, char **argv) {\n"
+            "  printf(\"%u %u\\n\", many(argc), many((unsigned)argc + 2147483647u));\n"
+            "  return 0;\n}\n")
+        oracle = self.folder / "inline-priority-gcc.exe"
+        execute(["gcc", "-O2", source, "-o", oracle], timeout=30)
+        arguments = [["argument"] * count for count in range(7)]
+        expected = [execute([oracle, *args], timeout=10) for args in arguments]
+        for level in ("O0", "O2"):
+            artifact = self.folder / ("inline-priority-" + level)
+            executable = self.folder / ("inline-priority-" + level + ".exe")
+            compile_source(parse_args([str(source), "-" + level, "-o", str(executable)]),
+                           prepared=True, artifact_dir=artifact)
+            self.assertEqual([execute([executable, *args], timeout=10) for args in arguments], expected)
+            assembly = (artifact / "output.s").read_text()
+            self.assertRegex(assembly, r"\bcall\s+kept\b")
+            if level == "O2":
+                self.assertNotRegex(assembly, r"\bcall\s+(requested|bridge|once)\b")
+            else:
+                self.assertRegex(assembly, r"\bcall\s+requested\b")
+                self.assertRegex(assembly, r"\bcall\s+once\b")
+
+    def test_new_wrappers_bound_nested_expansion(self):
+        source = self.folder / "nested-budget.c"
+        operations = "\n".join(
+            f"  value = (value ^ (value >> {index % 7 + 1})) * 33u + {index + 3}u;"
+            for index in range(70))
+        source.write_text(
+            "extern int printf(const char *, ...);\n"
+            "static __attribute__((noinline)) unsigned kept(unsigned value) { return value * 7u; }\n"
+            "static __inline__ unsigned large(unsigned value) {\n" + operations + "\n"
+            "  return kept(value);\n}\n"
+            "static unsigned wrapper(unsigned value) { return large(value); }\n"
+            "int main(int argc, char **argv) {\n"
+            "  printf(\"%u %u\\n\", wrapper(argc), wrapper((unsigned)argc + 2147483647u));\n"
+            "  return 0;\n}\n")
+        oracle = self.folder / "nested-budget-gcc.exe"
+        execute(["gcc", "-O2", source, "-o", oracle], timeout=30)
+        arguments = [["argument"] * count for count in range(7)]
+        expected = [execute([oracle, *args], timeout=10) for args in arguments]
+        for level in ("O0", "O2"):
+            artifact = self.folder / ("nested-budget-" + level)
+            executable = self.folder / ("nested-budget-" + level + ".exe")
+            compile_source(parse_args([str(source), "-" + level, "-o", str(executable)]),
+                           prepared=True, artifact_dir=artifact)
+            self.assertEqual([execute([executable, *args], timeout=10) for args in arguments], expected)
+            assembly = (artifact / "output.s").read_text()
+            if level == "O2":
+                self.assertNotRegex(assembly, r"\bcall\s+wrapper\b")
+                self.assertRegex(assembly, r"\bcall\s+large\b")
+            else:
+                self.assertRegex(assembly, r"\bcall\s+wrapper\b")
+
     def test_repeated_nonleaf_expansions_share_budget(self):
         source = self.folder / "nonleaf-budget.c"
         operations = "\n".join(
