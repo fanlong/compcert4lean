@@ -129,11 +129,15 @@ constant propagation, CSE, redundancy elimination, inlining, functions-called-on
 inlining, bounded loop unrolling, normal if-conversion, and full floating-point
 constant propagation. Small leaf functions may be inlined at multiple call
 sites while respecting explicit `noinline` attributes. Register allocation can
-reuse six recent spill reloads for twelve intervening instructions, including
+reuse eight recent spill reloads for twenty-four intervening instructions, including
 the first operand of destructive two-address operations. If allocation with
 the extended cache fails, it retries the original bounded cache policy; the
 unchanged allocation validator checks every emitted function. Four copies of selected
-short call-free loops expose repeated computations to CSE. Before constant
+short call-free loops expose repeated computations to CSE. At most one division
+loop per function gets eight copies when the function has at most 96 nodes,
+the loop has at most 32 nodes, one store and two conditional branches. The
+additional four copies contain only that loop's instructions, and routing
+canonicalizes exits to ordinary copies. Before constant
 propagation, acyclic functions with at most 128 nodes and two conditional
 branches gain path copies that keep branch-assigned values separate for
 simplification. Both transformations use the proved arbitrary-routing pass.

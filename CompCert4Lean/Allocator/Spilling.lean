@@ -246,8 +246,8 @@ def spillTraversal (original : XFunction) (spilled : IndexSet) (maxAge maxEntrie
 
 def insertSpills (original : XFunction) (spilled : IndexSet) (round : Nat) (extended : Bool := false)
     : Except String (XFunction × Nat) := do
-  let maxAge := if round <= 10 then (if extended then 12 else 3) else if round <= 20 then 1 else 0
-  let maxEntries := if extended && round <= 10 then 6 else 3
+  let maxAge := if round <= 10 then (if extended then 24 else 3) else if round <= 20 then 1 else 0
+  let maxEntries := if extended && round <= 10 then 8 else 3
   let roots := original.entry :: (List.range original.blocks.size).filter fun index =>
     (original.blocks[index]?.map (fun block => block.predecessors.length != 1)).getD false
   let pending := (roots ++ List.range original.blocks.size).map fun index => (index, [])

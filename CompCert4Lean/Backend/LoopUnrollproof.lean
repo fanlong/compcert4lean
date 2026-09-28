@@ -63,6 +63,72 @@ theorem entrypoint_preserved (source : function) :
 theorem map_instruction_id (instr : instruction) : map_instruction id instr = instr := by
   cases instr <;> simp [map_instruction]
 
+theorem extra_code_at (route : Route) (source : code) (pc : node) (instr : instruction)
+    (code_at : PTree.get pc source = some instr) (copied : route.extra pc = true) :
+    PTree.get pc (extra_code route source) = some instr := by
+  unfold extra_code
+  rw [PTree.gmap_filter1 _ _ pc, PTree.gmap _ pc source, code_at]
+  simp [copied]
+
+theorem normalize_copy_valid (route : Route) (copy : Phase) (pc : node) :
+    route.extra pc = true ∨ (normalize_copy route copy pc).2.2 = false := by
+  cases copied : route.extra pc with
+  | false => exact Or.inr (by simp [normalize_copy, copied])
+  | true => exact Or.inl rfl
+
+theorem copy_code_at (route : Route) (source : code) (copy : Phase)
+    (pc : node) (instr : instruction) (code_at : PTree.get pc source = some instr)
+    (valid : route.extra pc = true ∨ copy.2.2 = false) :
+    PTree.get (copy_pc copy pc) (copy_code route source) =
+      some (transf_instruction route copy pc instr) := by
+  change positive at pc
+  rcases copy with ⟨first, second, third⟩
+  cases first <;> cases second <;> cases third
+  · exact (PTree.gNode_proof (.xO (.xO (.xO pc))) _ _ _).trans
+      ((PTree.gNode_proof (.xO (.xO pc)) _ _ _).trans
+        ((PTree.gNode_proof (.xO pc) _ _ _).trans
+          ((PTree.gmap (transf_instruction route (false, false, false)) pc source).trans
+            (congrArg (Option.map (transf_instruction route (false, false, false) pc)) code_at))))
+  · have copied := extra_code_at route source pc instr code_at (valid.resolve_right (by decide))
+    exact (PTree.gNode_proof (.xO (.xO (.xI pc))) _ _ _).trans
+      ((PTree.gNode_proof (.xO (.xI pc)) _ _ _).trans
+        ((PTree.gNode_proof (.xI pc) _ _ _).trans
+          ((PTree.gmap (transf_instruction route (false, false, true)) pc (extra_code route source)).trans
+            (congrArg (Option.map (transf_instruction route (false, false, true) pc)) copied))))
+  · exact (PTree.gNode_proof (.xO (.xI (.xO pc))) _ _ _).trans
+      ((PTree.gNode_proof (.xI (.xO pc)) _ _ _).trans
+        ((PTree.gNode_proof (.xO pc) _ _ _).trans
+          ((PTree.gmap (transf_instruction route (false, true, false)) pc source).trans
+            (congrArg (Option.map (transf_instruction route (false, true, false) pc)) code_at))))
+  · have copied := extra_code_at route source pc instr code_at (valid.resolve_right (by decide))
+    exact (PTree.gNode_proof (.xO (.xI (.xI pc))) _ _ _).trans
+      ((PTree.gNode_proof (.xI (.xI pc)) _ _ _).trans
+        ((PTree.gNode_proof (.xI pc) _ _ _).trans
+          ((PTree.gmap (transf_instruction route (false, true, true)) pc (extra_code route source)).trans
+            (congrArg (Option.map (transf_instruction route (false, true, true) pc)) copied))))
+  · exact (PTree.gNode_proof (.xI (.xO (.xO pc))) _ _ _).trans
+      ((PTree.gNode_proof (.xO (.xO pc)) _ _ _).trans
+        ((PTree.gNode_proof (.xO pc) _ _ _).trans
+          ((PTree.gmap (transf_instruction route (true, false, false)) pc source).trans
+            (congrArg (Option.map (transf_instruction route (true, false, false) pc)) code_at))))
+  · have copied := extra_code_at route source pc instr code_at (valid.resolve_right (by decide))
+    exact (PTree.gNode_proof (.xI (.xO (.xI pc))) _ _ _).trans
+      ((PTree.gNode_proof (.xO (.xI pc)) _ _ _).trans
+        ((PTree.gNode_proof (.xI pc) _ _ _).trans
+          ((PTree.gmap (transf_instruction route (true, false, true)) pc (extra_code route source)).trans
+            (congrArg (Option.map (transf_instruction route (true, false, true) pc)) copied))))
+  · exact (PTree.gNode_proof (.xI (.xI (.xO pc))) _ _ _).trans
+      ((PTree.gNode_proof (.xI (.xO pc)) _ _ _).trans
+        ((PTree.gNode_proof (.xO pc) _ _ _).trans
+          ((PTree.gmap (transf_instruction route (true, true, false)) pc source).trans
+            (congrArg (Option.map (transf_instruction route (true, true, false) pc)) code_at))))
+  · have copied := extra_code_at route source pc instr code_at (valid.resolve_right (by decide))
+    exact (PTree.gNode_proof (.xI (.xI (.xI pc))) _ _ _).trans
+      ((PTree.gNode_proof (.xI (.xI pc)) _ _ _).trans
+        ((PTree.gNode_proof (.xI pc) _ _ _).trans
+          ((PTree.gmap (transf_instruction route (true, true, true)) pc (extra_code route source)).trans
+            (congrArg (Option.map (transf_instruction route (true, true, true) pc)) copied))))
+
 theorem transf_function_at (source : function) (copy : Phase) (pc : node)
     (instr : instruction) (code_at : PTree.get pc source.fn_code = some instr) :
     PTree.get (transf_pc policy source copy pc)
@@ -79,24 +145,8 @@ theorem transf_function_at (source : function) (copy : Phase) (pc : node)
         identity] using code_at
   | some route =>
       simp only [LoopUnroll.transf_function, transf_pc, next_copy, selected]
-      rcases copy with ⟨first, second⟩
-      cases first <;> cases second
-      · exact (PTree.gNode_proof (.xO (.xO pc)) _ _ _).trans
-          ((PTree.gNode_proof (.xO pc) _ _ _).trans
-            ((PTree.gmap (transf_instruction route (false, false)) pc source.fn_code).trans
-              (congrArg (Option.map (transf_instruction route (false, false) pc)) code_at)))
-      · exact (PTree.gNode_proof (.xO (.xI pc)) _ _ _).trans
-          ((PTree.gNode_proof (.xI pc) _ _ _).trans
-            ((PTree.gmap (transf_instruction route (false, true)) pc source.fn_code).trans
-              (congrArg (Option.map (transf_instruction route (false, true) pc)) code_at)))
-      · exact (PTree.gNode_proof (.xI (.xO pc)) _ _ _).trans
-          ((PTree.gNode_proof (.xO pc) _ _ _).trans
-            ((PTree.gmap (transf_instruction route (true, false)) pc source.fn_code).trans
-              (congrArg (Option.map (transf_instruction route (true, false) pc)) code_at)))
-      · exact (PTree.gNode_proof (.xI (.xI pc)) _ _ _).trans
-          ((PTree.gNode_proof (.xI pc) _ _ _).trans
-            ((PTree.gmap (transf_instruction route (true, true)) pc source.fn_code).trans
-              (congrArg (Option.map (transf_instruction route (true, true) pc)) code_at)))
+      exact copy_code_at route source.fn_code (normalize_copy route copy pc) pc instr code_at
+        (normalize_copy_valid route copy pc)
 
 inductive match_frames : stackframe → stackframe → Prop where
   | intro (result : reg) (source : function) (sp : val) (pc : node)

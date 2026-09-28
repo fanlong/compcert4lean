@@ -58,6 +58,13 @@ static __attribute__((noinline)) unsigned calls(unsigned count) {
   return result;
 }
 
+static __attribute__((noinline)) double divisions(unsigned count, double gain) {
+  double result = 0;
+  for (unsigned index = 0; index < count; ++index)
+    result += values[index & 127] / (gain + index + 1);
+  return result;
+}
+
 int main(int argc, char **argv) {
   unsigned count = argc > 1 ? (unsigned)strtoul(argv[1], 0, 10) : 0;
   for (unsigned index = 0; index < 128; ++index) values[index] = index * 31 + 11;
@@ -65,7 +72,8 @@ int main(int argc, char **argv) {
   unsigned second = nested(count);
   unsigned third = irreducible(count);
   unsigned fourth = calls(count);
-  printf("%u %u %u %u\n", first, second, third, fourth);
+  double fifth = divisions(count, 37);
+  printf("%u %u %u %u %.17g\n", first, second, third, fourth, fifth);
   return 0;
 }
 """
@@ -80,11 +88,13 @@ class LoopUnrollTests(unittest.TestCase):
         print(f"Artifacts: {cls.folder}", flush=True)
 
     def test_boundaries_control_flow_and_diagnostic_pipeline(self):
+        execute(["lake", "env", "lean", "--run", "tests/prototype/SelectiveUnroll.lean"],
+                cwd=REPO, timeout=120)
         source = self.folder / "loops.c"
         source.write_text(SOURCE)
         oracle = self.folder / "gcc.exe"
         execute(["gcc", "-O2", source, "-o", oracle], timeout=30)
-        counts = [0, 1, 2, 3, 7, 16, 31, 64, 127, 128, 129, 193]
+        counts = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 64, 127, 128, 129, 193]
         expected = {count: execute([oracle, str(count)], timeout=10) for count in counts}
         for level in ("O0", "O2"):
             artifact = self.folder / level

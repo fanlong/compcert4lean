@@ -319,7 +319,7 @@ def testDegreeCache : Except String Unit := do
 
 def testExtendedReloadReuse : Except String Unit := do
   let variables := #[{ type := typ.Tint }, { type := typ.Tint }, { type := typ.Tint }]
-  let gaps : List XInstruction := List.replicate 8 (.op (.Ointconst Lib.Integers.Int.zero) [] 2)
+  let gaps : List XInstruction := List.replicate 20 (.op (.Ointconst Lib.Integers.Int.zero) [] 2)
   let functionWith (between : List XInstruction) : XFunction := {
     signature := sign [], stacksize := number 0, variables, entry := 0
     blocks := #[{
