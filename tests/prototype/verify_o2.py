@@ -20,6 +20,7 @@ def main():
         [REPO / ".lake/build/bin/allocatorTests"],
         ["lake", "env", "lean", "--run", "tests/prototype/RuntimeHelpers.lean"],
         ["lake", "env", "lean", "tests/prototype/TargetHeader.lean"],
+        ["lake", "env", "lean", "tests/prototype/MapDefault.lean"],
         ["lake", "env", "lean", "tests/prototype/CodecDecoding.lean"],
         [sys.executable, "tests/prototype/test_optimization.py"],
         [sys.executable, "tests/prototype/test_small_inlining.py"],

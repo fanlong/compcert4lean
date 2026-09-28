@@ -1,5 +1,8 @@
 import CompCert4Lean.Prototype.Main
 
+#print axioms CompCert4Lean.Lib.Maps.PTree.getDefault_eq
+#print axioms CompCert4Lean.Lib.Maps.PMap.get_eq_getDirect
+
 #print axioms CompCert4Lean.Driver.Compiler.transf_c_program_correct
 #print axioms CompCert4Lean.Driver.Compiler.compilerPassCertificates_proof
 #print axioms CompCert4Lean.Backend.LoopUnrollproof.transf_program_correct

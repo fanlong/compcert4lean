@@ -151,13 +151,27 @@ branches gain path copies that keep branch-assigned values separate for
 simplification. Both transformations use the proved arbitrary-routing pass.
 The compiler
 correctness proof includes a single-step simulation of this duplication.
-Before register allocation, adjacent independent register operations may be
+Before register allocation, adjacent independent register operations and ordinary loads may be
 reordered to consume more dying operands first. The heuristic checks candidate
 independence before running liveness, skipping it when no pair can be reordered.
-It considers functions with at most 256 RTL nodes; checked destination and argument
+An empty hint tree returns the original function directly.
+It considers functions with at most 512 RTL nodes; checked destination and argument
 dependencies govern every selected pair. Its simulation delays the first
-operation until both source evaluations are available. Reachability renumbering
+instruction until both source evaluations are available. Neither instruction
+changes memory; stores, calls and builtins terminate eligible pairs. Reachability renumbering
 then removes unused copies before allocation.
+
+Native map reads borrow persistent trees. Default-valued map lookup uses a
+direct traversal that avoids constructing a temporary option for each read;
+a kernel-checked equality installs it through Lean's `csimp` mechanism.
+The logical lookup definitions and results are preserved.
+
+Register allocation weights spill costs inside postorder loop intervals,
+giving nested loops higher priority up to three levels. The sweep uses compact
+block indices and sorted interval endpoints, so sparse node labels do not
+allocate oversized arrays. Access counts, allocation constraints, and the
+checked allocation validator are unchanged.
+
 Size optimization, aggressive branchless conversion and debugging stay disabled.
 PIC and common symbols are explicit options; PIE remains unsupported. Python,
 the frontend/printer bridge and Lean use the same normalized profile; reference

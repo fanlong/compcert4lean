@@ -50,7 +50,8 @@ def Node {A : Type} (l : tree A) (o : Option A) (r : tree A) : tree A :=
 
 def empty (A : Type) : t A := .Empty
 
-def get' {A : Type} : positive → tree' A → Option A
+def get' {A : Type} (key : @& positive) (mapping : @& tree' A) : Option A :=
+  match key, mapping with
   | .xH, .Node001 _ => none
   | .xH, .Node010 x => some x
   | .xH, .Node011 x _ => some x
@@ -73,7 +74,7 @@ def get' {A : Type} : positive → tree' A → Option A
   | .xI q, .Node110 _ _ => none
   | .xI q, .Node111 _ _ m => get' q m
 
-def get {A : Type} (p : positive) (m : tree A) : Option A :=
+def get {A : Type} (p : @& positive) (m : @& tree A) : Option A :=
   match m with
   | .Empty => none
   | .Nodes m' => get' p m'
@@ -82,6 +83,42 @@ def set0 {A : Type} : positive → A → tree' A
   | .xH, x => .Node010 x
   | .xO q, x => .Node100 (set0 q x)
   | .xI q, x => .Node001 (set0 q x)
+
+def getDefault' {Value : Type} (fallback : @& Value)
+    (key : @& positive) (mapping : @& tree' Value) : Value :=
+  match key, mapping with
+  | .xH, .Node010 value | .xH, .Node011 value _
+  | .xH, .Node110 _ value | .xH, .Node111 _ value _ => value
+  | .xO rest, .Node100 left | .xO rest, .Node101 left _
+  | .xO rest, .Node110 left _ | .xO rest, .Node111 left _ _ =>
+      getDefault' fallback rest left
+  | .xI rest, .Node001 right | .xI rest, .Node011 _ right
+  | .xI rest, .Node101 _ right | .xI rest, .Node111 _ _ right =>
+      getDefault' fallback rest right
+  | _, _ => fallback
+
+theorem getDefault'_eq {Value : Type} (fallback : Value)
+    (key : positive) (mapping : tree' Value) :
+    getDefault' fallback key mapping = (get' key mapping).getD fallback := by
+  induction key generalizing mapping with
+  | xH => cases mapping <;> rfl
+  | xO rest inductionHypothesis =>
+      cases mapping <;> simp only [getDefault', get', Option.getD, inductionHypothesis]
+  | xI rest inductionHypothesis =>
+      cases mapping <;> simp only [getDefault', get', Option.getD, inductionHypothesis]
+
+def getDefault {Value : Type} (fallback : @& Value)
+    (key : @& positive) (mapping : @& tree Value) : Value :=
+  match mapping with
+  | .Empty => fallback
+  | .Nodes nodes => getDefault' fallback key nodes
+
+theorem getDefault_eq {Value : Type} (fallback : Value)
+    (key : positive) (mapping : tree Value) :
+    getDefault fallback key mapping = (get key mapping).getD fallback := by
+  cases mapping with
+  | Empty => rfl
+  | Nodes nodes => exact getDefault'_eq fallback key nodes
 
 def set' {A : Type} : positive → A → tree' A → tree' A
   | .xH, x, .Node001 r => .Node011 x r
@@ -398,7 +435,9 @@ def map_filter1 {A B : Type} (f : A → Option B) (m : tree A) : tree B :=
                     | .Nodes r' => .Nodes (.Node101 l' r')
       go m'
 
-def beq' {A : Type} (beqA : A → A → Bool) : tree' A → tree' A → Bool
+def beq' {A : Type} (beqA : A → A → Bool)
+    (left right : @& tree' A) : Bool :=
+  match left, right with
   | .Node001 r₁, .Node001 r₂ => beq' beqA r₁ r₂
   | .Node010 x₁, .Node010 x₂ => beqA x₁ x₂
   | .Node011 x₁ r₁, .Node011 x₂ r₂ => beqA x₁ x₂ && beq' beqA r₁ r₂
@@ -409,7 +448,8 @@ def beq' {A : Type} (beqA : A → A → Bool) : tree' A → tree' A → Bool
       beqA x₁ x₂ && beq' beqA l₁ l₂ && beq' beqA r₁ r₂
   | _, _ => false
 
-def beq {A : Type} (beqA : A → A → Bool) : t A → t A → Bool
+def beq {A : Type} (beqA : A → A → Bool) (left right : @& t A) : Bool :=
+  match left, right with
   | .Empty, .Empty => true
   | .Nodes m₁, .Nodes m₂ => beq' beqA m₁ m₂
   | _, _ => false
@@ -1506,10 +1546,21 @@ namespace PMap
 def elt : Type := positive
 def t (A : Type) : Type := A × PTree.t A
 def init {A : Type} (x : A) : t A := (x, PTree.empty A)
-def get {A : Type} (i : positive) (m : t A) : A :=
+def get {A : Type} (i : @& positive) (m : @& t A) : A :=
   match PTree.get i m.2 with
   | some x => x
   | none => m.1
+
+def getDirect {Value : Type} (key : @& positive) (mapping : @& t Value) : Value :=
+  PTree.getDefault mapping.1 key mapping.2
+
+@[csimp] theorem get_eq_getDirect : @get = @getDirect := by
+  funext Value key mapping
+  change Value × PTree.t Value at mapping
+  rcases mapping with ⟨fallback, tree⟩
+  change (PTree.get key tree).getD fallback = PTree.getDefault fallback key tree
+  exact (PTree.getDefault_eq fallback key tree).symm
+
 def set {A : Type} (i : positive) (x : A) (m : t A) : t A := (m.1, PTree.set i x m.2)
 
 def map {A B : Type} (f : A → B) (m : t A) : t B :=

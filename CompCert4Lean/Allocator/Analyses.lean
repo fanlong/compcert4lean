@@ -172,29 +172,29 @@ def charge (indices : List Nat) (amount accesses : Nat) (unspillable stackOnly :
         stackOnly := cost.stackOnly || stackOnly } }) graph
 
 def instructionCosts (function : XFunction) (instruction : XInstruction)
-    (graph : Interference) : Interference :=
+    (graph : Interference) (weight : Nat := 1) : Interference :=
   match instruction with
   | .move source destination =>
       if fixedStack function source then charge [destination] 0 0 false true graph
       else if fixedStack function destination then charge [source] 0 0 false true graph
-      else charge [source, destination] 1 1 false false graph
-  | .reload source destination => charge [destination] 0 1 true false (charge [source] 1 1 false false graph)
-  | .spill source destination => charge [source] 0 1 true false (charge [destination] 1 1 false false graph)
+      else charge [source, destination] weight 1 false false graph
+  | .reload source destination => charge [destination] 0 1 true false (charge [source] weight 1 false false graph)
+  | .spill source destination => charge [source] 0 1 true false (charge [destination] weight 1 false false graph)
   | .parmove sources destinations integerTemp floatTemp =>
-      charge [integerTemp, floatTemp] 0 0 true false (charge (sources ++ destinations) 1 1 false false graph)
+      charge [integerTemp, floatTemp] 0 0 true false (charge (sources ++ destinations) weight 1 false false graph)
   | .op _ arguments result | .load _ _ arguments result | .store _ _ arguments result =>
-      charge (result :: arguments) 10 1 false false graph
-  | .call _ target _ _ | .tailcall _ target _ => charge (targetUses target) 10 1 false false graph
+      charge (result :: arguments) (10 * weight) 1 false false graph
+  | .call _ target _ _ | .tailcall _ target _ => charge (targetUses target) (10 * weight) 1 false false graph
   | .builtin (.EF_annot ..) _ _ | .builtin (.EF_debug ..) _ _ => graph
   | .builtin external arguments result =>
       let args := params_of_builtin_args arguments
       let results := params_of_builtin_res result
       match external with
-      | .EF_vstore _ | .EF_memcpy .. => charge results 0 0 true false (charge args 10 1 false false graph)
-      | .EF_annot_val .. => charge (args ++ results) 1 1 false false graph
-      | _ => charge (args ++ results) 10 1 false false graph
-  | .cond _ arguments _ _ => charge arguments 10 1 false false graph
-  | .jumptable argument _ => charge [argument] 10 1 false false graph
+      | .EF_vstore _ | .EF_memcpy .. => charge results 0 0 true false (charge args (10 * weight) 1 false false graph)
+      | .EF_annot_val .. => charge (args ++ results) weight 1 false false graph
+      | _ => charge (args ++ results) (10 * weight) 1 false false graph
+  | .cond _ arguments _ _ => charge arguments (10 * weight) 1 false false graph
+  | .jumptable argument _ => charge [argument] (10 * weight) 1 false false graph
   | _ => graph
 
 def incoming (function : XFunction) (index : Nat) : Bool :=
@@ -203,8 +203,9 @@ def incoming (function : XFunction) (index : Nat) : Bool :=
   | _ => false
 
 def instructionInterference (configuration : Config.CompilerConfig) (function : XFunction)
-    (instruction : XInstruction) (live : IndexSet) (graph : Interference) : Interference := Id.run do
-  let mut graph := instructionCosts function instruction graph
+    (instruction : XInstruction) (live : IndexSet) (graph : Interference)
+    (weight : Nat := 1) : Interference := Id.run do
+  let mut graph := instructionCosts function instruction graph weight
   match instruction with
   | .move source destination | .reload source destination | .spill source destination =>
       graph := graphLive destination (live.erase source) (graphPreference source destination graph)
@@ -250,16 +251,40 @@ def instructionInterference (configuration : Config.CompilerConfig) (function : 
   | _ => pure ()
   return graph
 
+def loopWeights (function : XFunction) : Array Nat := Id.run do
+  let mut weights := Array.replicate function.blocks.size 1
+  let events := function.blocks.toList.flatMap fun block =>
+    let source := regKey block.source
+    block.successors.flatMap fun successor =>
+      match function.blocks[successor]? with
+      | none => []
+      | some target =>
+          let target := regKey target.source
+          if source <= target then [(source, true), (target + 1, false)] else []
+  if events.isEmpty then return weights
+  let mut events := events.mergeSort (fun left right => left.1 <= right.1)
+  let ordered := function.blocks.toList.zipIdx.mergeSort
+    (fun left right => regKey left.1.source <= regKey right.1.source)
+  let mut depth := 0
+  for (block, index) in ordered do
+    let (crossed, pending) := events.span (fun event => event.1 <= regKey block.source)
+    depth := crossed.foldl (fun depth event => if event.2 then depth + 1 else depth - 1) depth
+    events := pending
+    weights := weights.set! index (10 ^ min depth 3)
+  return weights
+
 def buildInterference (configuration : Config.CompilerConfig) (function : XFunction)
     (liveness : Liveness) : Interference := Id.run do
   let mut graph : Interference := {
     adjacency := Array.replicate function.variables.size {}
     preferences := Array.replicate function.variables.size {}
     costs := Array.replicate function.variables.size {} }
+  let weights := loopWeights function
   for index in [:function.blocks.size] do
     if let some block := function.blocks[index]? then
       let (_, next) := block.instructions.foldr (fun instruction (live, graph) =>
-        (liveBefore function instruction live, instructionInterference configuration function instruction live graph))
+        (liveBefore function instruction live,
+          instructionInterference configuration function instruction live graph (weights[index]?.getD 1)))
         (liveness.after[index]?.getD {}, graph)
       graph := next
   return graphDestroyed destroyed_at_function_entry (liveness.before[function.entry]?.getD {}) graph

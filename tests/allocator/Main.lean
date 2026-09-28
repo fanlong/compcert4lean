@@ -620,7 +620,38 @@ def testIndexSetCache : Except String Unit := do
             active := state.active.erase removed
             activeCache := IndexSetCache.erase state.active state.activeCache removed }
 
+def testLoopSpillWeights : Except String Unit := do
+  let block := fun source successors =>
+    ({ source := positiveOf source, instructions := [], successors } : XBlock)
+  let function : XFunction := {
+    signature := sign [], stacksize := number 0
+    variables := Array.replicate 5 { type := .Tint }
+    blocks := #[block 3 [], block 7 [3, 0], block 4 [1],
+      block 6 [4, 2], block 5 [3], block 8 [1]]
+    entry := 5 }
+  require (loopWeights function == #[1, 10, 10, 100, 100, 1])
+    "nested loops did not receive higher spill costs than surrounding code"
+  let sparse := { function with blocks := function.blocks.map (fun block =>
+    { block with source := positiveOf (regKey block.source + 1000000000000) }) }
+  require (loopWeights sparse == loopWeights function) "sparse node labels changed loop weights"
+  let acyclic := { function with blocks := #[block 1 [], block 3 [2], block 2 [0]], entry := 1 }
+  require (loopWeights acyclic == #[1, 1, 1]) "acyclic control flow received a loop weight"
+  let selfLoop := { function with blocks := #[block 1 [0]], entry := 0 }
+  require (loopWeights selfLoop == #[10]) "self-loop did not receive a loop weight"
+  let graph : Interference := {
+    adjacency := Array.replicate 5 {}, preferences := Array.replicate 5 {}
+    costs := Array.replicate 5 {} }
+  let ordinary := instructionCosts function (.op .Omul [2, 3] 4) graph
+  let weighted := instructionCosts function (.op .Omul [2, 3] 4) graph 100
+  for index in [:5] do
+    let before := ordinary.costs[index]?.getD {}
+    let after := weighted.costs[index]?.getD {}
+    require (after.amount == before.amount * 100 && after.accesses == before.accesses &&
+      after.unspillable == before.unspillable && after.stackOnly == before.stackOnly)
+      "loop costs changed access counts or allocation constraints"
+
 def tests : Except String (List (String × AllocationStats)) := do
+  testLoopSpillWeights
   testIndexSetCache
   testClassification
   testFixedLocationLookup

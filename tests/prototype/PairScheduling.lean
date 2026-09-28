@@ -42,15 +42,46 @@ def memory_read : RTL.function :=
     fn_code := PTree.set (posOfNat 3)
       (.Iload .Mint32 (.Aindexed Z0) [posOfNat 1] (posOfNat 5) (posOfNat 2)) source.fn_code }
 
+def first_load : RTL.function :=
+  { source with
+    fn_code := PTree.set (posOfNat 4)
+      (.Iload .Mint32 (.Aindexed Z0) [posOfNat 1] (posOfNat 3) (posOfNat 3)) source.fn_code }
+
+def two_loads : RTL.function :=
+  { first_load with
+    fn_code := PTree.set (posOfNat 3)
+      (.Iload .Mint32 (.Aindexed Z0) [posOfNat 2] (posOfNat 5) (posOfNat 2)) first_load.fn_code }
+
+def dependent_address : RTL.function :=
+  { first_load with
+    fn_code := PTree.set (posOfNat 3)
+      (.Iload .Mint32 (.Aindexed Z0) [posOfNat 3] (posOfNat 5) (posOfNat 2)) first_load.fn_code }
+
+def memory_store : RTL.function :=
+  { source with
+    fn_code := PTree.set (posOfNat 3)
+      (.Istore .Mint32 (.Aindexed Z0) [posOfNat 1] (posOfNat 3) (posOfNat 2)) source.fn_code }
+
 example : (pair_at hints source (posOfNat 4)).isSome = true := by decide
+example : transf_function (fun _ => PTree.empty Unit) source = source := by rfl
+example (function : RTL.function) :
+    transf_function (fun _ => PTree.empty Unit) function = function := by rfl
 example : (pair_at (PTree.empty Unit) source (posOfNat 4)).isNone = true := by decide
 example : (pair_at hints read_dependency (posOfNat 4)).isNone = true := by decide
 example : (pair_at hints write_dependency (posOfNat 4)).isNone = true := by decide
 example : (pair_at hints same_destination (posOfNat 4)).isNone = true := by decide
-example : (pair_at hints memory_read (posOfNat 4)).isNone = true := by decide
+example : (pair_at hints memory_read (posOfNat 4)).isSome = true := by decide
+example : (pair_at hints first_load (posOfNat 4)).isSome = true := by decide
+example : (pair_at hints two_loads (posOfNat 4)).isSome = true := by decide
+example : (pair_at hints dependent_address (posOfNat 4)).isNone = true := by decide
+example : (pair_at hints memory_store (posOfNat 4)).isNone = true := by decide
 #eval show IO Unit from do
   unless (pair_at (pressure_policy source) source (posOfNat 4)).isSome do
     throw (IO.userError "pressure policy did not select the independent pair")
+  unless (pair_at (pressure_policy memory_read) memory_read (posOfNat 4)).isSome do
+    throw (IO.userError "pressure policy did not select the operation/load pair")
+  unless (pair_at (pressure_policy first_load) first_load (posOfNat 4)).isSome do
+    throw (IO.userError "pressure policy did not select the load/operation pair")
 example : PTree.get (first_pc (posOfNat 77))
     (transf_function (fun _ => unknown_hint) source).fn_code = none := by decide
 example : (PTree.elements (transf_function (fun _ => unknown_hint) source).fn_code).length = 7 := by decide
@@ -63,6 +94,11 @@ example : PTree.get (second_pc (posOfNat 4)) (transf_function (fun _ => hints) s
     some (.Iop (.Ointconst (Lib.Integers.Int.repr (ZArith.BinInt.Z.of_nat 7))) [] (posOfNat 3) (normal_pc (posOfNat 2))) := by rfl
 example : PTree.get (normal_pc (posOfNat 3)) (transf_function (fun _ => hints) source).fn_code =
     some (.Iop .Omul [posOfNat 1, posOfNat 2] (posOfNat 5) (normal_pc (posOfNat 2))) := by rfl
+
+example : PTree.get (first_pc (posOfNat 4)) (transf_function (fun _ => hints) two_loads).fn_code =
+    some (.Iload .Mint32 (.Aindexed Z0) [posOfNat 2] (posOfNat 5) (second_pc (posOfNat 4))) := by rfl
+example : PTree.get (second_pc (posOfNat 4)) (transf_function (fun _ => hints) two_loads).fn_code =
+    some (.Iload .Mint32 (.Aindexed Z0) [posOfNat 1] (posOfNat 3) (normal_pc (posOfNat 2))) := by rfl
 
 #print axioms PairSchedulingproof.transf_program_correct
 

@@ -48,6 +48,29 @@ static __attribute__((noinline)) unsigned effects(unsigned *left, unsigned *righ
   return first * second;
 }
 
+static __attribute__((noinline)) unsigned load_after(unsigned *pointer, unsigned value) {
+  unsigned first = ~value;
+  unsigned second = *pointer;
+  return first ^ second;
+}
+
+static __attribute__((noinline)) unsigned load_before(unsigned *pointer, unsigned left, unsigned right) {
+  unsigned first = *pointer;
+  unsigned second = left * right;
+  return first ^ second;
+}
+
+static __attribute__((noinline)) unsigned load_pair(unsigned *left, unsigned *right) {
+  unsigned first = *left;
+  unsigned second = *right;
+  return (first * 33u) ^ second;
+}
+
+static __attribute__((noinline)) unsigned load_dependent(unsigned *base, unsigned index) {
+  unsigned first = base[index & 1u];
+  return base[first & 1u];
+}
+
 static __attribute__((noinline)) double floating(double first, double second, double third) {
   double square = first * first;
   double product = second * third;
@@ -66,6 +89,10 @@ int main(int argc, char **argv) {
     result ^= shared(first, second, third, seed, index & 1u);
     result ^= dependent(first, second);
     result ^= guarded(first, second, index & 7u);
+    result ^= load_after(&cells[index & 1u], third);
+    result ^= load_before(&cells[0], first, second);
+    result ^= load_pair(&cells[0], &cells[index & 1u]);
+    result ^= load_dependent(cells, index);
     result ^= effects(&cells[0], &cells[index & 1u], third);
     printf("%u %u %u\n", result, cells[0], observed);
   }
