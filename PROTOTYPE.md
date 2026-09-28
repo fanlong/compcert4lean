@@ -128,7 +128,12 @@ Compilation without an optimization option remains O0. O2 enables tail calls,
 constant propagation, CSE, redundancy elimination, inlining, functions-called-once
 inlining, bounded loop unrolling, normal if-conversion, and full floating-point
 constant propagation. Small leaf functions may be inlined at multiple call
-sites while respecting explicit `noinline` attributes. Register allocation can
+sites while respecting explicit `noinline` attributes. Functions through 32 RTL
+nodes and 32 stack bytes with one or two direct calls and acyclic control flow
+are also eligible, including call chains and recursion. Non-leaf expansions
+share a 256-node reservation budget per caller. The recursive inliner removes
+each expanded callee from its environment, while indirect calls and builtins
+remain excluded from this additional eligibility rule. Register allocation can
 reuse eight recent spill reloads for twenty-four intervening instructions, including
 the first operand of destructive two-address operations. If allocation with
 the extended cache fails, it retries the original bounded cache policy; the

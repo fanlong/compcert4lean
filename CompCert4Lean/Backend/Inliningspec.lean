@@ -1234,7 +1234,7 @@ private theorem expand_instr_unchanged_aux :
           simp only [hret] at h
           exact set_instr_other (spc ctx pc) _ s x s' i pc' h hne
   | Icall sig ros args result succ =>
-      cases hcan : can_inline fe ros with
+      cases hcan : budgeted_can_inline fe ros s with
       | Cannot_inline =>
           simp only [hcan] at h
           exact set_instr_other (spc ctx pc) _ s x s' i pc' h hne
@@ -1255,7 +1255,7 @@ private theorem expand_instr_unchanged_aux :
                   exact (set_instr_other (spc ctx pc) (Inop next) s1 u s2 i2 pc'
                     hs hne).trans hinline
   | Itailcall sig ros args =>
-      cases hcan : can_inline fe ros with
+      cases hcan : budgeted_can_inline fe ros s with
       | Cannot_inline =>
           cases hret : ctx.retinfo with
           | none =>
@@ -1746,7 +1746,7 @@ private theorem inliningspec_expand_instr_spec_aux : expand_instr_specStatement 
           · exact hbase _ _ _ _ _ _ _ hexp hsame
           · exact hret
   | Icall sig ros args result succ =>
-      cases hcan : can_inline fe ros with
+      cases hcan : budgeted_can_inline fe ros s with
       | Cannot_inline =>
           simp only [Inlining.expand_instr] at hexp
           simp only [hcan] at hexp
@@ -1972,7 +1972,7 @@ private theorem inliningspec_expand_instr_spec_aux : expand_instr_specStatement 
                           omega
                         -/
   | Itailcall sig ros args =>
-      cases hcan : can_inline fe ros with
+      cases hcan : budgeted_can_inline fe ros s with
       | Cannot_inline =>
           cases hret : ctx.retinfo with
           | none =>

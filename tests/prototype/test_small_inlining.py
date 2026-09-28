@@ -1,4 +1,4 @@
-"""Small leaf inlining preserves explicit controls and executable behavior."""
+"""Bounded inlining preserves explicit controls and executable behavior."""
 
 from pathlib import Path
 import re
@@ -99,6 +99,99 @@ class SmallInliningTests(unittest.TestCase):
             self.assertIsNotNone(re.search(r"(?m)^large:", assembly))
             self.assertIsNotNone(re.search(r"(?m)^with_call:", assembly))
         self.assertEqual(outputs[0], outputs[1])
+
+
+    def test_looping_nonleaf_remains_outlined(self):
+        source = self.folder / "nonleaf-loop.c"
+        source.write_text(
+            "extern int printf(const char *, ...);\n"
+            "static __attribute__((noinline)) unsigned step(unsigned value) { return value * 33u + 7u; }\n"
+            "static unsigned looped(unsigned count, unsigned value) {\n"
+            "  while (count--) value = step(value);\n"
+            "  return value;\n"
+            "}\n"
+            "int main(int argc, char **argv) {\n"
+            "  printf(\"%u %u\\n\", looped(argc - 1u, 2147483647u), looped(argc + 2u, 17u));\n"
+            "  return 0;\n"
+            "}\n")
+        oracle = self.folder / "nonleaf-loop-gcc.exe"
+        execute(["gcc", "-O2", source, "-o", oracle], timeout=30)
+        arguments = [["argument"] * count for count in range(7)]
+        expected = [execute([oracle, *args], timeout=10) for args in arguments]
+        for level in ("O0", "O2"):
+            artifact = self.folder / ("nonleaf-loop-" + level)
+            executable = self.folder / ("nonleaf-loop-" + level + ".exe")
+            compile_source(parse_args([str(source), "-" + level, "-o", str(executable)]),
+                           prepared=True, artifact_dir=artifact)
+            self.assertEqual([execute([executable, *args], timeout=10) for args in arguments], expected)
+            self.assertRegex((artifact / "output.s").read_text(), r"\bcall\s+looped\b")
+
+    def test_small_call_chains_and_recursion(self):
+        source = self.folder / "nonleaf.c"
+        source.write_text(
+            "extern int printf(const char *, ...);\n"
+            "static __attribute__((noinline)) unsigned kept(unsigned value) { return value * 7u; }\n"
+            "static unsigned middle(unsigned value) { return kept(value) + 3u; }\n"
+            "static unsigned outer(unsigned value) { return middle(value) ^ middle(value + 1u); }\n"
+            "static unsigned descend(unsigned depth, unsigned value) {\n"
+            "  if (!depth) return value;\n"
+            "  return (descend(depth - 1u, value * 33u + depth) ^ (value >> 3)) + depth;\n"
+            "}\n"
+            "static unsigned branching(unsigned depth, unsigned value) {\n"
+            "  if (!depth) return value;\n"
+            "  return branching(depth - 1u, value + depth) ^ branching(depth - 1u, value * 3u);\n"
+            "}\n"
+            "int main(int argc, char **argv) {\n"
+            "  printf(\"%u %u %u %u\\n\", outer(argc), outer((unsigned)argc + 2147483647u),\n"
+            "    descend((unsigned)argc + 2u, 4294967295u), branching((unsigned)argc, 123u));\n"
+            "  return 0;\n}\n")
+        oracle = self.folder / "nonleaf-gcc.exe"
+        execute(["gcc", "-O2", source, "-o", oracle], timeout=30)
+        arguments = [["argument"] * count for count in range(7)]
+        expected = [execute([oracle, *args], timeout=10) for args in arguments]
+        for level in ("O0", "O2"):
+            artifact = self.folder / ("nonleaf-" + level)
+            executable = self.folder / ("nonleaf-" + level + ".exe")
+            compile_source(parse_args([str(source), "-" + level, "-o", str(executable)]),
+                           prepared=True, artifact_dir=artifact)
+            self.assertEqual([execute([executable, *args], timeout=10) for args in arguments], expected)
+            assembly = (artifact / "output.s").read_text()
+            self.assertRegex(assembly, r"\bcall\s+kept\b")
+            if level == "O2":
+                self.assertNotRegex(assembly, r"(?m)^(middle|outer):")
+            else:
+                self.assertRegex(assembly, r"\bcall\s+outer\b")
+
+    def test_repeated_nonleaf_expansions_share_budget(self):
+        source = self.folder / "nonleaf-budget.c"
+        operations = "\n".join(
+            f"  value = (value ^ (value >> {index + 1})) * 33u + {index + 3}u;"
+            for index in range(3))
+        calls = "\n".join(f"  result ^= middle(value + {index}u);" for index in range(40))
+        source.write_text(
+            "extern int printf(const char *, ...);\n"
+            "static __attribute__((noinline)) unsigned kept(unsigned value) { return value * 7u; }\n"
+            "static unsigned middle(unsigned value) {\n" + operations + "\n  return kept(value) + 3u;\n}\n"
+            "static __attribute__((noinline)) unsigned many(unsigned value) {\n"
+            "  unsigned result = 0;\n" + calls + "\n  return result;\n}\n"
+            "int main(int argc, char **argv) {\n"
+            "  printf(\"%u %u\\n\", many(argc), many((unsigned)argc + 2147483647u));\n"
+            "  return 0;\n}\n")
+        oracle = self.folder / "nonleaf-budget-gcc.exe"
+        execute(["gcc", "-O2", source, "-o", oracle], timeout=30)
+        arguments = [["argument"] * count for count in range(6)]
+        expected = [execute([oracle, *args], timeout=10) for args in arguments]
+        for level in ("O0", "O2"):
+            artifact = self.folder / ("nonleaf-budget-" + level)
+            executable = self.folder / ("nonleaf-budget-" + level + ".exe")
+            compile_source(parse_args([str(source), "-" + level, "-o", str(executable)]),
+                           prepared=True, artifact_dir=artifact)
+            self.assertEqual([execute([executable, *args], timeout=10) for args in arguments], expected)
+            assembly = (artifact / "output.s").read_text()
+            remaining = len(re.findall(r"\bcall\s+middle\b", assembly))
+            self.assertGreater(remaining, 0)
+            if level == "O2":
+                self.assertLess(remaining, 40)
 
 
 if __name__ == "__main__":

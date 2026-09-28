@@ -188,6 +188,21 @@ def small_leaf_function (source : function) : Bool :=
       | .Icall .. | .Itailcall .. | .Ibuiltin .. => false
       | _ => true)
 
+def small_nonleaf_function (source : function) : Bool :=
+  let nodes := PTree.elements source.fn_code
+  let stacksize := intOfZ source.fn_stacksize
+  let calls := nodes.foldl (fun count entry =>
+    match entry.2 with
+    | .Icall .. | .Itailcall .. => count + 1
+    | _ => count) 0
+  nodes.length ≤ 32 && 0 ≤ stacksize && stacksize ≤ 32 &&
+    nodes.all (fun (pc, instr) => (successors_instr instr).all
+      (fun successor => posToNat successor < posToNat pc)) &&
+    0 < calls && calls ≤ 2 && nodes.all (fun entry =>
+      match entry.2 with
+      | .Icall _ (.inl _) .. | .Itailcall _ (.inl _) .. | .Ibuiltin .. => false
+      | _ => true)
+
 def should_inline (cfg : InliningConfig) (info : inlining_info)
     (id : ident) (source : function) : Bool :=
   if !cfg.enabled then
@@ -200,7 +215,7 @@ def should_inline (cfg : InliningConfig) (info : inlining_info)
         (cfg.functionsCalledOnce &&
           cfg.isStatic id &&
           callMultiplicity id info != .many &&
-          !addressTaken id info) || small_leaf_function source
+          !addressTaken id info) || small_leaf_function source || small_nonleaf_function source
 
 def add_globdef (cfg : InliningConfig) (info : inlining_info)
     (fenv : funenv) (idg : ident × globdef fundef Unit) : funenv :=
@@ -533,6 +548,17 @@ def inline_function (fenv : funenv)
       bind (rec (PTree.remove id fenv) (sizeFenvRemoveLt fenv id f lookup) ctx' f) (fun _ =>
         add_moves (sregs ctx args) (sregs ctx' f.fn_params) (spc ctx' f.fn_entrypoint))))
 
+def budgeted_can_inline (fenv : funenv) (ros : Sum reg ident)
+    (current : state) : inline_decision fenv ros :=
+  match can_inline fenv ros with
+  | .Cannot_inline => .Cannot_inline
+  | .Can_inline id source target lookup =>
+      if small_leaf_function source ||
+          posToNat current.st_nextnode + posToNat (max_pc_function source) +
+            source.fn_params.length <= 256 then
+        .Can_inline id source target lookup
+      else .Cannot_inline
+
 def inline_tail_function (fenv : funenv)
     (rec : ∀ fenv', size_fenv fenv' < size_fenv fenv → context → function → mon Unit)
     (ctx : context) (id : ident) (f : function) (lookup : PTree.get id fenv = some f)
@@ -554,7 +580,7 @@ def inline_return (ctx : context) (result : Option reg) (returnInfo : node × re
 def expand_instr (fenv : funenv)
     (rec : ∀ fenv', size_fenv fenv' < size_fenv fenv → context → function → mon Unit)
     (ctx : context) (pc : node) (instr : instruction) : mon Unit :=
-  match instr with
+  fun current => (match instr with
   | .Inop succ =>
       set_instr (spc ctx pc) (.Inop (spc ctx succ))
   | .Iop op args result succ =>
@@ -567,7 +593,7 @@ def expand_instr (fenv : funenv)
       set_instr (spc ctx pc)
         (.Istore chunk (saddr ctx addr) (sregs ctx args) (sreg ctx src) (spc ctx succ))
   | .Icall sig ros args result succ =>
-      match can_inline fenv ros with
+      match budgeted_can_inline fenv ros current with
       | .Cannot_inline =>
           set_instr (spc ctx pc)
             (.Icall sig (sros ctx ros) (sregs ctx args) (sreg ctx result) (spc ctx succ))
@@ -575,7 +601,7 @@ def expand_instr (fenv : funenv)
           bind (inline_function fenv rec ctx id f lookup args succ result) (fun next =>
             set_instr (spc ctx pc) (.Inop next))
   | .Itailcall sig ros args =>
-      match can_inline fenv ros with
+      match budgeted_can_inline fenv ros current with
       | .Cannot_inline =>
           match ctx.retinfo with
           | none =>
@@ -596,7 +622,7 @@ def expand_instr (fenv : funenv)
   | .Ireturn result =>
       match ctx.retinfo with
       | none => set_instr (spc ctx pc) (.Ireturn (result.map (sreg ctx)))
-      | some returnInfo => set_instr (spc ctx pc) (inline_return ctx result returnInfo)
+      | some returnInfo => set_instr (spc ctx pc) (inline_return ctx result returnInfo)) current
 
 def expand_cfg_rec (fenv : funenv)
     (rec : ∀ fenv', size_fenv fenv' < size_fenv fenv → context → function → mon Unit)
