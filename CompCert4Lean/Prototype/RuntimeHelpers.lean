@@ -146,4 +146,72 @@ def enumerateBlocks (source : LTL.function) : List positive :=
   ((visit (edges + 1) [source.fn_entrypoint] {} []).mergeSort
     (fun left right => left.1 ≥ right.1)).flatMap Prod.snd
 
+def hasLayoutCycle (source : LTL.function) : Bool :=
+  let nodes := PTree.elements source.fn_code
+  let edges := nodes.foldl (fun count (_, block) => count + (LTL.successors_block block).length) 0
+  let rec visit : Nat → List (positive × Bool) → Std.HashSet Nat → Std.HashSet Nat → Bool
+    | 0, _, _, _ => false
+    | _ + 1, [], _, _ => false
+    | fuel + 1, (node, exiting) :: pending, active, finished =>
+        let key := posToNat node
+        if exiting then visit fuel pending (active.erase key) (finished.insert key)
+        else if active.contains key then true
+        else if finished.contains key then visit fuel pending active finished
+        else
+          let successors : List positive :=
+            (PTree.get node source.fn_code).map LTL.successors_block |>.getD []
+          visit fuel (successors.map (fun successor => (successor, false)) ++
+            (node, true) :: pending) (active.insert key) finished
+  visit (2 * (edges + nodes.length + 1)) [(source.fn_entrypoint, false)] {} {}
+
+def layoutDepths (source : LTL.function) : PTree.t Nat := Id.run do
+  let nodes := PTree.elements source.fn_code
+  let events := nodes.flatMap fun (node, block) =>
+    (LTL.successors_block block).flatMap fun successor =>
+      let first := posToNat node
+      let last := posToNat successor
+      if first <= last then [(first, true), (last + 1, false)] else []
+  let mut events := events.mergeSort (fun left right => left.1 <= right.1)
+  let mut depth := 0
+  let mut depths := PTree.empty Nat
+  for (node, _) in nodes.mergeSort (fun left right => posToNat left.1 <= posToNat right.1) do
+    let (crossed, pending) := events.span (fun event => event.1 <= posToNat node)
+    depth := crossed.foldl (fun depth event => if event.2 then depth + 1 else depth - 1) depth
+    events := pending
+    depths := PTree.set node depth depths
+  return depths
+
+def layoutTrace (source : LTL.function) (depths priorities : PTree.t Nat) :
+    Nat → positive → Std.HashSet Nat → List positive → Std.HashSet Nat × List positive
+  | 0, _, visited, nodes => (visited, nodes)
+  | fuel + 1, node, visited, nodes =>
+      if visited.contains (posToNat node) then (visited, nodes) else
+      let visited := visited.insert (posToNat node)
+      let nodes := node :: nodes
+      let successors := ((PTree.get node source.fn_code).map LTL.successors_block |>.getD []).filter
+        (fun successor => !visited.contains (posToNat successor) && (PTree.get successor priorities).isSome)
+      let successors := successors.mergeSort fun left right =>
+        let leftDepth := (PTree.get left depths).getD 0
+        let rightDepth := (PTree.get right depths).getD 0
+        leftDepth > rightDepth || (leftDepth == rightDepth &&
+          (PTree.get left priorities).getD 0 <= (PTree.get right priorities).getD 0)
+      match successors with
+      | [] => (visited, nodes)
+      | successor :: _ => layoutTrace source depths priorities fuel successor visited nodes
+
+def enumerateLoopBlocks (source : LTL.function) : List positive := Id.run do
+  let original := enumerateBlocks source
+  if original.length > 2048 || !hasLayoutCycle source then return original
+  let bound := original.length + 1
+  let priorities := original.zipIdx.foldl
+    (fun priorities (node, index) => PTree.set node index priorities) (PTree.empty Nat)
+  let depths := layoutDepths source
+  let mut visited : Std.HashSet Nat := {}
+  let mut nodes := []
+  for node in original do
+    let result := layoutTrace source depths priorities bound node visited nodes
+    visited := result.1
+    nodes := result.2
+  return nodes.reverse
+
 end CompCert4Lean.Prototype

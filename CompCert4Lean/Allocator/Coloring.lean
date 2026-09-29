@@ -261,6 +261,18 @@ def cheaperSpill (function : XFunction) (state : ColoringState) (left right : Na
     let rightDegree := max 1 (degree function state right)
     leftCost.amount * rightDegree * rightDegree < rightCost.amount * leftDegree * leftDegree
 
+def freezeCandidate (function : XFunction) (state : ColoringState) : Option Nat := Id.run do
+  let mut selected := none
+  let mut inspected := 0
+  for index in state.freeze do
+    if inspected >= 32 then break
+    selected := match selected with
+      | none => some index
+      | some previous =>
+          if cheaperSpill function state index previous then some index else selected
+    inspected := inspected + 1
+  return selected
+
 def colorWorklists (context : AllocationContext) (function : XFunction) :
     Nat → ColoringState → Except String ColoringState
   | 0, _ => .error "register coalescing exhausted its worklist bound"
@@ -269,7 +281,7 @@ def colorWorklists (context : AllocationContext) (function : XFunction) :
         colorWorklists context function fuel (removeNode context function index state)
       else if let some move := state.workMoves.min? then
         colorWorklists context function fuel (coalesceMove context function move state)
-      else if let some index := state.freeze.min? then
+      else if let some index := freezeCandidate function state then
         colorWorklists context function fuel (freezeMoves context function index state)
       else if let some first := state.spill.min? then
         let index := state.spill.foldl (fun best candidate =>
@@ -591,7 +603,7 @@ def colorWorklistsCount (context : AllocationContext) (function : XFunction) :
         colorWorklistsCount context function fuel (removeNode context function index state)
       else if let some move := state.workMoves.min? then
         colorWorklistsCount context function fuel (coalesceMoveCount context function move state)
-      else if let some index := state.freeze.min? then
+      else if let some index := freezeCandidate function state then
         colorWorklistsCount context function fuel (freezeMoves context function index state)
       else if let some first := state.spill.min? then
         let index := state.spill.foldl (fun best candidate =>

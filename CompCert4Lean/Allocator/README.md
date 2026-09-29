@@ -26,7 +26,11 @@ The implementation follows pinned CompCert 3.17
 
 Implementation choices differ from the mutable OCaml representation: arrays
 use dense indices and ordered adjacency sets; worklists use deterministic index
-order; spill priorities use exact integer cross-products. Changed neighborhoods
+order; spill priorities use exact integer cross-products. When all current
+coalescing moves are blocked, freeze selection inspects at most 32 nodes and
+prefers the lowest loop-weighted cost/degree² score, retaining index order on
+ties. This keeps hotter move opportunities available without an unbounded
+worklist scan. Changed neighborhoods
 re-enable pending moves conservatively. Stack-slot reuse preserves the consuming
 value's type, size and alignment. Parallel cycles normally use register
 temporaries; if a stack-to-stack transfer needs an occupied cycle temporary,

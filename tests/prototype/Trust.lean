@@ -20,6 +20,7 @@ import CompCert4Lean.Prototype.Main
 #print axioms CompCert4Lean.Prototype.compileSwitch
 #print axioms CompCert4Lean.Prototype.ifConversion
 #print axioms CompCert4Lean.Prototype.enumerateBlocks
+#print axioms CompCert4Lean.Prototype.enumerateLoopBlocks
 #print axioms CompCert4Lean.Flocq.IEEE754.Binary.binary64_normalize_certificate_proof
 #print axioms CompCert4Lean.Flocq.IEEE754.Binary.binary32_normalize_certificate_proof
 #print axioms CompCert4Lean.Lib.IEEE754_extra.binary64_exact_inverse_certificate_proof

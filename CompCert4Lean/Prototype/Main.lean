@@ -198,7 +198,7 @@ def encodeHeader (header : TargetHeader) (target : X86.Asm.program) : CodecResul
     (fresh : Cfrontend.SimplExpr.FreshIdentContext) (source : Cfrontend.Csyntax.program) :
     CodecResult Json := do
   match Driver.Compiler.transf_c_program configuration (selectionFor configuration) inlining
-      (Allocator.regalloc configuration allocationContext) enumeration fresh source with
+      (Allocator.regalloc configuration allocationContext) (enumerationFor configuration) fresh source with
   | .Error errors => throw ("Lean compiler: " ++ errorText errors)
   | .OK target => encodeHeader header target
 
@@ -242,7 +242,7 @@ def diagnoseJson (value : Json) (folder : System.FilePath) (allocation : Bool :=
           mach := fun _ => emit "mach" }
       emit "start" ((value.getObjVal? "configuration").toOption.getD .null)
       match ← Driver.Diagnostics.transf_c_program sink configuration (selectionFor configuration) inlining
-          (Allocator.regalloc configuration context) enumeration fresh source with
+          (Allocator.regalloc configuration context) (enumerationFor configuration) fresh source with
       | .Error errors => return .error ("Lean compiler: " ++ errorText errors)
       | .OK target => emit "assembly"; return encodeTarget value target
 
@@ -320,7 +320,8 @@ def run (args : List String) : IO UInt32 := do
         let corrupt : Backend.Allocation.RegallocOracle := fun function => do
           let proposed ← Allocator.regalloc configuration allocationContext function
           .OK { proposed with fn_stacksize := ZArith.BinInt.Z.add function.fn_stacksize (z 1) }
-        match Driver.Compiler.transf_c_program configuration (selectionFor configuration) inlining corrupt enumeration fresh source with
+        match Driver.Compiler.transf_c_program configuration (selectionFor configuration) inlining corrupt
+            (enumerationFor configuration) fresh source with
         | .Error errors => throw (errorText errors)
         | .OK _ => pure ()
       match result with

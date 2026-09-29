@@ -14,7 +14,7 @@ def originalCompileJson (value : Json) : CodecResult Json := do
   let allocationContext ← decodeAllocationContext value
   let inlining ← decodeInlining value
   match Driver.Compiler.transf_c_program configuration (selectionFor configuration) inlining
-      (Allocator.regalloc configuration allocationContext) enumeration fresh source with
+      (Allocator.regalloc configuration allocationContext) (enumerationFor configuration) fresh source with
   | .Error errors => throw ("Lean compiler: " ++ errorText errors)
   | .OK target => encodeTarget value target
 

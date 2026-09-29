@@ -43,4 +43,8 @@ def inlineCfg : Inlining.InliningConfig :=
 
 def enumeration : Linearize.EnumerationService := enumerateBlocks
 
+def enumerationFor (configuration : Config.CompilerConfig) : Linearize.EnumerationService :=
+  if configuration.options.optimCSE && configuration.options.optimConstprop then enumerateLoopBlocks
+  else enumeration
+
 end CompCert4Lean.Prototype

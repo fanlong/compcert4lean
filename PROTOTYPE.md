@@ -151,6 +151,12 @@ branches gain path copies that keep branch-assigned values separate for
 simplification. Both transformations use the proved arbitrary-routing pass.
 The compiler
 correctness proof includes a single-step simulation of this duplication.
+At O2, functions with reachable control-flow cycles and at most 2,048 reachable
+LTL nodes use loop-depth-guided block traces. Equal-depth choices retain the
+original layout priority. Acyclic functions, larger functions and O0 retain
+the original block order. The existing linearization validator checks each
+proposal before translation, with the same service used by compilation and
+diagnostics.
 Before register allocation, adjacent independent register operations and ordinary loads may be
 reordered to consume more dying operands first. The heuristic checks candidate
 independence before running liveness, skipping it when no pair can be reordered.
