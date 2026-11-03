@@ -184,7 +184,12 @@ order of the minimum node number.  The result is only a proposal; the
 unchanged `Linearize.enumerate` validator checks it. -/
 def enumerateBasicBlocks (source : LTL.function) : List positive :=
   let joins := joinPoints source
-  let bound := (PTree.elements source.fn_code).length + 1
+  let nodes := PTree.elements source.fn_code
+  let edges := nodes.foldl (fun count (_, block) => count + (LTL.successors_block block).length) 0
+  -- Every pending entry consumes one unit of fuel, including entries that are
+  -- already visited; a block can contribute several successors, so the bound
+  -- must cover all edges rather than just the node count.
+  let bound := 2 * (nodes.length + edges) + 1
   let rec start : Nat → List positive → Std.HashSet Nat → List (Nat × List positive) →
       List (Nat × List positive)
     | 0, _, _, blocks => blocks
@@ -196,7 +201,7 @@ def enumerateBasicBlocks (source : LTL.function) : List positive :=
           let (visited', block, minimum, pending') :=
             followChain source joins fuel node (visited.insert key) [node] key pending
           start fuel pending' visited' ((minimum, block.reverse) :: blocks)
-  ((start (2 * bound + 1) [source.fn_entrypoint] {} []).mergeSort
+  ((start bound [source.fn_entrypoint] {} []).mergeSort
     (fun left right => left.1 ≥ right.1)).flatMap Prod.snd
 
 end CompCert4Lean.Prototype
