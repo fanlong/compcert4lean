@@ -109,34 +109,26 @@ structure InliningConfig : Type where
   inlineStatus : ident → InlineStatus
   isStatic : ident → Bool
 
-private inductive CallMultiplicity : Type where
-  | zero
-  | one
-  | many
-deriving DecidableEq
-
 private structure InliningInfoRepr : Type where
-  calls : PTree.t CallMultiplicity
+  calls : PTree.t Nat
   addrTaken : PTree.t Unit
+  allowed : PTree.t Unit
 
 def inlining_info : Type := InliningInfoRepr
 
 private def emptyInliningInfo : inlining_info :=
-  { calls := PTree.empty CallMultiplicity
-    addrTaken := PTree.empty Unit }
+  { calls := PTree.empty Nat
+    addrTaken := PTree.empty Unit
+    allowed := PTree.empty Unit }
 
-private def callMultiplicity (id : ident) (info : inlining_info) : CallMultiplicity :=
+private def callCount (id : ident) (info : inlining_info) : Nat :=
   match PTree.get id info.calls with
-  | none => .zero
+  | none => 0
   | some count => count
-
-private def incrementMultiplicity : CallMultiplicity → CallMultiplicity
-  | .zero => .one
-  | .one | .many => .many
 
 private def called (id : ident) (info : inlining_info) : inlining_info :=
   { info with
-    calls := PTree.set id (incrementMultiplicity (callMultiplicity id info)) info.calls }
+    calls := PTree.set id (callCount id info + 1) info.calls }
 
 private def addressTaken (id : ident) (info : inlining_info) : Bool :=
   match PTree.get id info.addrTaken with
@@ -168,15 +160,54 @@ private def analyzeInstruction (info : inlining_info) (_pc : node)
 private def analyzeFunction (info : inlining_info) (f : function) : inlining_info :=
   PTree.fold analyzeInstruction f.fn_code info
 
+private def instructionCount (f : function) : Nat :=
+  PTree.fold (fun count _ _ => count + 1) f.fn_code 0
+
+private def hasNoCalls (f : function) : Bool :=
+  PTree.fold (fun clean _ instruction =>
+    clean && (match instruction with
+      | .Icall .. => false
+      | .Itailcall .. => false
+      | _ => true)) f.fn_code true
+
+/-- Choose the multi-called static leaf functions to inline within a bounded
+code-growth budget.  Functions marked `inline`, `noinline` and functions
+called at most once keep the upstream rule; only additional small helpers are
+admitted, smallest estimated growth first, until the budget is exhausted.
+This keeps the -O2 compile-time growth far below the 2x campaign gate on
+large translation units. -/
+private def budgetPass (cfg : InliningConfig) (p : program) (info : inlining_info) :
+    inlining_info :=
+  let functions := p.prog_defs.filterMap fun idg =>
+    match idg.2 with
+    | .Gfun (.Internal f) => some (idg.1, f)
+    | _ => none
+  let total := functions.foldl (fun count (_, f) => count + instructionCount f) 0
+  let budget := max 200 (total / 20)
+  let candidates := functions.filterMap fun (id, f) =>
+    match cfg.inlineStatus id with
+    | .noSpecifier =>
+        if cfg.isStatic id && !addressTaken id info && callCount id info >= 2 &&
+            hasNoCalls f then
+          some (instructionCount f * (callCount id info - 1), id)
+        else none
+    | _ => none
+  let sorted := candidates.mergeSort (fun left right => left.1 ≤ right.1)
+  let (_, allowed) := sorted.foldl (fun (state : Nat × PTree.t Unit) (grow, id) =>
+    if state.1 + grow ≤ budget then (state.1 + grow, PTree.set id () state.2) else state)
+    (0, PTree.empty Unit)
+  { info with allowed := allowed }
+
 def inlining_analysis (cfg : InliningConfig) (p : program) : inlining_info :=
   if cfg.enabled && cfg.functionsCalledOnce then
-    p.prog_defs.foldl
+    let info := p.prog_defs.foldl
       (fun info idg =>
         match idg.2 with
         | .Gfun (.Internal f) => analyzeFunction info f
         | .Gvar gv => usedInGlobvar info gv
         | _ => info)
       emptyInliningInfo
+    budgetPass cfg p info
   else
     emptyInliningInfo
 
@@ -191,8 +222,8 @@ def should_inline (cfg : InliningConfig) (info : inlining_info)
     | .noSpecifier =>
         cfg.functionsCalledOnce &&
           cfg.isStatic id &&
-          callMultiplicity id info != .many &&
-          !addressTaken id info
+          !addressTaken id info &&
+          (callCount id info <= 1 || (PTree.get id info.allowed).isSome)
 
 def add_globdef (cfg : InliningConfig) (info : inlining_info)
     (fenv : funenv) (idg : ident × globdef fundef Unit) : funenv :=
