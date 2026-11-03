@@ -163,14 +163,9 @@ private def analyzeFunction (info : inlining_info) (f : function) : inlining_inf
 private def instructionCount (f : function) : Nat :=
   PTree.fold (fun count _ _ => count + 1) f.fn_code 0
 
-private def hasNoCalls (f : function) : Bool :=
-  PTree.fold (fun clean _ instruction =>
-    clean && (match instruction with
-      | .Icall .. => false
-      | .Itailcall .. => false
-      | _ => true)) f.fn_code true
+private def multiCallInlineLimit : Nat := 16
 
-/-- Choose the multi-called static leaf functions to inline within a bounded
+/-- Choose the multi-called static functions to inline within a bounded
 code-growth budget.  Functions marked `inline`, `noinline` and functions
 called at most once keep the upstream rule; only additional small helpers are
 admitted, smallest estimated growth first, until the budget is exhausted.
@@ -183,12 +178,12 @@ private def budgetPass (cfg : InliningConfig) (p : program) (info : inlining_inf
     | .Gfun (.Internal f) => some (idg.1, f)
     | _ => none
   let total := functions.foldl (fun count (_, f) => count + instructionCount f) 0
-  let budget := max 200 (total / 20)
+  let budget := max 200 (total / 100)
   let candidates := functions.filterMap fun (id, f) =>
     match cfg.inlineStatus id with
     | .noSpecifier =>
         if cfg.isStatic id && !addressTaken id info && callCount id info >= 2 &&
-            hasNoCalls f then
+            instructionCount f <= multiCallInlineLimit then
           some (instructionCount f * (callCount id info - 1), id)
         else none
     | _ => none
