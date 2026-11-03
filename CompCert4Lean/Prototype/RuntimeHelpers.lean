@@ -146,4 +146,57 @@ def enumerateBlocks (source : LTL.function) : List positive :=
   ((visit (edges + 1) [source.fn_entrypoint] {} []).mergeSort
     (fun left right => left.1 ≥ right.1)).flatMap Prod.snd
 
+/-- The terminator decision for one basic block, following the pinned upstream
+`Linearizeaux.ml` structure: an unconditional branch to a non-join target
+extends the block; every other terminator ends it and lists the blocks to
+start. -/
+inductive BlockEnd where
+  | stop (successors : List positive)
+  | follow (target : positive)
+
+def blockEnd (joins : Std.HashSet Nat) : List LTL.instruction → BlockEnd
+  | [] => .stop []
+  | .Lbranch target :: _ =>
+      if joins.contains (posToNat target) then .stop [target] else .follow target
+  | .Lcond _ _ ifso ifnot :: _ => .stop [ifso, ifnot]
+  | .Ljumptable _ targets :: _ => .stop targets
+  | .Ltailcall .. :: _ | .Lreturn :: _ => .stop []
+  | _ :: rest => blockEnd joins rest
+
+/-- Follow one basic block from `node` to its end, recording visited nodes. -/
+def followChain (source : LTL.function) (joins : Std.HashSet Nat) :
+    Nat → positive → Std.HashSet Nat → List positive → Nat → List positive →
+      Std.HashSet Nat × List positive × Nat × List positive
+  | 0, _, visited, block, minimum, pending => (visited, block, minimum, pending)
+  | fuel + 1, node, visited, block, minimum, pending =>
+      match blockEnd joins ((PTree.get node source.fn_code).getD []) with
+      | .stop successors => (visited, block, minimum, successors ++ pending)
+      | .follow target =>
+          let key := posToNat target
+          if visited.contains key then (visited, block, minimum, pending)
+          else
+            followChain source joins fuel target (visited.insert key)
+              (target :: block) (min minimum key) pending
+
+/-- Upstream-compatible enumeration: cut into basic blocks at join points and
+after conditional/jump-table terminators, then flatten blocks in decreasing
+order of the minimum node number.  The result is only a proposal; the
+unchanged `Linearize.enumerate` validator checks it. -/
+def enumerateBasicBlocks (source : LTL.function) : List positive :=
+  let joins := joinPoints source
+  let bound := (PTree.elements source.fn_code).length + 1
+  let rec start : Nat → List positive → Std.HashSet Nat → List (Nat × List positive) →
+      List (Nat × List positive)
+    | 0, _, _, blocks => blocks
+    | _fuel + 1, [], _, blocks => blocks
+    | fuel + 1, node :: pending, visited, blocks =>
+        let key := posToNat node
+        if visited.contains key then start fuel pending visited blocks
+        else
+          let (visited', block, minimum, pending') :=
+            followChain source joins fuel node (visited.insert key) [node] key pending
+          start fuel pending' visited' ((minimum, block.reverse) :: blocks)
+  ((start (2 * bound + 1) [source.fn_entrypoint] {} []).mergeSort
+    (fun left right => left.1 ≥ right.1)).flatMap Prod.snd
+
 end CompCert4Lean.Prototype

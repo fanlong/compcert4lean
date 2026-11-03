@@ -41,6 +41,6 @@ def inlineCfg : Inlining.InliningConfig :=
   { enabled := false, functionsCalledOnce := false,
     inlineStatus := fun _ => .noinline, isStatic := fun _ => false }
 
-def enumeration : Linearize.EnumerationService := enumerateBlocks
+def enumeration : Linearize.EnumerationService := enumerateBasicBlocks
 
 end CompCert4Lean.Prototype
