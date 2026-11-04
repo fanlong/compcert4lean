@@ -185,7 +185,7 @@ private def budgetPass (cfg : InliningConfig) (p : program) (info : inlining_inf
     | .Gfun (.Internal f) => some (idg.1, f)
     | _ => none
   let total := functions.foldl (fun count (_, f) => count + instructionCount f) 0
-  let budget := max 200 (total / 5)
+  let budget := max 200 (total / 2)
   let candidates := functions.filterMap fun (id, f) =>
     match cfg.inlineStatus id with
     | .noSpecifier =>
