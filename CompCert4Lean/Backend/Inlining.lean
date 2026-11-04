@@ -165,6 +165,13 @@ private def instructionCount (f : function) : Nat :=
 
 private def multiCallInlineLimit : Nat := 16
 
+/-- Upstream `-O2` inlines every static function that is called at most once,
+whatever its size.  With a larger multi-call budget that rule becomes the
+multiplier: a large called-once routine containing budget-inlined helpers is
+copied once per helper call site, which is what makes a single zstd
+translation unit compile five times slower.  Bound it. -/
+private def singleCallInlineLimit : Nat := 200
+
 /-- Choose the multi-called static functions to inline within a bounded
 code-growth budget.  Functions marked `inline`, `noinline` and functions
 called at most once keep the upstream rule; only additional small helpers are
@@ -178,7 +185,7 @@ private def budgetPass (cfg : InliningConfig) (p : program) (info : inlining_inf
     | .Gfun (.Internal f) => some (idg.1, f)
     | _ => none
   let total := functions.foldl (fun count (_, f) => count + instructionCount f) 0
-  let budget := max 200 (total / 100)
+  let budget := max 200 (total / 5)
   let candidates := functions.filterMap fun (id, f) =>
     match cfg.inlineStatus id with
     | .noSpecifier =>
@@ -207,7 +214,7 @@ def inlining_analysis (cfg : InliningConfig) (p : program) : inlining_info :=
     emptyInliningInfo
 
 def should_inline (cfg : InliningConfig) (info : inlining_info)
-    (id : ident) (_f : function) : Bool :=
+    (id : ident) (f : function) : Bool :=
   if !cfg.enabled then
     false
   else
@@ -218,7 +225,8 @@ def should_inline (cfg : InliningConfig) (info : inlining_info)
         cfg.functionsCalledOnce &&
           cfg.isStatic id &&
           !addressTaken id info &&
-          (callCount id info <= 1 || (PTree.get id info.allowed).isSome)
+          ((callCount id info <= 1 && instructionCount f <= singleCallInlineLimit) ||
+            (PTree.get id info.allowed).isSome)
 
 def add_globdef (cfg : InliningConfig) (info : inlining_info)
     (fenv : funenv) (idg : ident × globdef fundef Unit) : funenv :=
