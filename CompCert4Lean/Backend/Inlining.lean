@@ -189,7 +189,7 @@ private def budgetPass (cfg : InliningConfig) (p : program) (info : inlining_inf
   let candidates := functions.filterMap fun (id, f) =>
     match cfg.inlineStatus id with
     | .noSpecifier =>
-        if cfg.isStatic id && !addressTaken id info && callCount id info >= 2 &&
+        if !addressTaken id info && callCount id info >= 2 &&
             instructionCount f <= multiCallInlineLimit then
           some (instructionCount f * (callCount id info - 1), id)
         else none
@@ -223,9 +223,9 @@ def should_inline (cfg : InliningConfig) (info : inlining_info)
     | .noinline => false
     | .noSpecifier =>
         cfg.functionsCalledOnce &&
-          cfg.isStatic id &&
           !addressTaken id info &&
-          ((callCount id info <= 1 && instructionCount f <= singleCallInlineLimit) ||
+          ((cfg.isStatic id && callCount id info <= 1 &&
+              instructionCount f <= singleCallInlineLimit) ||
             (PTree.get id info.allowed).isSome)
 
 def add_globdef (cfg : InliningConfig) (info : inlining_info)
