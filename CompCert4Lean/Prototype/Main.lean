@@ -11,7 +11,7 @@ open CompCert4Lean.Allocator
 open CompCert4Lean.X86.Machregs
 
 def formatVersion := "compcert4lean-prototype-v3"
-def codecFuel := 4096
+def codecFuel := 16777216
 
 def getField (value : Json) (name : String) : CodecResult Json := value.getObjVal? name
 

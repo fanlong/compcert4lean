@@ -164,7 +164,8 @@ beyond JavaScript's exact range. Fixed-width integers use unsigned bits;
 float32/float64 use their 32/64-bit representations, preserving NaN payloads
 and signed zero. Rocq/OCaml strings are byte arrays. Decoders reject malformed
 tags, shapes, ranges, versions, and target profiles. Lean codecs have an
-explicit nesting budget of 4096. `scripts/generate_codecs.py` regenerates the
+explicit nesting budget of 16777216 (`codecFuel`); deep `Ssequence` chains from
+large initializers or long functions need more than 4096 levels. `scripts/generate_codecs.py` regenerates the
 reviewable, typed `Codecs.lean` and `bridge/codecs.ml` from an explicit allowlist
 of the pinned extraction interfaces; it introduces no replacements for core
 definitions. The OCaml bridge and these adapters are executable integration
