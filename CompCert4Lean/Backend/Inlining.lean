@@ -204,7 +204,7 @@ def should_inline (cfg : InliningConfig) (info : inlining_info)
           !addressTaken id info &&
           ((cfg.isStatic id && (callMultiplicity id info != .many || multiCallCandidate f)) ||
             (!cfg.isStatic id && callMultiplicity id info == .one &&
-              decide (treeCount f.fn_code ≤ 16) && PTree.fold leafInstruction f.fn_code true))
+              decide (treeCount f.fn_code ≤ 18) && PTree.fold leafInstruction f.fn_code true))
 
 def add_globdef (cfg : InliningConfig) (info : inlining_info)
     (fenv : funenv) (idg : ident × globdef fundef Unit) : funenv :=
