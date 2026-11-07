@@ -139,8 +139,8 @@ def enumerateBlocks (source : LTL.function) : List positive :=
         if visited.contains (posToNat node) then visit fuel pending visited blocks
         else
           let (block, successors, visited) := layoutBlock source joins bound node visited []
-          let entry := posToNat node
-          visit fuel (successors ++ pending) visited ((entry, block) :: blocks)
+          let minimum := block.foldl (fun minimum node => min minimum (posToNat node)) (posToNat node)
+          visit fuel (successors ++ pending) visited ((minimum, block) :: blocks)
   let edges := (PTree.elements source.fn_code).foldl
     (fun count (_, block) => count + (LTL.successors_block block).length) 0
   ((visit (edges + 1) [source.fn_entrypoint] {} []).mergeSort
