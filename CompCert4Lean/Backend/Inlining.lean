@@ -186,7 +186,7 @@ private def leafInstruction (leaf : Bool) (_pc : node) (instr : instruction) : B
   | _ => leaf
 
 private def smallLeafFunction (f : function) : Bool :=
-  decide (treeCount f.fn_code ≤ 180) && PTree.fold leafInstruction f.fn_code true
+  decide (treeCount f.fn_code ≤ 176) && PTree.fold leafInstruction f.fn_code true
 
 private def multiCallCandidate (f : function) : Bool :=
   smallLeafFunction f || decide (treeCount f.fn_code ≤ 8)
