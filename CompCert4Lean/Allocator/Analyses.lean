@@ -171,53 +171,30 @@ def charge (indices : List Nat) (amount accesses : Nat) (unspillable stackOnly :
         unspillable := cost.unspillable || unspillable
         stackOnly := cost.stackOnly || stackOnly } }) graph
 
-def loopPredecessors (function : XFunction) (header : Nat) :
-    Nat → List Nat → IndexSet → IndexSet
-  | 0, _, visited => visited
-  | _ + 1, [], visited => visited
-  | fuel + 1, node :: pending, visited =>
-      if visited.contains node then loopPredecessors function header fuel pending visited
-      else
-        let visited := visited.insert node
-        let predecessors := if node == header then [] else (function.blocks[node]?.map XBlock.predecessors).getD []
-        loopPredecessors function header fuel (predecessors ++ pending) visited
-
-def loopBlocks (function : XFunction) : IndexSet := Id.run do
-  let mut loops : IndexSet := {}
-  for index in [:function.blocks.size] do
-    if let some block := function.blocks[index]? then
-      for target in block.successors do
-        if target < index then
-          let members := loopPredecessors function target (function.blocks.size + 1) [index] {}
-          if members.contains target then loops := setUnion loops members
-  return loops
-
-def instructionCosts (weight : Nat) (function : XFunction) (instruction : XInstruction)
+def instructionCosts (function : XFunction) (instruction : XInstruction)
     (graph : Interference) : Interference :=
-  let chargeW := fun indices amount accesses unspillable stackOnly graph =>
-    charge indices (amount * weight) accesses unspillable stackOnly graph
   match instruction with
   | .move source destination =>
-      if fixedStack function source then chargeW [destination] 0 0 false true graph
-      else if fixedStack function destination then chargeW [source] 0 0 false true graph
-      else chargeW [source, destination] 1 1 false false graph
-  | .reload source destination => chargeW [destination] 0 1 true false (chargeW [source] 1 1 false false graph)
-  | .spill source destination => chargeW [source] 0 1 true false (chargeW [destination] 1 1 false false graph)
+      if fixedStack function source then charge [destination] 0 0 false true graph
+      else if fixedStack function destination then charge [source] 0 0 false true graph
+      else charge [source, destination] 1 1 false false graph
+  | .reload source destination => charge [destination] 0 1 true false (charge [source] 1 1 false false graph)
+  | .spill source destination => charge [source] 0 1 true false (charge [destination] 1 1 false false graph)
   | .parmove sources destinations integerTemp floatTemp =>
-      chargeW [integerTemp, floatTemp] 0 0 true false (chargeW (sources ++ destinations) 1 1 false false graph)
+      charge [integerTemp, floatTemp] 0 0 true false (charge (sources ++ destinations) 1 1 false false graph)
   | .op _ arguments result | .load _ _ arguments result | .store _ _ arguments result =>
-      chargeW (result :: arguments) 10 1 false false graph
-  | .call _ target _ _ | .tailcall _ target _ => chargeW (targetUses target) 10 1 false false graph
+      charge (result :: arguments) 10 1 false false graph
+  | .call _ target _ _ | .tailcall _ target _ => charge (targetUses target) 10 1 false false graph
   | .builtin (.EF_annot ..) _ _ | .builtin (.EF_debug ..) _ _ => graph
   | .builtin external arguments result =>
       let args := params_of_builtin_args arguments
       let results := params_of_builtin_res result
       match external with
-      | .EF_vstore _ | .EF_memcpy .. => chargeW results 0 0 true false (chargeW args 10 1 false false graph)
-      | .EF_annot_val .. => chargeW (args ++ results) 1 1 false false graph
-      | _ => chargeW (args ++ results) 10 1 false false graph
-  | .cond _ arguments _ _ => chargeW arguments 10 1 false false graph
-  | .jumptable argument _ => chargeW [argument] 10 1 false false graph
+      | .EF_vstore _ | .EF_memcpy .. => charge results 0 0 true false (charge args 10 1 false false graph)
+      | .EF_annot_val .. => charge (args ++ results) 1 1 false false graph
+      | _ => charge (args ++ results) 10 1 false false graph
+  | .cond _ arguments _ _ => charge arguments 10 1 false false graph
+  | .jumptable argument _ => charge [argument] 10 1 false false graph
   | _ => graph
 
 def incoming (function : XFunction) (index : Nat) : Bool :=
@@ -225,10 +202,9 @@ def incoming (function : XFunction) (index : Nat) : Bool :=
   | some (.S .Incoming ..) => true
   | _ => false
 
-def instructionInterference (weight : Nat) (configuration : Config.CompilerConfig)
-    (function : XFunction) (instruction : XInstruction) (live : IndexSet)
-    (graph : Interference) : Interference := Id.run do
-  let mut graph := instructionCosts weight function instruction graph
+def instructionInterference (configuration : Config.CompilerConfig) (function : XFunction)
+    (instruction : XInstruction) (live : IndexSet) (graph : Interference) : Interference := Id.run do
+  let mut graph := instructionCosts function instruction graph
   match instruction with
   | .move source destination | .reload source destination | .spill source destination =>
       graph := graphLive destination (live.erase source) (graphPreference source destination graph)
@@ -276,16 +252,14 @@ def instructionInterference (weight : Nat) (configuration : Config.CompilerConfi
 
 def buildInterference (configuration : Config.CompilerConfig) (function : XFunction)
     (liveness : Liveness) : Interference := Id.run do
-  let loops := loopBlocks function
   let mut graph : Interference := {
     adjacency := Array.replicate function.variables.size {}
     preferences := Array.replicate function.variables.size {}
     costs := Array.replicate function.variables.size {} }
   for index in [:function.blocks.size] do
     if let some block := function.blocks[index]? then
-      let weight := if loops.contains index then 2 else 1
       let (_, next) := block.instructions.foldr (fun instruction (live, graph) =>
-        (liveBefore function instruction live, instructionInterference weight configuration function instruction live graph))
+        (liveBefore function instruction live, instructionInterference configuration function instruction live graph))
         (liveness.after[index]?.getD {}, graph)
       graph := next
   return graphDestroyed destroyed_at_function_entry (liveness.before[function.entry]?.getD {}) graph
