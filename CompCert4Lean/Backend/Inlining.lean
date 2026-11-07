@@ -112,7 +112,6 @@ structure InliningConfig : Type where
 private inductive CallMultiplicity : Type where
   | zero
   | one
-  | two
   | many
 deriving DecidableEq
 
@@ -133,8 +132,7 @@ private def callMultiplicity (id : ident) (info : inlining_info) : CallMultiplic
 
 private def incrementMultiplicity : CallMultiplicity → CallMultiplicity
   | .zero => .one
-  | .one => .two
-  | .two | .many => .many
+  | .one | .many => .many
 
 private def called (id : ident) (info : inlining_info) : inlining_info :=
   { info with
@@ -190,9 +188,6 @@ private def leafInstruction (leaf : Bool) (_pc : node) (instr : instruction) : B
 private def smallLeafFunction (f : function) : Bool :=
   decide (treeCount f.fn_code ≤ 256) && PTree.fold leafInstruction f.fn_code true
 
-private def frequentLeafFunction (f : function) : Bool :=
-  decide (treeCount f.fn_code ≤ 64) && PTree.fold leafInstruction f.fn_code true
-
 def should_inline (cfg : InliningConfig) (info : inlining_info)
     (id : ident) (f : function) : Bool :=
   if !cfg.enabled then
@@ -204,11 +199,8 @@ def should_inline (cfg : InliningConfig) (info : inlining_info)
     | .noSpecifier =>
         cfg.functionsCalledOnce &&
           cfg.isStatic id &&
-          !addressTaken id info &&
-          match callMultiplicity id info with
-          | .zero | .one => true
-          | .two => smallLeafFunction f
-          | .many => frequentLeafFunction f
+          (callMultiplicity id info != .many || smallLeafFunction f) &&
+          !addressTaken id info
 
 def add_globdef (cfg : InliningConfig) (info : inlining_info)
     (fenv : funenv) (idg : ident × globdef fundef Unit) : funenv :=
