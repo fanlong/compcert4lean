@@ -198,9 +198,9 @@ def should_inline (cfg : InliningConfig) (info : inlining_info)
     | .noinline => false
     | .noSpecifier =>
         cfg.functionsCalledOnce &&
-          !addressTaken id info &&
-          ((cfg.isStatic id && (callMultiplicity id info != .many || smallLeafFunction f)) ||
-            (!cfg.isStatic id && decide (treeCount f.fn_code ≤ 16)))
+          cfg.isStatic id &&
+          (callMultiplicity id info != .many || smallLeafFunction f) &&
+          !addressTaken id info
 
 def add_globdef (cfg : InliningConfig) (info : inlining_info)
     (fenv : funenv) (idg : ident × globdef fundef Unit) : funenv :=
