@@ -112,6 +112,15 @@ def branchTarget : LTL.bblock → Option positive
   | .Lcond _ _ _ _ :: _ | .Ljumptable _ _ :: _ | .Ltailcall _ _ :: _ | .Lreturn :: _ => none
   | _ :: rest => branchTarget rest
 
+def layoutSuccessors : LTL.bblock → List positive
+  | [] => []
+  | .Ltailcall _ _ :: _ => []
+  | .Lbranch target :: _ => [target]
+  | .Lcond _ _ ifso ifnot :: _ => [ifnot, ifso]
+  | .Ljumptable _ table :: _ => table
+  | .Lreturn :: _ => []
+  | _ :: rest => layoutSuccessors rest
+
 def layoutBlock (source : LTL.function) (joins : Std.HashSet Nat) :
     Nat → positive → Std.HashSet Nat → List positive →
       List positive × List positive × Std.HashSet Nat
@@ -126,7 +135,7 @@ def layoutBlock (source : LTL.function) (joins : Std.HashSet Nat) :
         | some target =>
             if joins.contains (posToNat target) then (block.reverse, [target], visited)
             else layoutBlock source joins fuel target visited block
-        | none => (block.reverse, LTL.successors_block instructions, visited)
+        | none => (block.reverse, layoutSuccessors instructions, visited)
 
 def enumerateBlocks (source : LTL.function) : List positive :=
   let bound := (PTree.elements source.fn_code).length + 1
