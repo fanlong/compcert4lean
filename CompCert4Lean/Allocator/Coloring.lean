@@ -259,7 +259,7 @@ def cheaperSpill (function : XFunction) (state : ColoringState) (left right : Na
   else
     let leftDegree := max 1 (degree function state left)
     let rightDegree := max 1 (degree function state right)
-    leftCost.amount * rightDegree < rightCost.amount * leftDegree
+    leftCost.amount * rightDegree * rightDegree < rightCost.amount * leftDegree * leftDegree
 
 def colorWorklists (context : AllocationContext) (function : XFunction) :
     Nat → ColoringState → Except String ColoringState
