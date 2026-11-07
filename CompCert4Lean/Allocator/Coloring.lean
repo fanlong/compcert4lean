@@ -191,8 +191,8 @@ def canCoalesce (context : AllocationContext) (function : XFunction)
     let rightCost := state.graph.costs[right]?.getD {}
     briggs context function state left right ||
       (!leftCost.unspillable && !rightCost.unspillable &&
-        ((rightCost.accesses <= 2 && george context function state left right) ||
-         (leftCost.accesses <= 2 && george context function state right left)))
+        ((rightCost.accesses <= 3 && george context function state left right) ||
+         (leftCost.accesses <= 3 && george context function state right left)))
 
 def combineNodes (context : AllocationContext) (function : XFunction)
     (left right : Nat) (state : ColoringState) : ColoringState := Id.run do
@@ -554,8 +554,8 @@ def canCoalesceCount (context : AllocationContext) (function : XFunction)
     let rightCost := state.graph.costs[right]?.getD {}
     briggsCount context function state left right ||
       (!leftCost.unspillable && !rightCost.unspillable &&
-        ((rightCost.accesses <= 2 && CompilerOptimization.GeorgeSingleLookup.georgeOnce context function state left right) ||
-         (leftCost.accesses <= 2 && CompilerOptimization.GeorgeSingleLookup.georgeOnce context function state right left)))
+        ((rightCost.accesses <= 3 && CompilerOptimization.GeorgeSingleLookup.georgeOnce context function state left right) ||
+         (leftCost.accesses <= 3 && CompilerOptimization.GeorgeSingleLookup.georgeOnce context function state right left)))
 
 theorem canCoalesceCount_eq (context : AllocationContext) (function : XFunction)
     (state : ColoringState) (left right : Nat) :
