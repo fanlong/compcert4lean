@@ -188,6 +188,15 @@ private def leafInstruction (leaf : Bool) (_pc : node) (instr : instruction) : B
 private def smallLeafFunction (f : function) : Bool :=
   decide (treeCount f.fn_code ≤ 256) && PTree.fold leafInstruction f.fn_code true
 
+private def straightLineInstruction (straight : Bool) (_pc : node) (instr : instruction) : Bool :=
+  match instr with
+  | .Icond _ _ _ _ | .Ijumptable _ _ => false
+  | _ => straight
+
+private def multiCallCandidate (f : function) : Bool :=
+  smallLeafFunction f ||
+    (decide (treeCount f.fn_code ≤ 8) && PTree.fold straightLineInstruction f.fn_code true)
+
 def should_inline (cfg : InliningConfig) (info : inlining_info)
     (id : ident) (f : function) : Bool :=
   if !cfg.enabled then
@@ -199,7 +208,7 @@ def should_inline (cfg : InliningConfig) (info : inlining_info)
     | .noSpecifier =>
         cfg.functionsCalledOnce &&
           cfg.isStatic id &&
-          (callMultiplicity id info != .many || smallLeafFunction f) &&
+          (callMultiplicity id info != .many || multiCallCandidate f) &&
           !addressTaken id info
 
 def add_globdef (cfg : InliningConfig) (info : inlining_info)
