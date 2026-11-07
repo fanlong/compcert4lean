@@ -188,21 +188,8 @@ private def leafInstruction (leaf : Bool) (_pc : node) (instr : instruction) : B
 private def smallLeafFunction (f : function) : Bool :=
   decide (treeCount f.fn_code ≤ 256) && PTree.fold leafInstruction f.fn_code true
 
-private def forwardEdge (pc target : node) : Bool :=
-  decide (PArith.BinPos.Pos.to_nat pc < PArith.BinPos.Pos.to_nat target)
-
-private def loopFreeInstruction (free : Bool) (pc : node) (instr : instruction) : Bool :=
-  let forward := forwardEdge pc
-  match instr with
-  | .Inop succ | .Iop _ _ _ succ | .Iload _ _ _ _ succ | .Istore _ _ _ _ succ
-  | .Icall _ _ _ _ succ | .Ibuiltin _ _ _ succ => free && forward succ
-  | .Icond _ _ ifso ifnot => free && forward ifso && forward ifnot
-  | .Ijumptable _ table => free && table.all forward
-  | .Itailcall _ _ _ | .Ireturn _ => free
-
 private def multiCallCandidate (f : function) : Bool :=
-  smallLeafFunction f ||
-    (decide (treeCount f.fn_code ≤ 8) && PTree.fold loopFreeInstruction f.fn_code true)
+  smallLeafFunction f || decide (treeCount f.fn_code ≤ 8)
 
 def should_inline (cfg : InliningConfig) (info : inlining_info)
     (id : ident) (f : function) : Bool :=
