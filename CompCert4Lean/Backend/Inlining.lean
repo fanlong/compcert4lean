@@ -188,8 +188,14 @@ private def leafInstruction (leaf : Bool) (_pc : node) (instr : instruction) : B
 private def smallLeafFunction (f : function) : Bool :=
   decide (treeCount f.fn_code ≤ 256) && PTree.fold leafInstruction f.fn_code true
 
+private def callCount (count : Nat) (_pc : node) (instr : instruction) : Nat :=
+  match instr with
+  | .Icall _ _ _ _ _ | .Itailcall _ _ _ => count + 1
+  | _ => count
+
 private def multiCallCandidate (f : function) : Bool :=
-  smallLeafFunction f || decide (treeCount f.fn_code ≤ 8)
+  smallLeafFunction f ||
+    (decide (treeCount f.fn_code ≤ 8) && decide (PTree.fold callCount f.fn_code 0 ≤ 1))
 
 def should_inline (cfg : InliningConfig) (info : inlining_info)
     (id : ident) (f : function) : Bool :=
