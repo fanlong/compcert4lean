@@ -186,7 +186,7 @@ private def leafInstruction (leaf : Bool) (_pc : node) (instr : instruction) : B
   | _ => leaf
 
 private def smallLeafFunction (f : function) : Bool :=
-  decide (treeCount f.fn_code ≤ 512) && PTree.fold leafInstruction f.fn_code true
+  decide (treeCount f.fn_code ≤ 256) && PTree.fold leafInstruction f.fn_code true
 
 def should_inline (cfg : InliningConfig) (info : inlining_info)
     (id : ident) (f : function) : Bool :=
