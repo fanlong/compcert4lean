@@ -179,7 +179,7 @@ def loopPredecessors (function : XFunction) (header : Nat) :
       if visited.contains node then loopPredecessors function header fuel pending visited
       else
         let visited := visited.insert node
-        let predecessors := if node == header then [] else (function.blocks[node]?.getD {}).predecessors
+        let predecessors := if node == header then [] else (function.blocks[node]?.map XBlock.predecessors).getD []
         loopPredecessors function header fuel (predecessors ++ pending) visited
 
 def loopBlocks (function : XFunction) : IndexSet := Id.run do
