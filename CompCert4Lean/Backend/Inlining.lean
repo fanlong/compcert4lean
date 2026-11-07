@@ -188,7 +188,8 @@ private def leafInstruction (leaf : Bool) (_pc : node) (instr : instruction) : B
 private def smallLeafFunction (f : function) : Bool :=
   decide (treeCount f.fn_code ≤ 256) && PTree.fold leafInstruction f.fn_code true
 
-private def forwardEdge (pc target : node) : Bool := decide (pc < target)
+private def forwardEdge (pc target : node) : Bool :=
+  decide (PArith.BinPos.Pos.to_nat pc < PArith.BinPos.Pos.to_nat target)
 
 private def loopFreeInstruction (free : Bool) (pc : node) (instr : instruction) : Bool :=
   let forward := forwardEdge pc
