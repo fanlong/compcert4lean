@@ -194,7 +194,7 @@ private def codeCost (f : function) : Nat :=
   PTree.fold instructionCost f.fn_code 0
 
 private def smallLeafFunction (f : function) : Bool :=
-  decide (treeCount f.fn_code ≤ 176) && PTree.fold leafInstruction f.fn_code true
+  decide (codeCost f ≤ 160) && PTree.fold leafInstruction f.fn_code true
 
 private def multiCallCandidate (f : function) : Bool :=
   smallLeafFunction f || decide (treeCount f.fn_code ≤ 8)
@@ -212,7 +212,7 @@ def should_inline (cfg : InliningConfig) (info : inlining_info)
           !addressTaken id info &&
           ((cfg.isStatic id && (callMultiplicity id info != .many || multiCallCandidate f)) ||
             (!cfg.isStatic id && callMultiplicity id info == .one &&
-              ((decide (codeCost f ≤ 16) && PTree.fold leafInstruction f.fn_code true) ||
+              ((decide (treeCount f.fn_code ≤ 16) && PTree.fold leafInstruction f.fn_code true) ||
                 decide (treeCount f.fn_code ≤ 12))))
 
 def add_globdef (cfg : InliningConfig) (info : inlining_info)
