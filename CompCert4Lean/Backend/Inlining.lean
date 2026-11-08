@@ -207,7 +207,7 @@ def should_inline (cfg : InliningConfig) (info : inlining_info)
               ((callMultiplicity id info == .one &&
                 ((decide (treeCount f.fn_code ≤ 16) && PTree.fold leafInstruction f.fn_code true) ||
                   decide (treeCount f.fn_code ≤ 12))) ||
-                (callMultiplicity id info == .many && decide (treeCount f.fn_code ≤ 4) &&
+                (callMultiplicity id info == .many && decide (treeCount f.fn_code ≤ 2) &&
                   PTree.fold leafInstruction f.fn_code true))))
 
 def add_globdef (cfg : InliningConfig) (info : inlining_info)
