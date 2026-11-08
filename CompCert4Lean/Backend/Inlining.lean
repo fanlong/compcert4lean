@@ -189,7 +189,7 @@ private def smallLeafFunction (f : function) : Bool :=
   decide (treeCount f.fn_code ≤ 176) && PTree.fold leafInstruction f.fn_code true
 
 private def multiCallCandidate (f : function) : Bool :=
-  smallLeafFunction f || decide (treeCount f.fn_code ≤ 7)
+  smallLeafFunction f || decide (treeCount f.fn_code ≤ 8)
 
 def should_inline (cfg : InliningConfig) (info : inlining_info)
     (id : ident) (f : function) : Bool :=
