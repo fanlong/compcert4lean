@@ -203,12 +203,9 @@ def should_inline (cfg : InliningConfig) (info : inlining_info)
         cfg.functionsCalledOnce &&
           !addressTaken id info &&
           ((cfg.isStatic id && (callMultiplicity id info != .many || multiCallCandidate f)) ||
-            (!cfg.isStatic id &&
-              ((callMultiplicity id info == .one &&
-                ((decide (treeCount f.fn_code ≤ 16) && PTree.fold leafInstruction f.fn_code true) ||
-                  decide (treeCount f.fn_code ≤ 12))) ||
-                (callMultiplicity id info == .many && decide (treeCount f.fn_code ≤ 2) &&
-                  PTree.fold leafInstruction f.fn_code true))))
+            (!cfg.isStatic id && callMultiplicity id info == .one &&
+              ((decide (treeCount f.fn_code ≤ 16) && PTree.fold leafInstruction f.fn_code true) ||
+                decide (treeCount f.fn_code ≤ 12))))
 
 def add_globdef (cfg : InliningConfig) (info : inlining_info)
     (fenv : funenv) (idg : ident × globdef fundef Unit) : funenv :=
