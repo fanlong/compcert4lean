@@ -194,7 +194,7 @@ private def codeCost (f : function) : Nat :=
   PTree.fold instructionCost f.fn_code 0
 
 private def smallLeafFunction (f : function) : Bool :=
-  decide (codeCost f ≤ 176) && PTree.fold leafInstruction f.fn_code true
+  decide (treeCount f.fn_code ≤ 176) && PTree.fold leafInstruction f.fn_code true
 
 private def multiCallCandidate (f : function) : Bool :=
   smallLeafFunction f || decide (treeCount f.fn_code ≤ 8)
