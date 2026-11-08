@@ -40,7 +40,7 @@ def compileSwitch (modulus : Z) (default : Nat) (cases : table) : comptree :=
   match cases.head?, cases.getLast? with
   | some (minimum, _), some (maximum, _) =>
       let span := intOfZ maximum - intOfZ minimum
-      if cases.length ≥ 9 && span ≥ 0 && 8 + span ≤ 4 * (cases.length : Int) &&
+      if cases.length ≥ 8 && span ≥ 0 && 8 + span ≤ 4 * (cases.length : Int) &&
           span < (2 : Int)^54 - 1 then
         let targets := cases.foldl (fun (targets : Std.HashMap Int Nat) (key, target) =>
           targets.insert (intOfZ key) target) {}
