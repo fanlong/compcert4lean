@@ -183,7 +183,7 @@ def instructionCosts (function : XFunction) (instruction : XInstruction)
   | .parmove sources destinations integerTemp floatTemp =>
       charge [integerTemp, floatTemp] 0 0 true false (charge (sources ++ destinations) 1 1 false false graph)
   | .op _ arguments result | .load _ _ arguments result | .store _ _ arguments result =>
-      charge (result :: arguments) 8 1 false false graph
+      charge (result :: arguments) 10 1 false false graph
   | .call _ target _ _ | .tailcall _ target _ => charge (targetUses target) 10 1 false false graph
   | .builtin (.EF_annot ..) _ _ | .builtin (.EF_debug ..) _ _ => graph
   | .builtin external arguments result =>
