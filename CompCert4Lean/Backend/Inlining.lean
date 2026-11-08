@@ -201,8 +201,8 @@ def should_inline (cfg : InliningConfig) (info : inlining_info)
     | .noinline => false
     | .noSpecifier =>
         cfg.functionsCalledOnce &&
-          !addressTaken id info &&
-          ((cfg.isStatic id && (callMultiplicity id info != .many || multiCallCandidate f)) ||
+          ((cfg.isStatic id && !addressTaken id info &&
+            (callMultiplicity id info != .many || multiCallCandidate f)) ||
             (!cfg.isStatic id && callMultiplicity id info == .one &&
               decide (treeCount f.fn_code ≤ 16) && PTree.fold leafInstruction f.fn_code true))
 
