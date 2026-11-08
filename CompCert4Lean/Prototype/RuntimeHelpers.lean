@@ -128,7 +128,49 @@ def layoutBlock (source : LTL.function) (joins : Std.HashSet Nat) :
             else layoutBlock source joins fuel target visited block
         | none => (block.reverse, LTL.successors_block instructions, visited)
 
-def enumerateBlocks (source : LTL.function) : List positive :=
+/-- Loop rotation on a block order.  For a header `h` that ends in a conditional
+whose body successor `b` is placed right after it, and a latch that jumps back to
+`h` and is followed by the other (exit) successor `e`, move `h` after the latch:
+`h b … t e` becomes `b … t h e`.  The latch then falls into the header and the
+header branches back to the body, so each iteration runs one branch instead of
+two.  Only the order changes; `Linearize` validates the permutation. -/
+def rotateLoops (source : LTL.function) (order : List positive) : List positive := Id.run do
+  let terminator := fun (node : positive) => ((PTree.get node source.fn_code).getD []).getLast?
+  let positions := fun (blocks : Array positive) =>
+    blocks.foldl (fun (state : Std.HashMap Nat Nat × Nat) node =>
+      (state.1.insert (posToNat node) state.2, state.2 + 1)) ({}, 0) |>.1
+  -- latches: blocks ending in an unconditional branch, grouped by target
+  let latches := order.foldl (fun (map : Std.HashMap Nat (List positive)) node =>
+    match terminator node with
+    | some (.Lbranch target) => map.insert (posToNat target) (node :: (map.getD (posToNat target) []))
+    | _ => map) {}
+  let mut blocks := order.toArray
+  let mut index := blocks.foldl (fun (state : Std.HashMap Nat Nat × Nat) node =>
+      (state.1.insert (posToNat node) state.2, state.2 + 1)) ({}, 0) |>.1
+  let mut i := 0
+  for _ in [:2 * blocks.size + 1] do
+    if i + 1 >= blocks.size then break
+    let some header := blocks[i]? | break
+    let some body := blocks[i + 1]? | break
+    let same := fun (left right : positive) => posToNat left == posToNat right
+    let mut moved := false
+    if let some (.Lcond _ _ ifso ifnot) := terminator header then
+      if (same body ifso || same body ifnot) && !same ifso ifnot then
+        let exit := if same body ifso then ifnot else ifso
+        let mut target : Option Nat := none
+        for latch in latches.getD (posToNat header) [] do
+          if let some j := index.get? (posToNat latch) then
+            if j > i && (blocks[j + 1]?.map posToNat) == some (posToNat exit) then
+              target := some (match target with | some k => max k j | none => j)
+        if let some j := target then
+          blocks := (blocks.extract 0 i ++ blocks.extract (i + 1) (j + 1)).push header ++
+            blocks.extract (j + 1) blocks.size
+          index := positions blocks
+          moved := true
+    if !moved then i := i + 1
+  return blocks.toList
+
+def enumerateBlocksBase (source : LTL.function) : List positive :=
   let bound := (PTree.elements source.fn_code).length + 1
   let joins := joinPoints source
   let rec visit : Nat → List positive → Std.HashSet Nat → List (Nat × List positive) →
@@ -145,5 +187,8 @@ def enumerateBlocks (source : LTL.function) : List positive :=
     (fun count (_, block) => count + (LTL.successors_block block).length) 0
   ((visit (edges + 1) [source.fn_entrypoint] {} []).mergeSort
     (fun left right => left.1 ≥ right.1)).flatMap Prod.snd
+
+def enumerateBlocks (source : LTL.function) : List positive :=
+  rotateLoops source (enumerateBlocksBase source)
 
 end CompCert4Lean.Prototype

@@ -118,6 +118,8 @@ deriving DecidableEq
 private structure InliningInfoRepr : Type where
   calls : PTree.t CallMultiplicity
   addrTaken : PTree.t Unit
+  /-- Number of direct call sites of each function (a size heuristic only). -/
+  callSites : PTree.t Nat := PTree.empty Nat
 
 def inlining_info : Type := InliningInfoRepr
 
@@ -136,7 +138,11 @@ private def incrementMultiplicity : CallMultiplicity → CallMultiplicity
 
 private def called (id : ident) (info : inlining_info) : inlining_info :=
   { info with
-    calls := PTree.set id (incrementMultiplicity (callMultiplicity id info)) info.calls }
+    calls := PTree.set id (incrementMultiplicity (callMultiplicity id info)) info.calls
+    callSites := PTree.set id (((PTree.get id info.callSites).getD 0) + 1) info.callSites }
+
+private def callSiteCount (id : ident) (info : inlining_info) : Nat :=
+  (PTree.get id info.callSites).getD 0
 
 private def addressTaken (id : ident) (info : inlining_info) : Bool :=
   match PTree.get id info.addrTaken with
@@ -180,8 +186,31 @@ def inlining_analysis (cfg : InliningConfig) (p : program) : inlining_info :=
   else
     emptyInliningInfo
 
+/-- Bodies with at most this many RTL instructions are inlined at O2 even
+without an `inline` specifier.  This is a pure heuristic: inlining is correct for
+every Boolean policy. -/
+def smallFunctionInstructions : Nat := 16
+
+/-- Small functions with more direct call sites than this are not inlined without
+a specifier, which bounds the code growth of each such function. -/
+def smallFunctionCallSites : Nat := 16
+
+/-- A small function body that may be inlined without a specifier: not variadic,
+without builtins (for example `va_start` or inline assembly), and calling no
+function other than itself.  Excluding other calls keeps nested expansion of small
+functions linear; a self call expands at most one level because the inliner removes
+the function from its environment while expanding it. -/
+def smallInlinable (id : ident) (f : function) : Bool :=
+  f.fn_sig.sig_cc.cc_vararg.isNone &&
+    treeCount f.fn_code ≤ smallFunctionInstructions &&
+    PTree.fold (fun ok _ instr => ok && match instr with
+      | .Ibuiltin .. => false
+      | .Icall _ (.inr callee) _ _ _ | .Itailcall _ (.inr callee) _ => callee == id
+      | .Icall .. | .Itailcall .. => false
+      | _ => true) f.fn_code true
+
 def should_inline (cfg : InliningConfig) (info : inlining_info)
-    (id : ident) (_f : function) : Bool :=
+    (id : ident) (f : function) : Bool :=
   if !cfg.enabled then
     false
   else
@@ -190,9 +219,10 @@ def should_inline (cfg : InliningConfig) (info : inlining_info)
     | .noinline => false
     | .noSpecifier =>
         cfg.functionsCalledOnce &&
-          cfg.isStatic id &&
-          callMultiplicity id info != .many &&
-          !addressTaken id info
+          ((cfg.isStatic id &&
+            callMultiplicity id info != .many &&
+            !addressTaken id info) ||
+            (smallInlinable id f && callSiteCount id info ≤ smallFunctionCallSites))
 
 def add_globdef (cfg : InliningConfig) (info : inlining_info)
     (fenv : funenv) (idg : ident × globdef fundef Unit) : funenv :=

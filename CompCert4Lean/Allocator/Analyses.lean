@@ -159,6 +159,60 @@ def graphPairwise (indices : List Nat) (graph : Interference) : Interference :=
   let live := setOfList indices
   indices.foldl (fun graph index => graphLive index live graph) graph
 
+/-- Loop nesting depth of every XTL block.  A depth-first search from the entry
+finds back edges; the natural loop of each header is the set of reachable blocks
+that reach one of its back-edge tails without passing the header.  Unreachable
+blocks and irreducible regions without such a header get depth zero.  This is
+only a spill-cost heuristic: the validator checks every allocation. -/
+def loopDepths (function : XFunction) : Array Nat := Id.run do
+  let count := function.blocks.size
+  let mut depth := Array.replicate count 0
+  if function.entry >= count then return depth
+  let successors := fun (index : Nat) => (function.blocks[index]?.map (·.successors)).getD []
+  let edges := function.blocks.foldl (fun total block => total + block.successors.length) 0
+  -- 0 = unvisited, 1 = on the DFS stack, 2 = finished
+  let mut mark := (Array.replicate count (0 : Nat)).set! function.entry 1
+  let mut tails : Array (List Nat) := Array.replicate count []
+  let mut stack : Array (Nat × List Nat) := #[(function.entry, successors function.entry)]
+  for _ in [:count + edges + 1] do
+    match stack.back? with
+    | none => break
+    | some (node, []) =>
+        mark := mark.set! node 2
+        stack := stack.pop
+    | some (node, next :: rest) =>
+        stack := stack.set! (stack.size - 1) (node, rest)
+        if next < count then
+          if mark[next]! == 0 then
+            mark := mark.set! next 1
+            stack := stack.push (next, successors next)
+          else if mark[next]! == 1 then
+            tails := tails.modify next (node :: ·)
+  for header in [:count] do
+    let headerTails := tails[header]!
+    if headerTails.isEmpty then continue
+    let mut inLoop := (Array.replicate count false).set! header true
+    let mut pending : List Nat := []
+    for tail in headerTails do
+      if !inLoop[tail]! then
+        inLoop := inLoop.set! tail true
+        pending := tail :: pending
+    for _ in [:count + 1] do
+      match pending with
+      | [] => break
+      | block :: rest =>
+          pending := rest
+          for predecessor in (function.blocks[block]?.map (·.predecessors)).getD [] do
+            if predecessor < count && mark[predecessor]! != 0 && !inLoop[predecessor]! then
+              inLoop := inLoop.set! predecessor true
+              pending := predecessor :: pending
+    for index in [:count] do
+      if inLoop[index]! then depth := depth.modify index (· + 1)
+  return depth
+
+/-- Spill-cost multiplier for a block at the given loop depth. -/
+def loopWeight (depth : Nat) : Nat := 8 ^ (min depth 4)
+
 def charge (indices : List Nat) (amount accesses : Nat) (unspillable stackOnly : Bool)
     (graph : Interference) : Interference :=
   indices.foldl (fun graph index =>
@@ -172,7 +226,9 @@ def charge (indices : List Nat) (amount accesses : Nat) (unspillable stackOnly :
         stackOnly := cost.stackOnly || stackOnly } }) graph
 
 def instructionCosts (function : XFunction) (instruction : XInstruction)
-    (graph : Interference) : Interference :=
+    (graph : Interference) (weight : Nat := 1) : Interference :=
+  let charge := fun (indices : List Nat) (amount accesses : Nat) (unspillable stackOnly : Bool)
+      (graph : Interference) => charge indices (amount * weight) accesses unspillable stackOnly graph
   match instruction with
   | .move source destination =>
       if fixedStack function source then charge [destination] 0 0 false true graph
@@ -203,8 +259,9 @@ def incoming (function : XFunction) (index : Nat) : Bool :=
   | _ => false
 
 def instructionInterference (configuration : Config.CompilerConfig) (function : XFunction)
-    (instruction : XInstruction) (live : IndexSet) (graph : Interference) : Interference := Id.run do
-  let mut graph := instructionCosts function instruction graph
+    (instruction : XInstruction) (live : IndexSet) (graph : Interference) (weight : Nat := 1) :
+    Interference := Id.run do
+  let mut graph := instructionCosts function instruction graph weight
   match instruction with
   | .move source destination | .reload source destination | .spill source destination =>
       graph := graphLive destination (live.erase source) (graphPreference source destination graph)
@@ -256,10 +313,13 @@ def buildInterference (configuration : Config.CompilerConfig) (function : XFunct
     adjacency := Array.replicate function.variables.size {}
     preferences := Array.replicate function.variables.size {}
     costs := Array.replicate function.variables.size {} }
+  let depths := loopDepths function
   for index in [:function.blocks.size] do
     if let some block := function.blocks[index]? then
+      let weight := loopWeight (depths[index]?.getD 0)
       let (_, next) := block.instructions.foldr (fun instruction (live, graph) =>
-        (liveBefore function instruction live, instructionInterference configuration function instruction live graph))
+        (liveBefore function instruction live,
+          instructionInterference configuration function instruction live graph weight))
         (liveness.after[index]?.getD {}, graph)
       graph := next
   return graphDestroyed destroyed_at_function_entry (liveness.before[function.entry]?.getD {}) graph
