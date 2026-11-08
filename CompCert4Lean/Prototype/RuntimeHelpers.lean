@@ -74,7 +74,6 @@ def expressionCost : Cminor.expr → Nat
 
 def continuationTest : CminorSel.stmt → Option ident
   | .Sifthenelse (.CEcond (.Ccompuimm _ _) (.Econs (.Evar identifier) .Enil)) _ _ => some identifier
-  | .Sifthenelse (.CEcond (.Ccompluimm _ _) (.Econs (.Evar identifier) .Enil)) _ _ => some identifier
   | .Sseq .Sskip rest => continuationTest rest
   | .Sseq (.Sbuiltin _ (.EF_debug _ _ _) _) rest => continuationTest rest
   | .Sseq first _ => continuationTest first
@@ -82,7 +81,6 @@ def continuationTest : CminorSel.stmt → Option ident
 
 def integerConstant : Cminor.expr → Bool
   | .Econst (.Ointconst _) => true
-  | .Econst (.Olongconst _) => true
   | _ => false
 
 def ifConversion (enabled : Bool) : Selection.IfConversionHeuristic :=

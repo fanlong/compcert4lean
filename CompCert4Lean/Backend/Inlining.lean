@@ -118,12 +118,14 @@ deriving DecidableEq
 private structure InliningInfoRepr : Type where
   calls : PTree.t CallMultiplicity
   addrTaken : PTree.t Unit
+  loopCalls : PTree.t Unit
 
 def inlining_info : Type := InliningInfoRepr
 
 private def emptyInliningInfo : inlining_info :=
   { calls := PTree.empty CallMultiplicity
-    addrTaken := PTree.empty Unit }
+    addrTaken := PTree.empty Unit
+    loopCalls := PTree.empty Unit }
 
 private def callMultiplicity (id : ident) (info : inlining_info) : CallMultiplicity :=
   match PTree.get id info.calls with
@@ -137,6 +139,15 @@ private def incrementMultiplicity : CallMultiplicity → CallMultiplicity
 private def called (id : ident) (info : inlining_info) : inlining_info :=
   { info with
     calls := PTree.set id (incrementMultiplicity (callMultiplicity id info)) info.calls }
+
+private def calledFromLoop (id : ident) (info : inlining_info) : Bool :=
+  match PTree.get id info.loopCalls with
+  | none => false
+  | some _ => true
+
+private def calledIn (loop : Bool) (id : ident) (info : inlining_info) : inlining_info :=
+  let info := called id info
+  if loop then { info with loopCalls := PTree.set id () info.loopCalls } else info
 
 private def addressTaken (id : ident) (info : inlining_info) : Bool :=
   match PTree.get id info.addrTaken with
@@ -154,19 +165,24 @@ private def usedInGlobvar (info : inlining_info) (gv : globvar Unit) : inlining_
       | _ => acc)
     info
 
-private def analyzeInstruction (info : inlining_info) (_pc : node)
+private def analyzeInstruction (loop : Bool) (info : inlining_info) (_pc : node)
     (instr : instruction) : inlining_info :=
   match instr with
   | .Iop op _ _ _ => usedIds info (globals_operation op)
   | .Iload _ addr _ _ _ => usedIds info (globals_addressing addr)
   | .Istore _ addr _ _ _ => usedIds info (globals_addressing addr)
   | .Ibuiltin _ args _ _ => usedIds info (globals_of_builtin_args args)
-  | .Icall _ (.inr id) _ _ _ => called id info
-  | .Itailcall _ (.inr id) _ => called id info
+  | .Icall _ (.inr id) _ _ _ => calledIn loop id info
+  | .Itailcall _ (.inr id) _ => calledIn loop id info
   | _ => info
 
+private def backEdgeInstruction (found : Bool) (pc : node) (instr : instruction) : Bool :=
+  found || (successors_instr instr).any
+    (fun target => decide (PArith.BinPos.Pos.lt target pc))
+
 private def analyzeFunction (info : inlining_info) (f : function) : inlining_info :=
-  PTree.fold analyzeInstruction f.fn_code info
+  let loop := PTree.fold backEdgeInstruction f.fn_code false
+  PTree.fold (analyzeInstruction loop) f.fn_code info
 
 def inlining_analysis (cfg : InliningConfig) (p : program) : inlining_info :=
   if cfg.enabled && cfg.functionsCalledOnce then
@@ -204,7 +220,8 @@ def should_inline (cfg : InliningConfig) (info : inlining_info)
           !addressTaken id info &&
           ((cfg.isStatic id && (callMultiplicity id info != .many || multiCallCandidate f)) ||
             (!cfg.isStatic id && callMultiplicity id info == .one &&
-              ((decide (treeCount f.fn_code ≤ 16) && PTree.fold leafInstruction f.fn_code true) ||
+              ((decide (treeCount f.fn_code ≤ (if calledFromLoop id info then 32 else 16)) &&
+                  PTree.fold leafInstruction f.fn_code true) ||
                 decide (treeCount f.fn_code ≤ 12))))
 
 def add_globdef (cfg : InliningConfig) (info : inlining_info)
