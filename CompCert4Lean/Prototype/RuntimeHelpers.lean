@@ -144,6 +144,6 @@ def enumerateBlocks (source : LTL.function) : List positive :=
   let edges := (PTree.elements source.fn_code).foldl
     (fun count (_, block) => count + (LTL.successors_block block).length) 0
   ((visit (edges + 1) [source.fn_entrypoint] {} []).mergeSort
-    (fun left right => left.1 ≥ right.1)).flatMap Prod.snd
+    (fun left right => left.1 ≤ right.1)).flatMap Prod.snd
 
 end CompCert4Lean.Prototype
