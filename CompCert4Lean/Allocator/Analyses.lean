@@ -211,7 +211,7 @@ def loopDepths (function : XFunction) : Array Nat := Id.run do
   return depth
 
 /-- Spill-cost multiplier for a block at the given loop depth. -/
-def loopWeight (depth : Nat) : Nat := 8 ^ (min depth 4)
+def loopWeight (depth : Nat) : Nat := 16 ^ (min depth 3)
 
 def charge (indices : List Nat) (amount accesses : Nat) (unspillable stackOnly : Bool)
     (graph : Interference) : Interference :=

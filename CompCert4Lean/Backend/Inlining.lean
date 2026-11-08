@@ -189,7 +189,7 @@ def inlining_analysis (cfg : InliningConfig) (p : program) : inlining_info :=
 /-- Bodies with at most this many RTL instructions are inlined at O2 even
 without an `inline` specifier.  This is a pure heuristic: inlining is correct for
 every Boolean policy. -/
-def smallFunctionInstructions : Nat := 16
+def smallFunctionInstructions : Nat := 24
 
 /-- Small functions with more direct call sites than this are not inlined without
 a specifier, which bounds the code growth of each such function. -/
