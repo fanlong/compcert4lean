@@ -27,6 +27,10 @@ def switchTree : Nat → Nat → table → Int → Int → comptree
           .CTifeq key target (.CTifeq key2 target2
             (if maximum - minimum == 2 then .CTaction target3
              else .CTifeq key3 target3 (.CTaction default)))
+      | [(key, target), (key2, target2), (key3, target3), (key4, target4)] =>
+          .CTifeq key target (.CTifeq key2 target2 (.CTifeq key3 target3
+            (if maximum - minimum == 3 then .CTaction target4
+             else .CTifeq key4 target4 (.CTaction default))))
       | _ =>
           let middle := cases.length / 2
           match (cases.drop middle).head? with
@@ -139,8 +143,8 @@ def enumerateBlocks (source : LTL.function) : List positive :=
         if visited.contains (posToNat node) then visit fuel pending visited blocks
         else
           let (block, successors, visited) := layoutBlock source joins bound node visited []
-          let maximum := block.foldl (fun maximum node => max maximum (posToNat node)) (posToNat node)
-          visit fuel (successors ++ pending) visited ((maximum, block) :: blocks)
+          let minimum := block.foldl (fun minimum node => min minimum (posToNat node)) (posToNat node)
+          visit fuel (successors ++ pending) visited ((minimum, block) :: blocks)
   let edges := (PTree.elements source.fn_code).foldl
     (fun count (_, block) => count + (LTL.successors_block block).length) 0
   ((visit (edges + 1) [source.fn_entrypoint] {} []).mergeSort
