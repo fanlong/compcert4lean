@@ -60,7 +60,7 @@ def unaryCost : Cminor.unary_operation → Nat
 def binaryCost : Cminor.binary_operation → Nat
   | .Oadd | .Osub | .Oand | .Oor | .Oxor | .Oshl | .Oshr | .Oshru
   | .Oaddl | .Osubl | .Oandl | .Oorl | .Oxorl | .Oshll | .Oshrl | .Oshrlu => 1
-  | .Omul | .Omull => 3
+  | .Omul | .Omull => 1
   | .Oaddf | .Osubf | .Omulf | .Oaddfs | .Osubfs | .Omulfs => 2
   | .Ocmp _ | .Ocmpu _ | .Ocmpf _ | .Ocmpfs _ => 2
   | .Odivf | .Odivfs => 10
