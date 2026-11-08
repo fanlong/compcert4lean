@@ -120,6 +120,11 @@ private structure InliningInfoRepr : Type where
   addrTaken : PTree.t Unit
   /-- Number of direct call sites of each function (a size heuristic only). -/
   callSites : PTree.t Nat := PTree.empty Nat
+  /-- Functions that directly call an internal function which is an inlining target under the
+  base rules; the extended rules (one-call wrappers, non-static called once) skip them. -/
+  expands : PTree.t Unit := PTree.empty Unit
+  /-- Functions excluded from the new rules by a caller growth budget. -/
+  extBlocked : PTree.t Unit := PTree.empty Unit
 
 def inlining_info : Type := InliningInfoRepr
 
@@ -174,7 +179,7 @@ private def analyzeInstruction (info : inlining_info) (_pc : node)
 private def analyzeFunction (info : inlining_info) (f : function) : inlining_info :=
   PTree.fold analyzeInstruction f.fn_code info
 
-def inlining_analysis (cfg : InliningConfig) (p : program) : inlining_info :=
+private def inlining_analysis_calls (cfg : InliningConfig) (p : program) : inlining_info :=
   if cfg.enabled && cfg.functionsCalledOnce then
     p.prog_defs.foldl
       (fun info idg =>
@@ -200,14 +205,108 @@ without builtins (for example `va_start` or inline assembly), and calling no
 function other than itself.  Excluding other calls keeps nested expansion of small
 functions linear; a self call expands at most one level because the inliner removes
 the function from its environment while expanding it. -/
-def smallInlinable (id : ident) (f : function) : Bool :=
+def smallInlinable (id : ident) (f : function) (expands : Bool := false) : Bool :=
   f.fn_sig.sig_cc.cc_vararg.isNone &&
     treeCount f.fn_code ≤ smallFunctionInstructions &&
+    (PTree.fold (fun (state : Bool × Nat) _ instr => match instr with
+      | .Ibuiltin .. => (false, state.2)
+      | .Icall _ (.inr callee) _ _ _ | .Itailcall _ (.inr callee) _ =>
+          if callee == id then state else (state.1, state.2 + 1)
+      | .Icall .. | .Itailcall .. => (state.1, state.2 + 1)
+      | _ => state) f.fn_code (true, 0) |> fun state =>
+        state.1 && (state.2 == 0 || (state.2 == 1 && treeCount f.fn_code ≤ 8 && !expands)))
+
+/-- Size limit for inlining a non-static function at its single call site. -/
+def calledOnceInstructions : Nat := 50
+
+/-- A function body that may be inlined at its only call site: not variadic and
+without builtins. -/
+def calledOnceInlinable (f : function) : Bool :=
+  f.fn_sig.sig_cc.cc_vararg.isNone && treeCount f.fn_code ≤ calledOnceInstructions &&
     PTree.fold (fun ok _ instr => ok && match instr with
       | .Ibuiltin .. => false
-      | .Icall _ (.inr callee) _ _ _ | .Itailcall _ (.inr callee) _ => callee == id
-      | .Icall .. | .Itailcall .. => false
       | _ => true) f.fn_code true
+
+/-- Base inlining rules (the policy of 27c6f86) for a function `g` defined in the program. -/
+private def baseTarget (cfg : InliningConfig) (info : inlining_info) (g : ident) (f : function) : Bool :=
+  match cfg.inlineStatus g with
+  | .inline => true
+  | .noinline => false
+  | .noSpecifier =>
+      (cfg.isStatic g && callMultiplicity g info != .many && !addressTaken g info) ||
+      (f.fn_sig.sig_cc.cc_vararg.isNone && treeCount f.fn_code ≤ smallFunctionInstructions &&
+        callSiteCount g info ≤ smallFunctionCallSites &&
+        PTree.fold (fun ok _ instr => ok && match instr with
+          | .Ibuiltin .. => false
+          | .Icall _ (.inr callee) _ _ _ | .Itailcall _ (.inr callee) _ => callee == g
+          | .Icall .. | .Itailcall .. => false
+          | _ => true) f.fn_code true)
+
+private def markExpanding (cfg : InliningConfig) (p : program) (info : inlining_info) : inlining_info :=
+  let defs : PTree.t function := p.prog_defs.foldl (fun defs idg =>
+    match idg.2 with
+    | .Gfun (.Internal f) => PTree.set idg.1 f defs
+    | _ => PTree.remove idg.1 defs) (PTree.empty function)
+  p.prog_defs.foldl (fun info idg =>
+    match idg.2 with
+    | .Gfun (.Internal f) =>
+        let expands := PTree.fold (fun found _ instr => found || match instr with
+          | .Icall _ (.inr callee) _ _ _ | .Itailcall _ (.inr callee) _ =>
+              callee != idg.1 && match PTree.get callee defs with
+                | some g => baseTarget cfg info callee g
+                | none => false
+          | _ => false) f.fn_code false
+        if expands then { info with expands := PTree.set idg.1 () info.expands } else info
+    | _ => info) info
+
+/-- A function that only the new rules (one-call wrapper, non-static called once) would inline. -/
+private def extTarget (cfg : InliningConfig) (info : inlining_info) (g : ident) (f : function) : Bool :=
+  cfg.inlineStatus g == .noSpecifier && !baseTarget cfg info g f &&
+    (PTree.get g info.expands).isNone &&
+    ((smallInlinable g f false && callSiteCount g info ≤ smallFunctionCallSites) ||
+     (callSiteCount g info == 1 && !addressTaken g info && calledOnceInlinable f))
+
+/-- New-rule growth budget per caller: max(size / 2, 200) RTL instructions. -/
+def extCallerGrowth : Nat := 200
+
+private def blockExtByCallerBudget (cfg : InliningConfig) (p : program) (info : inlining_info) :
+    inlining_info :=
+  let defs : PTree.t function := p.prog_defs.foldl (fun defs idg =>
+    match idg.2 with
+    | .Gfun (.Internal f) => PTree.set idg.1 f defs
+    | _ => PTree.remove idg.1 defs) (PTree.empty function)
+  let size := fun (callee : ident) =>
+    match PTree.get callee defs with
+    | some g => if extTarget cfg info callee g then some (treeCount g.fn_code) else none
+    | none => none
+  p.prog_defs.foldl (fun info idg =>
+    match idg.2 with
+    | .Gfun (.Internal f) =>
+        let (growth, totals) := PTree.fold (fun (acc : Nat × PTree.t Nat) _ instr =>
+          match instr with
+          | .Icall _ (.inr callee) _ _ _ | .Itailcall _ (.inr callee) _ =>
+              match size callee with
+              | some n => (acc.1 + n, PTree.set callee ((PTree.get callee acc.2).getD 0 + n) acc.2)
+              | none => acc
+          | _ => acc) f.fn_code (0, PTree.empty Nat)
+        let budget := max (treeCount f.fn_code / 2) extCallerGrowth
+        if growth > budget then
+          let ranked := (PTree.elements totals).mergeSort (fun a b => a.2 ≥ b.2)
+          let (_, blocked) := ranked.foldl (fun (state : Nat × PTree.t Unit) (c, total) =>
+            if state.1 > budget then (state.1 - total, PTree.set c () state.2) else state)
+            (growth, info.extBlocked)
+          { info with extBlocked := blocked }
+        else info
+    | _ => info) info
+
+def inlining_analysis (cfg : InliningConfig) (p : program) : inlining_info :=
+  if cfg.enabled && cfg.functionsCalledOnce then
+    blockExtByCallerBudget cfg p (markExpanding cfg p (inlining_analysis_calls cfg p))
+  else
+    inlining_analysis_calls cfg p
+
+private def expandsInline (id : ident) (info : inlining_info) : Bool :=
+  (PTree.get id info.expands).isSome
 
 def should_inline (cfg : InliningConfig) (info : inlining_info)
     (id : ident) (f : function) : Bool :=
@@ -222,7 +321,10 @@ def should_inline (cfg : InliningConfig) (info : inlining_info)
           ((cfg.isStatic id &&
             callMultiplicity id info != .many &&
             !addressTaken id info) ||
-            (smallInlinable id f && callSiteCount id info ≤ smallFunctionCallSites))
+            (smallInlinable id f (expandsInline id info || (PTree.get id info.extBlocked).isSome) &&
+              callSiteCount id info ≤ smallFunctionCallSites) ||
+            (callSiteCount id info == 1 && !addressTaken id info && calledOnceInlinable f &&
+              !expandsInline id info && (PTree.get id info.extBlocked).isNone))
 
 def add_globdef (cfg : InliningConfig) (info : inlining_info)
     (fenv : funenv) (idg : ident × globdef fundef Unit) : funenv :=
