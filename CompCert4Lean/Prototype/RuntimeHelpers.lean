@@ -40,7 +40,7 @@ def compileSwitch (modulus : Z) (default : Nat) (cases : table) : comptree :=
   match cases.head?, cases.getLast? with
   | some (minimum, _), some (maximum, _) =>
       let span := intOfZ maximum - intOfZ minimum
-      if cases.length ≥ 6 && span ≥ 0 && 8 + span ≤ 4 * (cases.length : Int) &&
+      if cases.length ≥ 7 && span ≥ 0 && 8 + span ≤ 4 * (cases.length : Int) &&
           span < (2 : Int)^54 - 1 then
         let targets := cases.foldl (fun (targets : Std.HashMap Int Nat) (key, target) =>
           targets.insert (intOfZ key) target) {}
@@ -88,7 +88,7 @@ def ifConversion (enabled : Bool) : Selection.IfConversionHeuristic :=
     let left := expressionCost ifso
     let right := expressionCost ifnot
     enabled && (match type with | .Tint | .Tlong => true | _ => false) &&
-      left + right ≤ 24 && left - right ≤ 8 && right - left ≤ 8 &&
+      left + right ≤ 20 && left - right ≤ 8 && right - left ≤ 8 &&
       !(continuationTest continuation == some identifier &&
         (integerConstant ifso || integerConstant ifnot))
 
