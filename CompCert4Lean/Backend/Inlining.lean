@@ -178,7 +178,7 @@ private def analyzeInstruction (loop : Bool) (info : inlining_info) (_pc : node)
 
 private def backEdgeInstruction (found : Bool) (pc : node) (instr : instruction) : Bool :=
   found || (successors_instr instr).any
-    (fun target => decide (PArith.BinPos.Pos.lt target pc))
+    (fun target => decide (posToNat target < posToNat pc))
 
 private def analyzeFunction (info : inlining_info) (f : function) : inlining_info :=
   let loop := PTree.fold backEdgeInstruction f.fn_code false
