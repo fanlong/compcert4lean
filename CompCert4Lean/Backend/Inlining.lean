@@ -112,6 +112,7 @@ structure InliningConfig : Type where
 private inductive CallMultiplicity : Type where
   | zero
   | one
+  | two
   | many
 deriving DecidableEq
 
@@ -132,7 +133,8 @@ private def callMultiplicity (id : ident) (info : inlining_info) : CallMultiplic
 
 private def incrementMultiplicity : CallMultiplicity → CallMultiplicity
   | .zero => .one
-  | .one | .many => .many
+  | .one => .two
+  | .two | .many => .many
 
 private def called (id : ident) (info : inlining_info) : inlining_info :=
   { info with
@@ -191,6 +193,10 @@ private def smallLeafFunction (f : function) : Bool :=
 private def multiCallCandidate (f : function) : Bool :=
   smallLeafFunction f || decide (treeCount f.fn_code ≤ 8)
 
+private def twoCallCandidate (f : function) : Bool :=
+  (decide (treeCount f.fn_code ≤ 256) && PTree.fold leafInstruction f.fn_code true) ||
+    multiCallCandidate f
+
 def should_inline (cfg : InliningConfig) (info : inlining_info)
     (id : ident) (f : function) : Bool :=
   if !cfg.enabled then
@@ -202,7 +208,11 @@ def should_inline (cfg : InliningConfig) (info : inlining_info)
     | .noSpecifier =>
         cfg.functionsCalledOnce &&
           !addressTaken id info &&
-          ((cfg.isStatic id && (callMultiplicity id info != .many || multiCallCandidate f)) ||
+          ((cfg.isStatic id &&
+              (match callMultiplicity id info with
+               | .zero | .one => true
+               | .two => twoCallCandidate f
+               | .many => multiCallCandidate f)) ||
             (!cfg.isStatic id && callMultiplicity id info == .one &&
               ((decide (treeCount f.fn_code ≤ 16) && PTree.fold leafInstruction f.fn_code true) ||
                 decide (treeCount f.fn_code ≤ 12))))
