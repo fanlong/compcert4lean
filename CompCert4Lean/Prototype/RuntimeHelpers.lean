@@ -87,8 +87,10 @@ def ifConversion (enabled : Bool) : Selection.IfConversionHeuristic :=
   fun identifier _ ifso ifnot type continuation =>
     let left := expressionCost ifso
     let right := expressionCost ifnot
-    enabled && (match type with | .Tint | .Tlong => true | _ => false) &&
-      left + right ≤ 20 && left - right ≤ 4 && right - left ≤ 4 &&
+    enabled && (match type with
+      | .Tint => left + right ≤ 18 && left - right ≤ 4 && right - left ≤ 4
+      | .Tlong => left + right ≤ 20 && left - right ≤ 4 && right - left ≤ 4
+      | _ => false) &&
       !(continuationTest continuation == some identifier &&
         (integerConstant ifso || integerConstant ifnot))
 
