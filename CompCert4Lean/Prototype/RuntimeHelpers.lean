@@ -67,7 +67,7 @@ def binaryCost : Cminor.binary_operation → Nat
 
 def expressionCost : Cminor.expr → Nat
   | .Evar _ => 0
-  | .Econst _ => 0
+  | .Econst _ => 1
   | .Eunop operation value => unaryCost operation + expressionCost value
   | .Ebinop operation left right => binaryCost operation + expressionCost left + expressionCost right
   | .Eload _ _ => 1000
@@ -88,9 +88,7 @@ def ifConversion (enabled : Bool) : Selection.IfConversionHeuristic :=
     let left := expressionCost ifso
     let right := expressionCost ifnot
     enabled && (match type with | .Tint | .Tlong => true | _ => false) &&
-      left + right ≤ 20 && left - right ≤ 4 && right - left ≤ 4 &&
-      !(continuationTest continuation == some identifier &&
-        (integerConstant ifso || integerConstant ifnot))
+      left + right ≤ 20 && left - right ≤ 4 && right - left ≤ 4
 
 def joinPoints (source : LTL.function) : Std.HashSet Nat :=
   let rec visit : Nat → List positive → Std.HashSet Nat → Std.HashSet Nat → Std.HashSet Nat
