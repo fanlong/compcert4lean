@@ -51,8 +51,8 @@ def machineClass : mreg → Nat
   | .R8 | .R9 | .R10 | .R11 | .R12 | .R13 | .R14 | .R15 => 0
   | _ => 1
 
-def integerPreferred : List mreg := [.BX, .BP, .R12, .R13, .R14, .R15, .AX, .CX, .DX, .SI, .DI, .R8, .R9, .R10, .R11]
-def integerRemaining : List mreg := [.AX, .CX, .DX, .SI, .DI, .R8, .R9, .R10, .R11]
+def integerPreferred : List mreg := [.AX, .CX, .DX, .SI, .DI, .R8, .R9, .R10, .R11]
+def integerRemaining : List mreg := [.BX, .BP, .R12, .R13, .R14, .R15]
 def floatRegisters : List mreg :=
   [.X0, .X1, .X2, .X3, .X4, .X5, .X6, .X7, .X8, .X9, .X10, .X11, .X12, .X13, .X14, .X15]
 
