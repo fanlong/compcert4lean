@@ -344,7 +344,7 @@ def assignColors (context : AllocationContext) (function : XFunction)
     let location ← match pool.find? (fun register => availableLocation (.R register)) with
       | some register =>
           if preferred.any (regEqual register) then
-            starts := starts.set! classId ((start + 1) % preferred.length)
+            starts := starts.set! classId start
           pure (.R register)
       | none => do
           if (state.graph.costs[index]?.getD {}).unspillable then
