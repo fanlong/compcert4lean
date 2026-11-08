@@ -74,6 +74,7 @@ def expressionCost : Cminor.expr → Nat
 
 def continuationTest : CminorSel.stmt → Option ident
   | .Sifthenelse (.CEcond (.Ccompuimm _ _) (.Econs (.Evar identifier) .Enil)) _ _ => some identifier
+  | .Sifthenelse (.CEcond (.Ccompluimm _ _) (.Econs (.Evar identifier) .Enil)) _ _ => some identifier
   | .Sseq .Sskip rest => continuationTest rest
   | .Sseq (.Sbuiltin _ (.EF_debug _ _ _) _) rest => continuationTest rest
   | .Sseq first _ => continuationTest first
@@ -81,6 +82,7 @@ def continuationTest : CminorSel.stmt → Option ident
 
 def integerConstant : Cminor.expr → Bool
   | .Econst (.Ointconst _) => true
+  | .Econst (.Olongconst _) => true
   | _ => false
 
 def ifConversion (enabled : Bool) : Selection.IfConversionHeuristic :=
@@ -90,7 +92,7 @@ def ifConversion (enabled : Bool) : Selection.IfConversionHeuristic :=
     enabled && (match type with | .Tint | .Tlong => true | _ => false) &&
       left + right ≤ 20 && left - right ≤ 4 && right - left ≤ 4 &&
       !(continuationTest continuation == some identifier &&
-        (integerConstant ifso && integerConstant ifnot))
+        (integerConstant ifso || integerConstant ifnot))
 
 def joinPoints (source : LTL.function) : Std.HashSet Nat :=
   let rec visit : Nat → List positive → Std.HashSet Nat → Std.HashSet Nat → Std.HashSet Nat
