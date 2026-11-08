@@ -40,7 +40,7 @@ def compileSwitch (modulus : Z) (default : Nat) (cases : table) : comptree :=
   match cases.head?, cases.getLast? with
   | some (minimum, _), some (maximum, _) =>
       let span := intOfZ maximum - intOfZ minimum
-      if cases.length ≥ 7 && span ≥ 0 && 8 + span ≤ 5 * (cases.length : Int) &&
+      if cases.length ≥ 7 && span ≥ 0 && 8 + span ≤ 4 * (cases.length : Int) &&
           span < (2 : Int)^54 - 1 then
         let targets := cases.foldl (fun (targets : Std.HashMap Int Nat) (key, target) =>
           targets.insert (intOfZ key) target) {}
@@ -140,7 +140,8 @@ def enumerateBlocks (source : LTL.function) : List positive :=
         else
           let (block, successors, visited) := layoutBlock source joins bound node visited []
           let minimum := block.foldl (fun minimum node => min minimum (posToNat node)) (posToNat node)
-          visit fuel (successors ++ pending) visited ((minimum, block) :: blocks)
+          visit fuel ((successors.mergeSort (fun left right => posToNat left ≤ posToNat right)) ++ pending)
+            visited ((minimum, block) :: blocks)
   let edges := (PTree.elements source.fn_code).foldl
     (fun count (_, block) => count + (LTL.successors_block block).length) 0
   ((visit (edges + 1) [source.fn_entrypoint] {} []).mergeSort
