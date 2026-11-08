@@ -88,7 +88,9 @@ def ifConversion (enabled : Bool) : Selection.IfConversionHeuristic :=
     let left := expressionCost ifso
     let right := expressionCost ifnot
     enabled && (match type with | .Tint | .Tlong => true | _ => false) &&
-      left + right ≤ 20 && left - right ≤ 4 && right - left ≤ 4
+      left + right ≤ 20 && left - right ≤ 4 && right - left ≤ 4 &&
+      !(continuationTest continuation == some identifier &&
+        (integerConstant ifso && integerConstant ifnot))
 
 def joinPoints (source : LTL.function) : Std.HashSet Nat :=
   let rec visit : Nat → List positive → Std.HashSet Nat → Std.HashSet Nat → Std.HashSet Nat
