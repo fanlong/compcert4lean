@@ -88,7 +88,7 @@ def ifConversion (enabled : Bool) : Selection.IfConversionHeuristic :=
     let left := expressionCost ifso
     let right := expressionCost ifnot
     enabled && (match type with | .Tint | .Tlong => true | _ => false) &&
-      left + right ≤ 18 && left - right ≤ 4 && right - left ≤ 4 &&
+      left + right ≤ 20 && left - right ≤ 4 && right - left ≤ 4 &&
       !(continuationTest continuation == some identifier &&
         (integerConstant ifso || integerConstant ifnot))
 
@@ -139,8 +139,8 @@ def enumerateBlocks (source : LTL.function) : List positive :=
         if visited.contains (posToNat node) then visit fuel pending visited blocks
         else
           let (block, successors, visited) := layoutBlock source joins bound node visited []
-          let minimum := block.foldl (fun minimum node => min minimum (posToNat node)) (posToNat node)
-          visit fuel (successors ++ pending) visited ((minimum, block) :: blocks)
+          let maximum := block.foldl (fun maximum node => max maximum (posToNat node)) (posToNat node)
+          visit fuel (successors ++ pending) visited ((maximum, block) :: blocks)
   let edges := (PTree.elements source.fn_code).foldl
     (fun count (_, block) => count + (LTL.successors_block block).length) 0
   ((visit (edges + 1) [source.fn_entrypoint] {} []).mergeSort
