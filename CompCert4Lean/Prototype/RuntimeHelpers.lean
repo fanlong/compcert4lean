@@ -73,7 +73,10 @@ def expressionCost : Cminor.expr → Nat
   | .Eload _ _ => 1000
 
 def continuationTest : CminorSel.stmt → Option ident
+  | .Sifthenelse (.CEcond (.Ccompimm _ _) (.Econs (.Evar identifier) .Enil)) _ _ => some identifier
   | .Sifthenelse (.CEcond (.Ccompuimm _ _) (.Econs (.Evar identifier) .Enil)) _ _ => some identifier
+  | .Sifthenelse (.CEcond (.Ccomplimm _ _) (.Econs (.Evar identifier) .Enil)) _ _ => some identifier
+  | .Sifthenelse (.CEcond (.Ccompluimm _ _) (.Econs (.Evar identifier) .Enil)) _ _ => some identifier
   | .Sseq .Sskip rest => continuationTest rest
   | .Sseq (.Sbuiltin _ (.EF_debug _ _ _) _) rest => continuationTest rest
   | .Sseq first _ => continuationTest first
