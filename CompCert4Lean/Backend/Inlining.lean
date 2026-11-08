@@ -220,7 +220,7 @@ def should_inline (cfg : InliningConfig) (info : inlining_info)
           !addressTaken id info &&
           ((cfg.isStatic id && (callMultiplicity id info != .many || multiCallCandidate f)) ||
             (!cfg.isStatic id && callMultiplicity id info == .one &&
-              ((decide (treeCount f.fn_code ≤ (if calledFromLoop id info then 24 else 16)) &&
+              ((decide (treeCount f.fn_code ≤ (if calledFromLoop id info then 28 else 16)) &&
                   PTree.fold leafInstruction f.fn_code true) ||
                 decide (treeCount f.fn_code ≤ 12))))
 
