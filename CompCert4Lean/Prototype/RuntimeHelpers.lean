@@ -67,7 +67,7 @@ def binaryCost : Cminor.binary_operation → Nat
 
 def expressionCost : Cminor.expr → Nat
   | .Evar _ => 0
-  | .Econst _ => 1
+  | .Econst _ => 0
   | .Eunop operation value => unaryCost operation + expressionCost value
   | .Ebinop operation left right => binaryCost operation + expressionCost left + expressionCost right
   | .Eload _ _ => 1000
@@ -140,8 +140,7 @@ def enumerateBlocks (source : LTL.function) : List positive :=
         else
           let (block, successors, visited) := layoutBlock source joins bound node visited []
           let minimum := block.foldl (fun minimum node => min minimum (posToNat node)) (posToNat node)
-          visit fuel ((successors.mergeSort (fun left right => posToNat left ≤ posToNat right)) ++ pending)
-            visited ((minimum, block) :: blocks)
+          visit fuel (successors ++ pending) visited ((minimum, block) :: blocks)
   let edges := (PTree.elements source.fn_code).foldl
     (fun count (_, block) => count + (LTL.successors_block block).length) 0
   ((visit (edges + 1) [source.fn_entrypoint] {} []).mergeSort
