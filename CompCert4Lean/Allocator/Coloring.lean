@@ -341,7 +341,11 @@ def assignColors (context : AllocationContext) (function : XFunction)
     let start := starts[classId]?.getD 0
     let pool := preferred.drop start ++ preferred.take start ++
       (if classId == 2 then [] else remainingRegisters context classId)
-    let location ← match pool.find? (fun register => availableLocation (.R register)) with
+    let preferenceRegisters := (state.graph.preferences[index]?.getD {}).toList.filterMap fun neighbor =>
+      match (colors[rangeRoot state.parents neighbor]?).join with
+      | some (.R register) => some register
+      | _ => none
+    let location ← match (preferenceRegisters ++ pool).find? (fun register => availableLocation (.R register)) with
       | some register =>
           if preferred.any (regEqual register) then
             starts := starts.set! classId ((start + 1) % preferred.length)
