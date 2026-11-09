@@ -162,7 +162,18 @@ def transf_rtl_program
     (total_if (fun _ => Compopts.optim_constprop cfg)
       (time (ofString "Renumbering") Renumber.transf_program))
   let p11 := apply_total _ _ p10 (print (print_RTL (ZArith.BinInt.Z.of_nat 5)))
-  let p12 := apply_partial _ _ p11
+  let p11a := apply_partial _ _ p11 (time (ofString "Inlining") (Inlining.transf_program inlineCfg))
+  let p11b := apply_total _ _ p11a (time (ofString "Renumbering") Renumber.transf_program)
+  let p11c := apply_total _ _ p11b
+    (total_if (fun _ => Compopts.optim_constprop cfg)
+      (time (ofString "Constant propagation")
+        (Constprop.transf_program
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg)))
+  let p11d := apply_total _ _ p11c
+    (total_if (fun _ => Compopts.optim_constprop cfg)
+      (time (ofString "Renumbering") Renumber.transf_program))
+  let p12 := apply_partial _ _ p11d
     (partial_if (fun _ => Compopts.optim_CSE cfg)
       (time (ofString "CSE")
         (CSE.transf_program
@@ -569,6 +580,29 @@ def CompCert's_passes
       pass_match_link := @TransfIfLink RTL.program rtlLinker
         (fun _ => Compopts.optim_constprop cfg)
         Renumberproof.match_prog passCertificates.renumberConstprop }
+  let pass11a : Pass rtlLanguage rtlLanguage :=
+    { pass_match := Inliningproof.match_prog inlineCfg
+      pass_match_link := passCertificates.inlining }
+  let pass11b : Pass rtlLanguage rtlLanguage :=
+    { pass_match := Renumberproof.match_prog
+      pass_match_link := passCertificates.renumber }
+  let pass11c : Pass rtlLanguage rtlLanguage :=
+    { pass_match := match_if (fun _ => Compopts.optim_constprop cfg)
+        (Constpropproof.match_prog
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg)
+      pass_match_link := @TransfIfLink RTL.program rtlLinker
+        (fun _ => Compopts.optim_constprop cfg)
+        (Constpropproof.match_prog
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg)
+        passCertificates.constprop }
+  let pass11d : Pass rtlLanguage rtlLanguage :=
+    { pass_match := match_if (fun _ => Compopts.optim_constprop cfg)
+        Renumberproof.match_prog
+      pass_match_link := @TransfIfLink RTL.program rtlLinker
+        (fun _ => Compopts.optim_constprop cfg)
+        Renumberproof.match_prog passCertificates.renumberConstprop }
   let pass12 : Pass rtlLanguage rtlLanguage :=
     { pass_match := match_if (fun _ => Compopts.optim_CSE cfg)
         (CSEproof.match_prog
@@ -620,10 +654,11 @@ def CompCert's_passes
       pass_match_link := passCertificates.asmgen }
   pass_cons pass1 (pass_cons pass2 (pass_cons pass3 (pass_cons pass4
     (pass_cons pass5 (pass_cons pass6 (pass_cons pass7 (pass_cons pass8
-      (pass_cons pass9 (pass_cons pass10 (pass_cons pass11 (pass_cons pass12
+      (pass_cons pass9 (pass_cons pass10 (pass_cons pass11
+      (pass_cons pass11a (pass_cons pass11b (pass_cons pass11c (pass_cons pass11d (pass_cons pass12
         (pass_cons pass13 (pass_cons pass14 (pass_cons pass15 (pass_cons pass16
           (pass_cons pass17 (pass_cons pass18 (pass_cons pass19 (pass_cons pass20
-            (pass_cons pass21 (pass_nil asmLanguage)))))))))))))))))))))
+            (pass_cons pass21 (pass_nil asmLanguage)))))))))))))))))))))))))
 
 def match_prog
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
@@ -940,6 +975,10 @@ theorem transf_c_program_match
     refine ⟨_, Selectionproof.transf_program_match cfg selectionOracle _ _ (by assumption), ?_⟩
     refine ⟨_, RTLgenproof.transf_program_match _ _ (by assumption), ?_⟩
     refine ⟨_, total_if_match _ _ _ _ _ (Tailcallproof.transf_program_match cfg), ?_⟩
+    refine ⟨_, Inliningproof.transf_program_match inlineCfg _ _ (by assumption), ?_⟩
+    refine ⟨_, Renumberproof.transf_program_match _, ?_⟩
+    refine ⟨_, total_if_match _ _ _ _ _ (Constpropproof.transf_program_match cfg), ?_⟩
+    refine ⟨_, total_if_match _ _ _ _ _ Renumberproof.transf_program_match, ?_⟩
     refine ⟨_, Inliningproof.transf_program_match inlineCfg _ _ (by assumption), ?_⟩
     refine ⟨_, Renumberproof.transf_program_match _, ?_⟩
     refine ⟨_, total_if_match _ _ _ _ _ (Constpropproof.transf_program_match cfg), ?_⟩
@@ -1502,7 +1541,8 @@ theorem cstrategy_semantic_preservation
   simp only [match_prog, CompCert's_passes, compose_passes, pass_compose, pass_identity] at matched
   rcases matched with ⟨program1, match1, program2, match2, program3, match3,
     program4, match4, program5, match5, program6, match6, program7, match7,
-    program8, match8, program9, match9, program10, match10, program11, match11,
+    program8, match8, program9, match9, program10, match10, program11, match11, program11a, match11a, program11b, match11b,
+    program11c, match11c, program11d, match11d,
     program12, match12, program13, match13, program14, match14, program15, match15,
     program16, match16, program17, match17, program18, match18, program19, match19,
     program20, match20, program21, match21, sameTarget⟩
@@ -1533,6 +1573,16 @@ theorem cstrategy_semantic_preservation
         (Constpropproof.transf_program_correct cfg providers)) ?_
     refine compose_forward_simulations _ _ _
       (match_if_simulation _ (RTL.semantics providers) _ _ _ _ match11
+        (Renumberproof.transf_program_correct providers)) ?_
+    refine compose_forward_simulations _ _ _
+      (Inliningproof.transf_program_correct providers inlineCfg _ _ match11a) ?_
+    refine compose_forward_simulations _ _ _
+      (Renumberproof.transf_program_correct providers _ _ match11b) ?_
+    refine compose_forward_simulations _ _ _
+      (match_if_simulation _ (RTL.semantics providers) _ _ _ _ match11c
+        (Constpropproof.transf_program_correct cfg providers)) ?_
+    refine compose_forward_simulations _ _ _
+      (match_if_simulation _ (RTL.semantics providers) _ _ _ _ match11d
         (Renumberproof.transf_program_correct providers)) ?_
     refine compose_forward_simulations _ _ _
       (match_if_simulation _ (RTL.semantics providers) _ _ _ _ match12

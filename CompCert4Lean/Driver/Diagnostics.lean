@@ -101,6 +101,20 @@ def transf_rtl_program
       else
         p
     emitResult (sink.rtl (rtlTag 5)) tp
+  -- second round (same as Compiler.transf_rtl_program): Inlining, Renumber, Constprop, Renumber
+  let p5 := bindIORes p5 fun p =>
+    match Inlining.transf_program inlineCfg p with
+    | .Error message => pure (.Error message)
+    | .OK tp =>
+        let tp := Renumber.transf_program tp
+        let tp :=
+          if CompCert4Lean.Driver.Compopts.optim_constprop cfg then
+            Renumber.transf_program (Constprop.transf_program
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate) cfg tp)
+          else
+            tp
+        pure (.OK tp)
   let p6 := bindIORes p5 fun p =>
     let result :=
       if CompCert4Lean.Driver.Compopts.optim_CSE cfg then
