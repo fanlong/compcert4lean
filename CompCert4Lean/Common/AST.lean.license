@@ -1,0 +1,6 @@
+SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-INRIA-CompCert
+SPDX-FileCopyrightText: INRIA (Institut National de Recherche en Informatique et en Automatique)
+
+Translated to Lean in 2026 by the CompCert4Lean contributors from:
+https://github.com/AbsInt/CompCert/blob/7b1f02b09954b9b916eb2a91d283c9b5355bf172/common/AST.v
+License texts: see the top-level LICENSE and LICENSES/.

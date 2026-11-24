@@ -1,0 +1,6 @@
+SPDX-License-Identifier: LGPL-2.1-only
+SPDX-FileCopyrightText: INRIA, CNRS and contributors (The Coq Development Team)
+
+Contains Coq standard-library material adapted to Lean in 2026 by the CompCert4Lean contributors. Upstream source area:
+https://github.com/rocq-prover/rocq/tree/V8.20.1/theories/Strings/String.v
+License texts: see the top-level LICENSE and LICENSES/.

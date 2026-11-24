@@ -1,0 +1,71 @@
+CompCert4Lean licensing
+
+We license the project's original, independently reusable work under the MIT
+License (LICENSES/MIT.txt). This includes our Python drivers, test runners,
+codec generator, build configuration and documentation. Where a file incorporates
+upstream material, that material and adaptations of it keep the terms below.
+License notices beside individual source files identify the translated modules
+and their origins. The combined compiler includes passes covered by the INRIA Non-Commercial License
+Agreement. Section 4 requires distribution of the port of those passes on the
+same terms. Commercial use of the combined compiler requires separate permission.
+
+File guide (Lean paths below are relative to CompCert4Lean/)
+
+* CompCert 3.17, INRIA Non-Commercial License Agreement. This covers the
+  translations in Backend/, Cfrontend/, Driver/ and X86/, except for the
+  dual-licensed modules listed below. It also covers the allocator adaptations
+  of Regalloc.ml, IRC.ml, Splitting.ml and the x86 target rules in Allocator/
+  (the source mapping is in Allocator/README.md). The independently written
+  IndexSetCache.lean and the allocator README are MIT.
+
+* CompCert 3.17, choice of LGPL-2.1-or-later or the INRIA agreement. This
+  covers translations of upstream common/ and lib/, Backend/Cminor.lean,
+  Cfrontend/{Clight,Cop,Csem,Cstrategy,Csyntax,Ctypes,Ctyping}.lean,
+  X86/Builtins1.lean and X86_64/Archi.lean. Common/Events/Core.lean comes from
+  common/Events.v. The independently written Common/ExternalCalls.lean and
+  Lib/Floats/Sqrt.lean are MIT. For the Coq-derived files in Lib/, see below.
+
+* Flocq 4.2.1, LGPL-3.0-or-later. This covers Flocq/, the Lean translation
+  of the floating-point library bundled with CompCert 3.17. The adjacent
+  .license files identify the upstream sources and their authors.
+
+* Coq 8.20.1 standard library, LGPL-2.1. This covers the translated
+  standard-library material in Foundation/{Logic,Numbers,Ordered,Recursion,
+  RocqString,FlocqReal}.lean, Lib/{FSetDecide,FSetFacts,FSetInterface,
+  FSetProperties,MSetAVL,MSetGenTree}.lean and Lib/Floats/Model.lean.
+  Foundation/RocqStdlib.lean is the project's MIT-licensed import list.
+
+* Integration code. The project's own configuration, interchange code and
+  adapters are MIT. Prototype/RuntimeHelpers.lean includes switch compilation
+  from common/Switchaux.ml (dual-licensed as above) and heuristics from
+  backend/Selectionaux.ml and backend/Linearizeaux.ml (INRIA agreement).
+  Prototype/AllocationReport.lean and Prototype/AllocationTrace.lean replay the
+  CompCert-derived pipeline or allocator. Those adaptations carry the INRIA
+  terms. In Prototype/Codecs.lean and bridge/codecs.ml, the codec machinery is
+  project work and the generated constructor tables follow their source
+  interfaces: the CompCert C and common interfaces are dual-licensed, and
+  x86/Asm.v carries the INRIA terms. The same source rule applies to x86
+  builtin patterns adapted in bridge/bridge.ml. The linked upstream frontend,
+  printer and runtime retain their respective licenses.
+
+* Tests. Imported files under tests/small-tests/ are identified, by path and
+  hash, in tests/small-tests/provenance.json. Their default is GPL-2.0-or-later,
+  subject to individual notices, including those in spass/. See the corpus
+  README.md and LICENSE. Our SUITE.md, manifest.json and provenance.json are
+  MIT. Our other test harnesses and original checks are also MIT. If a check
+  reproduces part of a ported implementation, that portion retains its source
+  terms (for example, allocator reference routines in tests/allocator/Main.lean
+  and tests/optimization/).
+
+Upstream copyright and license texts
+
+CompCert is copyright INRIA and AbsInt Angewandte Informatik GmbH. The complete
+license from the pinned CompCert 3.17 checkout, including the INRIA agreement (also in LICENSES/LicenseRef-INRIA-CompCert.txt),
+LGPL 2.1, LGPL 3 and the BSD 3-Clause runtime notice, is in
+LICENSES/CompCert-3.17.txt. LICENSES/GPL-3.0.txt supplies the underlying GPL
+text for LGPL 3. The Coq library is copyright INRIA, CNRS and contributors.
+See the notices accompanying the translated libraries and the original sources:
+
+https://github.com/AbsInt/CompCert/tree/7b1f02b09954b9b916eb2a91d283c9b5355bf172
+https://github.com/rocq-prover/rocq/tree/V8.20.1/theories
+https://github.com/AbsInt/CompCert-small-tests/tree/081175df374260304a5cd78dd3dfaded93dceb41

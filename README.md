@@ -25,6 +25,15 @@ it does not establish a completed end-to-end verification of the driver,
 frontend, serialization, native runtime, or linker. See
 [PROTOTYPE.md](PROTOTYPE.md) for the implementation and trust boundary.
 
+## License
+
+We want anyone to be able to study, share and build on as much of CompCert4Lean
+as possible. We use MIT for our tools, documentation and other work we can
+license independently. CompCert 3.17 requires us to distribute adaptations of
+its noncommercial compiler passes under the same INRIA terms. Ported libraries
+and imported tests retain their own licenses. The [license guide](LICENSE)
+identifies the terms for each part of the repository.
+
 ## Quick start: compile one C file
 
 With the [prerequisites](#prerequisites-and-build) installed, run these commands

@@ -1,0 +1,7 @@
+SPDX-License-Identifier: LGPL-3.0-or-later
+SPDX-FileCopyrightText: 2009-2018 Sylvie Boldo
+SPDX-FileCopyrightText: 2009-2018 Guillaume Melquiond
+
+Translated to Lean in 2026 by the CompCert4Lean contributors from:
+https://github.com/AbsInt/CompCert/blob/7b1f02b09954b9b916eb2a91d283c9b5355bf172/flocq/Core/Generic_fmt.v
+License texts: see the top-level LICENSE and LICENSES/.

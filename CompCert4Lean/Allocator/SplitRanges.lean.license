@@ -1,0 +1,6 @@
+SPDX-License-Identifier: LicenseRef-INRIA-CompCert
+SPDX-FileCopyrightText: INRIA (Institut National de Recherche en Informatique et en Automatique)
+
+Includes a Lean adaptation (2026) by the CompCert4Lean contributors of:
+https://github.com/AbsInt/CompCert/blob/7b1f02b09954b9b916eb2a91d283c9b5355bf172/backend/Splitting.ml
+License texts: see the top-level LICENSE and LICENSES/.
