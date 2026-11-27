@@ -118,8 +118,10 @@ def prepare_toolchain(root, lean_session):
         if len(ocaml_tools) != 2:
             raise CompileError("invalid OCaml tool version output: " + repr(ocaml_tools))
         versions["ocaml"], versions["yojson"] = ocaml_tools
-        if "4.33.0" not in versions["lean"] or versions["ocaml"] != "4.14.2" or versions["yojson"] != "2.2.2":
-            raise CompileError("expected Lean 4.33.0, OCaml 4.14.2 and yojson 2.2.2: " + repr(versions))
+        lean_version = (REPO / "lean-toolchain").read_text().strip().rsplit(":v", 1)[-1]
+        if (lean_version not in versions["lean"] or not versions["ocaml"].startswith("4.14.")
+                or versions["yojson"].split(".")[0] not in ("2", "3")):
+            raise CompileError(f"expected Lean {lean_version}, OCaml 4.14 and yojson 2 or 3: " + repr(versions))
     bridge_dir = BUILD / "bridge"
     bridge_dir.mkdir(exist_ok=True)
     sources = [REPO / "bridge" / filename for filename in ("primitives.ml", "codecs.ml", "bridge.ml")]
