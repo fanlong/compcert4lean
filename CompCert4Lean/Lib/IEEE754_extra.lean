@@ -4094,9 +4094,7 @@ private theorem ieee_manual_round_exact {prec emax : Z}
     exact ieee_manual_round_canonical rounding sign result_mantissa result_exponent hcanonical hbounded
   · apply Bool.and_eq_true_iff.mpr
     constructor
-    · change (if fexp prec emax (Zadd (Zpos (Digits.digits2_pos result_mantissa)) result_exponent) =
-        result_exponent then true else false) = true
-      exact if_pos hcanonical
+    · exact decide_eq_true hcanonical
     · change (if intOfZ result_exponent ≤ intOfZ (Zsub emax prec) then true else false) = true
       exact if_pos hbounded
   · rw [halign.2]

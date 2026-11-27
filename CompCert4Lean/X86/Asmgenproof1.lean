@@ -5170,6 +5170,7 @@ private theorem mask_condition (negative : Bool) (mask : CompCert4Lean.Lib.Integ
       · simp only [Bool.not_not]
         exact equal
 
+set_option maxHeartbeats 2000000 in
 theorem transl_cond_correct
     [binary64_certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
       (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]

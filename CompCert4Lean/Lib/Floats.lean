@@ -3371,29 +3371,29 @@ private theorem quiet_nan64_bits_worker (y : BitVec 64)
 theorem float64_sqrt_correct_proof : float64_sqrt_correctStatement := by
   intro x
   have rawNaN_iff (y : BitVec 64) :
-      (BitVec.extractLsb 62 52 y = 2047#11 ∧
-        ¬BitVec.extractLsb 51 0 y = 0#52) ↔
+      (BitVec.extractLsb' 52 11 y = 2047#11 ∧
+        ¬BitVec.extractLsb' 0 52 y = 0#52) ↔
       isNaN64 (⟨y⟩ : float) = true := by
     have he_iff :
-        BitVec.extractLsb 62 52 y = 2047#11 ↔
+        BitVec.extractLsb' 52 11 y = 2047#11 ↔
           y.toNat / 2 ^ 52 % 2 ^ 11 = 2047 := by
       constructor
       · intro he
         have ht := congrArg BitVec.toNat he
-        simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow] using ht
+        simpa [BitVec.extractLsb_toNat, BitVec.extractLsb'_toNat, Nat.shiftRight_eq_div_pow] using ht
       · intro he
         apply BitVec.eq_of_toNat_eq
-        simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow] using he
+        simpa [BitVec.extractLsb_toNat, BitVec.extractLsb'_toNat, Nat.shiftRight_eq_div_pow] using he
     have hm_iff :
-        BitVec.extractLsb 51 0 y = 0#52 ↔
+        BitVec.extractLsb' 0 52 y = 0#52 ↔
           y.toNat % 2 ^ 52 = 0 := by
       constructor
       · intro hm
         have ht := congrArg BitVec.toNat hm
-        simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow] using ht
+        simpa [BitVec.extractLsb_toNat, BitVec.extractLsb'_toNat, Nat.shiftRight_eq_div_pow] using ht
       · intro hm
         apply BitVec.eq_of_toNat_eq
-        simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow] using hm
+        simpa [BitVec.extractLsb_toNat, BitVec.extractLsb'_toNat, Nat.shiftRight_eq_div_pow] using hm
     constructor
     · intro hparts
       have he := he_iff.1 hparts.1
@@ -3413,7 +3413,7 @@ theorem float64_sqrt_correct_proof : float64_sqrt_correctStatement := by
     have hp := rawNaN_iff y
     simpa [Float.Model.UnpackedFloat.unpackExponent,
       Float.Model.UnpackedFloat.unpackMantissa,
-      BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow] using hp
+      BitVec.extractLsb_toNat, BitVec.extractLsb'_toNat, Nat.shiftRight_eq_div_pow] using hp
   have rawProp_iff (y : BitVec 64) :
       (Float.Model.UnpackedFloat.unpackExponent
           (spec := Float.Model.Format.binary64) y = -1#11 ∧
@@ -3858,20 +3858,16 @@ private theorem sqrt_nan_equiv (b : BitVec 32) :
   simp only [Float.Model.UnpackedFloat.unpackExponent,
     Float.Model.UnpackedFloat.unpackMantissa]
   have hexp : (b.toNat / 8388608 % 256 == 255) =
-      (BitVec.extractLsb 30 23 b == 255#8) := by
+      (BitVec.extractLsb' 23 8 b == 255#8) := by
     apply Bool.eq_iff_iff.mpr
-    simp [beq_iff_eq, BitVec.toNat_eq, BitVec.extractLsb_toNat,
+    simp [BitVec.toNat_eq, BitVec.extractLsb'_toNat,
       Nat.shiftRight_eq_div_pow]
   have hmant : (b.toNat % 8388608 != 0) =
-      (BitVec.extractLsb 22 0 b != 0#23) := by
+      (BitVec.extractLsb' 0 23 b != 0#23) := by
     apply Bool.eq_iff_iff.mpr
-    simp [beq_iff_eq, BitVec.toNat_eq, BitVec.extractLsb_toNat,
-      Nat.shiftRight_eq_div_pow]
+    simp [BitVec.toNat_eq, BitVec.extractLsb'_toNat]
   rw [hexp, hmant]
-  simp only [show (23 + 8 - 1 : Nat) = 30 by decide,
-    show (23 - 1 : Nat) = 22 by decide, BitVec.cast_eq]
-  apply Bool.eq_iff_iff.mpr
-  simp
+  rfl
 
 end CompCert4Lean.Lib.Floats.Sqrt
 
@@ -4842,6 +4838,7 @@ private theorem conversion_model_zero (value : float32)
   have hunpack : Float.Model.UnpackedFloat.unpack Float.Model.Format.binary32 value.bits =
       Float.Model.UnpackedFloat.zero
         (Float.Model.UnpackedFloat.Sign.ofBitVec (BitVec.extractLsb 31 31 value.bits)) := by
+    simp only [BitVec.extractLsb] at hexponent hmantissa hbit ⊢
     simp [Float.Model.UnpackedFloat.unpack,
     Float.Model.UnpackedFloat.unpackExponent,
     Float.Model.UnpackedFloat.unpackMantissa,
@@ -4891,6 +4888,7 @@ private theorem conversion_model_zero_neg (value : float32)
   have hunpack : Float.Model.UnpackedFloat.unpack Float.Model.Format.binary32 value.bits =
       Float.Model.UnpackedFloat.zero
         (Float.Model.UnpackedFloat.Sign.ofBitVec (BitVec.extractLsb 31 31 value.bits)) := by
+    simp only [BitVec.extractLsb] at hexponent hmantissa hbit ⊢
     simp [Float.Model.UnpackedFloat.unpack,
       Float.Model.UnpackedFloat.unpackExponent,
       Float.Model.UnpackedFloat.unpackMantissa,
@@ -5129,6 +5127,7 @@ private theorem conversion_model_infinity (value : float32)
   have hunpack : Float.Model.UnpackedFloat.unpack Float.Model.Format.binary32 value.bits =
       Float.Model.UnpackedFloat.infinity
         (Float.Model.UnpackedFloat.Sign.ofBitVec (BitVec.extractLsb 31 31 value.bits)) := by
+    simp only [BitVec.extractLsb] at hexponent hmantissa hbit ⊢
     simp [Float.Model.UnpackedFloat.unpack,
       Float.Model.UnpackedFloat.unpackExponent,
       Float.Model.UnpackedFloat.unpackMantissa,
@@ -6929,6 +6928,7 @@ private theorem conversion_narrow_model_zero (value : float)
   have hunpack : Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 value.bits =
       Float.Model.UnpackedFloat.zero
         (Float.Model.UnpackedFloat.Sign.ofBitVec (BitVec.extractLsb 63 63 value.bits)) := by
+    simp only [BitVec.extractLsb] at hexponent hmantissa hbit ⊢
     simp [Float.Model.UnpackedFloat.unpack,
     Float.Model.UnpackedFloat.unpackExponent,
     Float.Model.UnpackedFloat.unpackMantissa,
@@ -6978,6 +6978,7 @@ private theorem conversion_narrow_model_zero_neg (value : float)
   have hunpack : Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 value.bits =
       Float.Model.UnpackedFloat.zero
         (Float.Model.UnpackedFloat.Sign.ofBitVec (BitVec.extractLsb 63 63 value.bits)) := by
+    simp only [BitVec.extractLsb] at hexponent hmantissa hbit ⊢
     simp [Float.Model.UnpackedFloat.unpack,
       Float.Model.UnpackedFloat.unpackExponent,
       Float.Model.UnpackedFloat.unpackMantissa,
@@ -7216,6 +7217,7 @@ private theorem conversion_narrow_model_infinity (value : float)
   have hunpack : Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 value.bits =
       Float.Model.UnpackedFloat.infinity
         (Float.Model.UnpackedFloat.Sign.ofBitVec (BitVec.extractLsb 63 63 value.bits)) := by
+    simp only [BitVec.extractLsb] at hexponent hmantissa hbit ⊢
     simp [Float.Model.UnpackedFloat.unpack,
       Float.Model.UnpackedFloat.unpackExponent,
       Float.Model.UnpackedFloat.unpackMantissa,
@@ -8070,7 +8072,7 @@ private theorem remaining_components_notNaN64 (mantissa exponent : Nat)
       (sign := .positive) (exponent := BitVec.ofNat 11 exponent)
       (mantissa := BitVec.ofNat 52 mantissa))
   simp only [unpackExponent, BitVec.toNat_cast, BitVec.extractLsb_toNat,
-    Nat.shiftRight_eq_div_pow, BitVec.toNat_ofNat] at extracted
+    BitVec.extractLsb'_toNat, Nat.shiftRight_eq_div_pow, BitVec.toNat_ofNat] at extracted
   have exponentValue : exponent64 ⟨packComponents Format.binary64 .positive
       (BitVec.ofNat 11 exponent) (BitVec.ofNat 52 mantissa)⟩ = exponent := by
     change (packComponents Format.binary64 .positive
